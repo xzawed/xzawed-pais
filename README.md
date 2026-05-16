@@ -239,6 +239,8 @@ Every push and pull request triggers [GitHub Actions](./.github/workflows/ci.yml
 
 ## 📚 Documentation
 
+**New to xzawedPAIS?** Start with the [Quick Start Guide](./QUICKSTART.md) — step-by-step instructions written for non-developers.
+
 Full API references, service design specs, and guides live in [`docs/`](./docs/README.md).
 
 ---
