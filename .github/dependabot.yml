@@ -1,0 +1,61 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /xzawedOrchestrator
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedOrchestrator]
+
+  - package-ecosystem: npm
+    directory: /xzawedManager
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedManager]
+
+  - package-ecosystem: npm
+    directory: /xzawedPlanner
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedPlanner]
+
+  - package-ecosystem: npm
+    directory: /xzawedDeveloper
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedDeveloper]
+
+  - package-ecosystem: npm
+    directory: /xzawedDesigner
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedDesigner]
+
+  - package-ecosystem: npm
+    directory: /xzawedTester
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedTester]
+
+  - package-ecosystem: npm
+    directory: /xzawedBuilder
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedBuilder]
+
+  - package-ecosystem: npm
+    directory: /xzawedWatcher
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedWatcher]
+
+  - package-ecosystem: npm
+    directory: /xzawedSecurity
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedSecurity]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels: [dependencies, github-actions]
