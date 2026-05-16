@@ -1,0 +1,174 @@
+name: xzawed-pais
+
+services:
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Orchestrator (port 3000) ────────────────────────────────────────────────
+  orchestrator:
+    build:
+      context: ./xzawedOrchestrator
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file: ./xzawedOrchestrator/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Manager (port 3001) ─────────────────────────────────────────────────────
+  manager:
+    build:
+      context: ./xzawedManager
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    env_file: ./xzawedManager/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3001"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Planner (port 3002) ─────────────────────────────────────────────────────
+  planner:
+    build:
+      context: ./xzawedPlanner
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    env_file: ./xzawedPlanner/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3002"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Developer (port 3003) ───────────────────────────────────────────────────
+  developer:
+    build:
+      context: ./xzawedDeveloper
+      dockerfile: Dockerfile
+    ports:
+      - "3003:3003"
+    env_file: ./xzawedDeveloper/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3003"
+    volumes:
+      - workspace:/workspace
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Designer (port 3004) ────────────────────────────────────────────────────
+  designer:
+    build:
+      context: ./xzawedDesigner
+      dockerfile: Dockerfile
+    ports:
+      - "3004:3004"
+    env_file: ./xzawedDesigner/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3004"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Tester (port 3005) ──────────────────────────────────────────────────────
+  tester:
+    build:
+      context: ./xzawedTester
+      dockerfile: Dockerfile
+    ports:
+      - "3005:3005"
+    env_file: ./xzawedTester/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3005"
+    volumes:
+      - workspace:/workspace
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Builder (port 3006) ─────────────────────────────────────────────────────
+  builder:
+    build:
+      context: ./xzawedBuilder
+      dockerfile: Dockerfile
+    ports:
+      - "3006:3006"
+    env_file: ./xzawedBuilder/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3006"
+    volumes:
+      - workspace:/workspace
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Watcher (port 3007) ─────────────────────────────────────────────────────
+  watcher:
+    build:
+      context: ./xzawedWatcher
+      dockerfile: Dockerfile
+    ports:
+      - "3007:3007"
+    env_file: ./xzawedWatcher/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3007"
+    volumes:
+      - workspace:/workspace
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Security (port 3008) ────────────────────────────────────────────────────
+  security:
+    build:
+      context: ./xzawedSecurity
+      dockerfile: Dockerfile
+    ports:
+      - "3008:3008"
+    env_file: ./xzawedSecurity/.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3008"
+    volumes:
+      - workspace:/workspace:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  workspace:

@@ -1,0 +1,27 @@
+FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@10 --activate
+WORKDIR /app
+
+FROM base AS deps
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY packages/server/package.json ./packages/server/
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+COPY . .
+RUN pnpm build
+
+FROM node:20-alpine AS runner
+RUN corepack enable && corepack prepare pnpm@10 --activate
+WORKDIR /app
+
+COPY --from=build /app/packages/server/dist ./packages/server/dist
+COPY --from=build /app/packages/server/package.json ./packages/server/
+COPY --from=build /app/package.json ./
+COPY --from=build /app/pnpm-workspace.yaml ./
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/server/node_modules ./packages/server/node_modules
+
+EXPOSE 3001
+WORKDIR /app/packages/server
+CMD ["node", "dist/index.js"]
