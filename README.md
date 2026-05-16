@@ -22,7 +22,9 @@
 [![Vitest](https://img.shields.io/badge/Vitest-2%2F3.x-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Turborepo](https://img.shields.io/badge/Turborepo-2.x-EF4444?logo=turborepo&logoColor=white)](https://turbo.build/)
 
-[![Tests](https://img.shields.io/badge/tests-235%2B%20passing-brightgreen)](./docs/README.md)
+[![Tests](https://img.shields.io/badge/tests-337%2B%20passing-brightgreen)](./docs/README.md)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](./.github/workflows/ci.yml)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](./docker-compose.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 </div>
@@ -64,13 +66,13 @@ No service imports another directly. Every message crosses a stream boundary, gi
 
 | Service | Port | Tests | Role |
 |---|---|---|---|
-| [xzawedOrchestrator](./xzawedOrchestrator/) | 3000 | v0.1.0 | User instruction intake, intent refinement, Manager relay |
+| [xzawedOrchestrator](./xzawedOrchestrator/) | 3000 | 65 / 65 | User instruction intake, intent refinement, Manager relay |
 | [xzawedManager](./xzawedManager/) | 3001 | 51 / 51 | Claude tool-calling loop, sub-agent dispatch |
-| [xzawedPlanner](./xzawedPlanner/) | 3002 | ✅ | intent → executable Step[] breakdown |
+| [xzawedPlanner](./xzawedPlanner/) | 3002 | 33 / 33 | intent → executable Step[] breakdown |
 | [xzawedDeveloper](./xzawedDeveloper/) | 3003 | 31 / 31 | Code generation & modification, file I/O |
 | [xzawedDesigner](./xzawedDesigner/) | 3004 | 26 / 26 | UI component spec & layout design |
 | [xzawedTester](./xzawedTester/) | 3005 | 28 / 28 | Test execution & failure analysis |
-| [xzawedBuilder](./xzawedBuilder/) | 3006 | v0.2.0 | Project build detection & execution |
+| [xzawedBuilder](./xzawedBuilder/) | 3006 | 32 / 32 | Project build detection & execution |
 | [xzawedWatcher](./xzawedWatcher/) | 3007 | 26 / 26 | File-change surveillance & event streaming |
 | [xzawedSecurity](./xzawedSecurity/) | 3008 | 45 / 45 | OWASP Top 10 security audit |
 
@@ -88,7 +90,9 @@ No service imports another directly. Every message crosses a stream boundary, gi
 | Schema validation | Zod |
 | AI SDK | @anthropic-ai/sdk — Claude Sonnet 4.6 |
 | Testing | Vitest 2/3 (`pool: 'forks'`) |
-| Orchestrator extras | @modelcontextprotocol/sdk, React 19, Electron (Phase 2) |
+| Orchestrator extras | @modelcontextprotocol/sdk, React 19, Electron |
+| Containerization | Docker Compose (all 9 services + Redis) |
+| CI/CD | GitHub Actions (build · test · audit on every PR) |
 
 ---
 
@@ -196,6 +200,40 @@ cd xzawedManager/packages/server && pnpm test <file>
 # Independent services — verbose output
 cd xzawedDeveloper && pnpm test -- --reporter=verbose
 ```
+
+---
+
+## 🐳 Docker
+
+Run the entire platform (Redis + all 9 services) with a single command:
+
+```bash
+# Copy .env files for each service first
+cp xzawedOrchestrator/.env.example xzawedOrchestrator/.env
+# ... (repeat for each service)
+
+# Build and start everything
+docker compose up --build
+
+# Start only specific services
+docker compose up redis planner developer security
+```
+
+All services share a `workspace` volume for file I/O, and Redis is health-checked before any service starts.
+
+---
+
+## ⚙️ CI/CD
+
+Every push and pull request triggers [GitHub Actions](./.github/workflows/ci.yml):
+
+| Check | Scope |
+|---|---|
+| `pnpm build` | All 9 services in parallel |
+| `pnpm test` | 337+ tests across all services |
+| `pnpm audit` | Zero moderate+ vulnerabilities enforced |
+
+[Dependabot](./.github/dependabot.yml) opens weekly PRs for dependency updates across all 9 services.
 
 ---
 

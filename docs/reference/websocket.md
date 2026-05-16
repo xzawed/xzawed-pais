@@ -145,7 +145,7 @@ xzawedManager로부터 작업 진행 상황 업데이트를 수신했을 때 전
   "type": "task_update",
   "agentId": "xzawedDeveloper",
   "status": "in_progress",
-  "content": "쇼핑몰 백엔드 API 구현 중입니다. 상품 관리 모듈 완료 (45%).",
+  "content": "사용자 인증 모듈 코드 생성 완료. 파일 저장 중 (45%).",
   "progress": 45
 }
 ```
