@@ -1,0 +1,114 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Turborepo services ─────────────────────────────────────────────────────
+  turborepo:
+    name: "${{ matrix.service }} (Turborepo)"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: xzawedOrchestrator
+            dir: xzawedOrchestrator
+          - service: xzawedManager
+            dir: xzawedManager
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: ${{ matrix.dir }}/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: ${{ matrix.dir }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        working-directory: ${{ matrix.dir }}
+        run: pnpm build
+
+      - name: Test
+        working-directory: ${{ matrix.dir }}
+        run: pnpm test
+
+      - name: Audit
+        working-directory: ${{ matrix.dir }}
+        run: pnpm audit --audit-level=moderate
+
+  # ── Independent services ───────────────────────────────────────────────────
+  independent:
+    name: "${{ matrix.service }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - xzawedPlanner
+          - xzawedDeveloper
+          - xzawedDesigner
+          - xzawedTester
+          - xzawedBuilder
+          - xzawedWatcher
+          - xzawedSecurity
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: ${{ matrix.service }}/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: ${{ matrix.service }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        working-directory: ${{ matrix.service }}
+        run: pnpm build
+
+      - name: Test
+        working-directory: ${{ matrix.service }}
+        run: pnpm test
+
+      - name: Audit
+        working-directory: ${{ matrix.service }}
+        run: pnpm audit --audit-level=moderate
+
+  # ── Summary gate (required for branch protection) ─────────────────────────
+  all-checks-pass:
+    name: All checks pass
+    runs-on: ubuntu-latest
+    needs: [turborepo, independent]
+    if: always()
+    steps:
+      - name: Check results
+        run: |
+          if [[ "${{ needs.turborepo.result }}" != "success" || "${{ needs.independent.result }}" != "success" ]]; then
+            echo "One or more jobs failed"
+            exit 1
+          fi
+          echo "All jobs passed"
