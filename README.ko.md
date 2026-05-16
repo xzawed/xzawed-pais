@@ -212,6 +212,8 @@ docker compose up redis planner developer security
 
 ## 📚 문서
 
+**처음 시작하시나요?** 비개발자도 따라할 수 있는 [빠른 시작 가이드](./QUICKSTART.md)를 먼저 읽어보세요.
+
 전체 API, 서비스별 설계 문서, 가이드는 [`docs/`](./docs/README.md)를 참고하세요.
 
 | 문서 | 설명 |
