@@ -5,6 +5,8 @@ node_modules/
 dist/
 build/
 out/
+# Electron build resources (icon assets) are source files, not build output
+!xzawedOrchestrator/packages/app/build/
 *.js.map
 *.tsbuildinfo
 
