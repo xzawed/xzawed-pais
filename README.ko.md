@@ -22,7 +22,9 @@
 [![Vitest](https://img.shields.io/badge/Vitest-2%2F3.x-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Turborepo](https://img.shields.io/badge/Turborepo-2.x-EF4444?logo=turborepo&logoColor=white)](https://turbo.build/)
 
-[![Tests](https://img.shields.io/badge/테스트-235개%20이상%20통과-brightgreen)](.)
+[![Tests](https://img.shields.io/badge/테스트-337개%20이상%20통과-brightgreen)](.)
+[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](./.github/workflows/ci.yml)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](./docker-compose.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
 </div>
@@ -63,13 +65,13 @@ _"쇼핑몰 만들어줘"_ 라고 입력하면, 에이전트들이 계획을 세
 
 | 서비스 | 포트 | 테스트 | 역할 |
 |---|---|---|---|
-| [xzawedOrchestrator](./xzawedOrchestrator) | 3000 | v0.1.0 | 사용자 지시 수신·정제, Manager 전달 |
+| [xzawedOrchestrator](./xzawedOrchestrator) | 3000 | 65/65 | 사용자 지시 수신·정제, Manager 전달 |
 | [xzawedManager](./xzawedManager) | 3001 | 51/51 | Claude tool-calling 루프, 에이전트 디스패치 |
-| [xzawedPlanner](./xzawedPlanner) | 3002 | ✅ | intent → 실행 가능한 Step[] 분해 |
+| [xzawedPlanner](./xzawedPlanner) | 3002 | 33/33 | intent → 실행 가능한 Step[] 분해 |
 | [xzawedDeveloper](./xzawedDeveloper) | 3003 | 31/31 | 코드 생성·수정, 파일 I/O |
 | [xzawedDesigner](./xzawedDesigner) | 3004 | 26/26 | UI 컴포넌트 스펙 설계 |
 | [xzawedTester](./xzawedTester) | 3005 | 28/28 | 테스트 실행·분석 |
-| [xzawedBuilder](./xzawedBuilder) | 3006 | v0.2.0 | 프로젝트 빌드 감지·실행 |
+| [xzawedBuilder](./xzawedBuilder) | 3006 | 32/32 | 프로젝트 빌드 감지·실행 |
 | [xzawedWatcher](./xzawedWatcher) | 3007 | 26/26 | 파일 변경 감시·이벤트 스트리밍 |
 | [xzawedSecurity](./xzawedSecurity) | 3008 | 45/45 | OWASP 보안 감사 |
 
@@ -168,7 +170,43 @@ cd xzawedSecurity  && pnpm dev
 | AI SDK | @anthropic-ai/sdk (Claude Sonnet 4.6) |
 | 테스트 | Vitest 2/3 (pool: forks, 프로세스 격리) |
 | MCP | @modelcontextprotocol/sdk (Orchestrator) |
-| UI (Phase 2) | React 19 + Zustand + Electron |
+| UI | React 19 + Zustand + Electron |
+| 컨테이너 | Docker Compose (9개 서비스 + Redis) |
+| CI/CD | GitHub Actions (빌드·테스트·감사 자동화) |
+
+---
+
+## 🐳 Docker
+
+전체 플랫폼(Redis + 9개 서비스)을 단일 명령으로 실행합니다:
+
+```bash
+# 각 서비스 .env 파일 준비
+cp xzawedOrchestrator/.env.example xzawedOrchestrator/.env
+# ... (모든 서비스 반복)
+
+# 전체 빌드 및 실행
+docker compose up --build
+
+# 특정 서비스만 실행
+docker compose up redis planner developer security
+```
+
+모든 서비스는 `workspace` 볼륨을 공유하며, Redis 헬스 체크 통과 후 서비스가 순차 시작됩니다.
+
+---
+
+## ⚙️ CI/CD
+
+모든 push와 PR에서 [GitHub Actions](./.github/workflows/ci.yml)가 자동 실행됩니다:
+
+| 검사 | 범위 |
+|---|---|
+| `pnpm build` | 9개 서비스 병렬 빌드 |
+| `pnpm test` | 전체 337개 이상 테스트 |
+| `pnpm audit` | 중간 이상 취약점 0개 강제 |
+
+[Dependabot](./.github/dependabot.yml)이 9개 서비스의 의존성 업데이트 PR을 매주 자동 생성합니다.
 
 ---
 
