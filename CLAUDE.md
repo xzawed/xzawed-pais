@@ -94,3 +94,31 @@ MODE=local
 ```
 
 서비스별 추가 환경 변수, 메시지 인터페이스, 아키텍처 세부 사항은 각 서비스 디렉토리의 `CLAUDE.md`를 참고한다.
+
+## 개발 워크플로우
+
+**모든 작업은 Pull Request(PR)를 통해 진행한다.**
+
+```
+feature/fix 브랜치 생성 → 작업 → 테스트 통과 → 코드 검토 → PR 생성 → 머지
+```
+
+### 규칙
+
+1. `master`에 직접 push 금지 — 반드시 브랜치를 만들어 작업한다
+2. PR은 작업 완료 후 마지막에 생성한다 (Draft PR 방식 사용 금지)
+3. PR 생성 전 필수 조건:
+   - 해당 서비스의 테스트 전체 통과 (`pnpm test`)
+   - 빌드 성공 (`pnpm build`)
+   - `pnpm audit` 취약점 0개
+
+### 브랜치 네이밍
+
+```
+feat/<서비스>/<설명>   # 새 기능
+fix/<서비스>/<설명>    # 버그 수정
+docs/<설명>            # 문서만 변경
+chore/<설명>           # 의존성, 설정 변경
+```
+
+예: `feat/developer/file-diff-support`, `fix/security/static-analyzer-false-positive`
