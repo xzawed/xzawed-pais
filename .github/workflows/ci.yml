@@ -39,14 +39,20 @@ jobs:
 
       - name: Install
         working-directory: ${{ matrix.dir }}
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
         run: pnpm install --frozen-lockfile
 
       - name: Build
         working-directory: ${{ matrix.dir }}
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
         run: pnpm build
 
       - name: Test
         working-directory: ${{ matrix.dir }}
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
         run: pnpm test
 
       - name: Audit
