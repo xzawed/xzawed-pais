@@ -1,0 +1,40 @@
+import { spawn, type ChildProcess } from 'node:child_process'
+import { join } from 'node:path'
+import { app } from 'electron'
+
+export class ServerManager {
+  private proc: ChildProcess | null = null
+
+  start(): void {
+    // Packaged: <install>/resources/app.asar → ../../server = <install>/server
+    // Dev mode: packages/app → ../server = packages/server
+    const serverDir = app.isPackaged
+      ? join(app.getAppPath(), '..', '..', 'server')
+      : join(app.getAppPath(), '..', 'server')
+    const entry = join(serverDir, 'dist', 'index.js')
+
+    this.proc = spawn(process.execPath, [entry], {
+      env: {
+        ...process.env,
+        PORT: '3000',
+        MODE: 'local',
+        AUTH: 'none',
+        CLAUDE_MODE: 'cli',
+        CLAUDE_MODEL: 'claude-sonnet-4-6',
+        REDIS_URL: 'redis://localhost:6379',
+      },
+      stdio: 'inherit',
+    })
+
+    this.proc.on('error', (err) => {
+      console.error('[ServerManager] failed to start server:', err.message)
+    })
+  }
+
+  stop(): void {
+    if (this.proc) {
+      this.proc.kill()
+      this.proc = null
+    }
+  }
+}

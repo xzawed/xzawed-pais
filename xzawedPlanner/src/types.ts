@@ -1,0 +1,48 @@
+import { z } from 'zod'
+
+export interface Step {
+  id: string
+  title: string
+  description: string
+  agentType: 'developer' | 'designer' | 'tester' | 'builder' | 'watcher' | 'security'
+  dependencies: string[]
+  estimatedMinutes: number
+}
+
+export interface UISpec {
+  type: 'form'
+  fields: Array<{
+    id: string
+    label: string
+    type: 'text' | 'select' | 'multiline'
+    options?: string[]
+    required?: boolean
+  }>
+}
+
+export interface PlannerToManagerMessage {
+  sessionId: string
+  messageId: string
+  timestamp: number
+  type: 'plan_complete' | 'info_request' | 'error'
+  payload: {
+    steps?: Step[]
+    estimatedTime?: string
+    content: string
+    uiSpec?: UISpec
+  }
+}
+
+export const ManagerToPlannerMessageSchema = z.object({
+  sessionId: z.string(),
+  messageId: z.string(),
+  timestamp: z.number(),
+  type: z.enum(['plan_request', 'abort']),
+  payload: z.object({
+    intent: z.string(),
+    context: z.record(z.unknown()),
+    priority: z.enum(['normal', 'high']),
+  }),
+})
+
+export type ManagerToPlannerMessage = z.infer<typeof ManagerToPlannerMessageSchema>
