@@ -2,6 +2,8 @@ import type { Config } from '../config.js'
 import type { ClaudeRunner } from './runner.interface.js'
 import { CLIRunner } from './cli-runner.js'
 import { APIRunner } from './api-runner.js'
+import { HTTPRemoteRunner } from './http-remote-runner.js'
+import { SSHRemoteRunner } from './ssh-remote-runner.js'
 
 export function createRunner(config: Config): ClaudeRunner {
   switch (config.claudeMode) {
@@ -11,8 +13,14 @@ export function createRunner(config: Config): ClaudeRunner {
         model: config.claudeModel,
       })
     case 'remote':
-      // RemoteCLIRunner는 Plan 2에서 구현. 현재는 CLIRunner 폴백.
-      return new CLIRunner()
+      if (config.remoteCLIUrl) {
+        return new HTTPRemoteRunner(config.remoteCLIUrl)
+      }
+      return new SSHRemoteRunner(
+        config.remoteHost!,
+        config.remoteUser!,
+        config.remoteKeyPath!,
+      )
     case 'cli':
     default:
       return new CLIRunner()
