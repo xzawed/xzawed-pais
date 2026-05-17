@@ -28,10 +28,9 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     ? new Anthropic({ apiKey: config.anthropicApiKey })
     : undefined
 
-  // Restrict CORS: local mode (Electron) disables cross-origin; remote mode uses allowlist
-  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean)
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(s => s.trim()).filter(Boolean) ?? []
   await app.register(cors, {
-    origin: config.mode === 'local' ? false : (allowedOrigins?.length ? allowedOrigins : false),
+    origin: config.mode === 'local' ? false : (allowedOrigins.length > 0 ? allowedOrigins : false),
   })
 
   if (config.auth === 'jwt' && config.serviceJwtSecret) {
