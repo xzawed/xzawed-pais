@@ -34,7 +34,7 @@ describe('JWT auth on /api/sessions/:sessionId/start', () => {
     const app = await buildAuthApp()
     const res = await app.inject({ method: 'POST', url: '/api/sessions/00000000-0000-0000-0000-000000000001/start' })
     expect(res.statusCode).toBe(401)
-    expect(res.json()).toMatchObject({ error: 'Unauthorized' })
+    expect(res.json()).toMatchObject({ error: 'Missing token' })
   })
 
   it('returns 401 when token is invalid', async () => {
