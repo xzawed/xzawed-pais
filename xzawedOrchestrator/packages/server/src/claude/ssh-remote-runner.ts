@@ -2,7 +2,7 @@ import { Client } from 'ssh2'
 import { readFileSync } from 'node:fs'
 import type { Chunk, Message } from '@xzawed/shared'
 import type { ClaudeRunner, RunOptions } from './runner.interface.js'
-import { parseCLILine } from './cli-parser.js'
+import { drainBuffer, flushRemainder } from './cli-parser.js'
 import { ChunkQueue } from './chunk-queue.js'
 
 function shellEscape(s: string): string {
@@ -53,20 +53,11 @@ export class SSHRemoteRunner implements ClaudeRunner {
         }
 
         stream.on('data', (data: Buffer) => {
-          buffer += data.toString()
-          const lines = buffer.split('\n')
-          buffer = lines.pop() ?? ''
-          for (const line of lines) {
-            const chunk = parseCLILine(line)
-            if (chunk) queue.push(chunk)
-          }
+          buffer = drainBuffer(buffer, data, queue.push.bind(queue))
         })
 
         stream.on('close', (code: number) => {
-          if (buffer.trim()) {
-            const chunk = parseCLILine(buffer)
-            if (chunk) queue.push(chunk)
-          }
+          flushRemainder(buffer, queue.push.bind(queue))
           queue.push(
             code === 0
               ? { type: 'done', content: '' }
