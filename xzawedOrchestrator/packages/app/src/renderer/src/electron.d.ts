@@ -23,6 +23,11 @@ interface ElectronAPI {
   mcpStart(id: string): Promise<void>
   mcpStop(id: string): Promise<void>
   mcpStatuses(): Promise<Record<string, 'running' | 'stopped' | 'error'>>
+  // Plugins
+  pluginList(): Promise<Array<{ id: string; name: string; version: string; description: string; type: 'claude-code' | 'xzawed'; enabled: boolean }>>
+  pluginInstall(pkg: string, type: 'claude-code' | 'xzawed'): Promise<void>
+  pluginToggle(id: string): Promise<void>
+  pluginUninstall(id: string): Promise<void>
 }
 
 declare global {

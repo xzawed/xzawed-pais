@@ -36,4 +36,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mcpStart:    (id: string): Promise<void> => ipcRenderer.invoke('mcp:start', id),
   mcpStop:     (id: string): Promise<void> => ipcRenderer.invoke('mcp:stop', id),
   mcpStatuses: (): Promise<Record<string, 'running' | 'stopped' | 'error'>> => ipcRenderer.invoke('mcp:statuses'),
+
+  // Plugins
+  pluginList:      (): Promise<Array<{ id: string; name: string; version: string; description: string; type: 'claude-code' | 'xzawed'; enabled: boolean }>> => ipcRenderer.invoke('plugin:list'),
+  pluginInstall:   (pkg: string, type: 'claude-code' | 'xzawed'): Promise<void> => ipcRenderer.invoke('plugin:install', pkg, type),
+  pluginToggle:    (id: string): Promise<void> => ipcRenderer.invoke('plugin:toggle', id),
+  pluginUninstall: (id: string): Promise<void> => ipcRenderer.invoke('plugin:uninstall', id),
 })

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { ServerManager } from './server-manager.js'
 import { McpProcessManager } from './mcp-process-manager.js'
+import { PluginManager } from './plugin-manager.js'
 import {
   startOAuthFlow,
   getStoredToken,
@@ -45,6 +46,7 @@ function writeSettings(settings: AppSettings): void {
 
 const serverManager = new ServerManager()
 const mcpManager = new McpProcessManager()
+const pluginManager = new PluginManager()
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
@@ -120,6 +122,12 @@ ipcMain.handle('mcp:remove',   (_e, id: string) => mcpManager.removeServer(id))
 ipcMain.handle('mcp:start',    (_e, id: string) => mcpManager.startServer(id))
 ipcMain.handle('mcp:stop',     (_e, id: string) => mcpManager.stopServer(id))
 ipcMain.handle('mcp:statuses', () => mcpManager.getStatuses())
+
+// ── Plugins ──────────────────────────────────────────────────────────
+ipcMain.handle('plugin:list',      () => pluginManager.list())
+ipcMain.handle('plugin:install',   (_e, pkg: string, type: string) => pluginManager.install(pkg, type as 'claude-code' | 'xzawed'))
+ipcMain.handle('plugin:toggle',    (_e, id: string) => pluginManager.toggle(id))
+ipcMain.handle('plugin:uninstall', (_e, id: string) => pluginManager.uninstall(id))
 
 // ── Lifecycle ────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
