@@ -3,9 +3,15 @@ import path from 'node:path'
 import type { FileChange } from './types.js'
 
 export async function validatePath(filePath: string, workspaceRoot: string): Promise<string> {
-  const resolved = path.resolve(filePath)
+  // Prevent WORKSPACE_ROOT from being filesystem root — would allow any absolute path to pass
+  const resolvedRoot = path.resolve(workspaceRoot)
+  if (resolvedRoot === path.parse(resolvedRoot).root) {
+    throw new Error('WORKSPACE_ROOT must not be filesystem root')
+  }
+
+  const resolved = path.resolve(workspaceRoot, filePath)
   const realFile = await fs.realpath(resolved).catch(() => resolved)
-  const realRoot = await fs.realpath(workspaceRoot).catch(() => path.resolve(workspaceRoot))
+  const realRoot = await fs.realpath(workspaceRoot).catch(() => resolvedRoot)
   const relative = path.relative(realRoot, realFile)
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
     throw new Error(`경로 거부: ${filePath}`)

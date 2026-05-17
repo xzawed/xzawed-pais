@@ -14,7 +14,6 @@ interface ElectronAPI {
     avatarUrl: string | null
   }>
   githubListRepos(): Promise<GitHubRepo[]>
-  githubGetToken(): Promise<string | null>
   onGitHubAuthComplete(cb: () => void): () => void
   // MCP
   mcpList(): Promise<Array<{ id: string; name: string; command: string; args: string[]; env: Record<string, string>; autoStart: boolean; status: 'running' | 'stopped' | 'error' }>>

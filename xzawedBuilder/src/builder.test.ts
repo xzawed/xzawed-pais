@@ -89,4 +89,20 @@ describe('Builder', () => {
     await builder.handle(abortMsg)
     expect(producer.publish).not.toHaveBeenCalled()
   })
+
+  it('허용되지 않은 커스텀 command는 error 메시지를 발행한다', async () => {
+    await builder.handle(buildRequest({ command: 'rm -rf /' }))
+    const calls = producer.publish.mock.calls
+    const errorCall = calls.find(([, msg]) => msg.type === 'error')
+    expect(errorCall).toBeDefined()
+    expect(errorCall![1].payload.content).toContain('Build command not allowed')
+  })
+
+  it('shell 메타문자가 포함된 command는 error 메시지를 발행한다', async () => {
+    await builder.handle(buildRequest({ command: 'pnpm build; rm -rf /' }))
+    const calls = producer.publish.mock.calls
+    const errorCall = calls.find(([, msg]) => msg.type === 'error')
+    expect(errorCall).toBeDefined()
+    expect(errorCall![1].payload.content).toContain('Shell metacharacters')
+  })
 })

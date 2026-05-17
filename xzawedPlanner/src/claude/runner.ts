@@ -1,5 +1,20 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { z } from 'zod'
 import type { Step, UISpec } from '../types.js'
+
+const StepSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1).max(200),
+  description: z.string(),
+  agentType: z.enum(['developer', 'designer', 'tester', 'builder', 'watcher', 'security']),
+  dependencies: z.array(z.string()),
+  estimatedMinutes: z.number().positive().max(480),
+})
+
+const PlanResponseSchema = z.object({
+  steps: z.array(StepSchema).min(1).max(50),
+  estimatedTime: z.string().optional(),
+})
 
 const SYSTEM_PROMPT = `You are a software project planning agent. Given a development intent and context, break it down into concrete, actionable steps.
 
@@ -75,18 +90,38 @@ export class ClaudeRunner {
       const parsed = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>
 
       if (parsed.clarification_needed === true) {
+        const ClarificationFieldSchema = z.object({
+          id: z.string(),
+          label: z.string(),
+          type: z.enum(['text', 'select', 'multiline']),
+          options: z.array(z.string()).optional(),
+          required: z.boolean().optional(),
+        })
+        const fieldsResult = z.array(ClarificationFieldSchema).safeParse(parsed.fields)
+        const validatedFields: UISpec['fields'] = fieldsResult.success
+          ? fieldsResult.data.map(f => {
+              const field: UISpec['fields'][number] = { id: f.id, label: f.label, type: f.type }
+              if (f.options !== undefined) field.options = f.options
+              if (f.required !== undefined) field.required = f.required
+              return field
+            })
+          : []
         return new ClarificationNeeded(
           String(parsed.question ?? 'Could you provide more details?'),
-          Array.isArray(parsed.fields) ? (parsed.fields as UISpec['fields']) : []
+          validatedFields
         )
       }
 
-      const steps = parsed.steps as Step[]
-      if (!Array.isArray(steps) || steps.length === 0) return this.fallback(intent)
+      const planResult = PlanResponseSchema.safeParse(parsed)
+      if (!planResult.success) {
+        console.warn('Plan response validation failed:', planResult.error.issues)
+        return this.fallback(intent)
+      }
+      const { steps } = planResult.data
 
       return {
         steps,
-        estimatedTime: String(parsed.estimatedTime ?? '1 hour'),
+        estimatedTime: String(planResult.data.estimatedTime ?? '1 hour'),
       }
     } catch {
       return this.fallback(intent)

@@ -29,7 +29,10 @@ export async function exec(
   const chunks: string[] = []
 
   return new Promise((resolve, reject) => {
-    const proc = spawn(command, [], { cwd, shell: true })
+    const parts = command.trim().split(/\s+/)
+    const bin = parts[0]
+    const cmdArgs = parts.slice(1)
+    const proc = spawn(bin, cmdArgs, { cwd, shell: false })
     let settled = false
 
     const settle = (fn: () => void) => {

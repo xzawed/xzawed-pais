@@ -20,8 +20,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   githubListRepos: (): Promise<
     Array<{ id: number; name: string; fullName: string; private: boolean; defaultBranch: string }>
   > => ipcRenderer.invoke('github:list-repos'),
-  githubGetToken: (): Promise<string | null> =>
-    ipcRenderer.invoke('github:get-token'),
   onGitHubAuthComplete: (cb: () => void) => {
     ipcRenderer.on('github:auth-complete', cb)
     return (): void => {

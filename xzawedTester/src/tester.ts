@@ -6,6 +6,22 @@ import { validatePath, exec } from './executor.js'
 import { detectTestCommand, buildCommandWithFiles, parseTestCounts } from './detector.js'
 import type { Config } from './config.js'
 
+const ALLOWED_PREFIXES = [
+  'pnpm', 'npm', 'npx', 'yarn', 'vitest', 'jest', 'mocha',
+  'pytest', 'cargo test', 'go test', 'make test',
+]
+
+function validateTestCommand(cmd: string): void {
+  const normalized = cmd.trim()
+  const isAllowed = ALLOWED_PREFIXES.some(prefix => normalized.startsWith(prefix))
+  if (!isAllowed) {
+    throw new Error(`testCommand not allowed: ${normalized}`)
+  }
+  if (/[;&|`$><]/.test(normalized)) {
+    throw new Error(`Shell metacharacters are not permitted in testCommand`)
+  }
+}
+
 export class Tester {
   constructor(
     private readonly producer: Producer,
@@ -36,6 +52,9 @@ export class Tester {
         }
       }
 
+      if (payload.testCommand) {
+        validateTestCommand(payload.testCommand)
+      }
       const baseCmd = payload.testCommand ?? await detectTestCommand(validatedPath)
       const finalCmd = buildCommandWithFiles(baseCmd, validatedFiles)
 

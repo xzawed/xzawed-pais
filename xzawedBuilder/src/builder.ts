@@ -5,6 +5,24 @@ import type { ClaudeRunner } from './claude/runner.js'
 import type { ManagerToBuilderMessage, BuilderToManagerMessage } from './types.js'
 import type { Config } from './config.js'
 
+const ALLOWED_PREFIXES = [
+  'pnpm', 'npm', 'npx', 'yarn',
+  'cargo build', 'make', 'cmake',
+  'gradle', 'mvn', 'go build',
+  'tsc', 'webpack', 'vite build',
+]
+
+function validateBuildCommand(cmd: string): void {
+  const normalized = cmd.trim()
+  const isAllowed = ALLOWED_PREFIXES.some(prefix => normalized.startsWith(prefix))
+  if (!isAllowed) {
+    throw new Error(`Build command not allowed: ${normalized}`)
+  }
+  if (/[;&|`$><]/.test(normalized)) {
+    throw new Error(`Shell metacharacters are not permitted in build command`)
+  }
+}
+
 export class Builder {
   constructor(
     private readonly producer: Producer,
@@ -21,6 +39,10 @@ export class Builder {
     try {
       const validatedPath = await validatePath(projectPath, this.config.workspaceRoot)
       const buildCmd = command ?? await detectBuildCommand(validatedPath)
+
+      if (payload.command) {
+        validateBuildCommand(payload.command)
+      }
 
       const { success, output, duration } = await exec(
         buildCmd,

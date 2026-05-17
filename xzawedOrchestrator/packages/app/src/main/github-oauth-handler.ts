@@ -1,6 +1,7 @@
 import http from 'node:http'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
 import { shell, safeStorage, app } from 'electron'
 import type { BrowserWindow } from 'electron'
 
@@ -68,11 +69,22 @@ export async function fetchUserRepos(token: string): Promise<Array<{ id: number;
 
 export function startOAuthFlow(mainWindow: BrowserWindow): Promise<string> {
   return new Promise((resolve, reject) => {
+    const oauthState = randomBytes(32).toString('hex')
+
     const server = http.createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', `http://localhost:${CALLBACK_PORT}`)
       if (url.pathname !== '/callback') {
         res.writeHead(404); res.end(); return
       }
+
+      const returnedState = url.searchParams.get('state')
+      if (!returnedState || returnedState !== oauthState) {
+        res.writeHead(400, { 'Content-Type': 'text/plain' })
+        res.end('OAuth state mismatch — possible CSRF attack')
+        server.close()
+        return reject(new Error('OAuth state mismatch'))
+      }
+
       const code = url.searchParams.get('code')
       if (!code) {
         res.writeHead(400); res.end('Missing code')
@@ -99,7 +111,8 @@ export function startOAuthFlow(mainWindow: BrowserWindow): Promise<string> {
         `https://github.com/login/oauth/authorize` +
         `?client_id=${clientId}` +
         `&scope=repo,user` +
-        `&redirect_uri=http://localhost:${CALLBACK_PORT}/callback`
+        `&redirect_uri=http://localhost:${CALLBACK_PORT}/callback` +
+        `&state=${oauthState}`
       void shell.openExternal(authUrl)
     })
 
