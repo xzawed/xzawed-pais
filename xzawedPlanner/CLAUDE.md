@@ -105,6 +105,12 @@ PORT=3002
 MODE=local
 ```
 
+## 구현 참고사항
+
+- `claude/runner.ts`: Claude JSON 응답을 `PlanResponseSchema.safeParse()`(Zod)로 검증 후 사용. 검증 실패 시 단일 step fallback 반환
+- `StepSchema`: `agentType` enum 강제 (`developer|designer|tester|builder|watcher|security`), `estimatedMinutes` 0초과 480분 이하
+- `JSON.parse() as Type` 캐스트 패턴 금지 — 반드시 `safeParse` 사용
+
 ## xzawedManager와의 연결
 
 xzawedManager의 `tools/plan-task.ts` → `createPlanTaskHandler(redisUrl)`으로 연결 완료.

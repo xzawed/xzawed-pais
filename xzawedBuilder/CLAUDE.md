@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedBuilder는 xzawed 멀티 에이전트 시스템의 **빌드 에이전트**다.
 xzawedManager로부터 프로젝트 경로와 빌드 타깃을 받아 빌드를 실행하고 결과 아티팩트를 반환한다.
 
-현재 상태: **구현 완료 (v0.1.0)** — 29개 단위 테스트 통과, `pnpm build` 정상. 스펙: `docs/superpowers/specs/2026-05-15-xzawedbuilder-design.md`
+현재 상태: **구현 완료 (v0.2.0)** — 39개 단위 테스트 통과, `pnpm build` 정상. 스펙: `docs/superpowers/specs/2026-05-15-xzawedbuilder-design.md`
 
 ## 핵심 명령어
 
@@ -94,7 +94,9 @@ BUILD_TIMEOUT_MS=120000
 
 - `WORKSPACE_ROOT` 외부 경로 빌드 차단 (path traversal 방지)
 - `BUILD_TIMEOUT_MS` 강제 적용 (기본 120초)
-- 빌드 프로세스 CPU/메모리 리소스 제한
+- **커맨드 인젝션 방지**: `executor.ts`는 `spawn(bin, args, {shell:false})` 사용 — `shell:true` 금지
+- **Redis 커맨드 검증**: `builder.ts`의 `validateBuildCommand()` — allowlist + 셸 메타문자 차단
+- **`package.json scripts` 미신뢰**: `detector.ts`는 `scripts.build` 값을 읽지 않음 — 의존성 기반 하드코딩 명령어만 반환
 
 ## xzawed 생태계 연결
 

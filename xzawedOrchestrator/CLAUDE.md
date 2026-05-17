@@ -77,6 +77,16 @@ GITHUB_CLIENT_SECRET=
 GitHub 토큰은 `electron.safeStorage`로 암호화하여 `userData/github-token.enc`에 저장.  
 MCP 서버 설정은 `userData/mcp-servers.json`, 플러그인 비활성 목록은 `userData/disabled-plugins.json`.
 
+## 보안 구현 패턴
+
+- **CLI 플래그 인젝션 방지** (`cli-runner.ts`): 사용자 메시지를 spawn args에 추가하기 전 반드시 `'--'` end-of-options 구분자 삽입
+- **OAuth CSRF 방지** (`github-oauth-handler.ts`): `randomBytes(32)` state 생성 → URL에 포함 → 콜백에서 검증. state 불일치 시 400 반환
+- **MCP 프로세스 보안** (`mcp-process-manager.ts`):
+  - `command` allowlist: `npx|node|python|python3|deno|uvx|bunx|bun|uv`
+  - `args` 위험 플래그 차단: `node -e`, `python -c`, `--eval`, URL 형태 인자
+  - `env` 키 차단: `PATH`, `LD_PRELOAD`, `NODE_PATH`, `HOME` 등 민감 환경변수 덮어쓰기 금지
+- **토큰 렌더러 노출 금지**: `github:get-token` IPC 채널 제거됨. GitHub 토큰은 main 프로세스에서만 접근. 렌더러에서 토큰 직접 획득 금지
+
 ## 관련 프로젝트
 
 xzawed suite: `f:\DEVELOPMENT\SOURCE\CLAUDE\xzawedPAIS\`  

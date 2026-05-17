@@ -89,6 +89,8 @@ DEBOUNCE_MS=300
 ## 구현 참고사항
 
 - `WatcherStore.remove()`: 타이머 전부 `clearTimeout` 후 watcher 닫음 (중지 후 이벤트 방지)
+- **`triggers` 보안**: `types.ts` Zod 스키마에서 절대경로·`..` 포함 패턴 차단. `watcher.ts`에서 chokidar 전달 전 이중 필터 적용 (defense-in-depth)
+- chokidar의 `cwd` 옵션은 절대경로 watch 항목에 적용되지 않으므로 Zod 단계에서 반드시 차단해야 함
 - 테스트: `vi.hoisted()` + `vi.mock('chokidar', ...)` 패턴, `vi.useFakeTimers()` + `vi.advanceTimersByTimeAsync(300)` 디바운스 검증
 - Manager 연결: `xzawedManager/packages/server/src/tools/watch-changes.ts` (`createWatchChangesHandler`)
 

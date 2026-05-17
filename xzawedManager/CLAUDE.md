@@ -89,8 +89,18 @@ CLAUDE_MODEL=claude-sonnet-4-6
 REDIS_URL=redis://localhost:6379
 PORT=3001
 MODE=local
-GITHUB_TOKEN=   # 선택: Orchestrator가 세션별로 전달. 설정 시 github_ops 핸들러 활성화
+GITHUB_TOKEN=            # 선택: 설정 시 github_ops 핸들러 활성화
+SERVICE_JWT_SECRET=      # AUTH=jwt 사용 시 필수 (32자 이상). 미설정 시 unauthenticated 모드
+AUTH=none                # none | jwt
 ```
+
+## 보안 구현 패턴
+
+- **Redis 메시지 검증**: `consumer.ts`는 `OrchestratorToManagerMessageSchema.safeParse()` 로 모든 수신 메시지 검증. 실패 시 xack 후 skip
+- **sessionId 검증**: `sessions.route.ts`에서 `z.string().uuid()` 검증 — UUID 형식 외 요청은 400 반환
+- **JWT 인증**: `AUTH=jwt` 시 `SERVICE_JWT_SECRET` 32자 미만이면 `superRefine`으로 시작 거부 (`config.ts`)
+- **github-ops 경로 검증**: `commitAndPush`의 `files[].path`는 `validateCommitPath()`로 검증 — `..`, 제어문자, `.github/workflows/` 경로 차단
+- **Claude tool-use 검증**: `runner.ts`의 `block.input`은 각 핸들러의 `inputSchema`로 런타임 검증 필요 (현재 부분 구현)
 
 ## 시스템 위치
 

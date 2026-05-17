@@ -47,12 +47,12 @@ xzawed AI 멀티 에이전트 오케스트레이션 플랫폼 전체 문서.
 | 서비스 | 포트 | 상태 | 역할 |
 |--------|------|------|------|
 | [Orchestrator](services/orchestrator.md) | 3000 | ✅ 완성 (v0.1.0) | 사용자 지시 수신, Manager에 전달 |
-| [Manager](services/manager.md) | 3001 | ✅ 완성 (51/51) | Claude tool-calling, 에이전트 위임 |
+| [Manager](services/manager.md) | 3001 | ✅ 완성 (56/56) | Claude tool-calling, 에이전트 위임 |
 | [Planner](services/planner.md) | 3002 | ✅ 완성 | 작업 → Step[] 분해 |
 | [Developer](services/developer.md) | 3003 | ✅ 완성 (31/31) | 코드 생성·수정 |
 | [Designer](services/designer.md) | 3004 | ✅ 완성 (26/26) | UI 컴포넌트 설계 |
 | [Tester](services/tester.md) | 3005 | ✅ 완성 (28/28) | 테스트 실행·분석 |
-| [Builder](services/builder.md) | 3006 | ✅ 완성 (v0.2.0) | 빌드 실행·결과 반환 |
+| [Builder](services/builder.md) | 3006 | ✅ 완성 (v0.2.0, 39/39) | 빌드 실행·결과 반환 |
 | [Watcher](services/watcher.md) | 3007 | ✅ 완성 (26/26) | 파일 변경 감시 스트리밍 |
 | [Security](services/security.md) | 3008 | ✅ 완성 (45/45) | OWASP 보안 감사 |
 

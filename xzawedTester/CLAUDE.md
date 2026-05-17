@@ -91,7 +91,9 @@ TEST_TIMEOUT_MS=120000
 
 ## 구현 참고사항
 
-- `detectTestCommand`: `package.json` scripts에서 test 명령 탐지, 없으면 `vitest`/`jest`/`pytest` 순으로 폴백
+- `detectTestCommand`: `devDependencies`/`dependencies`에서 프레임워크 탐지 후 **하드코딩 명령어** 반환. `package.json scripts.test` 값은 신뢰하지 않음 (보안)
+- `validateTestCommand()` (`tester.ts`): Redis 페이로드 `testCommand` 필드에 allowlist + 셸 메타문자 검증 적용
+- `executor.ts`: `spawn(bin, args, {shell:false})` — `shell:true` 금지
 - 테스트 파일 목 패턴: `vi.resetAllMocks()` + 재설정 패턴 사용
 - Manager 연결: `xzawedManager/packages/server/src/tools/run-tests.ts` (`createRunTestsHandler`)
 

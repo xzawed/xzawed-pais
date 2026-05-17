@@ -13,7 +13,7 @@ xzawedOrchestrator/
 ├── packages/
 │   ├── shared/     # 공통 TypeScript 타입 (Message, Session, UISpec, Streams)
 │   ├── server/     # Fastify 5 백엔드 (API, WebSocket, MCP, Claude 실행기, Redis Streams)
-│   └── app/        # Electron 앱 (Plan 2에서 구현 예정)
+│   └── app/        # Electron 앱 (React 19 + Zustand + electron-vite, 구현 완료)
 └── CLAUDE.md
 ```
 

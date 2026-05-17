@@ -90,7 +90,10 @@ WORKSPACE_ROOT=f:/DEVELOPMENT/SOURCE
 ## 구현 참고사항
 
 - `fileio.ts`의 `applyChange`: 파일 삭제는 실제 삭제 대신 `.bak` 리네임으로 처리 (복구 가능)
-- `WORKSPACE_ROOT` 외부 경로 차단 (path traversal 방지)
+- **경로 보안 강화** (`fileio.ts`):
+  - `WORKSPACE_ROOT`가 파일시스템 루트(`/`, `C:\`)이면 즉시 거부
+  - LLM 생성 절대경로는 `workspaceRoot` 기준 상대경로로 강제 변환 (`path.resolve(workspaceRoot, filePath)`)
+- **SYSTEM_PROMPT**: LLM에게 절대경로 대신 상대경로 사용 지시 (`src/index.ts` 형태)
 - Manager 연결: `xzawedManager/packages/server/src/tools/develop-code.ts` (`createDevelopCodeHandler`)
 
 ## xzawed 생태계 연결
