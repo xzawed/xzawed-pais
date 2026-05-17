@@ -37,3 +37,4 @@ coverage/
 # 기타
 .worktrees/
 build-output/
+.superpowers/
