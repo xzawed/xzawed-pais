@@ -8,9 +8,11 @@ import type { Message } from '@xzawed/shared'
 import { StreamConsumer } from '../streams/consumer.js'
 import Anthropic from '@anthropic-ai/sdk'
 import { structureIntent } from '../claude/intent-structurer.js'
+import { TaskStore } from '../tasks/task.store.js'
 
 const messageStore = new Map<string, Message[]>()
 const claudeSessionIds = new Map<string, string>()
+const taskStore = new TaskStore()
 
 export async function sessionsRoutes(
   app: FastifyInstance,
@@ -46,6 +48,7 @@ export async function sessionsRoutes(
     sessionCleanup.set(session.id, () => {
       messageStore.delete(session.id)
       claudeSessionIds.delete(session.id)
+      taskStore.deleteBySessionId(session.id)
       store.delete(session.id)
     })
 
@@ -62,8 +65,13 @@ export async function sessionsRoutes(
       const socket = wsSessions.get(session.id)
       if (!socket) return
 
+      const activeTask = taskStore
+        .findBySessionId(session.id)
+        .findLast(t => t.status === 'pending' || t.status === 'running')
+
       switch (msg.type) {
         case 'status_update':
+          if (activeTask) taskStore.update(activeTask.id, 'running')
           socket.send(JSON.stringify({
             type: 'agent_status',
             agentId: msg.payload.agentId,
@@ -71,6 +79,7 @@ export async function sessionsRoutes(
           }))
           break
         case 'task_complete':
+          if (activeTask) taskStore.update(activeTask.id, 'completed', msg.payload.content)
           socket.send(JSON.stringify({
             type: 'agent_done',
             agentId: msg.payload.agentId,
@@ -80,6 +89,7 @@ export async function sessionsRoutes(
           sessionConsumers.delete(session.id)
           break
         case 'error':
+          if (activeTask) taskStore.update(activeTask.id, 'failed', msg.payload.content)
           socket.send(JSON.stringify({
             type: 'agent_error',
             agentId: msg.payload.agentId,
@@ -171,6 +181,8 @@ export async function sessionsRoutes(
             ? await structureIntent(fullContent, anthropicClient, claudeModel)
             : fullContent
 
+          taskStore.create(req.params.id, intent)
+
           try {
             const msgId = crypto.randomUUID()
             await producer.publish({
@@ -203,6 +215,6 @@ export async function sessionsRoutes(
   app.get<{ Params: { id: string } }>('/sessions/:id/tasks', async (req, reply) => {
     const session = store.findById(req.params.id)
     if (!session) return reply.status(404).send({ error: 'Session not found' })
-    return { tasks: [] }
+    return { tasks: taskStore.findBySessionId(req.params.id) }
   })
 }

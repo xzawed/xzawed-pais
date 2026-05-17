@@ -213,4 +213,45 @@ describe('sessions route integration', () => {
 
     ws.close()
   })
+
+  it('GET /sessions/:id/tasks returns 404 for unknown session', async () => {
+    ;({ app, port } = await startServer(makeMockRunner([])))
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/does-not-exist/tasks`)
+    expect(res.status).toBe(404)
+  })
+
+  it('GET /sessions/:id/tasks returns pending task after message send', async () => {
+    const runner = makeMockRunner([
+      { type: 'text', content: 'OK, I will build the feature' },
+      { type: 'done', content: '' },
+    ])
+    ;({ app, port } = await startServer(runner))
+
+    const sessionRes = await fetch(`http://127.0.0.1:${port}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: 'u1' }),
+    })
+    const { sessionId } = (await sessionRes.json()) as { sessionId: string }
+
+    const { ws, messages } = await wsConnect(port, sessionId)
+    await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'connected')
+
+    await fetch(`http://127.0.0.1:${port}/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'Build a feature' }),
+    })
+
+    await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'done')
+
+    const tasksRes = await fetch(`http://127.0.0.1:${port}/sessions/${sessionId}/tasks`)
+    expect(tasksRes.status).toBe(200)
+    const body = (await tasksRes.json()) as { tasks: Array<{ status: string; intent: string }> }
+    expect(body.tasks).toHaveLength(1)
+    expect(body.tasks[0].status).toBe('pending')
+    expect(body.tasks[0].intent).toContain('OK, I will build the feature')
+
+    ws.close()
+  })
 })
