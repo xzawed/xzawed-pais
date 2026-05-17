@@ -18,6 +18,7 @@ export class StreamProducer {
       'data',
       JSON.stringify(message)
     )
-    return id!
+    if (id === null) throw new Error('Redis xadd returned null — stream may be at MAXLEN')
+    return id
   }
 }

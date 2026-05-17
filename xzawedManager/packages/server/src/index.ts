@@ -9,7 +9,7 @@ let isShuttingDown = false
 const shutdown = async () => {
   if (isShuttingDown) return
   isShuttingDown = true
-  closeAll()
+  await closeAll()
   await app.close()
   await closeRedisClient()
   process.exit(0)
