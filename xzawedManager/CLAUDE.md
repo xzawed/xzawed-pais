@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (51/51 테스트 통과)** — 7개 ToolHandler 모두 `RedisAgentHandler`로 구현.
+현재 상태: **구현 완료 (56/56 테스트 통과)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현.
 
 설계 스펙: `docs/specs/2026-05-15-manager-design.md`
 
@@ -44,7 +44,7 @@ packages/
         ├── server.ts           # Fastify HTTP (/health, port 3001)
         ├── streams/            # Redis consumer + producer
         ├── claude/runner.ts    # Claude tool-calling 루프
-        ├── tools/              # ToolHandler 7개 (plan-task, develop-code, design-ui, run-tests, build-project, watch-changes, security-audit)
+        ├── tools/              # ToolHandler 8개 (plan-task, develop-code, design-ui, run-tests, build-project, watch-changes, security-audit, github-ops)
         ├── sessions/           # 세션 상태 추적
         └── api/                # health 라우트
 ```
@@ -77,7 +77,9 @@ interface ToolHandler<TInput = unknown, TOutput = unknown> {
 }
 ```
 
-7개 핸들러 모두 `RedisAgentHandler` 팩토리 함수로 구현: `createPlanTaskHandler`, `createDevelopCodeHandler`, `createDesignUiHandler`, `createRunTestsHandler`, `createBuildProjectHandler`, `createWatchChangesHandler`, `createSecurityAuditHandler`.
+8개 핸들러:
+- 7개: `RedisAgentHandler` 팩토리 함수 — `createPlanTaskHandler`, `createDevelopCodeHandler`, `createDesignUiHandler`, `createRunTestsHandler`, `createBuildProjectHandler`, `createWatchChangesHandler`, `createSecurityAuditHandler`
+- 1개: **`createGithubOpsHandler`** — Octokit 직접 호출 (createRepo, createBranch, commitAndPush, createPR, createIssue, mergeBranch, listRepos, listBranches). `GITHUB_TOKEN` 환경변수 설정 시에만 등록됨.
 
 ## 환경 변수
 
@@ -87,6 +89,7 @@ CLAUDE_MODEL=claude-sonnet-4-6
 REDIS_URL=redis://localhost:6379
 PORT=3001
 MODE=local
+GITHUB_TOKEN=   # 선택: Orchestrator가 세션별로 전달. 설정 시 github_ops 핸들러 활성화
 ```
 
 ## 시스템 위치
