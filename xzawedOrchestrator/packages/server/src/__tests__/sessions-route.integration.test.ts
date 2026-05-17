@@ -49,7 +49,14 @@ function wsConnect(port: number, sessionId: string): Promise<{ ws: WebSocket; me
     const messages: unknown[] = []
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/sessions/${sessionId}`)
     ws.on('message', (raw) => {
-      const buf = Array.isArray(raw) ? Buffer.concat(raw) : Buffer.from(raw as Buffer | ArrayBuffer)
+      let buf: Buffer
+      if (Array.isArray(raw)) {
+        buf = Buffer.concat(raw)
+      } else if (raw instanceof ArrayBuffer) {
+        buf = Buffer.from(raw)
+      } else {
+        buf = raw
+      }
       messages.push(JSON.parse(buf.toString()))
     })
     ws.on('open', () => resolve({ ws, messages }))
