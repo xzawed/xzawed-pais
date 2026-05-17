@@ -70,6 +70,17 @@ export async function fetchUserRepos(token: string): Promise<Array<{ id: number;
 export function startOAuthFlow(mainWindow: BrowserWindow): Promise<string> {
   return new Promise((resolve, reject) => {
     const oauthState = randomBytes(32).toString('hex')
+    let settled = false
+    let oauthTimeout: ReturnType<typeof setTimeout> | undefined
+
+    const done = (err: unknown, value?: string) => {
+      if (settled) return
+      settled = true
+      if (oauthTimeout !== undefined) clearTimeout(oauthTimeout)
+      server.close()
+      if (err !== null && err !== undefined) reject(err)
+      else resolve(value ?? '')
+    }
 
     const server = http.createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', `http://localhost:${CALLBACK_PORT}`)
@@ -81,29 +92,32 @@ export function startOAuthFlow(mainWindow: BrowserWindow): Promise<string> {
       if (!returnedState || returnedState !== oauthState) {
         res.writeHead(400, { 'Content-Type': 'text/plain' })
         res.end('OAuth state mismatch — possible CSRF attack')
-        server.close()
-        return reject(new Error('OAuth state mismatch'))
+        done(new Error('OAuth state mismatch'))
+        return
       }
 
       const code = url.searchParams.get('code')
       if (!code) {
         res.writeHead(400); res.end('Missing code')
-        server.close()
-        return reject(new Error('Missing code in OAuth callback'))
+        done(new Error('Missing code in OAuth callback'))
+        return
       }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       res.end('<html><body style="font-family:sans-serif;padding:40px"><h2>✅ 인증 완료! 앱으로 돌아가세요.</h2></body></html>')
-      server.close()
 
       try {
         const token = await exchangeCode(code)
         storeToken(token)
         mainWindow.webContents.send('github:auth-complete')
-        resolve(token)
+        done(null, token)
       } catch (err) {
-        reject(err)
+        done(err)
       }
     })
+
+    oauthTimeout = setTimeout(() => {
+      done(new Error('OAuth flow timed out after 5 minutes'))
+    }, 5 * 60 * 1000)
 
     server.listen(CALLBACK_PORT, () => {
       const clientId = process.env['GITHUB_CLIENT_ID'] ?? ''
@@ -116,9 +130,6 @@ export function startOAuthFlow(mainWindow: BrowserWindow): Promise<string> {
       void shell.openExternal(authUrl)
     })
 
-    server.on('error', (err) => {
-      server.close()
-      reject(err)
-    })
+    server.on('error', (err) => done(err))
   })
 }

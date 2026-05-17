@@ -55,9 +55,10 @@ export class Consumer {
       const dataIdx = fields.indexOf('data')
       if (dataIdx === -1) continue
 
-      const parsed = ManagerToBuilderMessageSchema.safeParse(
-        JSON.parse(fields[dataIdx + 1])
-      )
+      const raw = fields[dataIdx + 1]
+      if (raw === undefined) continue
+
+      const parsed = ManagerToBuilderMessageSchema.safeParse(JSON.parse(raw))
       if (!parsed.success) {
         console.error('[Consumer] invalid message, skipping:', parsed.error.issues)
         await this.redis.xack(stream, CONSUMER_GROUP, msgId)

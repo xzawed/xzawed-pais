@@ -17,7 +17,7 @@ export async function structureIntent(
       ],
     })
     const block = response.content[0]
-    if (block.type === 'text' && block.text.trim()) {
+    if (block?.type === 'text' && block.text.trim()) {
       return block.text.trim()
     }
   } catch {

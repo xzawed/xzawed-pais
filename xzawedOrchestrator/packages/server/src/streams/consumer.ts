@@ -1,8 +1,21 @@
+import { z } from 'zod'
 import type { ManagerToOrchestratorMessage } from '@xzawed/shared'
 import { getRedisClient } from './redis.client.js'
 
 const streamKey = (sessionId: string) => `manager:to-orchestrator:${sessionId}`
 const GROUP = 'orchestrator-consumers'
+
+const ManagerToOrchestratorMessageSchema = z.object({
+  sessionId: z.string(),
+  messageId: z.string(),
+  timestamp: z.number(),
+  type: z.enum(['status_update', 'info_request', 'task_complete', 'error']),
+  payload: z.object({
+    agentId: z.string(),
+    content: z.string(),
+    uiSpec: z.unknown().optional(),
+  }),
+})
 
 export type MessageHandler = (msg: ManagerToOrchestratorMessage) => Promise<void>
 
@@ -30,11 +43,18 @@ export class StreamConsumer {
     const consumerId = `consumer-${process.pid}`
 
     while (this.running) {
-      const results = await redis.xreadgroup(
-        'GROUP', GROUP, consumerId,
-        'COUNT', '10', 'BLOCK', '2000',
-        'STREAMS', streamKey(sessionId), '>'
-      ) as [string, [string, string[]][]][] | null
+      let results: [string, [string, string[]][]][] | null = null
+      try {
+        results = await redis.xreadgroup(
+          'GROUP', GROUP, consumerId,
+          'COUNT', '10', 'BLOCK', '2000',
+          'STREAMS', streamKey(sessionId), '>'
+        ) as [string, [string, string[]][]][] | null
+      } catch (err: unknown) {
+        if (!this.running) return
+        console.error('[StreamConsumer] xreadgroup error:', err)
+        continue
+      }
 
       if (!results) continue
 
@@ -42,7 +62,25 @@ export class StreamConsumer {
         for (const [id, fields] of entries) {
           const dataIdx = fields.indexOf('data')
           if (dataIdx === -1) continue
-          const msg = JSON.parse(fields[dataIdx + 1]) as ManagerToOrchestratorMessage
+
+          const raw = fields[dataIdx + 1]
+          if (raw === undefined) continue
+
+          let msg: ManagerToOrchestratorMessage
+          try {
+            const parsed = ManagerToOrchestratorMessageSchema.safeParse(JSON.parse(raw))
+            if (!parsed.success) {
+              console.error('[StreamConsumer] invalid message, skipping:', parsed.error.issues)
+              await redis.xack(streamKey(sessionId), GROUP, id)
+              continue
+            }
+            msg = parsed.data as ManagerToOrchestratorMessage
+          } catch (err: unknown) {
+            console.error('[StreamConsumer] JSON parse error, skipping:', err)
+            await redis.xack(streamKey(sessionId), GROUP, id)
+            continue
+          }
+
           await handler(msg)
           await redis.xack(streamKey(sessionId), GROUP, id)
         }

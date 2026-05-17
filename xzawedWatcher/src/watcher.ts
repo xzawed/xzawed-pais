@@ -75,7 +75,12 @@ export class Watcher {
       fsWatcher.on('change', (p) => queueEvent('change', p))
       fsWatcher.on('unlink', (p) => queueEvent('unlink', p))
 
-      this.store.add(sessionId, { watcherId, watcher: fsWatcher, timers })
+      try {
+        this.store.add(sessionId, { watcherId, watcher: fsWatcher, timers })
+      } catch (storeErr: unknown) {
+        await fsWatcher.close()
+        throw storeErr
+      }
 
       await this.producer.publish(sessionId, {
         ...base,

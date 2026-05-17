@@ -6,16 +6,17 @@ export interface SessionEntry {
   state: SessionState
   abortController: AbortController
   infoResolve: ((value: string) => void) | null
+  infoReject: ((reason: Error) => void) | null
 }
 
 export class SessionStore {
-  private sessions = new Map<string, SessionEntry>()
+  private readonly sessions = new Map<string, SessionEntry>()
 
-  constructor(private repo?: SessionRepo) {}
+  constructor(private readonly repo?: SessionRepo) {}
 
   create(sessionId: string): void {
     if (this.sessions.has(sessionId)) throw new Error(`Session ${sessionId} already exists`)
-    this.sessions.set(sessionId, { state: 'idle', abortController: new AbortController(), infoResolve: null })
+    this.sessions.set(sessionId, { state: 'idle', abortController: new AbortController(), infoResolve: null, infoReject: null })
     void this.repo?.insert(sessionId)
   }
 
@@ -29,8 +30,9 @@ export class SessionStore {
     if (session.state === 'waiting_info') throw new Error(`Session ${sessionId} is already waiting for info`)
     session.state = 'waiting_info'
     void this.repo?.updateState(sessionId, 'waiting_info')
-    return new Promise<string>((resolve) => {
+    return new Promise<string>((resolve, reject) => {
       session.infoResolve = resolve
+      session.infoReject = reject
     })
   }
 
@@ -39,6 +41,7 @@ export class SessionStore {
     if (!session?.infoResolve) return
     session.infoResolve(answer)
     session.infoResolve = null
+    session.infoReject = null
     session.state = 'running'
     void this.repo?.updateState(sessionId, 'running')
   }
@@ -50,6 +53,7 @@ export class SessionStore {
     if (entry.infoResolve) {
       entry.infoResolve('')
       entry.infoResolve = null
+      entry.infoReject = null
     }
     entry.state = 'idle'
     void this.repo?.updateState(sessionId, 'idle')
@@ -60,6 +64,12 @@ export class SessionStore {
   }
 
   delete(sessionId: string): void {
+    const entry = this.sessions.get(sessionId)
+    if (entry?.infoReject) {
+      entry.infoReject(new Error('Session deleted while waiting for info'))
+      entry.infoResolve = null
+      entry.infoReject = null
+    }
     this.sessions.delete(sessionId)
     void this.repo?.remove(sessionId)
   }
