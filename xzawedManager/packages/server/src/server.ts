@@ -18,6 +18,7 @@ import { createRunTestsHandler } from './tools/run-tests.js'
 import { createBuildProjectHandler } from './tools/build-project.js'
 import { createWatchChangesHandler } from './tools/watch-changes.js'
 import { createSecurityAuditHandler } from './tools/security-audit.js'
+import { createGithubOpsHandler } from './tools/github-ops.js'
 
 export async function buildServer(
   config: Config,
@@ -45,6 +46,7 @@ export async function buildServer(
   registry.register(createBuildProjectHandler(config.REDIS_URL))
   registry.register(createWatchChangesHandler(config.REDIS_URL))
   registry.register(createSecurityAuditHandler(config.REDIS_URL))
+  registry.register(createGithubOpsHandler(config.GITHUB_TOKEN ?? ''))
 
   const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry)
   const producer = new StreamProducer(config.REDIS_URL)

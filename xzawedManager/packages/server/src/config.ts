@@ -8,6 +8,7 @@ const configSchema = z.object({
   MODE: z.enum(['local', 'remote']).default('local'),
   SERVICE_JWT_SECRET: z.string().optional(),
   DATABASE_URL: z.string().optional(),
+  GITHUB_TOKEN: z.string().optional(),
 })
 
 export type Config = z.infer<typeof configSchema>
