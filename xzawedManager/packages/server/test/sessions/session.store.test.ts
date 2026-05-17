@@ -74,4 +74,22 @@ describe('SessionStore', () => {
     // Should not throw
     expect(() => store.resolveInfo('nonexistent', 'value')).not.toThrow()
   })
+
+  it('delete rejects pending waitForInfo promise', async () => {
+    const store = new SessionStore()
+    store.create('sess-1')
+    const promise = store.waitForInfo('sess-1')
+    store.delete('sess-1')
+    await expect(promise).rejects.toThrow('Session deleted while waiting for info')
+  })
+
+  it('resolveInfo clears infoReject after resolve', async () => {
+    const store = new SessionStore()
+    store.create('sess-1')
+    const promise = store.waitForInfo('sess-1')
+    store.resolveInfo('sess-1', 'answer')
+    await promise
+    // infoReject should be cleared — delete should not throw
+    expect(() => store.delete('sess-1')).not.toThrow()
+  })
 })

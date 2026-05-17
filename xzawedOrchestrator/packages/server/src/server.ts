@@ -1,6 +1,7 @@
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify'
 import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
+import jwtPlugin from '@fastify/jwt'
 import Anthropic from '@anthropic-ai/sdk'
 import type { WebSocket } from 'ws'
 import type { Config } from './config.js'
@@ -13,6 +14,11 @@ import { StreamConsumer } from './streams/consumer.js'
 import { healthRoutes } from './api/health.route.js'
 import { sessionsRoutes } from './api/sessions.route.js'
 import { sessionWsRoutes } from './ws/session.ws.js'
+
+const JWT_ERRORS: Record<string, string> = {
+  FST_JWT_NO_AUTHORIZATION_IN_HEADER: 'Missing token',
+  FST_JWT_AUTHORIZATION_TOKEN_EXPIRED: 'Token expired',
+}
 
 export async function buildServer(config: Config, runnerOverride?: ClaudeRunner): Promise<FastifyInstance> {
   const app = Fastify({ logger: config.mode !== 'local' })
@@ -27,7 +33,24 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     ? new Anthropic({ apiKey: config.anthropicApiKey })
     : undefined
 
-  await app.register(cors, { origin: true })
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(s => s.trim()).filter(Boolean) ?? []
+  await app.register(cors, {
+    origin: config.mode === 'local' ? false : (allowedOrigins.length > 0 ? allowedOrigins : false),
+  })
+
+  if (config.auth === 'jwt' && config.serviceJwtSecret) {
+    await app.register(jwtPlugin, { secret: config.serviceJwtSecret })
+  }
+
+  const authHook = config.auth === 'jwt'
+    ? async (req: FastifyRequest, reply: FastifyReply) => {
+        await req.jwtVerify().catch(async (err: unknown) => {
+          const code = (err as { code?: string }).code ?? ''
+          await reply.status(401).send({ error: JWT_ERRORS[code] ?? 'Invalid token' })
+        })
+      }
+    : undefined
+
   await app.register(websocket)
   await app.register(healthRoutes)
   await app.register(sessionsRoutes, {
@@ -35,8 +58,9 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     redisUrl: config.redisUrl, producer, sessionConsumers, sessionCleanup,
     anthropicClient,
     claudeModel: config.claudeModel,
+    authHook,
   })
-  await app.register(sessionWsRoutes, { store, wsSessions, sessionConsumers, sessionCleanup })
+  await app.register(sessionWsRoutes, { store, wsSessions, sessionConsumers, sessionCleanup, authHook })
 
   return app
 }

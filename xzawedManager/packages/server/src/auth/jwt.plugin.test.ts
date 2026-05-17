@@ -2,11 +2,11 @@ import { describe, it, expect, afterEach } from 'vitest'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { registerJwt, verifyServiceToken } from './jwt.plugin.js'
 
-const SECRET = 'a-secret-key-that-is-at-least-32-characters-long'
+const MOCK_JWT_SECRET = 'a-secret-key-that-is-at-least-32-characters-long'
 
 async function buildTestApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false })
-  await registerJwt(app, SECRET)
+  await registerJwt(app, MOCK_JWT_SECRET)
   app.get('/protected', { preHandler: verifyServiceToken }, async () => ({ ok: true }))
   await app.ready()
   return app

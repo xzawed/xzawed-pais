@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
 import { SessionStore } from '../../src/sessions/session.store.js'
 import { ToolRegistry } from '../../src/tools/registry.js'
 import type { ToolHandler } from '../../src/tools/handler.interface.js'
@@ -17,11 +17,41 @@ vi.mock('../../src/streams/producer.js', () => ({
   },
 }))
 
+async function loadModules() {
+  const Anthropic = (await import('@anthropic-ai/sdk')).default
+  const { StreamProducer } = await import('../../src/streams/producer.js')
+  const { ClaudeRunner } = await import('../../src/claude/runner.js')
+  return { Anthropic, StreamProducer, ClaudeRunner }
+}
+
+function makeFakeHandler(execute = vi.fn().mockResolvedValue({})): ToolHandler {
+  return {
+    name: 'plan_task',
+    description: 'Plan a task',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+    execute,
+  }
+}
+
 describe('ClaudeRunner', () => {
+  let mods: Awaited<ReturnType<typeof loadModules>>
+
+  beforeAll(async () => {
+    mods = await loadModules()
+  })
+
   beforeEach(() => {
     mockCreate.mockReset()
     mockPublish.mockClear()
   })
+
+  function makeRunner(registry: ToolRegistry) {
+    const { Anthropic, StreamProducer, ClaudeRunner } = mods
+    const runner = new ClaudeRunner(new Anthropic({ apiKey: 'test' }), 'claude-haiku-4-5-20251001', registry)
+    const sessionStore = new SessionStore()
+    const producer = new StreamProducer('redis://localhost:6379')
+    return { runner, sessionStore, producer }
+  }
 
   it('returns final text when Claude responds with end_turn immediately', async () => {
     mockCreate.mockResolvedValueOnce({
@@ -29,20 +59,14 @@ describe('ClaudeRunner', () => {
       content: [{ type: 'text', text: 'Task analysis complete.' }],
     })
 
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-    const { StreamProducer } = await import('../../src/streams/producer.js')
-    const { ClaudeRunner } = await import('../../src/claude/runner.js')
-
-    const registry = new ToolRegistry()
-    const runner = new ClaudeRunner(new Anthropic({ apiKey: 'test' }), 'claude-haiku-4-5-20251001', registry)
-    const sessionStore = new SessionStore()
+    const { runner, sessionStore, producer } = makeRunner(new ToolRegistry())
     sessionStore.create('sess-1')
 
     const result = await runner.run({
       sessionId: 'sess-1',
       intent: 'analyze project',
       context: {},
-      producer: new StreamProducer('redis://localhost:6379'),
+      producer,
       sessionStore,
     })
 
@@ -65,28 +89,16 @@ describe('ClaudeRunner', () => {
       })
 
     const mockToolExecute = vi.fn().mockResolvedValue({ steps: ['step1'], estimatedTime: '1h' })
-    const fakeHandler: ToolHandler = {
-      name: 'plan_task',
-      description: 'Plan a task',
-      inputSchema: { type: 'object', properties: {}, required: [] },
-      execute: mockToolExecute,
-    }
-
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-    const { StreamProducer } = await import('../../src/streams/producer.js')
-    const { ClaudeRunner } = await import('../../src/claude/runner.js')
-
     const registry = new ToolRegistry()
-    registry.register(fakeHandler)
-    const runner = new ClaudeRunner(new Anthropic({ apiKey: 'test' }), 'claude-haiku-4-5-20251001', registry)
-    const sessionStore = new SessionStore()
+    registry.register(makeFakeHandler(mockToolExecute))
+    const { runner, sessionStore, producer } = makeRunner(registry)
     sessionStore.create('sess-1')
 
     const result = await runner.run({
       sessionId: 'sess-1',
       intent: 'build app',
       context: {},
-      producer: new StreamProducer('redis://localhost:6379'),
+      producer,
       sessionStore,
     })
 
@@ -103,29 +115,16 @@ describe('ClaudeRunner', () => {
       content: [{ type: 'text', text: 'done' }],
     })
 
-    const mockToolExecute = vi.fn().mockResolvedValue({})
-    const fakeHandler: ToolHandler = {
-      name: 'plan_task',
-      description: 'Plan a task',
-      inputSchema: { type: 'object', properties: {}, required: [] },
-      execute: mockToolExecute,
-    }
-
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-    const { StreamProducer } = await import('../../src/streams/producer.js')
-    const { ClaudeRunner } = await import('../../src/claude/runner.js')
-
     const registry = new ToolRegistry()
-    registry.register(fakeHandler)
-    const runner = new ClaudeRunner(new Anthropic({ apiKey: 'test' }), 'claude-haiku-4-5-20251001', registry)
-    const sessionStore = new SessionStore()
+    registry.register(makeFakeHandler())
+    const { runner, sessionStore, producer } = makeRunner(registry)
     sessionStore.create('sess-tools')
 
     await runner.run({
       sessionId: 'sess-tools',
       intent: 'test tools',
       context: {},
-      producer: new StreamProducer('redis://localhost:6379'),
+      producer,
       sessionStore,
     })
 
@@ -133,6 +132,28 @@ describe('ClaudeRunner', () => {
     const toolNames = callArgs.tools.map((t) => t.name)
     expect(toolNames).toContain('plan_task')
     expect(toolNames).toContain('request_info')
+  })
+
+  it('throws when iteration limit exceeded', async () => {
+    mockCreate.mockResolvedValue({
+      stop_reason: 'tool_use',
+      content: [
+        { type: 'tool_use', id: 'tool-loop', name: 'plan_task', input: { intent: 'loop', context: {} } },
+      ],
+    })
+
+    const registry = new ToolRegistry()
+    registry.register(makeFakeHandler())
+    const { runner, sessionStore, producer } = makeRunner(registry)
+    sessionStore.create('sess-loop')
+
+    await expect(runner.run({
+      sessionId: 'sess-loop',
+      intent: 'loop forever',
+      context: {},
+      producer,
+      sessionStore,
+    })).rejects.toThrow('exceeded')
   })
 
   it('throws when Claude calls unknown tool', async () => {
@@ -143,20 +164,14 @@ describe('ClaudeRunner', () => {
       ],
     })
 
-    const Anthropic = (await import('@anthropic-ai/sdk')).default
-    const { StreamProducer } = await import('../../src/streams/producer.js')
-    const { ClaudeRunner } = await import('../../src/claude/runner.js')
-
-    const registry = new ToolRegistry()
-    const runner = new ClaudeRunner(new Anthropic({ apiKey: 'test' }), 'claude-haiku-4-5-20251001', registry)
-    const sessionStore = new SessionStore()
+    const { runner, sessionStore, producer } = makeRunner(new ToolRegistry())
     sessionStore.create('sess-3')
 
     await expect(runner.run({
       sessionId: 'sess-3',
       intent: 'test',
       context: {},
-      producer: new StreamProducer('redis://localhost:6379'),
+      producer,
       sessionStore,
     })).rejects.toThrow('Unknown tool: nonexistent_tool')
   })

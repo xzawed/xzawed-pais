@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import type { WebSocket } from 'ws'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { StreamConsumer } from '../streams/consumer.js'
@@ -10,11 +10,18 @@ export async function sessionWsRoutes(
     wsSessions,
     sessionConsumers,
     sessionCleanup,
-  }: { store: SessionStore; wsSessions: Map<string, WebSocket>; sessionConsumers: Map<string, StreamConsumer>; sessionCleanup: Map<string, () => void> }
+    authHook,
+  }: {
+    store: SessionStore
+    wsSessions: Map<string, WebSocket>
+    sessionConsumers: Map<string, StreamConsumer>
+    sessionCleanup: Map<string, () => void>
+    authHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
+  }
 ): Promise<void> {
   app.get<{ Params: { id: string } }>(
     '/ws/sessions/:id',
-    { websocket: true },
+    { websocket: true as const, ...(authHook ? { preHandler: authHook } : {}) },
     (socket, req) => {
       const sessionId = req.params.id
       const session = store.findById(sessionId)

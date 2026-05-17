@@ -4,6 +4,7 @@ export interface Config {
   port: number
   mode: 'local' | 'remote'
   auth: 'none' | 'jwt'
+  serviceJwtSecret?: string
   claudeMode: ClaudeMode
   anthropicApiKey?: string
   claudeModel: string
@@ -17,6 +18,8 @@ export interface Config {
 
 export function loadConfig(): Config {
   const claudeMode = (process.env.CLAUDE_MODE ?? 'cli') as ClaudeMode
+  const auth = (process.env.AUTH ?? 'none') as 'none' | 'jwt'
+  const serviceJwtSecret = process.env.SERVICE_JWT_SECRET
 
   if (claudeMode === 'api' && !process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY is required when CLAUDE_MODE=api')
@@ -26,10 +29,15 @@ export function loadConfig(): Config {
     throw new Error('REMOTE_CLI_URL or REMOTE_HOST is required when CLAUDE_MODE=remote')
   }
 
+  if (auth === 'jwt' && (!serviceJwtSecret || serviceJwtSecret.length < 32)) {
+    throw new Error('SERVICE_JWT_SECRET must be at least 32 characters when AUTH=jwt')
+  }
+
   return {
     port: parseInt(process.env.PORT ?? '3000', 10),
     mode: (process.env.MODE ?? 'local') as 'local' | 'remote',
-    auth: (process.env.AUTH ?? 'none') as 'none' | 'jwt',
+    auth,
+    serviceJwtSecret,
     claudeMode,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
     claudeModel: process.env.CLAUDE_MODEL ?? 'claude-sonnet-4-6',

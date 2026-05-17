@@ -26,9 +26,9 @@ export interface RunnerOptions {
 
 export class ClaudeRunner {
   constructor(
-    private client: Anthropic,
-    private model: string,
-    private registry: ToolRegistry,
+    private readonly client: Anthropic,
+    private readonly model: string,
+    private readonly registry: ToolRegistry,
   ) {}
 
   async run(options: RunnerOptions): Promise<string> {
@@ -46,8 +46,10 @@ export class ClaudeRunner {
       REQUEST_INFO_TOOL,
     ]
 
+    const MAX_ITERATIONS = 50
+    let iterations = 0
     // 수동 tool-calling 루프: 각 도구 호출 전후에 status_update를 발행하기 위해 수동 루프 사용
-    while (true) {
+    while (iterations++ < MAX_ITERATIONS) {
       if (signal?.aborted) throw new Error('Session aborted')
 
       const response = await this.client.messages.create({
@@ -123,5 +125,6 @@ export class ClaudeRunner {
         messages.push({ role: 'user', content: toolResults })
       }
     }
+    throw new Error(`Claude runner exceeded ${MAX_ITERATIONS} iterations without completing`)
   }
 }

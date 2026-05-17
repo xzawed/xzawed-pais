@@ -57,8 +57,8 @@ function validateMcpEnv(env: Record<string, string> | undefined): void {
 }
 
 export class McpProcessManager {
-  private processes = new Map<string, ChildProcess>()
-  private statuses  = new Map<string, McpStatus>()
+  private readonly processes = new Map<string, ChildProcess>()
+  private readonly statuses  = new Map<string, McpStatus>()
   private configs: McpServerConfig[] = []
 
   constructor() {
@@ -141,7 +141,8 @@ export class McpProcessManager {
   }
 
   stopAll(): void {
-    for (const [id] of this.processes) void this.stopServer(id)
+    const ids = [...this.processes.keys()]
+    for (const id of ids) void this.stopServer(id)
   }
 
   async startAutoStart(): Promise<void> {

@@ -136,6 +136,9 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+}).catch((err: unknown) => {
+  console.error('App initialization failed:', err)
+  app.quit()
 })
 
 app.on('before-quit', () => {

@@ -1,13 +1,12 @@
 import { Client } from 'ssh2'
 import { readFileSync } from 'node:fs'
+import { Shescape } from 'shescape'
 import type { Chunk, Message } from '@xzawed/shared'
 import type { ClaudeRunner, RunOptions } from './runner.interface.js'
 import { drainBuffer, flushRemainder } from './cli-parser.js'
 import { ChunkQueue } from './chunk-queue.js'
 
-function shellEscape(s: string): string {
-  return "'" + s.replaceAll("'", String.raw`'\''`) + "'"
-}
+const shescape = new Shescape({ shell: false })
 
 export class SSHRemoteRunner implements ClaudeRunner {
   constructor(
@@ -31,13 +30,13 @@ export class SSHRemoteRunner implements ClaudeRunner {
     const lastUserMessage = messages.findLast(m => m.role === 'user')?.content ?? ''
     const parts: string[] = ['claude']
     if (options.claudeSessionId) {
-      parts.push('--resume', shellEscape(options.claudeSessionId))
+      parts.push('--resume', shescape.escape(options.claudeSessionId))
     }
     parts.push('--print', '--output-format', 'stream-json', '--verbose')
     if (options.systemPrompt) {
-      parts.push('--system-prompt', shellEscape(options.systemPrompt))
+      parts.push('--system-prompt', shescape.escape(options.systemPrompt))
     }
-    parts.push('--', shellEscape(lastUserMessage))
+    parts.push('--', shescape.escape(lastUserMessage))
     const command = parts.join(' ')
 
     const queue = new ChunkQueue()

@@ -12,6 +12,20 @@ vi.mock('ioredis', () => ({
 describe('StreamProducer', () => {
   beforeEach(() => { vi.resetModules(); mockXadd.mockClear() })
 
+  it('throws when xadd returns null (stream at MAXLEN)', async () => {
+    mockXadd.mockResolvedValueOnce(null)
+    const { StreamProducer } = await import('../../src/streams/producer.js')
+    const producer = new StreamProducer('redis://localhost:6379')
+    const msg: ManagerToOrchestratorMessage = {
+      sessionId: 'sess-null',
+      messageId: 'msg-null',
+      timestamp: 1000,
+      type: 'status_update',
+      payload: { agentId: 'manager', content: 'test' },
+    }
+    await expect(producer.publish(msg)).rejects.toThrow('null')
+  })
+
   it('publishes to manager:to-orchestrator:{sessionId} stream', async () => {
     const { StreamProducer } = await import('../../src/streams/producer.js')
     const producer = new StreamProducer('redis://localhost:6379')

@@ -23,9 +23,7 @@ export class RedisAgentHandler<TInput, TOutput>
   ) {}
 
   private get redis(): Redis {
-    if (!this._redis) {
-      this._redis = new Redis(this.redisUrl)
-    }
+    this._redis ??= new Redis(this.redisUrl)
     return this._redis
   }
 
@@ -56,7 +54,7 @@ export class RedisAgentHandler<TInput, TOutput>
       const results = await this.redis.xread(
         'COUNT', '10', 'BLOCK', String(blockMs),
         'STREAMS', responseStream, lastId,
-      ) as unknown as [string, [string, string[]][]][] | null
+      )
 
       if (!results) continue
 
@@ -70,7 +68,12 @@ export class RedisAgentHandler<TInput, TOutput>
           const raw = fields[dataIdx + 1]
           if (raw === undefined) continue
 
-          const msg = JSON.parse(raw) as { type: string; payload: Record<string, unknown> }
+          let msg: { type: string; payload: Record<string, unknown> }
+          try {
+            msg = JSON.parse(raw) as { type: string; payload: Record<string, unknown> }
+          } catch {
+            continue
+          }
 
           if (msg.type === 'error') {
             throw new Error(String(msg.payload['content'] ?? `${this.agentName} error`))

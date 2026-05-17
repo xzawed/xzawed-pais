@@ -22,7 +22,7 @@ import { createGithubOpsHandler } from './tools/github-ops.js'
 
 export async function buildServer(
   config: Config,
-): Promise<{ app: ReturnType<typeof Fastify>; closeAll: () => void }> {
+): Promise<{ app: ReturnType<typeof Fastify>; closeAll: () => Promise<void> }> {
   const app = Fastify({ logger: config.MODE === 'local' })
 
   if (config.SERVICE_JWT_SECRET) {
@@ -67,9 +67,9 @@ export async function buildServer(
     ...(authHook && { authHook }),
   })
 
-  const closeAll = () => {
+  const closeAll = async () => {
     for (const c of activeConsumers.values()) c.stop()
-    void closePool()
+    await closePool()
   }
 
   return { app, closeAll }
