@@ -18,6 +18,7 @@ export function GitHubPanel(): React.JSX.Element {
     async function restoreStatus(): Promise<void> {
       const status = await window.electronAPI?.githubGetStatus()
       if (status?.connected && status.username && status.avatarUrl) {
+        const { setGitHubConnected, setGitHubRepos } = useIntegrationsStore.getState()
         setGitHubConnected(status.username, status.avatarUrl)
         const repos = await window.electronAPI?.githubListRepos() ?? []
         setGitHubRepos(repos)
@@ -42,8 +43,16 @@ export function GitHubPanel(): React.JSX.Element {
   }
 
   async function handleDisconnect(): Promise<void> {
-    await window.electronAPI?.githubDisconnect()
-    disconnectGitHub()
+    if (loading) return
+    setLoading(true)
+    try {
+      await window.electronAPI?.githubDisconnect()
+      disconnectGitHub()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '연결 해제 중 오류가 발생했습니다')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -53,12 +62,13 @@ export function GitHubPanel(): React.JSX.Element {
         <h2>🐙 GitHub</h2>
       </div>
 
+      {error && <p style={{ color: '#ff6b6b', marginBottom: 16 }}>{error}</p>}
+
       {!github.connected ? (
         <div className="panel-card" style={{ textAlign: 'center', padding: 40 }}>
           <p style={{ color: '#a0a0c0', marginBottom: 24 }}>
             GitHub 계정을 연결하면 에이전트가 레포지토리 생성, 코드 push, PR 생성을 자동으로 수행합니다.
           </p>
-          {error && <p style={{ color: '#ff6b6b', marginBottom: 16 }}>{error}</p>}
           <button className="panel-btn panel-btn--primary" onClick={handleConnect} disabled={loading}>
             {loading ? '브라우저에서 인증 중...' : '🐙 GitHub으로 로그인'}
           </button>
