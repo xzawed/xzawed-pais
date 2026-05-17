@@ -14,6 +14,8 @@ export interface McpServerConfig {
 
 type McpStatus = 'running' | 'stopped' | 'error'
 
+const ALLOWED_MCP_COMMANDS = new Set(['npx', 'node', 'python', 'python3', 'deno', 'uvx', 'bunx', 'bun', 'uv'])
+
 export class McpProcessManager {
   private processes = new Map<string, ChildProcess>()
   private statuses  = new Map<string, McpStatus>()
@@ -65,6 +67,9 @@ export class McpProcessManager {
     const config = this.configs.find((c) => c.id === id)
     if (!config) throw new Error(`MCP server not found: ${id}`)
     if (this.processes.has(id)) return
+    if (!ALLOWED_MCP_COMMANDS.has(config.command)) {
+      throw new Error(`MCP command not allowed: ${config.command}`)
+    }
 
     const proc = spawn(config.command, config.args, {
       env: { ...process.env, ...config.env },

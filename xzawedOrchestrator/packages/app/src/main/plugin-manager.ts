@@ -15,6 +15,13 @@ export interface PluginInfo {
 const HOME = process.env['HOME'] ?? process.env['USERPROFILE'] ?? ''
 const CLAUDE_PLUGINS_DIR = join(HOME, '.claude', 'plugins', 'cache')
 
+// npm 패키지명 규칙: 선택적 @scope/ 접두사 + 이름 (경로 순회·셸 메타문자 차단)
+const VALID_PKG_RE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(@[a-z0-9._~^*-]+)?$/i
+
+function validatePackageName(name: string): void {
+  if (!VALID_PKG_RE.test(name)) throw new Error(`Invalid package name: ${name}`)
+}
+
 function xzawedPluginsDir(): string {
   return join(app.getPath('userData'), 'xzawed-extensions')
 }
@@ -85,6 +92,7 @@ export class PluginManager {
   }
 
   async install(packageName: string, type: 'claude-code' | 'xzawed'): Promise<void> {
+    validatePackageName(packageName)
     if (type === 'claude-code') {
       spawnSync('npx', ['skills', 'add', packageName], { stdio: 'inherit' })
     } else {
@@ -102,6 +110,7 @@ export class PluginManager {
   }
 
   async uninstall(id: string): Promise<void> {
+    validatePackageName(id)
     const xzawedDir = xzawedPluginsDir()
     spawnSync('npm', ['uninstall', id, '--prefix', xzawedDir], { stdio: 'ignore' })
     const disabled = loadDisabled()
