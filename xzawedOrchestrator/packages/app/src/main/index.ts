@@ -2,6 +2,13 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { ServerManager } from './server-manager.js'
+import {
+  startOAuthFlow,
+  getStoredToken,
+  clearToken,
+  fetchGitHubUser,
+  fetchUserRepos,
+} from './github-oauth-handler.js'
 
 export interface AppSettings {
   serverUrl: string
@@ -36,9 +43,10 @@ function writeSettings(settings: AppSettings): void {
 }
 
 const serverManager = new ServerManager()
+let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 800,
@@ -51,36 +59,67 @@ function createWindow(): void {
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
-ipcMain.handle('settings:get', (): AppSettings => {
-  return readSettings()
+// ── Settings ─────────────────────────────────────────────────────────
+ipcMain.handle('settings:get', (): AppSettings => readSettings())
+ipcMain.handle('settings:set', (_e, settings: AppSettings): void => writeSettings(settings))
+
+// ── GitHub ───────────────────────────────────────────────────────────
+ipcMain.handle('github:connect', async () => {
+  if (!mainWindow) throw new Error('No window')
+  await startOAuthFlow(mainWindow)
+  const token = getStoredToken()
+  if (!token) throw new Error('Token not stored after OAuth')
+  const user = await fetchGitHubUser(token)
+  return { username: user.login, avatarUrl: user.avatar_url }
 })
 
-ipcMain.handle('settings:set', (_event, settings: AppSettings): void => {
-  writeSettings(settings)
+ipcMain.handle('github:disconnect', () => {
+  clearToken()
 })
 
+ipcMain.handle('github:get-status', async () => {
+  const token = getStoredToken()
+  if (!token) return { connected: false, username: null, avatarUrl: null }
+  try {
+    const user = await fetchGitHubUser(token)
+    return { connected: true, username: user.login, avatarUrl: user.avatar_url }
+  } catch {
+    return { connected: false, username: null, avatarUrl: null }
+  }
+})
+
+ipcMain.handle('github:list-repos', async () => {
+  const token = getStoredToken()
+  if (!token) return []
+  const repos = await fetchUserRepos(token)
+  return repos.map((r) => ({
+    id: r.id,
+    name: r.name,
+    fullName: r.full_name,
+    private: r.private,
+    defaultBranch: r.default_branch,
+  }))
+})
+
+ipcMain.handle('github:get-token', () => getStoredToken())
+
+// ── Lifecycle ────────────────────────────────────────────────────────
 app.whenReady().then(() => {
   const settings = readSettings()
-  if (settings.mode === 'local') {
-    serverManager.start()
-  }
+  if (settings.mode === 'local') serverManager.start()
   createWindow()
-
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
 })
 
-app.on('before-quit', () => {
-  serverManager.stop()
-})
-
+app.on('before-quit', () => serverManager.stop())
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
