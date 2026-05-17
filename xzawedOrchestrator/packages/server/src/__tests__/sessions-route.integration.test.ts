@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { Chunk, Message } from '@xzawed/shared'
 import WebSocket from 'ws'
 import type { FastifyInstance } from 'fastify'
@@ -48,8 +48,9 @@ function wsConnect(port: number, sessionId: string): Promise<{ ws: WebSocket; me
   return new Promise((resolve) => {
     const messages: unknown[] = []
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/sessions/${sessionId}`)
-    ws.on('message', (data) => {
-      messages.push(JSON.parse(data.toString()))
+    ws.on('message', (raw) => {
+      const buf = Array.isArray(raw) ? Buffer.concat(raw) : Buffer.from(raw as Buffer | ArrayBuffer)
+      messages.push(JSON.parse(buf.toString()))
     })
     ws.on('open', () => resolve({ ws, messages }))
   })
@@ -65,6 +66,26 @@ function waitForWsMessage(messages: unknown[], predicate: (m: unknown) => boolea
         resolve()
       }
     }, 10)
+  })
+}
+
+async function createConnectedSession(port: number): Promise<{ sessionId: string; ws: WebSocket; messages: unknown[] }> {
+  const res = await fetch(`http://127.0.0.1:${port}/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: 'u1' }),
+  })
+  const { sessionId } = (await res.json()) as { sessionId: string }
+  const { ws, messages } = await wsConnect(port, sessionId)
+  await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'connected')
+  return { sessionId, ws, messages }
+}
+
+async function postMessage(port: number, sessionId: string, content: string): Promise<Response> {
+  return fetch(`http://127.0.0.1:${port}/sessions/${sessionId}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
   })
 }
 
@@ -98,17 +119,8 @@ describe('sessions route integration', () => {
 
   it('WebSocket /ws/sessions/:id sends connected on connect', async () => {
     ;({ app, port } = await startServer(makeMockRunner([])))
-
-    const sessionRes = await fetch(`http://127.0.0.1:${port}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'u1' }),
-    })
-    const { sessionId } = (await sessionRes.json()) as { sessionId: string }
-
-    const { ws, messages } = await wsConnect(port, sessionId)
+    const { sessionId, ws, messages } = await createConnectedSession(port)
     try {
-      await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'connected')
       const connected = messages.find((m) => (m as { type: string }).type === 'connected') as { sessionId: string }
       expect(connected.sessionId).toBe(sessionId)
     } finally {
@@ -123,60 +135,27 @@ describe('sessions route integration', () => {
       { type: 'done', content: '' },
     ])
     ;({ app, port } = await startServer(runner))
+    const { sessionId, ws, messages } = await createConnectedSession(port)
 
-    const sessionRes = await fetch(`http://127.0.0.1:${port}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'u1' }),
-    })
-    const { sessionId } = (await sessionRes.json()) as { sessionId: string }
-
-    const { ws, messages } = await wsConnect(port, sessionId)
-    await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'connected')
-
-    const msgRes = await fetch(`http://127.0.0.1:${port}/sessions/${sessionId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: 'hi' }),
-    })
+    const msgRes = await postMessage(port, sessionId, 'hi')
     expect(msgRes.status).toBe(202)
-
     await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'done')
 
-    const chunks = messages.filter((m) => (m as { type: string }).type === 'chunk')
-    expect(chunks).toHaveLength(2)
-
-    const doneMsg = messages.find((m) => (m as { type: string }).type === 'done')
-    expect(doneMsg).toBeDefined()
-
+    expect(messages.filter((m) => (m as { type: string }).type === 'chunk')).toHaveLength(2)
+    expect(messages.find((m) => (m as { type: string }).type === 'done')).toBeDefined()
     ws.close()
   })
 
   it('WebSocket receives error message when runner yields error', async () => {
     const runner = makeMockRunner([{ type: 'error', content: 'something failed' }])
     ;({ app, port } = await startServer(runner))
+    const { sessionId, ws, messages } = await createConnectedSession(port)
 
-    const sessionRes = await fetch(`http://127.0.0.1:${port}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'u1' }),
-    })
-    const { sessionId } = (await sessionRes.json()) as { sessionId: string }
-
-    const { ws, messages } = await wsConnect(port, sessionId)
-    await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'connected')
-
-    await fetch(`http://127.0.0.1:${port}/sessions/${sessionId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: 'hi' }),
-    })
-
+    await postMessage(port, sessionId, 'hi')
     await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'error')
 
     const errMsg = messages.find((m) => (m as { type: string }).type === 'error') as { content: string }
     expect(errMsg.content).toBe('something failed')
-
     ws.close()
   })
 
@@ -186,31 +165,14 @@ describe('sessions route integration', () => {
       { type: 'done', content: '' },
     ])
     ;({ app, port } = await startServer(runner))
+    const { sessionId, ws, messages } = await createConnectedSession(port)
 
-    const sessionRes = await fetch(`http://127.0.0.1:${port}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'u1' }),
-    })
-    const { sessionId } = (await sessionRes.json()) as { sessionId: string }
-
-    const { ws, messages } = await wsConnect(port, sessionId)
-    await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'connected')
-
-    await fetch(`http://127.0.0.1:${port}/sessions/${sessionId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: 'question' }),
-    })
-
+    await postMessage(port, sessionId, 'question')
     await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'done')
 
     const historyRes = await fetch(`http://127.0.0.1:${port}/sessions/${sessionId}/messages`)
     const history = (await historyRes.json()) as Array<{ role: string; content: string }>
-
-    const assistant = history.find((m) => m.role === 'assistant')
-    expect(assistant?.content).toBe('The answer')
-
+    expect(history.find((m) => m.role === 'assistant')?.content).toBe('The answer')
     ws.close()
   })
 
@@ -226,23 +188,9 @@ describe('sessions route integration', () => {
       { type: 'done', content: '' },
     ])
     ;({ app, port } = await startServer(runner))
+    const { sessionId, ws, messages } = await createConnectedSession(port)
 
-    const sessionRes = await fetch(`http://127.0.0.1:${port}/sessions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'u1' }),
-    })
-    const { sessionId } = (await sessionRes.json()) as { sessionId: string }
-
-    const { ws, messages } = await wsConnect(port, sessionId)
-    await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'connected')
-
-    await fetch(`http://127.0.0.1:${port}/sessions/${sessionId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: 'Build a feature' }),
-    })
-
+    await postMessage(port, sessionId, 'Build a feature')
     await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'done')
 
     const tasksRes = await fetch(`http://127.0.0.1:${port}/sessions/${sessionId}/tasks`)
@@ -251,7 +199,6 @@ describe('sessions route integration', () => {
     expect(body.tasks).toHaveLength(1)
     expect(body.tasks[0].status).toBe('pending')
     expect(body.tasks[0].intent).toContain('OK, I will build the feature')
-
     ws.close()
   })
 })
