@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('node:child_process', () => ({
-  execSync: vi.fn(),
-  exec: vi.fn((_cmd, cb) => cb(null, '', '')),
+  spawnSync: vi.fn(() => ({ status: 0 })),
 }))
 let disabledStore: string[] = []
 

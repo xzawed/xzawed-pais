@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
@@ -86,11 +86,11 @@ export class PluginManager {
 
   async install(packageName: string, type: 'claude-code' | 'xzawed'): Promise<void> {
     if (type === 'claude-code') {
-      execSync(`npx skills add ${packageName}`, { stdio: 'inherit' })
+      spawnSync('npx', ['skills', 'add', packageName], { stdio: 'inherit' })
     } else {
       const xzawedDir = xzawedPluginsDir()
       if (!existsSync(xzawedDir)) mkdirSync(xzawedDir, { recursive: true })
-      execSync(`npm install ${packageName} --prefix ${xzawedDir}`, { stdio: 'inherit' })
+      spawnSync('npm', ['install', packageName, '--prefix', xzawedDir], { stdio: 'inherit' })
     }
   }
 
@@ -102,7 +102,8 @@ export class PluginManager {
   }
 
   async uninstall(id: string): Promise<void> {
-    try { execSync(`npm uninstall ${id}`, { stdio: 'ignore' }) } catch { /* ignore */ }
+    const xzawedDir = xzawedPluginsDir()
+    spawnSync('npm', ['uninstall', id, '--prefix', xzawedDir], { stdio: 'ignore' })
     const disabled = loadDisabled()
     disabled.delete(id)
     saveDisabled(disabled)
