@@ -1,6 +1,7 @@
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify'
 import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
+import jwtPlugin from '@fastify/jwt'
 import Anthropic from '@anthropic-ai/sdk'
 import type { WebSocket } from 'ws'
 import type { Config } from './config.js'
@@ -13,7 +14,11 @@ import { StreamConsumer } from './streams/consumer.js'
 import { healthRoutes } from './api/health.route.js'
 import { sessionsRoutes } from './api/sessions.route.js'
 import { sessionWsRoutes } from './ws/session.ws.js'
-import { registerJwt, verifyServiceToken } from './auth/jwt.plugin.js'
+
+const JWT_ERRORS: Record<string, string> = {
+  FST_JWT_NO_AUTHORIZATION_IN_HEADER: 'Missing token',
+  FST_JWT_AUTHORIZATION_TOKEN_EXPIRED: 'Token expired',
+}
 
 export async function buildServer(config: Config, runnerOverride?: ClaudeRunner): Promise<FastifyInstance> {
   const app = Fastify({ logger: config.mode !== 'local' })
@@ -34,10 +39,17 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   })
 
   if (config.auth === 'jwt' && config.serviceJwtSecret) {
-    await registerJwt(app, config.serviceJwtSecret)
+    await app.register(jwtPlugin, { secret: config.serviceJwtSecret })
   }
 
-  const authHook = config.auth === 'jwt' ? verifyServiceToken : undefined
+  const authHook = config.auth === 'jwt'
+    ? async (req: FastifyRequest, reply: FastifyReply) => {
+        await req.jwtVerify().catch(async (err: unknown) => {
+          const code = (err as { code?: string }).code ?? ''
+          await reply.status(401).send({ error: JWT_ERRORS[code] ?? 'Invalid token' })
+        })
+      }
+    : undefined
 
   await app.register(websocket)
   await app.register(healthRoutes)
