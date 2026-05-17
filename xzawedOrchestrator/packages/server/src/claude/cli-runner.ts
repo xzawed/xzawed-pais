@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import type { Chunk, Message } from '@xzawed/shared'
 import type { ClaudeRunner, RunOptions } from './runner.interface.js'
-import { parseCLILine } from './cli-parser.js'
+import { drainBuffer, flushRemainder } from './cli-parser.js'
 import { ChunkQueue } from './chunk-queue.js'
 
 export class CLIRunner implements ClaudeRunner {
@@ -32,20 +32,11 @@ export class CLIRunner implements ClaudeRunner {
 
     let buffer = ''
     proc.stdout.on('data', (data: Buffer) => {
-      buffer += data.toString()
-      const lines = buffer.split('\n')
-      buffer = lines.pop() ?? ''
-      for (const line of lines) {
-        const chunk = parseCLILine(line)
-        if (chunk) queue.push(chunk)
-      }
+      buffer = drainBuffer(buffer, data, c => queue.push(c))
     })
 
     proc.on('close', (code) => {
-      if (buffer.trim()) {
-        const chunk = parseCLILine(buffer)
-        if (chunk) queue.push(chunk)
-      }
+      flushRemainder(buffer, c => queue.push(c))
       queue.push(
         code === 0
           ? { type: 'done', content: '' }

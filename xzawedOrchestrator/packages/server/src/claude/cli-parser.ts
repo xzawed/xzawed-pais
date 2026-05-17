@@ -1,5 +1,23 @@
 import type { Chunk } from '@xzawed/shared'
 
+export function drainBuffer(buffer: string, data: Buffer, onChunk: (c: Chunk) => void): string {
+  const updated = buffer + data.toString()
+  const lines = updated.split('\n')
+  const remainder = lines.pop() ?? ''
+  for (const line of lines) {
+    const chunk = parseCLILine(line)
+    if (chunk) onChunk(chunk)
+  }
+  return remainder
+}
+
+export function flushRemainder(buffer: string, onChunk: (c: Chunk) => void): void {
+  if (buffer.trim()) {
+    const chunk = parseCLILine(buffer)
+    if (chunk) onChunk(chunk)
+  }
+}
+
 export function parseCLILine(line: string): Chunk | null {
   if (!line.trim()) return null
   try {
