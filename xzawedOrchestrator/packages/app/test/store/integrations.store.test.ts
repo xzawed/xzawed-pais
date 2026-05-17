@@ -22,10 +22,12 @@ describe('integrations.store', () => {
 
   it('GitHub 연결을 해제한다', () => {
     useIntegrationsStore.getState().setGitHubConnected('xzawed', 'https://avatar.url')
+    useIntegrationsStore.getState().setDefaultRepo('xzawed/my-app')
     useIntegrationsStore.getState().disconnectGitHub()
     const { github } = useIntegrationsStore.getState()
     expect(github.connected).toBe(false)
     expect(github.username).toBeNull()
+    expect(github.defaultRepo).toBeNull()
   })
 
   it('MCP 서버 상태를 업데이트한다', () => {
