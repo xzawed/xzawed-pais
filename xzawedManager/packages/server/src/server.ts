@@ -46,7 +46,9 @@ export async function buildServer(
   registry.register(createBuildProjectHandler(config.REDIS_URL))
   registry.register(createWatchChangesHandler(config.REDIS_URL))
   registry.register(createSecurityAuditHandler(config.REDIS_URL))
-  registry.register(createGithubOpsHandler(config.GITHUB_TOKEN ?? ''))
+  if (config.GITHUB_TOKEN) {
+    registry.register(createGithubOpsHandler(config.GITHUB_TOKEN))
+  }
 
   const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry)
   const producer = new StreamProducer(config.REDIS_URL)

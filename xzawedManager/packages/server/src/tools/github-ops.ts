@@ -60,10 +60,17 @@ export function createGithubOpsHandler(token: string): ToolHandler<GithubInput, 
     description: 'Perform GitHub operations: create repo/branch, commit code, open PR, create issues',
     inputSchema,
     execute: async (input: GithubInput, _sessionId: string) => {
+      function need<T>(val: T | undefined, name: string): T {
+        if (val === undefined || val === null) {
+          throw new Error(`github_ops [${input.action}] missing required field: ${name}`)
+        }
+        return val
+      }
+
       switch (input.action) {
         case 'createRepo': {
           const { data } = await octokit.rest.repos.createForAuthenticatedUser({
-            name: input.repoName!,
+            name: need(input.repoName, 'repoName'),
             description: input.description,
             private: input.private ?? false,
             auto_init: true,
@@ -78,56 +85,59 @@ export function createGithubOpsHandler(token: string): ToolHandler<GithubInput, 
 
         case 'createBranch': {
           const { data: ref } = await octokit.rest.git.getRef({
-            owner: input.owner!,
-            repo: input.repo!,
+            owner: need(input.owner, 'owner'),
+            repo: need(input.repo, 'repo'),
             ref: `heads/${input.fromBranch ?? 'main'}`,
           })
           await octokit.rest.git.createRef({
-            owner: input.owner!,
-            repo: input.repo!,
-            ref: `refs/heads/${input.branch!}`,
+            owner: need(input.owner, 'owner'),
+            repo: need(input.repo, 'repo'),
+            ref: `refs/heads/${need(input.branch, 'branch')}`,
             sha: ref.object.sha,
           })
           return { branch: input.branch, sha: ref.object.sha }
         }
 
         case 'listBranches': {
-          const { data } = await octokit.rest.repos.listBranches({ owner: input.owner!, repo: input.repo! })
+          const { data } = await octokit.rest.repos.listBranches({ owner: need(input.owner, 'owner'), repo: need(input.repo, 'repo') })
           return data.map((b) => ({ name: b.name, sha: b.commit.sha }))
         }
 
         case 'commitAndPush': {
-          const { files = [], commitMessage = 'chore: update files', branch, owner, repo } = input
+          const { files = [], commitMessage = 'chore: update files' } = input
+          const owner = need(input.owner, 'owner')
+          const repo = need(input.repo, 'repo')
+          const branch = need(input.branch, 'branch')
           const blobs = await Promise.all(
             files.map((f) =>
               octokit.rest.git.createBlob({
-                owner: owner!, repo: repo!,
+                owner, repo,
                 content: Buffer.from(f.content).toString('base64'),
                 encoding: 'base64',
               })
             )
           )
-          const { data: baseRef } = await octokit.rest.git.getRef({ owner: owner!, repo: repo!, ref: `heads/${branch!}` })
-          const { data: baseCommit } = await octokit.rest.git.getCommit({ owner: owner!, repo: repo!, commit_sha: baseRef.object.sha })
+          const { data: baseRef } = await octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` })
+          const { data: baseCommit } = await octokit.rest.git.getCommit({ owner, repo, commit_sha: baseRef.object.sha })
           const { data: tree } = await octokit.rest.git.createTree({
-            owner: owner!, repo: repo!,
+            owner, repo,
             base_tree: baseCommit.tree.sha,
             tree: files.map((f, i) => ({ path: f.path, mode: '100644' as const, type: 'blob' as const, sha: blobs[i].data.sha })),
           })
           const { data: commit } = await octokit.rest.git.createCommit({
-            owner: owner!, repo: repo!,
+            owner, repo,
             message: commitMessage,
             tree: tree.sha,
             parents: [baseRef.object.sha],
           })
-          await octokit.rest.git.updateRef({ owner: owner!, repo: repo!, ref: `heads/${branch!}`, sha: commit.sha })
+          await octokit.rest.git.updateRef({ owner, repo, ref: `heads/${branch}`, sha: commit.sha })
           return { sha: commit.sha, branch }
         }
 
         case 'createPR': {
           const { data } = await octokit.rest.pulls.create({
-            owner: input.owner!, repo: input.repo!,
-            title: input.title!, head: input.head!, base: input.base ?? 'main',
+            owner: need(input.owner, 'owner'), repo: need(input.repo, 'repo'),
+            title: need(input.title, 'title'), head: need(input.head, 'head'), base: input.base ?? 'main',
             body: input.body ?? '',
           })
           return { number: data.number, url: data.html_url, title: data.title }
@@ -135,18 +145,18 @@ export function createGithubOpsHandler(token: string): ToolHandler<GithubInput, 
 
         case 'createIssue': {
           const { data } = await octokit.rest.issues.create({
-            owner: input.owner!, repo: input.repo!,
-            title: input.title!, body: input.body ?? '',
+            owner: need(input.owner, 'owner'), repo: need(input.repo, 'repo'),
+            title: need(input.title, 'title'), body: input.body ?? '',
           })
           return { number: data.number, url: data.html_url, title: data.title }
         }
 
         case 'mergeBranch': {
           const { data } = await octokit.rest.repos.merge({
-            owner: input.owner!, repo: input.repo!,
-            base: input.base ?? 'main', head: input.head!,
+            owner: need(input.owner, 'owner'), repo: need(input.repo, 'repo'),
+            base: input.base ?? 'main', head: need(input.head, 'head'),
           })
-          return { sha: data?.sha, merged: true }
+          return { sha: data?.sha, merged: data?.sha !== undefined }
         }
 
         default:
