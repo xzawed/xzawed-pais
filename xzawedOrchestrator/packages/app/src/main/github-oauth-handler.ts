@@ -4,8 +4,6 @@ import { join } from 'node:path'
 import { shell, safeStorage, app } from 'electron'
 import type { BrowserWindow } from 'electron'
 
-const CLIENT_ID     = process.env['GITHUB_CLIENT_ID']     ?? ''
-const CLIENT_SECRET = process.env['GITHUB_CLIENT_SECRET'] ?? ''
 const CALLBACK_PORT = 54321
 
 function tokenFilePath(): string {
@@ -40,10 +38,12 @@ export function clearToken(): void {
 }
 
 async function exchangeCode(code: string): Promise<string> {
+  const clientId     = process.env['GITHUB_CLIENT_ID']     ?? ''
+  const clientSecret = process.env['GITHUB_CLIENT_SECRET'] ?? ''
   const res = await fetch('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client_id: CLIENT_ID, client_secret: CLIENT_SECRET, code }),
+    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code }),
   })
   const data = (await res.json()) as { access_token?: string; error?: string }
   if (!data.access_token) throw new Error(data.error ?? 'Token exchange failed')
@@ -94,14 +94,18 @@ export function startOAuthFlow(mainWindow: BrowserWindow): Promise<string> {
     })
 
     server.listen(CALLBACK_PORT, () => {
+      const clientId = process.env['GITHUB_CLIENT_ID'] ?? ''
       const authUrl =
         `https://github.com/login/oauth/authorize` +
-        `?client_id=${CLIENT_ID}` +
+        `?client_id=${clientId}` +
         `&scope=repo,user` +
         `&redirect_uri=http://localhost:${CALLBACK_PORT}/callback`
       void shell.openExternal(authUrl)
     })
 
-    server.on('error', reject)
+    server.on('error', (err) => {
+      server.close()
+      reject(err)
+    })
   })
 }
