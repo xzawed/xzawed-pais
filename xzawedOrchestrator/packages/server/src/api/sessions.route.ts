@@ -6,6 +6,8 @@ import type { ManagerClient } from '../manager/manager.client.js'
 import type { StreamProducer } from '../streams/producer.js'
 import type { Message } from '@xzawed/shared'
 import { StreamConsumer } from '../streams/consumer.js'
+import Anthropic from '@anthropic-ai/sdk'
+import { structureIntent } from '../claude/intent-structurer.js'
 
 const messageStore = new Map<string, Message[]>()
 const claudeSessionIds = new Map<string, string>()
@@ -21,7 +23,20 @@ export async function sessionsRoutes(
     producer,
     sessionConsumers,
     sessionCleanup,
-  }: { store: SessionStore; runner: ClaudeRunner; wsSessions: Map<string, WebSocket>; manager: ManagerClient; redisUrl: string; producer: StreamProducer; sessionConsumers: Map<string, StreamConsumer>; sessionCleanup: Map<string, () => void> }
+    anthropicClient,
+    claudeModel,
+  }: {
+    store: SessionStore
+    runner: ClaudeRunner
+    wsSessions: Map<string, WebSocket>
+    manager: ManagerClient
+    redisUrl: string
+    producer: StreamProducer
+    sessionConsumers: Map<string, StreamConsumer>
+    sessionCleanup: Map<string, () => void>
+    anthropicClient?: Anthropic
+    claudeModel?: string
+  }
 ): Promise<void> {
   app.post<{ Body: { userId: string } }>('/sessions', async (req, reply) => {
     const { userId } = req.body
@@ -152,6 +167,10 @@ export async function sessionsRoutes(
           history.push(assistantMsg)
 
           // Publish task_request to Redis stream (best-effort: don't block done if Manager unavailable)
+          const intent = (anthropicClient && claudeModel)
+            ? await structureIntent(fullContent, anthropicClient, claudeModel)
+            : fullContent
+
           try {
             const msgId = crypto.randomUUID()
             await producer.publish({
@@ -160,7 +179,7 @@ export async function sessionsRoutes(
               timestamp: Date.now(),
               type: 'task_request',
               payload: {
-                intent: fullContent,
+                intent,
                 context: { history: snapshot.map((m) => ({ role: m.role, content: m.content })) },
                 priority: 'normal',
               },

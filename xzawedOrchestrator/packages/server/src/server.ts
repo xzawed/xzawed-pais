@@ -1,6 +1,7 @@
 import Fastify, { type FastifyInstance } from 'fastify'
 import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
+import Anthropic from '@anthropic-ai/sdk'
 import type { WebSocket } from 'ws'
 import type { Config } from './config.js'
 import type { ClaudeRunner } from './claude/runner.interface.js'
@@ -22,11 +23,19 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   const wsSessions = new Map<string, WebSocket>()
   const sessionConsumers = new Map<string, StreamConsumer>()
   const sessionCleanup = new Map<string, () => void>()
+  const anthropicClient = config.anthropicApiKey
+    ? new Anthropic({ apiKey: config.anthropicApiKey })
+    : undefined
 
   await app.register(cors, { origin: true })
   await app.register(websocket)
   await app.register(healthRoutes)
-  await app.register(sessionsRoutes, { store, runner, wsSessions, manager, redisUrl: config.redisUrl, producer, sessionConsumers, sessionCleanup })
+  await app.register(sessionsRoutes, {
+    store, runner, wsSessions, manager,
+    redisUrl: config.redisUrl, producer, sessionConsumers, sessionCleanup,
+    anthropicClient,
+    claudeModel: config.claudeModel,
+  })
   await app.register(sessionWsRoutes, { store, wsSessions, sessionConsumers, sessionCleanup })
 
   return app
