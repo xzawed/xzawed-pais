@@ -14,12 +14,12 @@ export function Sidebar(): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    const observer = new ResizeObserver(() => {
+    function handleResize(): void {
       setAutoCompact(window.innerWidth < 900)
-    })
-    observer.observe(document.body)
-    setAutoCompact(window.innerWidth < 900)
-    return () => observer.disconnect()
+    }
+    window.addEventListener('resize', handleResize)
+    handleResize()
+    return () => window.removeEventListener('resize', handleResize)
   }, [])
 
   const isCompact =

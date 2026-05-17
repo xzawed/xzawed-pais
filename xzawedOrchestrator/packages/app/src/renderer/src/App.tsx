@@ -45,7 +45,7 @@ export function App(): React.JSX.Element {
       cancelled = true
       clearInterval(id)
     }
-  }, [settings.serverUrl])
+  }, [settings.serverUrl, setServerStatus])
 
   return (
     <div className="app-shell">

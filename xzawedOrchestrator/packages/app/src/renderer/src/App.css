@@ -24,17 +24,6 @@ body,
   width: 100%;
 }
 
-.sidebar {
-  width: 220px;
-  flex-shrink: 0;
-  background: #16213e;
-  border-right: 1px solid #2a2a4a;
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
-  gap: 8px;
-}
-
 .chat-panel {
   flex: 1;
   display: flex;
@@ -326,9 +315,11 @@ body,
 .sidebar {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 4px;
   padding: 12px 8px;
   background: #16213e;
+  border-right: 1px solid #2a2a4a;
   transition: width 200ms ease;
   overflow: hidden;
   position: relative;
