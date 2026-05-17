@@ -80,7 +80,8 @@ export function ChatView(): React.JSX.Element {
     addMessage(userMsg)
 
     try {
-      await postMessage(settings.serverUrl, sessionId, content)
+      const githubToken = await window.electronAPI?.githubGetToken() ?? undefined
+      await postMessage(settings.serverUrl, sessionId, content, githubToken)
       setPending(true)
     } catch (err) {
       const errMsg: Message = {

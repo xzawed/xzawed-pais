@@ -1,13 +1,18 @@
 import React, { useEffect } from 'react'
 import { useAppStore } from './store/app.store.js'
+import { useIntegrationsStore } from './store/integrations.store.js'
 import { checkHealth } from './lib/api.js'
 import { Sidebar } from './components/Sidebar.js'
 import { ChatView } from './components/ChatView.js'
 import { DynamicPanel } from './components/DynamicPanel.js'
 import { SettingsModal } from './components/SettingsModal.js'
+import { GitHubPanel } from './components/GitHubPanel.js'
+import { McpPanel } from './components/McpPanel.js'
+import { PluginPanel } from './components/PluginPanel.js'
 
 export function App(): React.JSX.Element {
   const { settings, updateSettings, setServerStatus } = useAppStore()
+  const { activePanel } = useIntegrationsStore()
 
   // Load persisted settings from Electron main on first render
   useEffect(() => {
@@ -40,13 +45,20 @@ export function App(): React.JSX.Element {
       cancelled = true
       clearInterval(id)
     }
-  }, [settings.serverUrl])
+  }, [settings.serverUrl, setServerStatus])
 
   return (
     <div className="app-shell">
       <Sidebar />
-      <ChatView />
-      <DynamicPanel />
+      {activePanel === 'chat' && (
+        <>
+          <ChatView />
+          <DynamicPanel />
+        </>
+      )}
+      {activePanel === 'github'  && <GitHubPanel />}
+      {activePanel === 'mcp'     && <McpPanel />}
+      {activePanel === 'plugins' && <PluginPanel />}
       <SettingsModal />
     </div>
   )
