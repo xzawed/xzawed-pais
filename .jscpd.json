@@ -1,0 +1,19 @@
+{
+  "threshold": 0,
+  "minTokens": 100,
+  "format": ["typescript", "tsx"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.turbo/**",
+    "**/coverage/**",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/__tests__/**",
+    "**/*.d.ts"
+  ],
+  "absolute": true,
+  "gitignore": true,
+  "reporters": ["console", "markdown"]
+}
