@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { ServerManager } from './server-manager.js'
+import { McpProcessManager } from './mcp-process-manager.js'
 import {
   startOAuthFlow,
   getStoredToken,
@@ -43,6 +44,7 @@ function writeSettings(settings: AppSettings): void {
 }
 
 const serverManager = new ServerManager()
+const mcpManager = new McpProcessManager()
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
@@ -109,11 +111,22 @@ ipcMain.handle('github:list-repos', async () => {
 
 ipcMain.handle('github:get-token', () => getStoredToken())
 
+// ── MCP ──────────────────────────────────────────────────────────────
+ipcMain.handle('mcp:list', () =>
+  mcpManager.listServers().map((s) => ({ ...s, status: mcpManager.getStatus(s.id) }))
+)
+ipcMain.handle('mcp:add',      (_e, config) => mcpManager.addServer(config))
+ipcMain.handle('mcp:remove',   (_e, id: string) => mcpManager.removeServer(id))
+ipcMain.handle('mcp:start',    (_e, id: string) => mcpManager.startServer(id))
+ipcMain.handle('mcp:stop',     (_e, id: string) => mcpManager.stopServer(id))
+ipcMain.handle('mcp:statuses', () => mcpManager.getStatuses())
+
 // ── Lifecycle ────────────────────────────────────────────────────────
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const settings = readSettings()
   if (settings.mode === 'local') serverManager.start()
   createWindow()
+  await mcpManager.startAutoStart()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
