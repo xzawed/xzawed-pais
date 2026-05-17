@@ -71,7 +71,7 @@ export function createGithubOpsHandler(token: string): ToolHandler<GithubInput, 
         case 'createRepo': {
           const { data } = await octokit.rest.repos.createForAuthenticatedUser({
             name: need(input.repoName, 'repoName'),
-            description: input.description,
+            ...(input.description !== undefined ? { description: input.description } : {}),
             private: input.private ?? false,
             auto_init: true,
           })
@@ -122,7 +122,7 @@ export function createGithubOpsHandler(token: string): ToolHandler<GithubInput, 
           const { data: tree } = await octokit.rest.git.createTree({
             owner, repo,
             base_tree: baseCommit.tree.sha,
-            tree: files.map((f, i) => ({ path: f.path, mode: '100644' as const, type: 'blob' as const, sha: blobs[i].data.sha })),
+            tree: files.map((f, i) => ({ path: f.path, mode: '100644' as const, type: 'blob' as const, sha: blobs[i]!.data.sha })),
           })
           const { data: commit } = await octokit.rest.git.createCommit({
             owner, repo,
