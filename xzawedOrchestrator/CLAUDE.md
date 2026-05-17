@@ -35,6 +35,20 @@ cd packages/server && pnpm mcp
 packages/
 ├── shared/     # 공통 TypeScript 타입 (Message, Session, UISpec, Streams)
 ├── server/     # Fastify 백엔드 (API, WebSocket, MCP, Claude 실행기, Redis Streams)
+│   └── src/
+│       ├── api/
+│       │   └── sessions.route.ts     # POST /sessions, GET /sessions/:id/tasks 등
+│       ├── claude/
+│       │   ├── runner.interface.ts   # ClaudeRunner 인터페이스
+│       │   ├── runner.factory.ts     # createRunner() — 모드별 Runner 선택
+│       │   ├── cli-runner.ts         # 로컬 claude CLI 서브프로세스
+│       │   ├── api-runner.ts         # Anthropic SDK 직접 호출
+│       │   ├── http-remote-runner.ts # 원격 HTTP 서버 NDJSON 스트리밍
+│       │   ├── ssh-remote-runner.ts  # SSH 연결 후 원격 claude CLI 실행
+│       │   └── intent-structurer.ts  # Claude API로 사용자 의도 1-2문장 정제
+│       └── tasks/
+│           ├── task.ts               # Task 타입 (pending→running→completed/failed)
+│           └── task.store.ts         # TaskStore — 세션별 인메모리 Map 관리
 └── app/        # Electron 앱 (React 19 + Zustand + electron-vite)
     ├── src/main/
     │   ├── index.ts                  # IPC 채널 등록 (settings, github, mcp, plugin)
@@ -54,12 +68,26 @@ packages/
             └── PluginPanel.tsx
 ```
 
+### 작업(Task) 생명주기
+
+메시지 전송 시 `structureIntent()` 로 Claude API 기반 의도 정제 후 `TaskStore`에 `pending` 상태로 등록.  
+Redis 이벤트 수신에 따라 상태 전이: `pending` → `status_update` → `running` → `task_complete` → `completed` / `error` → `failed`.
+
 ## Claude 실행 모드
 
 `CLAUDE_MODE` 환경변수로 전환:
-- `cli` (기본): 로컬 claude CLI 서브프로세스
-- `api`: Anthropic SDK 직접 호출 (ANTHROPIC_API_KEY 필요)
-- `remote`: 원격 서버 CLI (REMOTE_CLI_URL 또는 SSH 설정 필요)
+- `cli` (기본): 로컬 claude CLI 서브프로세스 (`CLIRunner`)
+- `api`: Anthropic SDK 직접 호출 (`APIRunner`, ANTHROPIC_API_KEY 필요)
+- `remote`: 원격 서버 CLI — `REMOTE_CLI_URL` 설정 시 `HTTPRemoteRunner`(NDJSON 스트리밍), 미설정 시 `SSHRemoteRunner`(SSH + exec)
+
+### 원격 모드 환경 변수
+
+```env
+REMOTE_CLI_URL=http://remote-host:4000   # HTTP 원격 — 설정 시 SSH 무시
+REMOTE_HOST=                             # SSH 호스트 (HTTP 미설정 시 필수)
+REMOTE_USER=                             # SSH 사용자
+REMOTE_KEY_PATH=~/.ssh/id_rsa            # SSH 개인키 경로
+```
 
 ## 배포 모드
 

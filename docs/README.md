@@ -46,8 +46,8 @@ xzawed AI 멀티 에이전트 오케스트레이션 플랫폼 전체 문서.
 
 | 서비스 | 포트 | 상태 | 역할 |
 |--------|------|------|------|
-| [Orchestrator](services/orchestrator.md) | 3000 | ✅ 완성 (v0.1.0) | 사용자 지시 수신, Manager에 전달 |
-| [Manager](services/manager.md) | 3001 | ✅ 완성 (56/56) | Claude tool-calling, 에이전트 위임 |
+| [Orchestrator](services/orchestrator.md) | 3000 | ✅ 완성 (100/100) | 사용자 지시 수신, 의도 정제, Manager에 전달 |
+| [Manager](services/manager.md) | 3001 | ✅ 완성 (60/60) | Claude tool-calling, 에이전트 위임 |
 | [Planner](services/planner.md) | 3002 | ✅ 완성 | 작업 → Step[] 분해 |
 | [Developer](services/developer.md) | 3003 | ✅ 완성 (31/31) | 코드 생성·수정 |
 | [Designer](services/designer.md) | 3004 | ✅ 완성 (26/26) | UI 컴포넌트 설계 |
@@ -93,6 +93,7 @@ xzawed AI 멀티 에이전트 오케스트레이션 플랫폼 전체 문서.
 | [Builder 초기 구현](plans/2026-05-16-builder-initial-implementation.md) | Builder 구현 계획 (29 테스트) |
 | [Builder 문서 계획](plans/2026-05-15-builder-docs.md) | Builder 문서 작성 계획 |
 | [Manager 서버](plans/2026-05-15-manager-server.md) | Manager 서버 구현 계획 |
+| [이슈 #10~#13 구현](superpowers/plans/2026-05-17-issues-10-11-12-13.md) | JWT 인증·의도 정제·작업 엔드포인트·원격 Runner 구현 계획 |
 
 ---
 
