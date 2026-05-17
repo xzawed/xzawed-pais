@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import type { Chunk, Message } from '@xzawed/shared'
 import type { ClaudeRunner, RunOptions } from './runner.interface.js'
+import { parseCLILine } from './cli-parser.js'
 
 export class CLIRunner implements ClaudeRunner {
   async *send(messages: Message[], options: RunOptions = {}): AsyncIterable<Chunk> {
@@ -45,35 +46,16 @@ export class CLIRunner implements ClaudeRunner {
       const lines = buffer.split('\n')
       buffer = lines.pop() ?? ''
       for (const line of lines) {
-        if (!line.trim()) continue
-        try {
-          const event = JSON.parse(line)
-          if (event.type === 'system' && event.subtype === 'init' && typeof event.session_id === 'string') {
-            pending.push({ type: 'claude_session', content: event.session_id })
-          } else if (event.type === 'assistant' && Array.isArray(event.message?.content)) {
-            for (const block of event.message.content) {
-              if (block.type === 'text') pending.push({ type: 'text', content: block.text })
-            }
-          }
-        } catch {
-          // ignore unparseable lines
-        }
+        const chunk = parseCLILine(line)
+        if (chunk) pending.push(chunk)
       }
       signal()
     })
 
     proc.on('close', (code) => {
       if (buffer.trim()) {
-        try {
-          const event = JSON.parse(buffer)
-          if (event.type === 'system' && event.subtype === 'init' && typeof event.session_id === 'string') {
-            pending.push({ type: 'claude_session', content: event.session_id })
-          } else if (event.type === 'assistant' && Array.isArray(event.message?.content)) {
-            for (const block of event.message.content) {
-              if (block.type === 'text') pending.push({ type: 'text', content: block.text })
-            }
-          }
-        } catch { /* ignore unparseable remainder */ }
+        const chunk = parseCLILine(buffer)
+        if (chunk) pending.push(chunk)
       }
       if (code === 0) {
         pending.push({ type: 'done', content: '' })
