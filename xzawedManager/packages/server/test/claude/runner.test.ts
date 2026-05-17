@@ -135,6 +135,41 @@ describe('ClaudeRunner', () => {
     expect(toolNames).toContain('request_info')
   })
 
+  it('throws when iteration limit exceeded', async () => {
+    mockCreate.mockResolvedValue({
+      stop_reason: 'tool_use',
+      content: [
+        { type: 'tool_use', id: 'tool-loop', name: 'plan_task', input: { intent: 'loop', context: {} } },
+      ],
+    })
+
+    const mockToolExecute = vi.fn().mockResolvedValue({})
+    const fakeHandler: ToolHandler = {
+      name: 'plan_task',
+      description: 'Plan a task',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      execute: mockToolExecute,
+    }
+
+    const Anthropic = (await import('@anthropic-ai/sdk')).default
+    const { StreamProducer } = await import('../../src/streams/producer.js')
+    const { ClaudeRunner } = await import('../../src/claude/runner.js')
+
+    const registry = new ToolRegistry()
+    registry.register(fakeHandler)
+    const runner = new ClaudeRunner(new Anthropic({ apiKey: 'test' }), 'claude-haiku-4-5-20251001', registry)
+    const sessionStore = new SessionStore()
+    sessionStore.create('sess-loop')
+
+    await expect(runner.run({
+      sessionId: 'sess-loop',
+      intent: 'loop forever',
+      context: {},
+      producer: new StreamProducer('redis://localhost:6379'),
+      sessionStore,
+    })).rejects.toThrow('exceeded')
+  })
+
   it('throws when Claude calls unknown tool', async () => {
     mockCreate.mockResolvedValueOnce({
       stop_reason: 'tool_use',
