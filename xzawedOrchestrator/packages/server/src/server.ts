@@ -13,6 +13,7 @@ import { StreamConsumer } from './streams/consumer.js'
 import { healthRoutes } from './api/health.route.js'
 import { sessionsRoutes } from './api/sessions.route.js'
 import { sessionWsRoutes } from './ws/session.ws.js'
+import { registerJwt, verifyServiceToken } from './auth/jwt.plugin.js'
 
 export async function buildServer(config: Config, runnerOverride?: ClaudeRunner): Promise<FastifyInstance> {
   const app = Fastify({ logger: config.mode !== 'local' })
@@ -27,7 +28,18 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     ? new Anthropic({ apiKey: config.anthropicApiKey })
     : undefined
 
-  await app.register(cors, { origin: true })
+  // Restrict CORS: local mode (Electron) disables cross-origin; remote mode uses allowlist
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(o => o.trim()).filter(Boolean)
+  await app.register(cors, {
+    origin: config.mode === 'local' ? false : (allowedOrigins?.length ? allowedOrigins : false),
+  })
+
+  if (config.auth === 'jwt' && config.serviceJwtSecret) {
+    await registerJwt(app, config.serviceJwtSecret)
+  }
+
+  const authHook = config.auth === 'jwt' ? verifyServiceToken : undefined
+
   await app.register(websocket)
   await app.register(healthRoutes)
   await app.register(sessionsRoutes, {
@@ -35,8 +47,9 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     redisUrl: config.redisUrl, producer, sessionConsumers, sessionCleanup,
     anthropicClient,
     claudeModel: config.claudeModel,
+    authHook,
   })
-  await app.register(sessionWsRoutes, { store, wsSessions, sessionConsumers, sessionCleanup })
+  await app.register(sessionWsRoutes, { store, wsSessions, sessionConsumers, sessionCleanup, authHook })
 
   return app
 }
