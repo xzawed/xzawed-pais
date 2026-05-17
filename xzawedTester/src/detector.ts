@@ -10,42 +10,25 @@ export async function detectTestCommand(projectPath: string): Promise<string> {
   try {
     const raw = await fs.readFile(path.join(projectPath, 'package.json'), 'utf-8')
     const pkg = JSON.parse(raw) as {
-      scripts?: Record<string, string>
       devDependencies?: Record<string, string>
       dependencies?: Record<string, string>
     }
 
-    // scripts.test가 실제 명령인 경우 (echo no test 같은 경우 제외)
-    if (pkg.scripts?.['test'] && !pkg.scripts['test'].startsWith('echo')) {
-      return pkg.scripts['test']
-    }
-
-    // devDependencies로 프레임워크 감지
-    const allDeps = { ...pkg.devDependencies, ...pkg.dependencies }
+    // Detect framework from dependencies and return a HARDCODED safe command.
+    // Never trust scripts.test — it may contain arbitrary shell commands.
+    const allDeps = { ...pkg.dependencies, ...pkg.devDependencies }
     if ('vitest' in allDeps) return 'pnpm vitest run'
     if ('jest' in allDeps) return 'pnpm jest'
     if ('mocha' in allDeps) return 'pnpm mocha'
 
     return 'pnpm test'
-  } catch {}
+  } catch {
+    // Fallback for non-JS projects
+  }
 
   // Cargo.toml — Rust
-  try {
-    await fs.access(path.join(projectPath, 'Cargo.toml'))
-    return 'cargo test'
-  } catch {}
-
-  // Makefile
-  try {
-    await fs.access(path.join(projectPath, 'Makefile'))
-    return 'make test'
-  } catch {}
-
-  // Python
-  try {
-    await fs.access(path.join(projectPath, 'pyproject.toml'))
-    return 'pytest'
-  } catch {}
+  const hasCargoToml = await fs.access(path.join(projectPath, 'Cargo.toml')).then(() => true).catch(() => false)
+  if (hasCargoToml) return 'cargo test'
 
   throw new Error('테스트 명령을 감지할 수 없습니다')
 }

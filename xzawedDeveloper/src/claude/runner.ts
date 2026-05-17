@@ -5,14 +5,14 @@ const SYSTEM_PROMPT = `You are an expert software developer. Given a development
 
 Return ONLY a JSON array of file changes with this exact structure:
 [
-  {"path": "/absolute/path/to/new-file.ts", "operation": "create", "content": "// file content here"},
-  {"path": "/absolute/path/to/existing.ts", "operation": "modify", "content": "// updated full content"},
-  {"path": "/absolute/path/to/old.ts", "operation": "delete"}
+  {"path": "src/new-file.ts", "operation": "create", "content": "// file content here"},
+  {"path": "src/existing.ts", "operation": "modify", "content": "// updated full content"},
+  {"path": "src/old.ts", "operation": "delete"}
 ]
 
 Rules:
 - Return ONLY the JSON array, no explanatory text before or after
-- Use absolute file paths based on the provided project path
+- Use relative file paths from the project root (e.g., 'src/index.ts', not '/absolute/path/src/index.ts')
 - For delete operations, omit the content field
 - Include complete file contents for create and modify (not partial diffs)
 - Apply ALL changes described in the plan`

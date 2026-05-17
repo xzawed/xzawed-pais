@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { StreamConsumer } from '../streams/consumer.js'
 import type { StreamProducer } from '../streams/producer.js'
@@ -28,6 +29,10 @@ export async function sessionsRoute(
     '/api/sessions/:sessionId/start',
     { preHandler },
     async (req, reply) => {
+      const uuidResult = z.string().uuid().safeParse(req.params.sessionId)
+      if (!uuidResult.success) {
+        return reply.status(400).send({ error: 'Invalid sessionId format' })
+      }
       const { sessionId } = req.params
 
       if (activeConsumers.has(sessionId)) {

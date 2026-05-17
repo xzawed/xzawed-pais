@@ -32,7 +32,7 @@ async function buildAuthApp() {
 describe('JWT auth on /api/sessions/:sessionId/start', () => {
   it('returns 401 when Authorization header is missing', async () => {
     const app = await buildAuthApp()
-    const res = await app.inject({ method: 'POST', url: '/api/sessions/s1/start' })
+    const res = await app.inject({ method: 'POST', url: '/api/sessions/00000000-0000-0000-0000-000000000001/start' })
     expect(res.statusCode).toBe(401)
     expect(res.json()).toMatchObject({ error: 'Unauthorized' })
   })
@@ -41,7 +41,7 @@ describe('JWT auth on /api/sessions/:sessionId/start', () => {
     const app = await buildAuthApp()
     const res = await app.inject({
       method: 'POST',
-      url: '/api/sessions/s2/start',
+      url: '/api/sessions/00000000-0000-0000-0000-000000000002/start',
       headers: { authorization: 'Bearer invalid.token.here' },
     })
     expect(res.statusCode).toBe(401)
@@ -53,7 +53,7 @@ describe('JWT auth on /api/sessions/:sessionId/start', () => {
     const token = app.jwt.sign({ service: 'orchestrator' })
     const res = await app.inject({
       method: 'POST',
-      url: '/api/sessions/s3/start',
+      url: '/api/sessions/00000000-0000-0000-0000-000000000003/start',
       headers: { authorization: `Bearer ${token}` },
     })
     expect(res.statusCode).toBe(202)
@@ -68,7 +68,7 @@ describe('JWT auth on /api/sessions/:sessionId/start', () => {
       producer: { publish: vi.fn().mockResolvedValue('1-0') } as never,
       sessionStore,
     })
-    const res = await app.inject({ method: 'POST', url: '/api/sessions/s4/start' })
+    const res = await app.inject({ method: 'POST', url: '/api/sessions/00000000-0000-0000-0000-000000000004/start' })
     expect(res.statusCode).toBe(202)
   })
 })

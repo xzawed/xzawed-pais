@@ -30,11 +30,11 @@ describe('POST /api/sessions/:sessionId/start', () => {
 
     const response = await app.inject({
       method: 'POST',
-      url: '/api/sessions/sess-1/start',
+      url: '/api/sessions/00000000-0000-0000-0000-000000000001/start',
     })
 
     expect(response.statusCode).toBe(202)
-    expect(JSON.parse(response.body)).toEqual({ sessionId: 'sess-1', status: 'started' })
+    expect(JSON.parse(response.body)).toEqual({ sessionId: '00000000-0000-0000-0000-000000000001', status: 'started' })
   })
 
   it('returns 409 when session is already active', async () => {
@@ -47,8 +47,8 @@ describe('POST /api/sessions/:sessionId/start', () => {
       sessionStore,
     })
 
-    await app.inject({ method: 'POST', url: '/api/sessions/sess-dup/start' })
-    const response = await app.inject({ method: 'POST', url: '/api/sessions/sess-dup/start' })
+    await app.inject({ method: 'POST', url: '/api/sessions/00000000-0000-0000-0000-000000000002/start' })
+    const response = await app.inject({ method: 'POST', url: '/api/sessions/00000000-0000-0000-0000-000000000002/start' })
 
     expect(response.statusCode).toBe(409)
     expect(JSON.parse(response.body)).toMatchObject({ error: 'Session already active' })

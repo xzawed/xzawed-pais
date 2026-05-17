@@ -1,4 +1,5 @@
 import chokidar from 'chokidar'
+import path from 'node:path'
 import type { ManagerToWatcherMessage, FileEvent } from './types.js'
 import type { Producer } from './streams/producer.js'
 import type { WatcherStore } from './watcher-store.js'
@@ -60,7 +61,8 @@ export class Watcher {
         timers.set(filePath, timer)
       }
 
-      const watchedPaths = payload.triggers.length > 0 ? payload.triggers : ['**/*']
+      const safeTriggers = payload.triggers.filter(t => !path.isAbsolute(t) && !t.includes('..'))
+      const watchedPaths = safeTriggers.length > 0 ? safeTriggers : ['**/*']
       const fsWatcher = chokidar.watch(watchedPaths, {
         cwd: validPath,
         ignored: /(node_modules|\.git)/,

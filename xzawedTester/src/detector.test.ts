@@ -12,12 +12,12 @@ beforeEach(() => {
 })
 
 describe('detectTestCommand', () => {
-  it('returns scripts.test from package.json', async () => {
+  it('detects vitest from devDependencies (ignores scripts.test for safety)', async () => {
     mockFs.readFile.mockResolvedValueOnce(
-      JSON.stringify({ scripts: { test: 'vitest run' } }) as unknown as Buffer
+      JSON.stringify({ scripts: { test: 'vitest run' }, devDependencies: { vitest: '^2.0.0' } }) as unknown as Buffer
     )
     const cmd = await detectTestCommand('/project')
-    expect(cmd).toBe('vitest run')
+    expect(cmd).toBe('pnpm vitest run')
   })
 
   it('skips echo-style scripts and falls back to devDeps', async () => {

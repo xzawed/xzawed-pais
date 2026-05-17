@@ -111,8 +111,6 @@ ipcMain.handle('github:list-repos', async () => {
   }))
 })
 
-ipcMain.handle('github:get-token', () => getStoredToken())
-
 // ── MCP ──────────────────────────────────────────────────────────────
 ipcMain.handle('mcp:list', () =>
   mcpManager.listServers().map((s) => ({ ...s, status: mcpManager.getStatus(s.id) }))

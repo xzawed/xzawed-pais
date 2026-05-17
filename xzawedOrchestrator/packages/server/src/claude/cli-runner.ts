@@ -13,6 +13,7 @@ export class CLIRunner implements ClaudeRunner {
           '--output-format', 'stream-json',
           '--verbose',
           ...(options.systemPrompt ? ['--system-prompt', options.systemPrompt] : []),
+          '--',
           lastUserMessage,
         ]
       : [
@@ -20,6 +21,7 @@ export class CLIRunner implements ClaudeRunner {
           '--output-format', 'stream-json',
           '--verbose',
           ...(options.systemPrompt ? ['--system-prompt', options.systemPrompt] : []),
+          '--',
           lastUserMessage,
         ]
 
