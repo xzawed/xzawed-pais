@@ -1,0 +1,23 @@
+{
+  "name": "@xzawed/agent-streams",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "ioredis": "^5.4.1",
+    "typescript": "^5.7.0",
+    "zod": "^3.23.8"
+  },
+  "peerDependencies": {
+    "ioredis": ">=5",
+    "zod": ">=3"
+  }
+}

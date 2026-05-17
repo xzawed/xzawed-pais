@@ -14,6 +14,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.40.0
         version: 0.40.1
+      '@xzawed/agent-streams':
+        specifier: file:../xzawedShared
+        version: file:../xzawedShared(ioredis@5.10.1)(zod@3.25.76)
       fastify:
         specifier: ^5.0.0
         version: 5.8.5
@@ -415,6 +418,12 @@ packages:
 
   '@vitest/utils@3.2.4':
     resolution: {integrity: sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA==}
+
+  '@xzawed/agent-streams@file:../xzawedShared':
+    resolution: {directory: ../xzawedShared, type: directory}
+    peerDependencies:
+      ioredis: '>=5'
+      zod: '>=3'
 
   abort-controller@3.0.0:
     resolution: {integrity: sha512-h8lQ8tacZYnR3vNQTgibj+tODHI5/+l06Au2Pcriv/Gmet0eaj4TwWH41sO9wnHDiQsEj19q0drzdWdeAHtweg==}
@@ -1290,6 +1299,11 @@ snapshots:
       '@vitest/pretty-format': 3.2.4
       loupe: 3.2.1
       tinyrainbow: 2.0.0
+
+  '@xzawed/agent-streams@file:../xzawedShared(ioredis@5.10.1)(zod@3.25.76)':
+    dependencies:
+      ioredis: 5.10.1
+      zod: 3.25.76
 
   abort-controller@3.0.0:
     dependencies:

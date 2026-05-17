@@ -88,6 +88,10 @@ jobs:
           cache: pnpm
           cache-dependency-path: ${{ matrix.service }}/pnpm-lock.yaml
 
+      - name: Build xzawedShared
+        working-directory: xzawedShared
+        run: pnpm install && pnpm build
+
       - name: Install
         working-directory: ${{ matrix.service }}
         run: pnpm install --frozen-lockfile
