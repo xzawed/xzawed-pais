@@ -34,7 +34,7 @@ export function McpPanel(): React.JSX.Element {
     try {
       await window.electronAPI?.mcpAdd(config)
       const { setMcpServers: setServers, setMcpStatus: setStatus } = useIntegrationsStore.getState()
-      setServers([...mcp.servers, config])
+      setServers([...useIntegrationsStore.getState().mcp.servers, config])
       setStatus(rec.name, 'running')
     } finally {
       setLoading(null)
@@ -59,9 +59,14 @@ export function McpPanel(): React.JSX.Element {
   }
 
   async function remove(id: string): Promise<void> {
-    await window.electronAPI?.mcpRemove(id)
-    const { setMcpServers: setServers } = useIntegrationsStore.getState()
-    setServers(mcp.servers.filter((s) => s.id !== id))
+    setLoading(id)
+    try {
+      await window.electronAPI?.mcpRemove(id)
+      const { setMcpServers: setServers } = useIntegrationsStore.getState()
+      setServers(useIntegrationsStore.getState().mcp.servers.filter((s) => s.id !== id))
+    } finally {
+      setLoading(null)
+    }
   }
 
   async function addCustom(): Promise<void> {
@@ -75,7 +80,7 @@ export function McpPanel(): React.JSX.Element {
     try {
       await window.electronAPI?.mcpAdd(config)
       const { setMcpServers: setServers, setMcpStatus: setStatus } = useIntegrationsStore.getState()
-      setServers([...mcp.servers, config])
+      setServers([...useIntegrationsStore.getState().mcp.servers, config])
       setStatus(id, 'running')
       setForm({ name: '', command: 'npx', args: '', env: '' })
       setTab('installed')
@@ -129,7 +134,7 @@ export function McpPanel(): React.JSX.Element {
                 <button className="panel-btn panel-btn--ghost" disabled={loading === s.id} onClick={() => void toggle(s.id)}>
                   {loading === s.id ? '...' : status === 'running' ? '중지' : '시작'}
                 </button>
-                <button className="panel-btn panel-btn--danger" onClick={() => void remove(s.id)}>제거</button>
+                <button className="panel-btn panel-btn--danger" disabled={loading === s.id} onClick={() => void remove(s.id)}>제거</button>
               </div>
             )
           })}
