@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import type { WebSocket } from 'ws'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { ClaudeRunner } from '../claude/runner.interface.js'
@@ -27,6 +27,7 @@ export async function sessionsRoutes(
     sessionCleanup,
     anthropicClient,
     claudeModel,
+    authHook,
   }: {
     store: SessionStore
     runner: ClaudeRunner
@@ -38,9 +39,12 @@ export async function sessionsRoutes(
     sessionCleanup: Map<string, () => void>
     anthropicClient?: Anthropic
     claudeModel?: string
+    authHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
   }
 ): Promise<void> {
-  app.post<{ Body: { userId: string } }>('/sessions', async (req, reply) => {
+  const routeOpts = authHook ? { preHandler: authHook } : {}
+
+  app.post<{ Body: { userId: string } }>('/sessions', routeOpts, async (req, reply) => {
     const { userId } = req.body
     const session = store.create(userId ?? 'anonymous', 'cli')
     messageStore.set(session.id, [])
@@ -114,7 +118,7 @@ export async function sessionsRoutes(
     return reply.status(201).send({ sessionId: session.id })
   })
 
-  app.get<{ Params: { id: string } }>('/sessions/:id/messages', async (req, reply) => {
+  app.get<{ Params: { id: string } }>('/sessions/:id/messages', routeOpts, async (req, reply) => {
     const session = store.findById(req.params.id)
     if (!session) return reply.status(404).send({ error: 'Session not found' })
     return messageStore.get(req.params.id) ?? []
@@ -122,6 +126,7 @@ export async function sessionsRoutes(
 
   app.post<{ Params: { id: string }; Body: { content: string } }>(
     '/sessions/:id/messages',
+    routeOpts,
     async (req, reply) => {
       const session = store.findById(req.params.id)
       if (!session) return reply.status(404).send({ error: 'Session not found' })
@@ -212,7 +217,7 @@ export async function sessionsRoutes(
     }
   )
 
-  app.get<{ Params: { id: string } }>('/sessions/:id/tasks', async (req, reply) => {
+  app.get<{ Params: { id: string } }>('/sessions/:id/tasks', routeOpts, async (req, reply) => {
     const session = store.findById(req.params.id)
     if (!session) return reply.status(404).send({ error: 'Session not found' })
     return { tasks: taskStore.findBySessionId(req.params.id) }
