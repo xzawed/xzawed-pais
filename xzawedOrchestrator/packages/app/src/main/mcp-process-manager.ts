@@ -78,7 +78,8 @@ export class McpProcessManager {
       this.processes.delete(id)
       this.statuses.set(id, 'stopped')
     })
-    proc.on('error', () => {
+    proc.on('error', (err) => {
+      console.error(`MCP server ${id} error:`, err)
       this.processes.delete(id)
       this.statuses.set(id, 'error')
     })
