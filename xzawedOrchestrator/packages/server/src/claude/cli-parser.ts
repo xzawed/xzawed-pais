@@ -1,9 +1,13 @@
 import type { Chunk } from '@xzawed/shared'
 
-export function drainBuffer(buffer: string, data: Buffer, onChunk: (c: Chunk) => void): string {
-  const updated = buffer + data.toString()
-  const lines = updated.split('\n')
+export function splitLines(buffer: string, incoming: string): [string[], string] {
+  const lines = (buffer + incoming).split('\n')
   const remainder = lines.pop() ?? ''
+  return [lines, remainder]
+}
+
+export function drainBuffer(buffer: string, data: Buffer, onChunk: (c: Chunk) => void): string {
+  const [lines, remainder] = splitLines(buffer, data.toString())
   for (const line of lines) {
     const chunk = parseCLILine(line)
     if (chunk) onChunk(chunk)
