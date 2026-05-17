@@ -1,5 +1,6 @@
 import type { Chunk, Message } from '@xzawed/shared'
 import type { ClaudeRunner, RunOptions } from './runner.interface.js'
+import { splitLines } from './cli-parser.js'
 
 export class HTTPRemoteRunner implements ClaudeRunner {
   constructor(private remoteUrl: string) {}
@@ -35,18 +36,13 @@ export class HTTPRemoteRunner implements ClaudeRunner {
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-
+        const [lines, remainder] = splitLines(buffer, decoder.decode(value, { stream: true }))
+        buffer = remainder
         for (const line of lines) {
           if (!line.trim()) continue
           try {
             yield JSON.parse(line) as Chunk
-          } catch {
-            // ignore unparseable lines
-          }
+          } catch { /* ignore unparseable lines */ }
         }
       }
 
