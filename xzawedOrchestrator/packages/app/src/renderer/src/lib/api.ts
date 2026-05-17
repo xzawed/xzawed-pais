@@ -13,10 +13,13 @@ export interface PostMessageResponse {
   status: 'accepted'
 }
 
-export async function createSession(baseUrl: string, userId: string): Promise<CreateSessionResponse> {
+export async function createSession(baseUrl: string, userId: string, githubToken?: string): Promise<CreateSessionResponse> {
   const res = await fetch(`${baseUrl}/sessions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(githubToken ? { 'X-GitHub-Token': githubToken } : {}),
+    },
     body: JSON.stringify({ userId }),
   })
   if (!res.ok) throw new Error(`createSession failed: ${res.status}`)
@@ -26,11 +29,15 @@ export async function createSession(baseUrl: string, userId: string): Promise<Cr
 export async function postMessage(
   baseUrl: string,
   sessionId: string,
-  content: string
+  content: string,
+  githubToken?: string
 ): Promise<PostMessageResponse> {
   const res = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(githubToken ? { 'X-GitHub-Token': githubToken } : {}),
+    },
     body: JSON.stringify({ content }),
   })
   if (!res.ok) throw new Error(`postMessage failed: ${res.status}`)
