@@ -11,6 +11,9 @@ importers:
 
   .:
     dependencies:
+      '@xzawed/agent-streams':
+        specifier: file:../xzawedShared
+        version: file:../xzawedShared(ioredis@5.10.1)(zod@3.25.76)
       chokidar:
         specifier: ^3.6.0
         version: 3.6.0
@@ -406,6 +409,12 @@ packages:
 
   '@vitest/utils@3.2.4':
     resolution: {integrity: sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA==}
+
+  '@xzawed/agent-streams@file:../xzawedShared':
+    resolution: {directory: ../xzawedShared, type: directory}
+    peerDependencies:
+      ioredis: '>=5'
+      zod: '>=3'
 
   abstract-logging@2.0.1:
     resolution: {integrity: sha512-2BjRTZxTPvheOvGbBslFSYOUkr+SjPtOnrLP33f+VIWLzezQpZcqVg7ja3L4dBXmzzgwT+a029jRx5PCi3JuiA==}
@@ -1108,6 +1117,11 @@ snapshots:
       '@vitest/pretty-format': 3.2.4
       loupe: 3.2.1
       tinyrainbow: 2.0.0
+
+  '@xzawed/agent-streams@file:../xzawedShared(ioredis@5.10.1)(zod@3.25.76)':
+    dependencies:
+      ioredis: 5.10.1
+      zod: 3.25.76
 
   abstract-logging@2.0.1: {}
 

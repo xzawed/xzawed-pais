@@ -9,6 +9,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@xzawed/agent-streams": "file:../xzawedShared",
     "chokidar": "^3.6.0",
     "fastify": "^5.0.0",
     "ioredis": "^5.4.1",
