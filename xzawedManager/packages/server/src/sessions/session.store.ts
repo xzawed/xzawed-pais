@@ -9,6 +9,9 @@ export interface SessionEntry {
   infoReject: ((reason: Error) => void) | null
 }
 
+const dbErr = (op: string, id: string) => (err: unknown) =>
+  console.error(`[SessionStore] ${op} failed for ${id}:`, err)
+
 export class SessionStore {
   private readonly sessions = new Map<string, SessionEntry>()
 
@@ -17,7 +20,7 @@ export class SessionStore {
   create(sessionId: string): void {
     if (this.sessions.has(sessionId)) throw new Error(`Session ${sessionId} already exists`)
     this.sessions.set(sessionId, { state: 'idle', abortController: new AbortController(), infoResolve: null, infoReject: null })
-    void this.repo?.insert(sessionId)
+    void this.repo?.insert(sessionId).catch(dbErr('insert', sessionId))
   }
 
   get(sessionId: string): SessionEntry | undefined {
@@ -29,7 +32,7 @@ export class SessionStore {
     if (!session) throw new Error(`Session ${sessionId} not found`)
     if (session.state === 'waiting_info') throw new Error(`Session ${sessionId} is already waiting for info`)
     session.state = 'waiting_info'
-    void this.repo?.updateState(sessionId, 'waiting_info')
+    void this.repo?.updateState(sessionId, 'waiting_info').catch(dbErr('updateState(waiting_info)', sessionId))
     return new Promise<string>((resolve, reject) => {
       session.infoResolve = resolve
       session.infoReject = reject
@@ -43,7 +46,7 @@ export class SessionStore {
     session.infoResolve = null
     session.infoReject = null
     session.state = 'running'
-    void this.repo?.updateState(sessionId, 'running')
+    void this.repo?.updateState(sessionId, 'running').catch(dbErr('updateState(running)', sessionId))
   }
 
   abort(sessionId: string): void {
@@ -58,7 +61,7 @@ export class SessionStore {
       entry.infoReject = null
     }
     entry.state = 'idle'
-    void this.repo?.updateState(sessionId, 'idle')
+    void this.repo?.updateState(sessionId, 'idle').catch(dbErr('updateState(idle)', sessionId))
   }
 
   getAbortSignal(sessionId: string): AbortSignal | undefined {
@@ -73,6 +76,6 @@ export class SessionStore {
       entry.infoReject = null
     }
     this.sessions.delete(sessionId)
-    void this.repo?.remove(sessionId)
+    void this.repo?.remove(sessionId).catch(dbErr('remove', sessionId))
   }
 }

@@ -80,7 +80,9 @@ export async function sessionsRoute(
               sessionStore.delete(sessionId)
               activeConsumers.delete(sessionId)
             }
-          })()
+          })().catch((err: unknown) => {
+            app.log.error({ err, sessionId }, 'Unexpected task runner error')
+          })
         } else if (msg.type === 'info_response') {
           sessionStore.resolveInfo(sessionId, msg.payload.answer)
         } else if (msg.type === 'abort') {
@@ -88,6 +90,8 @@ export async function sessionsRoute(
           consumer.stop()
           activeConsumers.delete(sessionId)
         }
+      }).catch((err: unknown) => {
+        app.log.error({ err, sessionId }, 'StreamConsumer error')
       })
 
       return reply.status(202).send({ sessionId, status: 'started' })
