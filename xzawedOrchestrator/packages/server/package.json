@@ -20,12 +20,14 @@
     "@xzawed/shared": "workspace:*",
     "fastify": "^5.0.0",
     "ioredis": "^5.4.0",
+    "pg": "^8.21.0",
     "shescape": "^2.1.12",
     "ssh2": "^1.17.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/pg": "^8.20.0",
     "@types/ssh2": "^1.15.5",
     "@types/ws": "^8.18.1",
     "tsx": "^4.0.0",

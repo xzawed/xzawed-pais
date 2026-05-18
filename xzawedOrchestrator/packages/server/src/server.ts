@@ -14,6 +14,7 @@ import { StreamConsumer } from './streams/consumer.js'
 import { healthRoutes } from './api/health.route.js'
 import { sessionsRoutes } from './api/sessions.route.js'
 import { sessionWsRoutes } from './ws/session.ws.js'
+import { createPool, runMigrations, closePool } from './db/pool.js'
 
 const JWT_ERRORS: Record<string, string> = {
   FST_JWT_NO_AUTHORIZATION_IN_HEADER: 'Missing token',
@@ -22,6 +23,13 @@ const JWT_ERRORS: Record<string, string> = {
 
 export async function buildServer(config: Config, runnerOverride?: ClaudeRunner): Promise<FastifyInstance> {
   const app = Fastify({ logger: config.mode !== 'local' })
+
+  if (config.databaseUrl) {
+    const pool = createPool(config.databaseUrl)
+    await runMigrations(pool)
+    app.addHook('onClose', async () => { await closePool() })
+  }
+
   const store = new SessionStore()
   const runner = runnerOverride ?? createRunner(config)
   const manager = new ManagerClient(config.managerUrl)
