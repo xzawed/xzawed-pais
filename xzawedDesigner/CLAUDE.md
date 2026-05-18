@@ -91,8 +91,13 @@ MODE=local
 - `claude/runner.ts`의 `parseResponse`는 JSON 펜스 제거 후 `ComponentSpec[]` 파싱
 - Manager 연결: `xzawedManager/packages/server/src/tools/design-ui.ts` (`createDesignUiHandler`)
 
+## 보안 구현 패턴
+
+- **Redis 메시지 검증**: 수신 메시지는 `XxxMessageSchema.safeParse()`로 검증. 실패 시 xack 후 skip
+- **Redis xack 보장**: `handler()` 호출을 `try/finally`로 감싸 예외 발생 시에도 xack 실행 (PEL 누수 방지)
+
 ## xzawed 생태계 연결
 
-전체 suite: `f:\DEVELOPMENT\SOURCE\CLAUDE\xzawedPAIS\`
+전체 suite: 현재 저장소 루트
 - 에이전트 간 통신: Redis Streams (ioredis), 포트 3002–3008
 - 설계 스펙: `docs/services/designer.md`

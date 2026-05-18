@@ -72,7 +72,7 @@ packages/
 interface ToolHandler<TInput = unknown, TOutput = unknown> {
   name: string
   description: string
-  inputSchema: z.ZodType<TInput>
+  inputSchema: Anthropic.Tool['input_schema']  // JSON Schema (Zod 아님 — Anthropic API에 직접 전달)
   execute(input: TInput, sessionId: string): Promise<TOutput>
 }
 ```
@@ -112,4 +112,4 @@ AUTH=none                # none | jwt
                                           Planner / Developer / Designer / Tester / Builder / Watcher / Security
 ```
 
-관련 프로젝트: `f:\DEVELOPMENT\SOURCE\CLAUDE\xzawedPAIS\` — 전체 9개 서비스 모두 구현 완료
+관련 프로젝트: 현재 저장소 루트 — 전체 9개 서비스 모두 구현 완료

@@ -133,6 +133,8 @@
 - 모바일 클라이언트
 - 청구·구독 관리
 
+> **[2026-05-18 업데이트]** 이 문서는 v0.1 초기 범위를 기록합니다. xzawedManager 및 하위 에이전트 8개(Planner, Developer, Designer, Tester, Builder, Watcher, Security + GitHub Ops) 모두 현재 구현 완료되었습니다.
+
 ---
 
 ## 관련 문서

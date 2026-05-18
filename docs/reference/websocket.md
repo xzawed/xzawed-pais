@@ -248,7 +248,7 @@ function connectWithRetry(sessionId, maxRetries = 5) {
 
     ws.onclose = (event) => {
       if (retries < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, retries), 30000);
+        const delay = Math.min(1000 * Math.pow(2, retries), 30000) * (0.5 + Math.random() * 0.5); // 최대 30초, jitter 포함 — thundering herd 방지
         console.log(`${delay}ms 후 재연결 시도 (${retries + 1}/${maxRetries})`);
         setTimeout(connect, delay);
         retries++;

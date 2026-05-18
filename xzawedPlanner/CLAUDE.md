@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 xzawedPlanner는 xzawed 멀티 에이전트 시스템의 **계획 에이전트**다. xzawedManager로부터 작업 지시를 받아 실행 가능한 단계별 계획으로 분해하고 반환한다.
 
-현재 상태: **구현 완료**
+현재 상태: **구현 완료 (33/33 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -114,3 +114,8 @@ MODE=local
 ## xzawedManager와의 연결
 
 xzawedManager의 `tools/plan-task.ts` → `createPlanTaskHandler(redisUrl)`으로 연결 완료.
+
+## 보안 구현 패턴
+
+- **Redis 메시지 검증**: 수신 메시지는 `XxxMessageSchema.safeParse()`로 검증. 실패 시 xack 후 skip
+- **Redis xack 보장**: `handler()` 호출을 `try/finally`로 감싸 예외 발생 시에도 xack 실행 (PEL 누수 방지)

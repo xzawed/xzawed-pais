@@ -81,7 +81,7 @@ interface FileEvent { path: string; event: 'add' | 'change' | 'unlink'; timestam
 REDIS_URL=redis://localhost:6379
 PORT=3007
 MODE=local
-WORKSPACE_ROOT=f:/DEVELOPMENT/SOURCE
+WORKSPACE_ROOT=/path/to/workspace  # 절대경로 필수
 MAX_WATCHERS=10
 DEBOUNCE_MS=300
 ```
@@ -96,6 +96,6 @@ DEBOUNCE_MS=300
 
 ## xzawed 생태계 연결
 
-전체 suite: `f:\DEVELOPMENT\SOURCE\CLAUDE\xzawedPAIS\`
+전체 suite: 현재 저장소 루트
 - 에이전트 간 통신: Redis Streams (ioredis), 포트 3002–3008
 - 설계 스펙: `docs/services/watcher.md`

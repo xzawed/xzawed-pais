@@ -106,11 +106,8 @@ XREADGROUP GROUP orchestrator-consumers consumer-{pid}
 
 handler(message) 실행
   │
-  ├── 성공 → XACK manager:to-orchestrator:{sessionId} orchestrator-consumers {id}
-  │          (메시지가 PEL에서 제거됨)
-  │
-  └── 실패 (예외 발생) → XACK 호출 안 됨
-                          (메시지가 PEL에 남아 있음)
+  └── 성공/실패 무관하게 → XACK manager:to-orchestrator:{sessionId} orchestrator-consumers {id}
+                           (항상 ACK — PEL 누수 방지)
 ```
 
 `>` 기호는 "아직 다른 컨슈머에게 전달되지 않은 새 메시지만"을 의미합니다. 재시작 후에는 PEL(Pending Entry List)을 확인하여 처리되지 않은 메시지를 재처리합니다.
@@ -175,8 +172,11 @@ export class StreamConsumer {
         'STREAMS', `manager:to-orchestrator:${sessionId}`, '>'
       )
       for (const [id, msg] of entries) {
-        await handler(msg)
-        await redis.xack(streamKey, GROUP, id)  // 성공 시에만 ACK
+        try {
+          await handler(msg)
+        } finally {
+          await redis.xack(streamKey, GROUP, id)  // 성공/실패 무관하게 항상 ACK — PEL 누수 방지
+        }
       }
     }
   }
