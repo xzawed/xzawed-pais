@@ -40,4 +40,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pluginInstall:   (pkg: string, type: 'claude-code' | 'xzawed'): Promise<void> => ipcRenderer.invoke('plugin:install', pkg, type),
   pluginToggle:    (id: string): Promise<void> => ipcRenderer.invoke('plugin:toggle', id),
   pluginUninstall: (id: string): Promise<void> => ipcRenderer.invoke('plugin:uninstall', id),
+
+  // Auth token (safeStorage)
+  tokenGet:   (): Promise<string | null> => ipcRenderer.invoke('token:get'),
+  tokenSet:   (token: string): Promise<void> => ipcRenderer.invoke('token:set', token),
+  tokenClear: (): Promise<void> => ipcRenderer.invoke('token:clear'),
 })

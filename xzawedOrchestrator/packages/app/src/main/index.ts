@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import { join } from 'node:path'
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs'
 import { ServerManager } from './server-manager.js'
 import { McpProcessManager } from './mcp-process-manager.js'
 import { PluginManager } from './plugin-manager.js'
@@ -109,6 +109,42 @@ ipcMain.handle('github:list-repos', async () => {
     private: r.private,
     defaultBranch: r.default_branch,
   }))
+})
+
+// ── Auth token (safeStorage) ─────────────────────────────────────────
+const TOKEN_FILE = 'auth-token.enc'
+
+function getTokenPath(): string {
+  return join(app.getPath('userData'), TOKEN_FILE)
+}
+
+ipcMain.handle('token:get', (): string | null => {
+  const path = getTokenPath()
+  if (!existsSync(path)) return null
+  try {
+    const encrypted = readFileSync(path)
+    return safeStorage.isEncryptionAvailable()
+      ? safeStorage.decryptString(encrypted)
+      : encrypted.toString('utf-8')
+  } catch {
+    return null
+  }
+})
+
+ipcMain.handle('token:set', (_e, token: string): void => {
+  const dir = app.getPath('userData')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  const data = safeStorage.isEncryptionAvailable()
+    ? safeStorage.encryptString(token)
+    : Buffer.from(token, 'utf-8')
+  writeFileSync(getTokenPath(), data)
+})
+
+ipcMain.handle('token:clear', (): void => {
+  const path = getTokenPath()
+  if (existsSync(path)) {
+    try { unlinkSync(path) } catch { /* ignore */ }
+  }
 })
 
 // ── MCP ──────────────────────────────────────────────────────────────

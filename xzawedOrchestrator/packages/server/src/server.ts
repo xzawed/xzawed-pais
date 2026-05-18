@@ -1,7 +1,10 @@
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify'
 import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
 import jwtPlugin from '@fastify/jwt'
+import staticPlugin from '@fastify/static'
 import Anthropic from '@anthropic-ai/sdk'
 import type { WebSocket } from 'ws'
 import type { Config } from './config.js'
@@ -84,6 +87,14 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     userAuthHook,
   })
   await app.register(sessionWsRoutes, { store, wsSessions, sessionConsumers, sessionCleanup, authHook, userAuthHook })
+
+  if (config.serveWeb) {
+    const webDist = join(fileURLToPath(import.meta.url), '../../../../web/dist')
+    await app.register(staticPlugin, { root: webDist, prefix: '/' })
+    app.setNotFoundHandler((_req, reply) => {
+      void reply.sendFile('index.html')
+    })
+  }
 
   return app
 }

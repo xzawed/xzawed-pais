@@ -2,6 +2,23 @@ name: xzawed-pais
 
 services:
   # ── Infrastructure ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: xzawed
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: xzawed_orchestrator
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xzawed"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     ports:
@@ -28,6 +45,8 @@ services:
       PORT: "3000"
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
 
@@ -171,4 +190,5 @@ services:
 
 volumes:
   redis-data:
+  postgres-data:
   workspace:

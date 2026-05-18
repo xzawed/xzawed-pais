@@ -27,6 +27,10 @@ interface ElectronAPI {
   pluginInstall(pkg: string, type: 'claude-code' | 'xzawed'): Promise<void>
   pluginToggle(id: string): Promise<void>
   pluginUninstall(id: string): Promise<void>
+  // Auth token
+  tokenGet(): Promise<string | null>
+  tokenSet(token: string): Promise<void>
+  tokenClear(): Promise<void>
 }
 
 declare global {

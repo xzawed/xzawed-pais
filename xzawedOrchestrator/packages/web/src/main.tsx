@@ -1,6 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router-dom'
+import { BrowserRouter } from 'react-router-dom'
 import './styles/globals.css'
 import { App } from './App.js'
 
@@ -9,8 +9,8 @@ if (!root) throw new Error('Root element not found')
 
 createRoot(root).render(
   <StrictMode>
-    <MemoryRouter initialEntries={['/']}>
+    <BrowserRouter>
       <App />
-    </MemoryRouter>
+    </BrowserRouter>
   </StrictMode>
 )
