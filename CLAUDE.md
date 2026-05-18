@@ -164,6 +164,14 @@ PR #9(2026-05-17) 전체 보안 감사를 통해 수립된 공통 보안 패턴.
 - 민감 자격증명(토큰, 키)은 렌더러에 노출 금지 — main 프로세스에서 직접 API 호출
 - MCP `args`는 런타임별 위험 플래그(`-e`, `-c`, `--eval`, URL) 차단
 
+### SSRF / Open Redirect 방지
+- `fetch` URL은 반드시 `new URL(url)` 파싱 후 `protocol`이 `http:` 또는 `https:`임을 검증 (http-remote-runner.ts, manager.client.ts)
+- `shell.openExternal` 호출 전 URL 접두사 검증 필수 — 예상 접두사가 아니면 즉시 에러 (github-oauth-handler.ts)
+
+### Redis 안정성
+- `handler(msg)` 호출은 반드시 `try/finally`로 감싸 `xack` 보장 — 핸들러 예외 시 PEL 누수 방지
+- `JSON.parse` + `onMessage` 모두 `try/catch/finally`로 감싸 메시지 처리 실패 시에도 `xack` 실행
+
 ## SonarCloud 트러블슈팅
 
 SonarCloud는 **GitHub App Automatic Analysis** 방식으로 동작한다. CI 워크플로우에 Sonar 스텝이 없다.

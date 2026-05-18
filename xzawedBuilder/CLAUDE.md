@@ -97,6 +97,7 @@ BUILD_TIMEOUT_MS=120000
 - **커맨드 인젝션 방지**: `executor.ts`는 `spawn(bin, args, {shell:false})` 사용 — `shell:true` 금지
 - **Redis 커맨드 검증**: `builder.ts`의 `validateBuildCommand()` — allowlist + 셸 메타문자 차단
 - **`package.json scripts` 미신뢰**: `detector.ts`는 `scripts.build` 값을 읽지 않음 — 의존성 기반 하드코딩 명령어만 반환
+- **빈 명령어 가드** (`executor.ts`): `command.trim()` 결과가 빈 문자열이면 즉시 `throw` — `spawn(undefined, ...)` 호출 방지
 
 ## xzawed 생태계 연결
 
