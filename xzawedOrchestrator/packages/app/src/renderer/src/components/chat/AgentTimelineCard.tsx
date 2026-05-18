@@ -86,7 +86,6 @@ export function AgentTimelineCard({ message, streaming = false }: Props): React.
             key={`${step.agentName}-${i}`}
             step={step}
             index={i}
-            isLast={i === steps.length - 1}
             streaming={streaming}
           />
         ))}
@@ -98,7 +97,6 @@ export function AgentTimelineCard({ message, streaming = false }: Props): React.
 function TimelineStep({ step, index, streaming }: {
   step: AgentStep
   index: number
-  isLast: boolean
   streaming: boolean
 }): React.JSX.Element {
   const meta = AGENT_META[step.agentName]
