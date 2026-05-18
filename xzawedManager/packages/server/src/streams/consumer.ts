@@ -64,7 +64,7 @@ export class StreamConsumer {
     const dataIdx = fields.indexOf('data')
     if (dataIdx === -1) return null
     try {
-      const raw: unknown = JSON.parse(fields[dataIdx + 1]!)
+      const raw: unknown = JSON.parse(fields[dataIdx + 1])
       const parsed = OrchestratorToManagerMessageSchema.safeParse(raw)
       if (!parsed.success) {
         console.error(
