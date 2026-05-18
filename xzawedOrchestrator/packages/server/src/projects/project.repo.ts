@@ -53,7 +53,8 @@ function toSlug(name: string): string {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+    .replace(/^-+/, '')
+    .replace(/-+$/, '')
     .slice(0, 60)
 }
 
@@ -103,6 +104,15 @@ export class ProjectRepo {
     const { rows } = await this.pool.query<ProjectRow>(
       'SELECT * FROM projects WHERE id = $1',
       [id]
+    )
+    const row = rows[0]
+    return row ? rowToProject(row) : undefined
+  }
+
+  async findByIdAndUser(id: string, userId: string): Promise<Project | undefined> {
+    const { rows } = await this.pool.query<ProjectRow>(
+      'SELECT * FROM projects WHERE id = $1 AND user_id = $2',
+      [id, userId]
     )
     const row = rows[0]
     return row ? rowToProject(row) : undefined

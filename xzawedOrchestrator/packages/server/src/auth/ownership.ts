@@ -9,8 +9,8 @@ export async function assertProjectOwner(
   reply: FastifyReply
 ): Promise<Project | false> {
   const repo = new ProjectRepo(pool)
-  const project = await repo.findById(projectId)
-  if (!project || project.userId !== userId) {
+  const project = await repo.findByIdAndUser(projectId, userId)
+  if (!project) {
     await reply.status(404).send({ error: 'Project not found' })
     return false
   }
