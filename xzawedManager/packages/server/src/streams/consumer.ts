@@ -63,8 +63,10 @@ export class StreamConsumer {
   ): OrchestratorToManagerMessage | null {
     const dataIdx = fields.indexOf('data')
     if (dataIdx === -1) return null
+    const rawStr = fields[dataIdx + 1]
+    if (rawStr === undefined) return null
     try {
-      const raw: unknown = JSON.parse(fields[dataIdx + 1])
+      const raw: unknown = JSON.parse(rawStr)
       const parsed = OrchestratorToManagerMessageSchema.safeParse(raw)
       if (!parsed.success) {
         console.error(
