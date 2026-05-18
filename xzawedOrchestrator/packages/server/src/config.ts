@@ -15,6 +15,7 @@ export interface Config {
   redisUrl: string
   managerUrl: string
   databaseUrl?: string
+  userJwtSecret?: string
 }
 
 export function loadConfig(): Config {
@@ -49,5 +50,6 @@ export function loadConfig(): Config {
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
     managerUrl: process.env.MANAGER_URL ?? 'http://localhost:3001',
     databaseUrl: process.env.DATABASE_URL,
+    userJwtSecret: process.env.USER_JWT_SECRET,
   }
 }
