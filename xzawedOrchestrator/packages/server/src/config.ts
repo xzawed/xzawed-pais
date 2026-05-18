@@ -34,7 +34,7 @@ export function loadConfig(): Config {
   }
 
   return {
-    port: parseInt(process.env.PORT ?? '3000', 10),
+    port: Number.parseInt(process.env.PORT ?? '3000', 10),
     mode: (process.env.MODE ?? 'local') as 'local' | 'remote',
     auth,
     serviceJwtSecret,
