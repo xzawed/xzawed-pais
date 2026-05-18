@@ -48,6 +48,7 @@ export function MessageInput({ onSend, disabled }: Props): React.JSX.Element {
       >
         <textarea
           ref={textareaRef}
+          data-testid="message-input"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -66,6 +67,7 @@ export function MessageInput({ onSend, disabled }: Props): React.JSX.Element {
           </span>
           <motion.button
             aria-label="메시지 전송"
+            data-testid="message-send-button"
             onClick={handleSend}
             disabled={!canSend}
             className="h-6 w-6 rounded flex items-center justify-center text-[11px] bg-accent text-white disabled:opacity-30 transition-colors"

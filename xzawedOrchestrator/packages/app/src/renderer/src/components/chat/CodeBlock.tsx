@@ -57,6 +57,7 @@ export function CodeBlock({ code, filename, lang, streaming = false }: Props): R
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <span className="font-mono text-[9px] text-fg-ghost">{filename ?? language}</span>
         <button
+          data-testid="code-copy-button"
           onClick={handleCopy}
           className="text-[9px] text-accent hover:text-fg transition-colors duration-150"
         >
