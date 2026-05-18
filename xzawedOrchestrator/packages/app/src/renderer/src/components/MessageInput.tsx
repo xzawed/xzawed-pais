@@ -65,6 +65,7 @@ export function MessageInput({ onSend, disabled }: Props): React.JSX.Element {
             {disabled ? '' : 'Enter 전송 · Shift+Enter 줄바꿈'}
           </span>
           <motion.button
+            aria-label="메시지 전송"
             onClick={handleSend}
             disabled={!canSend}
             className="h-6 w-6 rounded flex items-center justify-center text-[11px] bg-accent text-white disabled:opacity-30 transition-colors"
