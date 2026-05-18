@@ -71,6 +71,7 @@ export function Sidebar(): React.JSX.Element {
         <motion.button
           onClick={handleNewSession}
           disabled={isCreating}
+          data-testid="new-session-button"
           className="w-full rounded bg-accent py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-50 flex items-center justify-center gap-1"
           whileHover={{ y: -1 }}
           whileTap={{ scale: 0.98 }}

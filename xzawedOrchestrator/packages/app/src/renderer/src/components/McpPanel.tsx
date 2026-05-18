@@ -113,7 +113,7 @@ export function McpPanel(): React.JSX.Element {
   const installedIds = new Set(mcp.servers.map((s) => s.id))
 
   return (
-    <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5 bg-bg">
+    <div data-testid="mcp-panel" className="flex flex-1 flex-col gap-4 overflow-y-auto p-5 bg-bg">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="sm" onClick={() => setActivePanel('chat')}>← 채팅으로</Button>
         <h2 className="text-[13px] font-semibold text-fg">🔌 MCP 서버</h2>

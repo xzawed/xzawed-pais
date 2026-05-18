@@ -34,6 +34,8 @@ export function ActivityBar(): React.JSX.Element {
           <TooltipTrigger asChild>
             <button
               onClick={toggleSettings}
+              aria-label="설정"
+              data-testid="settings-trigger"
               className="relative flex h-8 w-8 items-center justify-center rounded text-base text-fg-ghost transition-all duration-150 hover:scale-110 hover:bg-border hover:text-fg"
             >
               ⚙
@@ -60,6 +62,8 @@ function ActivityButton({ item, isActive, onClick }: {
       <TooltipTrigger asChild>
         <button
           onClick={onClick}
+          aria-label={item.label}
+          data-testid={`nav-${item.panel}`}
           className={cn(
             'relative flex h-8 w-8 items-center justify-center rounded text-base transition-all duration-150',
             isActive
