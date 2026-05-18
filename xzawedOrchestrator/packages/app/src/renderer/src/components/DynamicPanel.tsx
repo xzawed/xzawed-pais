@@ -137,7 +137,7 @@ function FormPanel({ spec }: FormPanelProps): React.JSX.Element {
   }
 
   return (
-    <div>
+    <div className="flex flex-1 flex-col">
       <div className="border-b border-border px-4 py-2 text-[13px] font-semibold text-fg">
         {spec.title ?? 'Form'}
       </div>
