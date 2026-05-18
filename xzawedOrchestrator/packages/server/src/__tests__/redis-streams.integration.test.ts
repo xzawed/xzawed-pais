@@ -75,6 +75,11 @@ describe.skipIf(!hasRedis)('Redis Streams Integration', () => {
     const inboundKey = `manager:to-orchestrator:${sessionId}`
     usedKeys.push(inboundKey)
 
+    // Create consumer group on empty stream first so that '$' resolves to 0-0.
+    // Messages added after group creation will have IDs > 0-0 and be visible to '>'.
+    const consumer = new StreamConsumer(REDIS_URL)
+    await consumer.ensureGroup(sessionId)
+
     const message: ManagerToOrchestratorMessage = {
       sessionId,
       messageId: randomUUID(),
@@ -86,8 +91,6 @@ describe.skipIf(!hasRedis)('Redis Streams Integration', () => {
     await redis.xadd(inboundKey, '*', 'data', JSON.stringify(message))
 
     const received: ManagerToOrchestratorMessage[] = []
-
-    const consumer = new StreamConsumer(REDIS_URL)
 
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
