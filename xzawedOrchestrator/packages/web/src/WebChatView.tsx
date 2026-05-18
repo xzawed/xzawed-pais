@@ -16,7 +16,11 @@ interface Props {
   serverUrl: string
 }
 
-export function WebChatView({ serverUrl }: Props): React.JSX.Element {
+function authHeaders(token: string | null): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+export function WebChatView({ serverUrl }: Readonly<Props>): React.JSX.Element {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
   const { accessToken } = useAuthStore()
@@ -39,10 +43,7 @@ export function WebChatView({ serverUrl }: Props): React.JSX.Element {
   const initSession = async (): Promise<string> => {
     const res = await fetch(`${serverUrl}/sessions`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(accessToken) },
       body: JSON.stringify({ projectId }),
     })
     if (!res.ok) throw new Error('Failed to create session')
@@ -92,10 +93,7 @@ export function WebChatView({ serverUrl }: Props): React.JSX.Element {
 
       await fetch(`${serverUrl}/sessions/${sid}/messages`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json', ...authHeaders(accessToken) },
         body: JSON.stringify({ content: text }),
       })
     } catch (err) {

@@ -8,7 +8,7 @@ interface Props {
   onLogout: () => void
 }
 
-export function ProjectsPage({ serverUrl, onSelectProject, onLogout }: Props): React.JSX.Element {
+export function ProjectsPage({ serverUrl, onSelectProject, onLogout }: Readonly<Props>): React.JSX.Element {
   const { user, accessToken, logout } = useAuthStore()
   const { projects, isLoading, fetchProjects, createProject } = useProjectsStore()
   const [showCreate, setShowCreate] = useState(false)
@@ -27,7 +27,7 @@ export function ProjectsPage({ serverUrl, onSelectProject, onLogout }: Props): R
     onLogout()
   }
 
-  const handleCreate = async (e: React.FormEvent): Promise<void> => {
+  const handleCreate = async (e: React.SyntheticEvent): Promise<void> => {
     e.preventDefault()
     setCreateError(null)
     try {

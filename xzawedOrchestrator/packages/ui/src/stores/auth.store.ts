@@ -7,6 +7,23 @@ export interface AuthUser {
   displayName?: string | undefined
 }
 
+async function fetchAuth(
+  url: string,
+  body: Record<string, string | undefined>,
+  defaultError: string,
+): Promise<{ user: AuthUser; accessToken: string }> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const b = (await res.json()) as { error?: string }
+    throw new Error(b.error ?? defaultError)
+  }
+  return (await res.json()) as { user: AuthUser; accessToken: string }
+}
+
 interface AuthState {
   user: AuthUser | null
   accessToken: string | null
@@ -25,16 +42,11 @@ export const useAuthStore = create<AuthState>()((set) => ({
   login: async (serverUrl, email, password) => {
     set({ isLoading: true })
     try {
-      const res = await fetch(`${serverUrl}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      if (!res.ok) {
-        const body = (await res.json()) as { error?: string }
-        throw new Error(body.error ?? 'Login failed')
-      }
-      const { user, accessToken } = (await res.json()) as { user: AuthUser; accessToken: string }
+      const { user, accessToken } = await fetchAuth(
+        `${serverUrl}/auth/login`,
+        { email, password },
+        'Login failed',
+      )
       await tokenStorage.setAccessToken(accessToken)
       set({ user, accessToken, isLoading: false })
     } catch (err) {
@@ -46,16 +58,11 @@ export const useAuthStore = create<AuthState>()((set) => ({
   register: async (serverUrl, email, password, displayName) => {
     set({ isLoading: true })
     try {
-      const res = await fetch(`${serverUrl}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, displayName }),
-      })
-      if (!res.ok) {
-        const body = (await res.json()) as { error?: string }
-        throw new Error(body.error ?? 'Registration failed')
-      }
-      const { user, accessToken } = (await res.json()) as { user: AuthUser; accessToken: string }
+      const { user, accessToken } = await fetchAuth(
+        `${serverUrl}/auth/register`,
+        { email, password, displayName },
+        'Registration failed',
+      )
       await tokenStorage.setAccessToken(accessToken)
       set({ user, accessToken, isLoading: false })
     } catch (err) {
