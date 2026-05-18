@@ -14,6 +14,7 @@ import { StreamConsumer } from './streams/consumer.js'
 import { healthRoutes } from './api/health.route.js'
 import { sessionsRoutes } from './api/sessions.route.js'
 import { sessionWsRoutes } from './ws/session.ws.js'
+import { authRoutes } from './api/auth.route.js'
 import { createPool, runMigrations, closePool } from './db/pool.js'
 
 const JWT_ERRORS: Record<string, string> = {
@@ -24,9 +25,10 @@ const JWT_ERRORS: Record<string, string> = {
 export async function buildServer(config: Config, runnerOverride?: ClaudeRunner): Promise<FastifyInstance> {
   const app = Fastify({ logger: config.mode !== 'local' })
 
+  let dbPool = null as import('pg').Pool | null
   if (config.databaseUrl) {
-    const pool = createPool(config.databaseUrl)
-    await runMigrations(pool)
+    dbPool = createPool(config.databaseUrl)
+    await runMigrations(dbPool)
     app.addHook('onClose', async () => { await closePool() })
   }
 
@@ -61,6 +63,9 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
 
   await app.register(websocket)
   await app.register(healthRoutes)
+  if (dbPool && config.userJwtSecret) {
+    await app.register(authRoutes, { pool: dbPool, userJwtSecret: config.userJwtSecret })
+  }
   await app.register(sessionsRoutes, {
     store, runner, wsSessions, manager,
     redisUrl: config.redisUrl, producer, sessionConsumers, sessionCleanup,

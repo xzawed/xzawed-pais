@@ -17,15 +17,18 @@
     "@fastify/jwt": "^10.0.0",
     "@fastify/websocket": "^11.0.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
+    "@node-rs/argon2": "^2.0.2",
     "@xzawed/shared": "workspace:*",
     "fastify": "^5.0.0",
     "ioredis": "^5.4.0",
+    "jsonwebtoken": "^9.0.3",
     "pg": "^8.21.0",
     "shescape": "^2.1.12",
     "ssh2": "^1.17.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.0.0",
     "@types/pg": "^8.20.0",
     "@types/ssh2": "^1.15.5",
