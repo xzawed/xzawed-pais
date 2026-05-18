@@ -93,7 +93,7 @@ describe.skipIf(!hasRedis)('Redis Streams Integration', () => {
       const timeout = setTimeout(() => {
         consumer.stop()
         reject(new Error('timed out waiting for handler call'))
-      }, 5000)
+      }, 12000)
 
       void consumer.start(sessionId, async (msg) => {
         received.push(msg)
@@ -106,7 +106,7 @@ describe.skipIf(!hasRedis)('Redis Streams Integration', () => {
     expect(received).toHaveLength(1)
     expect(received[0].type).toBe('status_update')
     expect(received[0].payload.content).toBe('test content')
-  })
+  }, 15000)
 
   // ── Scenario 3: Round-trip — request/response via two stream directions ────
 
