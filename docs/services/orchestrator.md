@@ -45,6 +45,12 @@ src/
 | `api` | Anthropic SDK 직접 호출 | API 키, 토큰당 과금 |
 | `remote` | 원격 서버 CLI (SSH/HTTP) | 팀 서버 배포 |
 
+#### Claude 스트리밍 구현
+- **API 모드**: `messages.stream()` → `content_block_delta` 이벤트 → WebSocket push
+- **CLI 모드**: `--output-format stream-json` NDJSON 파싱
+- **HTTP 원격**: fetch ReadableStream NDJSON 스트리밍
+- **SSH 원격**: SSH exec + stream-json 파싱
+
 ## Redis Streams 인터페이스
 
 **발신:** `orchestrator:to-manager:{sessionId}`
@@ -94,6 +100,8 @@ PORT=3000
 MODE=local                     # local | remote
 CLAUDE_MODE=cli                # cli | api | remote
 AUTH=none                      # none | jwt
+MANAGER_URL=http://localhost:3001  # xzawedManager URL
+SERVICE_JWT_SECRET=                # AUTH=jwt 시 필수 (32자 이상)
 ```
 
 ## 핵심 명령어

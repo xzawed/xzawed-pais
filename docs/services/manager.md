@@ -1,8 +1,8 @@
 # xzawedManager — 총관리자
 
-**역할:** xzawedOrchestrator로부터 작업 지시를 수신하고 Claude tool-calling 루프를 통해 7개 전문 에이전트에 위임한다.
+**역할:** xzawedOrchestrator로부터 작업 지시를 수신하고 Claude tool-calling 루프를 통해 8개 전문 에이전트에 위임한다.
 
-**포트:** 3001 | **상태:** 구현 완료 (51/51 테스트)
+**포트:** 3001 | **상태:** 구현 완료 (64/64 테스트)
 
 ---
 
@@ -18,7 +18,7 @@ xzawedManager/
             ├── server.ts           # Fastify HTTP (/health, port 3001)
             ├── streams/            # Redis consumer + producer
             ├── claude/runner.ts    # Claude tool-calling 루프
-            ├── tools/              # ToolHandler 7개
+            ├── tools/              # ToolHandler 8개
             ├── sessions/           # 세션 상태 추적
             └── api/                # health 라우트
 ```
@@ -48,14 +48,16 @@ xzawedManager/
 interface ToolHandler<TInput = unknown, TOutput = unknown> {
   name: string
   description: string
-  inputSchema: z.ZodType<TInput>
+  inputSchema: Anthropic.Tool['input_schema']  // JSON Schema (Zod 아님)
   execute(input: TInput, sessionId: string): Promise<TOutput>
 }
 ```
 
-초기 구현: `ClaudeStubHandler` → 하위 에이전트 완성 시 `RedisAgentHandler`로 교체. Manager 코드 변경 없음.
+모든 핸들러는 RedisAgentHandler 기반으로 구현 완료.
 
-## 7개 ToolHandler
+도구 호출 루프는 `MAX_ITERATIONS = 50` 제한으로 무한 루프를 방지한다.
+
+## 8개 ToolHandler
 
 | 도구 | 위임 대상 | Redis 스트림 |
 |------|-----------|-------------|
@@ -66,6 +68,7 @@ interface ToolHandler<TInput = unknown, TOutput = unknown> {
 | `build_project` | xzawedBuilder | `manager:to-builder:{sessionId}` |
 | `watch_changes` | xzawedWatcher | `manager:to-watcher:{sessionId}` |
 | `security_audit` | xzawedSecurity | `manager:to-security:{sessionId}` |
+| `github_ops` | GitHub API 직접 호출 (Octokit) | createRepo, createBranch, commitAndPush, createPR, createIssue, mergeBranch, listRepos, listBranches |
 
 ## 환경 변수
 
@@ -75,6 +78,9 @@ CLAUDE_MODEL=claude-sonnet-4-6
 REDIS_URL=redis://localhost:6379
 PORT=3001
 MODE=local
+GITHUB_TOKEN=           # 선택: 설정 시 github_ops 핸들러 활성화
+SERVICE_JWT_SECRET=     # AUTH=jwt 시 필수 (32자 이상)
+AUTH=none               # none | jwt
 ```
 
 ## 핵심 명령어

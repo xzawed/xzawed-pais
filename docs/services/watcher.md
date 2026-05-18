@@ -1,4 +1,4 @@
-# xzawedWatcher — 이슈 관리자
+# xzawedWatcher — 파일 변경 감시 에이전트
 
 **역할:** 프로젝트 파일 시스템을 감시하고 변경 이벤트를 xzawedManager로 스트리밍한다. Claude API 미사용 — chokidar 기반 순수 파일 감시.
 
@@ -89,4 +89,4 @@ pnpm build
 
 ## xzawedManager 연결
 
-`tools/watch-changes.ts`의 `ClaudeStubHandler`를 `RedisAgentHandler`로 교체하면 연결 완료.
+`tools/watch-changes.ts`는 RedisAgentHandler 기반으로 구현 완료.

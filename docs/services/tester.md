@@ -91,4 +91,4 @@ pnpm build
 
 ## xzawedManager 연결
 
-`tools/run-tests.ts`의 `ClaudeStubHandler`를 `RedisAgentHandler`로 교체하면 연결 완료.
+`tools/run-tests.ts`는 RedisAgentHandler 기반으로 구현 완료.

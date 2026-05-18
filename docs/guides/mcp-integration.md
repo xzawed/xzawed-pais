@@ -35,7 +35,7 @@ xzawedOrchestrator MCP 서버
     "xzawed-orchestrator": {
       "command": "npx",
       "args": ["tsx", "packages/server/src/mcp/entry.ts"],
-      "cwd": "f:\\DEVELOPMENT\\SOURCE\\CLAUDE\\xzawedOrchestrator",
+      "cwd": "/path/to/xzawedOrchestrator",
       "env": {
         "MODE": "local",
         "CLAUDE_MODE": "cli"
@@ -58,7 +58,7 @@ pnpm build
     "xzawed-orchestrator": {
       "command": "node",
       "args": ["packages/server/dist/mcp/entry.js"],
-      "cwd": "f:\\DEVELOPMENT\\SOURCE\\CLAUDE\\xzawedOrchestrator",
+      "cwd": "/path/to/xzawedOrchestrator",
       "env": {
         "MODE": "local",
         "CLAUDE_MODE": "api",
@@ -77,7 +77,7 @@ pnpm build
     "xzawed-orchestrator": {
       "command": "pnpm",
       "args": ["--filter", "@xzawed/server", "mcp"],
-      "cwd": "f:\\DEVELOPMENT\\SOURCE\\CLAUDE\\xzawedOrchestrator"
+      "cwd": "/path/to/xzawedOrchestrator"
     }
   }
 }

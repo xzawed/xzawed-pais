@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedBuilder는 xzawed 멀티 에이전트 시스템의 **빌드 에이전트**다.
 xzawedManager로부터 프로젝트 경로와 빌드 타깃을 받아 빌드를 실행하고 결과 아티팩트를 반환한다.
 
-현재 상태: **구현 완료 (v0.2.0)** — 39개 단위 테스트 통과, `pnpm build` 정상. 스펙: `docs/superpowers/specs/2026-05-15-xzawedbuilder-design.md`
+현재 상태: **구현 완료 (v0.2.0)** — 39개 단위 테스트 통과, `pnpm build` 정상. 스펙: `docs/specs/2026-05-15-builder-design.md`
 
 ## 핵심 명령어
 
@@ -86,7 +86,7 @@ CLAUDE_MODEL=claude-sonnet-4-6
 REDIS_URL=redis://localhost:6379
 PORT=3006
 MODE=local
-WORKSPACE_ROOT=f:/DEVELOPMENT/SOURCE
+WORKSPACE_ROOT=/path/to/workspace  # 절대경로 필수
 BUILD_TIMEOUT_MS=120000
 ```
 
@@ -102,8 +102,8 @@ BUILD_TIMEOUT_MS=120000
 ## xzawed 생태계 연결
 
 xzawedManager의 `build_project` 도구가 이 서비스로 위임된다.
-Manager의 `tools/build-project.ts`를 `RedisAgentHandler`로 교체하면 연결 완료.
+Manager의 `tools/build-project.ts`는 `RedisAgentHandler` 기반으로 연결 완료.
 
-전체 suite: `f:\DEVELOPMENT\SOURCE\CLAUDE\` 하위
-- xzawedOrchestrator (완성, 참조 구현) → xzawedManager (진행 중) → xzawedBuilder / xzawedPlanner / xzawedDeveloper / xzawedTester / xzawedDesigner / xzawedWatcher / xzawedSecurity
+전체 suite: 현재 저장소 루트
+- xzawedOrchestrator (완성, 참조 구현) → xzawedManager (완성, 64/64) → xzawedBuilder / xzawedPlanner / xzawedDeveloper / xzawedTester / xzawedDesigner / xzawedWatcher / xzawedSecurity
 - 에이전트 간 통신: Redis Streams (ioredis), 포트 3002–3008

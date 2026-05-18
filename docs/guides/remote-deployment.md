@@ -132,7 +132,7 @@ docker run -p 3000:3000 \
 MODE=remote
 PORT=3000
 AUTH=jwt
-# JWT_SECRET=your-strong-secret  (추후 구현)
+SERVICE_JWT_SECRET=your-strong-32-char-secret-here  # 32자 이상 필수
 
 CLAUDE_MODE=api
 ANTHROPIC_API_KEY=sk-ant-...
@@ -142,8 +142,6 @@ REDIS_URL=redis://default:password@redis.example.com:6379
 ```
 
 각 팀원은 자신의 `userId`로 세션을 생성하며, 세션은 Redis Streams 키에 `sessionId`가 포함되어 **완전히 격리**됩니다.
-
-> **Note:** JWT 인증의 상세 구현은 추후 릴리스에서 제공됩니다. 현재 `AUTH=jwt` 설정 시 JWT 슬롯만 확보된 상태입니다.
 
 ---
 

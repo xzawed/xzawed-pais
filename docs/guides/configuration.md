@@ -132,7 +132,7 @@ REDIS_URL=redis://default:password@redis.railway.internal:6379
 MODE=remote
 PORT=3000
 AUTH=jwt
-# JWT_SECRET=your-secret-key  (추후 구현)
+SERVICE_JWT_SECRET=your-strong-32-char-secret-here  # 32자 이상 필수
 
 CLAUDE_MODE=api
 ANTHROPIC_API_KEY=sk-ant-api03-...

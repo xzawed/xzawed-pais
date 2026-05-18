@@ -44,7 +44,7 @@ interface ManagerToSecurityMessage {
   timestamp: number
   type: 'audit_request' | 'abort'
   payload: {
-    artifacts: FileChange[]           // 감사 대상 코드
+    artifacts: string[]               // 감사 대상 파일 경로 목록
     projectPath: string
     severity: 'low' | 'medium' | 'high'  // 최소 보고 심각도
     context: Record<string, unknown>
@@ -59,7 +59,7 @@ interface SecurityToManagerMessage {
   sessionId: string
   messageId: string
   timestamp: number
-  type: 'audit_complete' | 'audit_progress' | 'error'
+  type: 'audit_complete' | 'error'
   payload: {
     issues?: SecurityIssue[]
     score?: number                    // 0-100 (높을수록 안전)
@@ -89,6 +89,7 @@ REDIS_URL=redis://localhost:6379
 PORT=3008
 MODE=local
 WORKSPACE_ROOT=f:/DEVELOPMENT/SOURCE
+SECURITY_SESSION_ID=security-default  # 선택: 기본 세션 ID
 ```
 
 ## 핵심 명령어
@@ -102,4 +103,4 @@ pnpm build
 
 ## xzawedManager 연결
 
-`tools/security-audit.ts`의 `ClaudeStubHandler`를 `RedisAgentHandler`로 교체하면 연결 완료.
+`tools/security-audit.ts`는 RedisAgentHandler 기반으로 구현 완료.

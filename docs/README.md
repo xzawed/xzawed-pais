@@ -46,8 +46,8 @@ xzawed AI 멀티 에이전트 오케스트레이션 플랫폼 전체 문서.
 
 | 서비스 | 포트 | 상태 | 역할 |
 |--------|------|------|------|
-| [Orchestrator](services/orchestrator.md) | 3000 | ✅ 완성 (100/100) | 사용자 지시 수신, 의도 정제, Manager에 전달 |
-| [Manager](services/manager.md) | 3001 | ✅ 완성 (60/60) | Claude tool-calling, 에이전트 위임 |
+| [Orchestrator](services/orchestrator.md) | 3000 | ✅ 완성 (107/107) | 사용자 지시 수신, 의도 정제, Manager에 전달 |
+| [Manager](services/manager.md) | 3001 | ✅ 완성 (64/64) | Claude tool-calling, 에이전트 위임 |
 | [Planner](services/planner.md) | 3002 | ✅ 완성 | 작업 → Step[] 분해 |
 | [Developer](services/developer.md) | 3003 | ✅ 완성 (31/31) | 코드 생성·수정 |
 | [Designer](services/designer.md) | 3004 | ✅ 완성 (26/26) | UI 컴포넌트 설계 |

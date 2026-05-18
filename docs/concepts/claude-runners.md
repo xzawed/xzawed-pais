@@ -74,7 +74,7 @@ Fastify 서버
     ▼ client.messages.stream({
     │   model: 'claude-sonnet-4-6',
     │   messages: [...],
-    │   max_tokens: 8096
+    │   max_tokens: 8096  # claude-sonnet-4-6 기준 최대 64K 출력 가능. 복잡한 에이전트 작업 시 증가 권장.
     │ })
     │
     ▼ AsyncIterable<MessageStreamEvent>
@@ -89,8 +89,20 @@ Fastify 서버
 | 모델 | 설명 |
 |------|------|
 | `claude-sonnet-4-6` | 기본값. 속도와 성능의 균형 |
-| `claude-opus-4-5` | 최고 성능, 높은 비용 |
-| `claude-haiku-3-5` | 빠른 응답, 낮은 비용 |
+| `claude-opus-4-7` | 최고 성능, 장기 에이전트 작업 |
+| `claude-haiku-4-5` | 빠른 응답, 높은 비용 효율성 |
+
+### 속도 제한 및 재시도 (Rate Limiting)
+
+Anthropic SDK는 기본적으로 429(속도 제한) 및 529(과부하) 오류에 대해 자동 재시도(기본 `maxRetries: 2`)를 수행한다.
+
+- **HTTP 429** `rate_limit_error`: 요청 빈도 초과 — SDK가 지수 백오프로 자동 재시도
+- **HTTP 529** `overloaded_error`: API 일시 과부하 — 동일하게 자동 재시도
+- 애플리케이션 레벨의 추가 재시도가 필요한 경우 `new Anthropic({ maxRetries: 5 })` 설정
+
+### 프롬프트 캐싱 (Prompt Caching)
+
+반복되는 시스템 프롬프트와 도구 스키마에는 `cache_control: { type: "ephemeral" }` 마킹을 통해 비용 최대 90% 절감 가능. `claude-sonnet-4-6`, `claude-opus-4-7`, `claude-haiku-4-5` 모두 지원.
 
 ---
 
