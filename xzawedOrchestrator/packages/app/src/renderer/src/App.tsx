@@ -1,24 +1,30 @@
 import React, { useEffect } from 'react'
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
+import { LoginPage, RegisterPage, ProjectsPage, useAuthStore } from '@xzawed/ui'
 import { useAppStore } from './store/app.store.js'
-import { useIntegrationsStore } from './store/integrations.store.js'
 import { checkHealth } from './lib/api.js'
-import { ActivityBar } from './components/layout/ActivityBar.js'
-import { Sidebar } from './components/Sidebar.js'
-import { RightPanel } from './components/layout/RightPanel.js'
-import { ChatView } from './components/ChatView.js'
-import { DynamicPanel } from './components/DynamicPanel.js'
+import { ChatLayout } from './components/ChatLayout.js'
 import { SettingsModal } from './components/SettingsModal.js'
-import { GitHubPanel } from './components/GitHubPanel.js'
-import { McpPanel } from './components/McpPanel.js'
-import { PluginPanel } from './components/PluginPanel.js'
 import { CommandPalette } from './components/CommandPalette.js'
 import { TooltipProvider } from './components/ui/tooltip.js'
 import { StatusBar } from './components/layout/StatusBar.js'
 
+function RequireAuth({ children }: { children: React.ReactNode }): React.JSX.Element {
+  const user = useAuthStore((s) => s.user)
+  if (!user) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+function RootRedirect(): React.JSX.Element {
+  const user = useAuthStore((s) => s.user)
+  return <Navigate to={user ? '/projects' : '/login'} replace />
+}
+
 export function App(): React.JSX.Element {
   const { settings, updateSettings, setServerStatus } = useAppStore()
-  const { activePanel } = useIntegrationsStore()
+  const { restore } = useAuthStore()
+  const navigate = useNavigate()
 
   useEffect(() => {
     globalThis.electronAPI
@@ -28,6 +34,12 @@ export function App(): React.JSX.Element {
   }, [updateSettings])
 
   useEffect(() => {
+    if (settings.serverUrl) {
+      void restore(settings.serverUrl)
+    }
+  }, [settings.serverUrl, restore])
+
+  useEffect(() => {
     let cancelled = false
     async function poll(): Promise<void> {
       if (cancelled) return
@@ -35,45 +47,71 @@ export function App(): React.JSX.Element {
       if (!cancelled) setServerStatus(healthy ? 'running' : 'stopped')
     }
     void poll().catch((e: unknown) => console.error('[App] poll error:', e))
-    const id = setInterval(() => { void poll().catch((e: unknown) => console.error('[App] poll error:', e)) }, 3000)
+    const id = setInterval(() => {
+      void poll().catch((e: unknown) => console.error('[App] poll error:', e))
+    }, 3000)
     return () => { cancelled = true; clearInterval(id) }
   }, [settings.serverUrl, setServerStatus])
 
   return (
     <TooltipProvider delayDuration={400}>
       <div className="flex h-full w-full flex-col overflow-hidden bg-bg">
-
-        {/* 4-panel row (flex-1) */}
         <div className="flex flex-1 overflow-hidden min-w-0">
+          <Routes>
+            <Route path="/" element={<RootRedirect />} />
 
-          {/* 1. Activity Bar (44px) */}
-          <ActivityBar />
+            <Route
+              path="/login"
+              element={
+                <LoginPage
+                  serverUrl={settings.serverUrl}
+                  onSuccess={() => navigate('/projects')}
+                  onRegister={() => navigate('/register')}
+                />
+              }
+            />
 
-          {/* 2. Sidebar (210px) */}
-          <Sidebar />
+            <Route
+              path="/register"
+              element={
+                <RegisterPage
+                  serverUrl={settings.serverUrl}
+                  onSuccess={() => navigate('/projects')}
+                  onLogin={() => navigate('/login')}
+                />
+              }
+            />
 
-          {/* 3. Main Area (flex-1) */}
-          <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-            {activePanel === 'chat' && (
-              <div className="flex flex-1 overflow-hidden">
-                <ChatView />
-                <DynamicPanel />
-              </div>
-            )}
-            {activePanel === 'github'  && <GitHubPanel />}
-            {activePanel === 'mcp'     && <McpPanel />}
-            {activePanel === 'plugins' && <PluginPanel />}
-          </div>
+            <Route
+              path="/projects"
+              element={
+                <RequireAuth>
+                  <ProjectsPage
+                    serverUrl={settings.serverUrl}
+                    onSelectProject={(id) => navigate(`/projects/${id}/chat`)}
+                    onLogout={() => navigate('/login')}
+                  />
+                </RequireAuth>
+              }
+            />
 
-          {/* 4. Right Panel (200px) — chat 패널에서만 표시 */}
-          {activePanel === 'chat' && <RightPanel />}
+            <Route
+              path="/projects/:projectId/chat"
+              element={
+                <RequireAuth>
+                  <ChatLayout />
+                </RequireAuth>
+              }
+            />
 
+            {/* Legacy/local mode: direct chat without auth */}
+            <Route path="/chat" element={<ChatLayout />} />
+
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </div>
 
-        {/* Status Bar */}
         <StatusBar />
-
-        {/* Overlays */}
         <SettingsModal />
         <CommandPalette />
         <Toaster

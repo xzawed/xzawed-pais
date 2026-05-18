@@ -9,6 +9,13 @@ export type MessageHandler = (msg: OrchestratorToManagerMessage) => Promise<void
 
 // Runtime validation schema for messages received from Redis Streams.
 // Prevents unvalidated data from reaching the handler (Vuln 7).
+const UserContextSchema = z.object({
+  userId: z.string(),
+  projectId: z.string(),
+  workspaceRoot: z.string(),
+  githubRepo: z.object({ owner: z.string(), repo: z.string(), branch: z.string() }).optional(),
+})
+
 const TaskRequestSchema = z.object({
   sessionId: z.string(),
   messageId: z.string(),
@@ -18,6 +25,7 @@ const TaskRequestSchema = z.object({
     intent: z.string(),
     context: z.record(z.unknown()),
     priority: z.enum(['normal', 'high']),
+    userContext: UserContextSchema.optional(),
   }),
 })
 

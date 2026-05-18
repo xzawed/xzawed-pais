@@ -91,6 +91,17 @@ describe('RedisAgentHandler', () => {
     )
   })
 
+  it('userContext가 있으면 payload에 포함하여 XADD한다', async () => {
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('build_complete', { success: true, output: '', artifacts: [] })
+    )
+    const userContext = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/u1/p1' }
+    await handler.execute({ projectPath: '/app' }, 'sess-42', userContext)
+    const call = mockRedis.xadd.mock.calls[0] as unknown[]
+    const data = JSON.parse(call[3] as string) as { payload: Record<string, unknown> }
+    expect(data.payload['userContext']).toEqual(userContext)
+  })
+
   it('payload에 optional 필드가 없어도 Zod default로 채운다', async () => {
     mockRedis.xread.mockResolvedValueOnce(makeMsg('build_complete', {}))
     const result = await handler.execute({}, 'sess-1')

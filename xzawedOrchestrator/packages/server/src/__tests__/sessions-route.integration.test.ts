@@ -35,7 +35,7 @@ function makeMockRunner(chunks: Chunk[]): ClaudeRunner {
 
 async function startServer(runner: ClaudeRunner): Promise<{ app: FastifyInstance; port: number }> {
   const app = await buildServer(
-    { port: 0, redisUrl: 'redis://127.0.0.1:6380', managerUrl: 'http://127.0.0.1:9999', claudeMode: 'cli', mode: 'local', auth: 'none', claudeModel: 'test' },
+    { port: 0, redisUrl: 'redis://127.0.0.1:6380', managerUrl: 'http://127.0.0.1:9999', claudeMode: 'cli', mode: 'local', auth: 'none', claudeModel: 'test', serveWeb: false },
     runner
   )
   await app.listen({ port: 0, host: '127.0.0.1' })

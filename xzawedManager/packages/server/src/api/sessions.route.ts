@@ -5,6 +5,7 @@ import type { StreamProducer } from '../streams/producer.js'
 import type { ClaudeRunner, RunnerOptions } from '../claude/runner.js'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { OrchestratorToManagerMessage } from '../types/streams.js'
+import { ensureWorkspace } from '../workspace.js'
 
 type RouteHook = (req: FastifyRequest, reply: FastifyReply) => Promise<void>
 
@@ -47,6 +48,10 @@ export async function sessionsRoute(
         if (msg.type === 'task_request') {
           void (async () => {
             try {
+              const { userContext } = msg.payload
+              if (userContext !== undefined) {
+                await ensureWorkspace(userContext)
+              }
               const sig = sessionStore.getAbortSignal(sessionId)
               const result = await runner.run({
                 sessionId,
@@ -55,6 +60,7 @@ export async function sessionsRoute(
                 producer,
                 sessionStore,
                 ...(sig !== undefined && { signal: sig }),
+                ...(userContext !== undefined && { userContext }),
               } satisfies RunnerOptions)
 
               await producer.publish({
