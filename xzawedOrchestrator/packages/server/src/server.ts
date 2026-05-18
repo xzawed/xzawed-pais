@@ -15,6 +15,7 @@ import { healthRoutes } from './api/health.route.js'
 import { sessionsRoutes } from './api/sessions.route.js'
 import { sessionWsRoutes } from './ws/session.ws.js'
 import { authRoutes } from './api/auth.route.js'
+import { projectsRoutes } from './api/projects.route.js'
 import { createPool, runMigrations, closePool } from './db/pool.js'
 
 const JWT_ERRORS: Record<string, string> = {
@@ -65,6 +66,7 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   await app.register(healthRoutes)
   if (dbPool && config.userJwtSecret) {
     await app.register(authRoutes, { pool: dbPool, userJwtSecret: config.userJwtSecret })
+    await app.register(projectsRoutes, { pool: dbPool, userJwtSecret: config.userJwtSecret })
   }
   await app.register(sessionsRoutes, {
     store, runner, wsSessions, manager,
