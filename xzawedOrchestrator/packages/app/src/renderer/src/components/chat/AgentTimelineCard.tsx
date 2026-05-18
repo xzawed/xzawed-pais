@@ -2,7 +2,7 @@ import React from 'react'
 import { motion } from 'framer-motion'
 import type { Message } from '@xzawed/shared'
 import { parseAgentSteps, type AgentStep, type AgentName } from '../../lib/parseAgentSteps.js'
-import { CodeBlock } from './CodeBlock.js'
+import { MarkdownContent } from './MarkdownContent.js'
 import { cn } from '../../lib/utils.js'
 
 interface Props {
@@ -20,48 +20,6 @@ const AGENT_META: Record<AgentName, { icon: string; color: string; bgDone: strin
   Watcher:   { icon: '👁',  color: 'text-agent-watcher',  bgDone: 'border-border bg-surface',       bgActive: 'border-agent-watcher/40 bg-surface' },
   Security:  { icon: '🔒', color: 'text-agent-security', bgDone: 'border-border bg-surface',       bgActive: 'border-danger/40 bg-danger/5' },
   Assistant: { icon: '🤖', color: 'text-fg-muted',       bgDone: 'border-border bg-surface',       bgActive: 'border-accent bg-accent-bg' },
-}
-
-const CODE_FENCE_RE = /```(\w*)\n?([\s\S]*?)```/g
-
-function extractCodeBlocks(content: string): Array<{ lang: string; code: string; raw: string }> {
-  const blocks: Array<{ lang: string; code: string; raw: string }> = []
-  let match: RegExpExecArray | null
-  CODE_FENCE_RE.lastIndex = 0
-  while ((match = CODE_FENCE_RE.exec(content)) !== null) {
-    blocks.push({ lang: match[1] || 'typescript', code: match[2].trim(), raw: match[0] })
-  }
-  return blocks
-}
-
-function renderContent(content: string, streaming: boolean): React.ReactNode {
-  if (!content) return null
-  const blocks = extractCodeBlocks(content)
-  if (blocks.length === 0) {
-    return <p className="whitespace-pre-wrap text-[11px] text-fg leading-relaxed">{content}</p>
-  }
-
-  const parts: React.ReactNode[] = []
-  let lastIndex = 0
-  CODE_FENCE_RE.lastIndex = 0
-  let match: RegExpExecArray | null
-  let i = 0
-  while ((match = CODE_FENCE_RE.exec(content)) !== null) {
-    const textBefore = content.slice(lastIndex, match.index).trim()
-    if (textBefore) {
-      parts.push(<p key={`t-${i}`} className="whitespace-pre-wrap text-[11px] text-fg leading-relaxed mb-1">{textBefore}</p>)
-    }
-    parts.push(
-      <CodeBlock key={`c-${i}`} code={blocks[i]?.code ?? ''} lang={blocks[i]?.lang} streaming={streaming && i === blocks.length - 1} />
-    )
-    lastIndex = match.index + match[0].length
-    i++
-  }
-  const trailing = content.slice(lastIndex).trim()
-  if (trailing) {
-    parts.push(<p key="t-end" className="whitespace-pre-wrap text-[11px] text-fg leading-relaxed mt-1">{trailing}</p>)
-  }
-  return <>{parts}</>
 }
 
 export function AgentTimelineCard({ message, streaming = false }: Props): React.JSX.Element {
@@ -149,12 +107,7 @@ function TimelineStep({ step, index, streaming }: {
 
         {/* Content */}
         {step.content && (
-          <div>
-            {renderContent(step.content, isActive && streaming)}
-            {isActive && streaming && !step.content.includes('```') && (
-              <span className="inline-block h-3 w-0.5 bg-fg animate-blink ml-0.5 align-middle" />
-            )}
-          </div>
+          <MarkdownContent content={step.content} streaming={isActive && streaming} />
         )}
         {isWaiting && !step.content && (
           <p className="text-[10px] text-fg-ghost">이전 에이전트 완료 후 시작됩니다.</p>
