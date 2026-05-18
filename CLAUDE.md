@@ -171,6 +171,7 @@ PR #9(2026-05-17) 전체 보안 감사를 통해 수립된 공통 보안 패턴.
 ### Electron IPC
 - 민감 자격증명(토큰, 키)은 렌더러에 노출 금지 — main 프로세스에서 직접 API 호출
 - MCP `args`는 런타임별 위험 플래그(`-e`, `-c`, `--eval`, URL) 차단
+- `electron.d.ts`에 `Window` 인터페이스 + `var electronAPI` 전역 선언 모두 필요 — 렌더러 컴포넌트가 `globalThis.electronAPI`로 접근 시 타입 추론을 위해 (`interface Window`만으로는 `typeof globalThis` 인덱스 미반영)
 
 ### SSRF / Open Redirect 방지
 - `fetch` URL은 반드시 `new URL(url)` 파싱 후 `protocol`이 `http:` 또는 `https:`임을 검증 (http-remote-runner.ts, manager.client.ts)
