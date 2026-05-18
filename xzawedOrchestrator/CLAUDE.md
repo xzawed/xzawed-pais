@@ -57,16 +57,58 @@ packages/
     │   └── plugin-manager.ts         # Claude Code / xzawed 플러그인 목록·설치·토글
     ├── src/preload/index.ts          # contextBridge API 노출
     └── src/renderer/src/
+        ├── styles/
+        │   └── globals.css            # Tailwind v4 디자인 토큰 28개
+        ├── lib/
+        │   ├── utils.ts               # cn() 유틸리티 (clsx + tailwind-merge)
+        │   ├── markdown.ts            # Shiki 싱글턴 하이라이터
+        │   └── parseAgentSteps.ts     # 에이전트 스텝 파서 유틸리티
         ├── store/
         │   ├── app.store.ts           # 앱 설정, 서버 상태
-        │   ├── chat.store.ts          # 세션·메시지 상태
+        │   ├── chat.store.ts          # 세션·메시지 상태 (logLines, tokenCount, elapsedMs, modifiedFiles 추가)
         │   └── integrations.store.ts  # GitHub·MCP·Plugin 통합 상태 (Zustand + persist)
         └── components/
-            ├── Sidebar.tsx    # 반응형 사이드바 (900px 기준 compact/expanded)
-            ├── GitHubPanel.tsx
-            ├── McpPanel.tsx
-            └── PluginPanel.tsx
+            ├── ui/                    # shadcn/ui 기반 기본 컴포넌트
+            │   ├── button.tsx         # CVA Button
+            │   ├── scroll-area.tsx
+            │   ├── badge.tsx
+            │   ├── separator.tsx
+            │   ├── tooltip.tsx
+            │   ├── dialog.tsx
+            │   └── command.tsx
+            ├── layout/                # 레이아웃 컴포넌트
+            │   ├── ActivityBar.tsx    # 좌측 아이콘 네비게이션 바
+            │   ├── RightPanel.tsx     # 우측 컨텍스트 패널
+            │   └── StatusBar.tsx      # 하단 상태 표시줄
+            ├── chat/                  # 채팅 뷰 컴포넌트
+            │   ├── UserBubble.tsx     # 사용자 메시지 말풍선
+            │   ├── CodeBlock.tsx      # Shiki 코드 하이라이팅 블록
+            │   ├── AgentTimelineCard.tsx  # 에이전트 실행 타임라인 카드
+            │   ├── PipelineStrip.tsx  # 파이프라인 단계 표시 스트립
+            │   └── MarkdownContent.tsx    # react-markdown + Shiki 렌더러
+            ├── App.tsx                # 4패널 레이아웃 (TooltipProvider, ActivityBar, Sidebar, ChatView, RightPanel, StatusBar, CommandPalette, SettingsModal, Toaster)
+            ├── Sidebar.tsx            # Slack 스타일 재설계
+            ├── ChatView.tsx           # AgentTimelineCard + PipelineStrip + UserBubble 통합
+            ├── MessageInput.tsx       # Framer Motion focus glow + aria-label
+            ├── CommandPalette.tsx     # ⌘K Spotlight 스타일 완전 구현
+            ├── SettingsModal.tsx      # shadcn Dialog 기반
+            ├── DynamicPanel.tsx       # Tailwind 리스타일
+            ├── GitHubPanel.tsx        # Tailwind 리스타일
+            ├── McpPanel.tsx           # Tailwind 리스타일
+            └── PluginPanel.tsx        # Tailwind 리스타일 + Badge 컴포넌트
 ```
+
+### Electron 앱 기술 스택 (packages/app)
+
+- **React 19 + Zustand** — UI 상태 관리
+- **Tailwind CSS v4** — 디자인 토큰 28개 (`globals.css`)
+- **shadcn/ui** — Button, Badge, Dialog, Command, ScrollArea, Separator, Tooltip
+- **Framer Motion** — MessageInput focus glow 등 UI 애니메이션
+- **Shiki** — 코드 하이라이팅 싱글턴 (`lib/markdown.ts`)
+- **react-markdown** — MarkdownContent 렌더러
+- **sonner** — 토스트 알림 (Toaster)
+- **cmdk** — ⌘K CommandPalette (Spotlight 스타일)
+- **electron-vite + @tailwindcss/vite** — 빌드 파이프라인
 
 ### 작업(Task) 생명주기
 
