@@ -10,19 +10,19 @@ type E2EFixtures = {
 }
 
 export const test = base.extend<E2EFixtures>({
-  electronApp: async ({}, use) => {
+  electronApp: async ({}, provide) => {
     const app = await electron.launch({
       args: [mainEntry],
       env: { ...process.env, NODE_ENV: 'test' },
     })
-    await use(app)
+    await provide(app)
     await app.close()
   },
 
-  page: async ({ electronApp }, use) => {
+  page: async ({ electronApp }, provide) => {
     const window = await electronApp.firstWindow()
     await window.waitForLoadState('domcontentloaded')
-    await use(window)
+    await provide(window)
   },
 })
 
