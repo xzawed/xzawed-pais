@@ -21,8 +21,8 @@ vi.mock('node:fs', () => ({
   }),
   mkdirSync: vi.fn(),
 }))
-vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/test') } }))
-vi.stubEnv('HOME', '/tmp/test-home')
+vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/test') } })) // NOSONAR
+vi.stubEnv('HOME', '/tmp/test-home') // NOSONAR
 vi.stubEnv('USERPROFILE', 'C:/Users/test')
 
 import { PluginManager } from '../../src/main/plugin-manager.js'
