@@ -94,11 +94,11 @@ export class PluginManager {
   async install(packageName: string, type: 'claude-code' | 'xzawed'): Promise<void> {
     validatePackageName(packageName)
     if (type === 'claude-code') {
-      spawnSync('npx', ['skills', 'add', packageName], { stdio: 'inherit' })
+      spawnSync('npx', ['skills', 'add', packageName], { stdio: 'inherit', shell: false })
     } else {
       const xzawedDir = xzawedPluginsDir()
       if (!existsSync(xzawedDir)) mkdirSync(xzawedDir, { recursive: true })
-      spawnSync('npm', ['install', packageName, '--prefix', xzawedDir], { stdio: 'inherit' })
+      spawnSync('npm', ['install', packageName, '--prefix', xzawedDir], { stdio: 'inherit', shell: false })
     }
   }
 
@@ -112,7 +112,7 @@ export class PluginManager {
   async uninstall(id: string): Promise<void> {
     validatePackageName(id)
     const xzawedDir = xzawedPluginsDir()
-    spawnSync('npm', ['uninstall', id, '--prefix', xzawedDir], { stdio: 'ignore' })
+    spawnSync('npm', ['uninstall', id, '--prefix', xzawedDir], { stdio: 'ignore', shell: false })
     const disabled = loadDisabled()
     disabled.delete(id)
     saveDisabled(disabled)

@@ -31,6 +31,7 @@ export async function exec(
   return new Promise((resolve, reject) => {
     const parts = command.trim().split(/\s+/)
     const bin = parts[0]
+    if (!bin) throw new Error('Empty command')
     const cmdArgs = parts.slice(1)
     const proc = spawn(bin, cmdArgs, { cwd, shell: false })
     let settled = false

@@ -122,7 +122,11 @@ export class ClaudeRunner {
           })
         }
 
-        messages.push({ role: 'user', content: toolResults })
+        if (toolResults.length > 0) {
+          messages.push({ role: 'user', content: toolResults })
+        }
+      } else {
+        throw new Error(`Unexpected stop_reason: ${response.stop_reason as string}`)
       }
     }
     throw new Error(`Claude runner exceeded ${MAX_ITERATIONS} iterations without completing`)
