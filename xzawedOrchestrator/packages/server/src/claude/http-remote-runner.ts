@@ -10,7 +10,7 @@ function validateRemoteUrl(url: string): void {
 }
 
 export class HTTPRemoteRunner implements ClaudeRunner {
-  constructor(private remoteUrl: string) {
+  constructor(private readonly remoteUrl: string) {
     validateRemoteUrl(remoteUrl)
   }
 
@@ -42,23 +42,27 @@ export class HTTPRemoteRunner implements ClaudeRunner {
       const decoder = new TextDecoder()
       let buffer = ''
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        const [lines, remainder] = splitLines(buffer, decoder.decode(value, { stream: true }))
-        buffer = remainder
-        for (const line of lines) {
-          if (!line.trim()) continue
-          try {
-            yield JSON.parse(line) as Chunk
-          } catch { /* ignore unparseable lines */ }
+      try {
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          const [lines, remainder] = splitLines(buffer, decoder.decode(value, { stream: true }))
+          buffer = remainder
+          for (const line of lines) {
+            if (!line.trim()) continue
+            try {
+              yield JSON.parse(line) as Chunk
+            } catch { /* ignore unparseable lines */ }
+          }
         }
-      }
 
-      if (buffer.trim()) {
-        try {
-          yield JSON.parse(buffer) as Chunk
-        } catch { /* ignore */ }
+        if (buffer.trim()) {
+          try {
+            yield JSON.parse(buffer) as Chunk
+          } catch { /* ignore */ }
+        }
+      } finally {
+        reader.cancel().catch(() => { /* ignore cancel errors */ })
       }
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {

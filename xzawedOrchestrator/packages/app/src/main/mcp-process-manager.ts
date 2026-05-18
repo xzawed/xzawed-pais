@@ -113,7 +113,7 @@ export class McpProcessManager {
     validateMcpArgs(config.command, config.args)
     validateMcpEnv(config.env)
 
-    const proc = spawn(config.command, config.args, {
+    const proc = spawn(config.command, config.args, { // NOSONAR: command validated against ALLOWED_MCP_COMMANDS allowlist; args validated by validateMcpArgs(); shell:false prevents injection
       env: { ...process.env, ...config.env },
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: false,
