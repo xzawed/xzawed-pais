@@ -81,8 +81,11 @@ export class StreamConsumer {
             continue
           }
 
-          await handler(msg)
-          await redis.xack(streamKey(sessionId), GROUP, id)
+          try {
+            await handler(msg)
+          } finally {
+            await redis.xack(streamKey(sessionId), GROUP, id)
+          }
         }
       }
     }

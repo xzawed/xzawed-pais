@@ -1,4 +1,4 @@
-import React, { useState, useEffect, type ReactNode } from 'react'
+import React, { useState, useEffect, useRef, type ReactNode } from 'react'
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime'
 import { toJsxRuntime } from 'hast-util-to-jsx-runtime'
 import { getHighlighter, detectLang } from '../../lib/markdown.js'
@@ -13,6 +13,7 @@ interface Props {
 export function CodeBlock({ code, filename, lang, streaming = false }: Props): React.JSX.Element {
   const [node, setNode] = useState<ReactNode>(null)
   const [copied, setCopied] = useState(false)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const language = lang ?? detectLang(filename)
 
   useEffect(() => {
@@ -37,10 +38,18 @@ export function CodeBlock({ code, filename, lang, streaming = false }: Props): R
     }
   }, [code, language])
 
-  async function handleCopy(): Promise<void> {
-    await navigator.clipboard.writeText(code)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) clearTimeout(copyTimerRef.current)
+    }
+  }, [])
+
+  function handleCopy(): void {
+    navigator.clipboard.writeText(code).then(() => {
+      setCopied(true)
+      if (copyTimerRef.current !== null) clearTimeout(copyTimerRef.current)
+      copyTimerRef.current = setTimeout(() => setCopied(false), 1500)
+    }).catch(() => { /* clipboard denied — no-op */ })
   }
 
   return (

@@ -50,6 +50,8 @@ export class SessionStore {
     const entry = this.sessions.get(sessionId)
     if (!entry) return
     entry.abortController.abort()
+    // Replace controller so the session can be reused after abort
+    entry.abortController = new AbortController()
     if (entry.infoResolve) {
       entry.infoResolve('')
       entry.infoResolve = null

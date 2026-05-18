@@ -14,10 +14,6 @@ export function ChatView(): React.JSX.Element {
   const {
     sessionId, messages, streamingContent, streamingMsgId, isStreaming, isPending,
   } = useChatStore()
-  const {
-    initSession: _init, addMessage, setPending, startStream,
-    appendChunk, finalizeStream, addLogLine,
-  } = useChatStore.getState()
   const { settings } = useAppStore()
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -29,17 +25,17 @@ export function ChatView(): React.JSX.Element {
     if (!sessionId) return
     const client = new SessionWsClient()
     const teardown = client.connect(settings.serverUrl, sessionId, (msg) => {
+      const store = useChatStore.getState()
       if (msg.type === 'chunk') {
-        const state = useChatStore.getState()
-        if (state.streamingMsgId !== msg.messageId) startStream(msg.messageId)
-        appendChunk(msg.content)
+        if (store.streamingMsgId !== msg.messageId) store.startStream(msg.messageId)
+        store.appendChunk(msg.content)
         const lines = msg.content.split('\n').filter((l) => /^\[[A-Z]{2,3}\]/.exec(l))
-        lines.forEach((l) => addLogLine(l.trim()))
+        lines.forEach((l) => store.addLogLine(l.trim()))
       } else if (msg.type === 'done') {
-        finalizeStream(msg.messageId)
+        store.finalizeStream(msg.messageId)
       } else if (msg.type === 'error') {
-        setPending(false)
-        addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `[Error] ${msg.content}`, timestamp: Date.now() })
+        store.setPending(false)
+        store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `[Error] ${msg.content}`, timestamp: Date.now() })
       }
     }, () => { useChatStore.getState().cancelStream() })
     return teardown
@@ -47,12 +43,13 @@ export function ChatView(): React.JSX.Element {
 
   async function handleSend(content: string): Promise<void> {
     if (!sessionId) return
-    addMessage({ id: crypto.randomUUID(), sessionId, role: 'user', content, timestamp: Date.now() })
+    const store = useChatStore.getState()
+    store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'user', content, timestamp: Date.now() })
     try {
       await postMessage(settings.serverUrl, sessionId, content)
-      setPending(true)
+      store.setPending(true)
     } catch (err) {
-      addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `[Error] ${err instanceof Error ? err.message : String(err)}`, timestamp: Date.now() })
+      store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `[Error] ${err instanceof Error ? err.message : String(err)}`, timestamp: Date.now() })
     }
   }
 

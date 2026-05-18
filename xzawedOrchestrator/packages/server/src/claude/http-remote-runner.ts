@@ -2,8 +2,17 @@ import type { Chunk, Message } from '@xzawed/shared'
 import type { ClaudeRunner, RunOptions } from './runner.interface.js'
 import { splitLines } from './cli-parser.js'
 
+function validateRemoteUrl(url: string): void {
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`Remote URL must use http or https scheme: ${url}`)
+  }
+}
+
 export class HTTPRemoteRunner implements ClaudeRunner {
-  constructor(private remoteUrl: string) {}
+  constructor(private remoteUrl: string) {
+    validateRemoteUrl(remoteUrl)
+  }
 
   async *send(messages: Message[], options: RunOptions = {}): AsyncIterable<Chunk> {
     try {

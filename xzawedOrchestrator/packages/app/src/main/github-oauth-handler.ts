@@ -123,10 +123,15 @@ export function startOAuthFlow(mainWindow: BrowserWindow): Promise<string> {
       const clientId = process.env['GITHUB_CLIENT_ID'] ?? ''
       const authUrl =
         `https://github.com/login/oauth/authorize` +
-        `?client_id=${clientId}` +
+        `?client_id=${encodeURIComponent(clientId)}` +
         `&scope=repo,user` +
         `&redirect_uri=http://localhost:${CALLBACK_PORT}/callback` +
         `&state=${oauthState}`
+      // Verify URL targets the expected GitHub OAuth endpoint before opening
+      if (!authUrl.startsWith('https://github.com/login/oauth/authorize?')) {
+        done(new Error('Unexpected OAuth URL — aborting'))
+        return
+      }
       void shell.openExternal(authUrl)
     })
 

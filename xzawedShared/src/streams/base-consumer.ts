@@ -59,15 +59,25 @@ export class BaseConsumer<TMessage> {
       const raw = fields[dataIdx + 1]
       if (raw === undefined) continue
 
-      const parsed = this.schema.safeParse(JSON.parse(raw))
+      let parsed: ReturnType<typeof this.schema.safeParse>
+      try {
+        parsed = this.schema.safeParse(JSON.parse(raw))
+      } catch {
+        console.error('[Consumer] JSON parse error, skipping')
+        await this.redis.xack(stream, this.consumerGroup, msgId)
+        continue
+      }
       if (!parsed.success) {
         console.error('[Consumer] invalid message, skipping:', parsed.error.issues)
         await this.redis.xack(stream, this.consumerGroup, msgId)
         continue
       }
 
-      await this.onMessage(parsed.data)
-      await this.redis.xack(stream, this.consumerGroup, msgId)
+      try {
+        await this.onMessage(parsed.data)
+      } finally {
+        await this.redis.xack(stream, this.consumerGroup, msgId)
+      }
     }
   }
 

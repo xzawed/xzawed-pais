@@ -1,5 +1,14 @@
+function validateManagerUrl(url: string): void {
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`Manager URL must use http or https scheme: ${url}`)
+  }
+}
+
 export class ManagerClient {
-  constructor(private baseUrl: string) {}
+  constructor(private baseUrl: string) {
+    validateManagerUrl(baseUrl)
+  }
 
   async startSession(sessionId: string): Promise<void> {
     const url = `${this.baseUrl}/api/sessions/${sessionId}/start`
