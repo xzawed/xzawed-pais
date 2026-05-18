@@ -78,7 +78,7 @@ export function startOAuthFlow(mainWindow: BrowserWindow): Promise<string> {
       settled = true
       if (oauthTimeout !== undefined) clearTimeout(oauthTimeout)
       server.close()
-      if (err !== null && err !== undefined) reject(err)
+      if (err !== null && err !== undefined) reject(err instanceof Error ? err : new Error(String(err)))
       else resolve(value ?? '')
     }
 
