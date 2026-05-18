@@ -53,8 +53,9 @@ function toSlug(name: string): string {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+/, '')
-    .replace(/-+$/, '')
+    .split('-')
+    .filter(Boolean)
+    .join('-')
     .slice(0, 60)
 }
 
