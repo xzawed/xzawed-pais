@@ -17,7 +17,7 @@ export function PluginPanel(): React.JSX.Element {
       const list = await globalThis.electronAPI?.pluginList() ?? []
       useIntegrationsStore.getState().setPlugins(list)
     }
-    void load()
+    void load().catch((e: unknown) => console.error('[PluginPanel] load error:', e))
   }, [])
 
   const filtered = plugins.filter((p) => {

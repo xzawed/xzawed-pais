@@ -1,3 +1,10 @@
+function validateBaseUrl(url: string): void {
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`Server URL must use http or https scheme: ${url}`)
+  }
+}
+
 export type WsMessage =
   | { type: 'connected'; sessionId: string }
   | { type: 'chunk'; messageId: string; content: string }
@@ -14,6 +21,7 @@ export interface PostMessageResponse {
 }
 
 export async function createSession(baseUrl: string, userId: string): Promise<CreateSessionResponse> {
+  validateBaseUrl(baseUrl)
   const res = await fetch(`${baseUrl}/sessions`, {
     method: 'POST',
     headers: {
@@ -30,6 +38,7 @@ export async function postMessage(
   sessionId: string,
   content: string
 ): Promise<PostMessageResponse> {
+  validateBaseUrl(baseUrl)
   const res = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
     method: 'POST',
     headers: {
@@ -43,6 +52,7 @@ export async function postMessage(
 
 export async function checkHealth(baseUrl: string): Promise<boolean> {
   try {
+    validateBaseUrl(baseUrl)
     const res = await fetch(`${baseUrl}/health`)
     return res.ok
   } catch {
@@ -59,6 +69,7 @@ export class SessionWsClient {
     onMessage: (msg: WsMessage) => void,
     onClose?: () => void
   ): () => void {
+    validateBaseUrl(baseUrl)
     const wsUrl = baseUrl.replace(/^http/, 'ws') + `/ws/sessions/${sessionId}`
     this.ws = new WebSocket(wsUrl)
 

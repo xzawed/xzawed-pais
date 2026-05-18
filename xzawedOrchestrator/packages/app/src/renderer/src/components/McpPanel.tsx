@@ -12,28 +12,48 @@ const RECOMMENDED: Array<Omit<McpServerConfig, 'id' | 'autoStart'>> = [
 
 type Tab = 'installed' | 'recommended' | 'custom'
 
+function getTabLabel(t: Tab, serverCount: number): string {
+  if (t === 'installed') return `설치됨 (${serverCount})`
+  if (t === 'recommended') return '추천 서버'
+  return '직접 추가'
+}
+
+function getFieldLabel(field: 'name' | 'command' | 'args' | 'env'): string {
+  if (field === 'name') return '이름'
+  if (field === 'command') return '실행 명령어'
+  if (field === 'args') return '인수 (공백 구분)'
+  return '환경변수 (JSON)'
+}
+
+function getFieldPlaceholder(field: 'name' | 'command' | 'args' | 'env'): string {
+  if (field === 'name') return '예: my-custom-mcp'
+  if (field === 'command') return '예: npx'
+  if (field === 'args') return '예: @org/mcp-server --port 8080'
+  return '예: {"API_KEY": "sk-..."}'
+}
+
 export function McpPanel(): React.JSX.Element {
-  const { mcp, setMcpServers, setMcpStatus, setActivePanel } = useIntegrationsStore()
+  const { mcp, setActivePanel } = useIntegrationsStore()
   const [tab, setTab] = useState<Tab>('installed')
   const [form, setForm] = useState({ name: '', command: 'npx', args: '', env: '' })
   const [loading, setLoading] = useState<string | null>(null)
 
   useEffect(() => {
     async function load(): Promise<void> {
-      const list = await window.electronAPI?.mcpList() ?? []
+      const list = await globalThis.electronAPI?.mcpList() ?? []
       const { setMcpServers: setServers, setMcpStatus: setStatus } = useIntegrationsStore.getState()
       setServers(list.map(({ status: _s, ...s }) => s))
-      const statuses = await window.electronAPI?.mcpStatuses() ?? {}
+      const statuses = await globalThis.electronAPI?.mcpStatuses() ?? {}
       Object.entries(statuses).forEach(([id, st]) => setStatus(id, st))
     }
-    void load()
+    void load().catch((e: unknown) => console.error('[McpPanel] load error:', e))
   }, [])
 
   async function installRecommended(rec: (typeof RECOMMENDED)[0]): Promise<void> {
     setLoading(rec.name)
     const config: McpServerConfig = { id: rec.name, ...rec, autoStart: true }
     try {
-      await window.electronAPI?.mcpAdd(config)
+      await globalThis.electronAPI?.mcpAdd(config)
       const { setMcpServers: setServers, setMcpStatus: setStatus } = useIntegrationsStore.getState()
       setServers([...useIntegrationsStore.getState().mcp.servers, config])
       setStatus(rec.name, 'running')
@@ -48,10 +68,10 @@ export function McpPanel(): React.JSX.Element {
     const { setMcpStatus: setStatus } = useIntegrationsStore.getState()
     try {
       if (status === 'running') {
-        await window.electronAPI?.mcpStop(id)
+        await globalThis.electronAPI?.mcpStop(id)
         setStatus(id, 'stopped')
       } else {
-        await window.electronAPI?.mcpStart(id)
+        await globalThis.electronAPI?.mcpStart(id)
         setStatus(id, 'running')
       }
     } finally {
@@ -62,7 +82,7 @@ export function McpPanel(): React.JSX.Element {
   async function remove(id: string): Promise<void> {
     setLoading(id)
     try {
-      await window.electronAPI?.mcpRemove(id)
+      await globalThis.electronAPI?.mcpRemove(id)
       const { setMcpServers: setServers } = useIntegrationsStore.getState()
       setServers(useIntegrationsStore.getState().mcp.servers.filter((s) => s.id !== id))
     } finally {
@@ -79,7 +99,7 @@ export function McpPanel(): React.JSX.Element {
     const config: McpServerConfig = { id, name: form.name, command: form.command, args, env, autoStart: true }
     setLoading(id)
     try {
-      await window.electronAPI?.mcpAdd(config)
+      await globalThis.electronAPI?.mcpAdd(config)
       const { setMcpServers: setServers, setMcpStatus: setStatus } = useIntegrationsStore.getState()
       setServers([...useIntegrationsStore.getState().mcp.servers, config])
       setStatus(id, 'running')
@@ -111,7 +131,7 @@ export function McpPanel(): React.JSX.Element {
                 : 'text-fg-ghost border-transparent hover:text-fg',
             ].join(' ')}
           >
-            {t === 'installed' ? `설치됨 (${mcp.servers.length})` : t === 'recommended' ? '추천 서버' : '직접 추가'}
+            {getTabLabel(t, mcp.servers.length)}
           </button>
         ))}
       </div>
@@ -155,6 +175,9 @@ export function McpPanel(): React.JSX.Element {
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
           {RECOMMENDED.map((rec) => {
             const installed = installedIds.has(rec.name)
+            let installBtnLabel = '+ 설치'
+            if (loading === rec.name) installBtnLabel = '설치 중...'
+            else if (installed) installBtnLabel = '✓ 설치됨'
             return (
               <div key={rec.name} className="flex flex-col gap-2 rounded border border-border bg-surface px-3 py-3">
                 <div className="text-[13px] font-semibold text-fg">{rec.name}</div>
@@ -166,7 +189,7 @@ export function McpPanel(): React.JSX.Element {
                   disabled={installed || loading === rec.name}
                   onClick={() => void installRecommended(rec)}
                 >
-                  {loading === rec.name ? '설치 중...' : installed ? '✓ 설치됨' : '+ 설치'}
+                  {installBtnLabel}
                 </Button>
               </div>
             )
@@ -179,16 +202,11 @@ export function McpPanel(): React.JSX.Element {
           {(['name', 'command', 'args', 'env'] as const).map((field) => (
             <div key={field} className="flex flex-col gap-1">
               <label className="text-[11px] text-fg-ghost">
-                {field === 'name' ? '이름' : field === 'command' ? '실행 명령어' : field === 'args' ? '인수 (공백 구분)' : '환경변수 (JSON)'}
+                {getFieldLabel(field)}
               </label>
               <input
                 className="w-full rounded border border-border bg-bg px-3 py-2 text-[13px] text-fg placeholder:text-fg-ghost focus:outline-none focus:border-accent"
-                placeholder={
-                  field === 'name' ? '예: my-custom-mcp' :
-                  field === 'command' ? '예: npx' :
-                  field === 'args' ? '예: @org/mcp-server --port 8080' :
-                  '예: {"API_KEY": "sk-..."}'
-                }
+                placeholder={getFieldPlaceholder(field)}
                 value={form[field]}
                 onChange={(e) => setForm({ ...form, [field]: e.target.value })}
               />

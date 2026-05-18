@@ -4,7 +4,7 @@ import type { SessionStore } from '../sessions/session.store.js'
 import type { ClaudeRunner } from '../claude/runner.interface.js'
 import type { ManagerClient } from '../manager/manager.client.js'
 import type { StreamProducer } from '../streams/producer.js'
-import type { Message } from '@xzawed/shared'
+import type { Message, ManagerToOrchestratorMessage } from '@xzawed/shared'
 import { StreamConsumer } from '../streams/consumer.js'
 import Anthropic from '@anthropic-ai/sdk'
 import { structureIntent } from '../claude/intent-structurer.js'
@@ -14,34 +14,78 @@ const messageStore = new Map<string, Message[]>()
 const claudeSessionIds = new Map<string, string>()
 const taskStore = new TaskStore()
 
+interface SessionsRoutesConfig {
+  store: SessionStore
+  runner: ClaudeRunner
+  wsSessions: Map<string, WebSocket>
+  manager: ManagerClient
+  redisUrl: string
+  producer: StreamProducer
+  sessionConsumers: Map<string, StreamConsumer>
+  sessionCleanup: Map<string, () => void>
+  anthropicClient?: Anthropic
+  claudeModel?: string
+  authHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
+}
+
+function handleConsumerMessage(
+  msg: ManagerToOrchestratorMessage,
+  sessionId: string,
+  socket: WebSocket,
+  consumers: Map<string, StreamConsumer>
+): void {
+  const activeTask = taskStore
+    .findBySessionId(sessionId)
+    .findLast(t => t.status === 'pending' || t.status === 'running')
+
+  switch (msg.type) {
+    case 'status_update':
+      if (activeTask) taskStore.update(activeTask.id, 'running')
+      socket.send(JSON.stringify({
+        type: 'agent_status',
+        agentId: msg.payload.agentId,
+        content: msg.payload.content,
+      }))
+      break
+    case 'task_complete':
+      if (activeTask) taskStore.update(activeTask.id, 'completed', msg.payload.content)
+      socket.send(JSON.stringify({
+        type: 'agent_done',
+        agentId: msg.payload.agentId,
+        content: msg.payload.content,
+      }))
+      consumers.get(sessionId)?.stop()
+      consumers.delete(sessionId)
+      break
+    case 'error':
+      if (activeTask) taskStore.update(activeTask.id, 'failed', msg.payload.content)
+      socket.send(JSON.stringify({
+        type: 'agent_error',
+        agentId: msg.payload.agentId,
+        content: msg.payload.content,
+      }))
+      consumers.get(sessionId)?.stop()
+      consumers.delete(sessionId)
+      break
+    case 'info_request':
+      socket.send(JSON.stringify({
+        type: 'agent_info_request',
+        agentId: msg.payload.agentId,
+        content: msg.payload.content,
+        ...(msg.payload.uiSpec !== undefined ? { uiSpec: msg.payload.uiSpec } : {}),
+      }))
+      break
+  }
+}
+
 export async function sessionsRoutes(
   app: FastifyInstance,
-  {
-    store,
-    runner,
-    wsSessions,
-    manager,
-    redisUrl,
-    producer,
-    sessionConsumers,
-    sessionCleanup,
-    anthropicClient,
-    claudeModel,
-    authHook,
-  }: {
-    store: SessionStore
-    runner: ClaudeRunner
-    wsSessions: Map<string, WebSocket>
-    manager: ManagerClient
-    redisUrl: string
-    producer: StreamProducer
-    sessionConsumers: Map<string, StreamConsumer>
-    sessionCleanup: Map<string, () => void>
-    anthropicClient?: Anthropic
-    claudeModel?: string
-    authHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
-  }
+  config: SessionsRoutesConfig
 ): Promise<void> {
+  const {
+    store, runner, wsSessions, manager, redisUrl, producer,
+    sessionConsumers, sessionCleanup, anthropicClient, claudeModel, authHook,
+  } = config
   const routeOpts = authHook ? { preHandler: authHook } : {}
 
   app.post<{ Body: { userId: string } }>('/sessions', routeOpts, async (req, reply) => {
@@ -56,7 +100,6 @@ export async function sessionsRoutes(
       store.delete(session.id)
     })
 
-    // Notify Manager to start listening on the Redis stream for this session.
     // Fire-and-forget with best-effort: session creation must not fail if Manager is unavailable.
     void manager.startSession(session.id).catch((err: unknown) => {
       req.log.warn({ err, sessionId: session.id }, 'Failed to start Manager session')
@@ -68,49 +111,7 @@ export async function sessionsRoutes(
     void consumer.start(session.id, async (msg) => {
       const socket = wsSessions.get(session.id)
       if (!socket) return
-
-      const activeTask = taskStore
-        .findBySessionId(session.id)
-        .findLast(t => t.status === 'pending' || t.status === 'running')
-
-      switch (msg.type) {
-        case 'status_update':
-          if (activeTask) taskStore.update(activeTask.id, 'running')
-          socket.send(JSON.stringify({
-            type: 'agent_status',
-            agentId: msg.payload.agentId,
-            content: msg.payload.content,
-          }))
-          break
-        case 'task_complete':
-          if (activeTask) taskStore.update(activeTask.id, 'completed', msg.payload.content)
-          socket.send(JSON.stringify({
-            type: 'agent_done',
-            agentId: msg.payload.agentId,
-            content: msg.payload.content,
-          }))
-          consumer.stop()
-          sessionConsumers.delete(session.id)
-          break
-        case 'error':
-          if (activeTask) taskStore.update(activeTask.id, 'failed', msg.payload.content)
-          socket.send(JSON.stringify({
-            type: 'agent_error',
-            agentId: msg.payload.agentId,
-            content: msg.payload.content,
-          }))
-          consumer.stop()
-          sessionConsumers.delete(session.id)
-          break
-        case 'info_request':
-          socket.send(JSON.stringify({
-            type: 'agent_info_request',
-            agentId: msg.payload.agentId,
-            content: msg.payload.content,
-            ...(msg.payload.uiSpec !== undefined ? { uiSpec: msg.payload.uiSpec } : {}),
-          }))
-          break
-      }
+      handleConsumerMessage(msg, session.id, socket, sessionConsumers)
     }).catch((err: unknown) => {
       req.log.warn({ err, sessionId: session.id }, 'StreamConsumer error')
     })

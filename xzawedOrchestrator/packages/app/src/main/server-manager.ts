@@ -24,6 +24,7 @@ export class ServerManager {
         REDIS_URL: 'redis://localhost:6379',
       },
       stdio: 'inherit',
+      shell: false,
     })
 
     this.proc.on('error', (err) => {

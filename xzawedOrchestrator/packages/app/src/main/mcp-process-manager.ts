@@ -116,6 +116,7 @@ export class McpProcessManager {
     const proc = spawn(config.command, config.args, {
       env: { ...process.env, ...config.env },
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false,
     })
 
     this.processes.set(id, proc)
@@ -142,7 +143,11 @@ export class McpProcessManager {
 
   stopAll(): void {
     const ids = [...this.processes.keys()]
-    for (const id of ids) void this.stopServer(id)
+    for (const id of ids) {
+      this.stopServer(id).catch((err: unknown) => {
+        console.error(`[McpProcessManager] stopAll error for ${id}:`, err)
+      })
+    }
   }
 
   async startAutoStart(): Promise<void> {
