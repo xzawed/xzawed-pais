@@ -9,6 +9,10 @@ interface ChatState {
   isStreaming: boolean
   isPending: boolean
   uiSpec: UISpec | null
+  logLines: string[]
+  tokenCount: number
+  elapsedMs: number
+  modifiedFiles: string[]
   initSession: (sessionId: string) => void
   addMessage: (msg: Message) => void
   setPending: (v: boolean) => void
@@ -17,6 +21,10 @@ interface ChatState {
   finalizeStream: (msgId: string) => void
   cancelStream: () => void
   setUiSpec: (spec: UISpec | null) => void
+  addLogLine: (line: string) => void
+  setTokenCount: (n: number) => void
+  setElapsedMs: (ms: number) => void
+  addModifiedFile: (path: string) => void
   reset: () => void
 }
 
@@ -28,13 +36,16 @@ const initialState = {
   isStreaming: false,
   isPending: false,
   uiSpec: null,
+  logLines: [] as string[],
+  tokenCount: 0,
+  elapsedMs: 0,
+  modifiedFiles: [] as string[],
 }
 
 export const useChatStore = create<ChatState>((set) => ({
   ...initialState,
 
-  initSession: (sessionId) =>
-    set({ ...initialState, sessionId }),
+  initSession: (sessionId) => set({ ...initialState, sessionId }),
 
   addMessage: (msg) =>
     set((state) => ({ messages: [...state.messages, msg] })),
@@ -47,7 +58,8 @@ export const useChatStore = create<ChatState>((set) => ({
   appendChunk: (content) =>
     set((state) => ({ streamingContent: state.streamingContent + content })),
 
-  cancelStream: () => set({ isStreaming: false, isPending: false, streamingMsgId: null, streamingContent: '' }),
+  cancelStream: () =>
+    set({ isStreaming: false, isPending: false, streamingMsgId: null, streamingContent: '' }),
 
   finalizeStream: (msgId) =>
     set((state) => {
@@ -68,6 +80,20 @@ export const useChatStore = create<ChatState>((set) => ({
     }),
 
   setUiSpec: (uiSpec) => set({ uiSpec }),
+
+  addLogLine: (line) =>
+    set((state) => ({ logLines: [...state.logLines.slice(-199), line] })),
+
+  setTokenCount: (tokenCount) => set({ tokenCount }),
+
+  setElapsedMs: (elapsedMs) => set({ elapsedMs }),
+
+  addModifiedFile: (path) =>
+    set((state) => ({
+      modifiedFiles: state.modifiedFiles.includes(path)
+        ? state.modifiedFiles
+        : [...state.modifiedFiles, path],
+    })),
 
   reset: () => set({ ...initialState }),
 }))

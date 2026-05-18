@@ -1,71 +1,86 @@
-import React, { useState } from 'react'
-import { useAppStore, type AppSettings } from '../store/app.store.js'
+import React, { useState, useEffect } from 'react'
+import { useAppStore } from '../store/app.store.js'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from './ui/dialog.js'
+import { Button } from './ui/button.js'
 
-export function SettingsModal(): React.JSX.Element | null {
+export function SettingsModal(): React.JSX.Element {
   const { settings, showSettings, toggleSettings, updateSettings } = useAppStore()
-  const [draft, setDraft] = useState<AppSettings>({ ...settings })
+  const [localUrl, setLocalUrl] = useState(settings.serverUrl)
+  const [localMode, setLocalMode] = useState(settings.mode)
+  const [localUserId, setLocalUserId] = useState(settings.userId)
 
-  if (!showSettings) return null
+  useEffect(() => {
+    if (showSettings) {
+      setLocalUrl(settings.serverUrl)
+      setLocalMode(settings.mode)
+      setLocalUserId(settings.userId)
+    }
+  }, [showSettings, settings])
 
   function handleSave(): void {
-    updateSettings(draft)
-    // Persist via IPC if electronAPI is available
-    window.electronAPI?.setSettings(draft).catch(console.error)
+    const updated = { serverUrl: localUrl, mode: localMode, userId: localUserId }
+    updateSettings(updated)
+    window.electronAPI?.setSettings(updated).catch(console.error)
     toggleSettings()
   }
 
-  function handleCancel(): void {
-    setDraft({ ...settings })
-    toggleSettings()
-  }
+  const labelClass = 'block text-[10px] text-fg-ghost mb-1'
+  const inputClass =
+    'w-full rounded border border-border bg-code px-2.5 py-1.5 text-[12px] text-fg placeholder:text-fg-ghost outline-none focus:border-accent/60 transition-colors'
 
   return (
-    <div className="settings-overlay" onClick={handleCancel}>
-      <div className="settings-modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Settings</h2>
+    <Dialog open={showSettings} onOpenChange={toggleSettings}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>설정</DialogTitle>
+        </DialogHeader>
 
-        <div className="settings-field">
-          <label>Server URL</label>
-          <input
-            type="text"
-            value={draft.serverUrl}
-            onChange={(e) => setDraft((d) => ({ ...d, serverUrl: e.target.value }))}
-            placeholder="http://localhost:3000"
-          />
+        <div className="space-y-3">
+          <div>
+            <label htmlFor="settings-server-url" className={labelClass}>서버 URL</label>
+            <input
+              id="settings-server-url"
+              type="text"
+              value={localUrl}
+              onChange={(e) => setLocalUrl(e.target.value)}
+              className={inputClass}
+              placeholder="http://localhost:3000"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="settings-mode" className={labelClass}>모드</label>
+            <select
+              id="settings-mode"
+              value={localMode}
+              onChange={(e) => setLocalMode(e.target.value as 'local' | 'remote')}
+              className={inputClass}
+            >
+              <option value="local">Local</option>
+              <option value="remote">Remote</option>
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="settings-user-id" className={labelClass}>사용자 ID</label>
+            <input
+              id="settings-user-id"
+              type="text"
+              value={localUserId}
+              onChange={(e) => setLocalUserId(e.target.value)}
+              className={inputClass}
+              placeholder="user-id"
+            />
+          </div>
         </div>
 
-        <div className="settings-field">
-          <label>Mode</label>
-          <select
-            value={draft.mode}
-            onChange={(e) =>
-              setDraft((d) => ({ ...d, mode: e.target.value as 'local' | 'remote' }))
-            }
-          >
-            <option value="local">Local (embedded server)</option>
-            <option value="remote">Remote (external server)</option>
-          </select>
+        <div className="mt-5 flex justify-end gap-2">
+          <DialogClose asChild>
+            <Button variant="ghost" size="md">취소</Button>
+          </DialogClose>
+          <Button variant="default" size="md" onClick={handleSave}>저장</Button>
         </div>
-
-        <div className="settings-field">
-          <label>User ID</label>
-          <input
-            type="text"
-            value={draft.userId}
-            onChange={(e) => setDraft((d) => ({ ...d, userId: e.target.value }))}
-            placeholder="user"
-          />
-        </div>
-
-        <div className="settings-modal-actions">
-          <button className="btn-secondary" onClick={handleCancel}>
-            Cancel
-          </button>
-          <button className="btn-primary" onClick={handleSave}>
-            Save
-          </button>
-        </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

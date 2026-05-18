@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useIntegrationsStore, type McpServerConfig } from '../store/integrations.store.js'
+import { Button } from './ui/button.js'
 
 const RECOMMENDED: Array<Omit<McpServerConfig, 'id' | 'autoStart'>> = [
   { name: 'context7',   command: 'npx', args: ['@upstash/context7-mcp'],                       env: {} },
@@ -92,23 +93,23 @@ export function McpPanel(): React.JSX.Element {
   const installedIds = new Set(mcp.servers.map((s) => s.id))
 
   return (
-    <div className="integration-panel">
-      <div className="panel-header">
-        <button className="panel-back-btn" onClick={() => setActivePanel('chat')}>← 채팅으로</button>
-        <h2>🔌 MCP 서버</h2>
+    <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5 bg-bg">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={() => setActivePanel('chat')}>← 채팅으로</Button>
+        <h2 className="text-[13px] font-semibold text-fg">🔌 MCP 서버</h2>
       </div>
 
-      <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #2a2a4a', marginBottom: 20 }}>
+      <div className="flex border-b border-border">
         {(['installed', 'recommended', 'custom'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            style={{
-              padding: '8px 16px', border: 'none', background: 'none', cursor: 'pointer',
-              color: tab === t ? '#e0e0e0' : '#6a6a8a',
-              borderBottom: tab === t ? '2px solid #4a4aaa' : '2px solid transparent',
-              fontSize: 13,
-            }}
+            className={[
+              'px-4 py-2 text-[13px] border-b-2 -mb-px transition-colors',
+              tab === t
+                ? 'text-fg border-accent'
+                : 'text-fg-ghost border-transparent hover:text-fg',
+            ].join(' ')}
           >
             {t === 'installed' ? `설치됨 (${mcp.servers.length})` : t === 'recommended' ? '추천 서버' : '직접 추가'}
           </button>
@@ -116,25 +117,34 @@ export function McpPanel(): React.JSX.Element {
       </div>
 
       {tab === 'installed' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="flex flex-col gap-2">
           {mcp.servers.length === 0 && (
-            <div style={{ color: '#6a6a8a', textAlign: 'center', padding: 40 }}>
+            <div className="py-10 text-center text-[11px] text-fg-ghost">
               설치된 MCP 서버가 없습니다. &quot;추천 서버&quot; 탭에서 설치하세요.
             </div>
           )}
           {mcp.servers.map((s) => {
             const status = mcp.statuses[s.id] ?? 'stopped'
+            let statusColor = 'text-fg-ghost'
+            if (status === 'running') statusColor = 'text-ok'
+            else if (status === 'error') statusColor = 'text-danger'
+
+            let toggleLabel = '시작'
+            if (loading === s.id) toggleLabel = '...'
+            else if (status === 'running') toggleLabel = '중지'
             return (
-              <div key={s.id} className="panel-card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 10, color: status === 'running' ? '#4caf50' : status === 'error' ? '#f44336' : '#9e9e9e' }}>●</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ color: '#e0e0e0', fontSize: 13, fontWeight: 600 }}>{s.name}</div>
-                  <div style={{ color: '#6a6a8a', fontSize: 11 }}>{s.command} {s.args.join(' ')}</div>
+              <div key={s.id} className="flex items-center justify-between rounded border border-border bg-surface px-3 py-2 text-[11px] text-fg">
+                <span className={`mr-2 text-[10px] ${statusColor}`}>●</span>
+                <div className="flex-1">
+                  <div className="font-mono text-[11px] text-fg font-semibold">{s.name}</div>
+                  <div className="text-[10px] text-fg-ghost">{s.command} {s.args.join(' ')}</div>
                 </div>
-                <button className="panel-btn panel-btn--ghost" disabled={loading === s.id} onClick={() => void toggle(s.id)}>
-                  {loading === s.id ? '...' : status === 'running' ? '중지' : '시작'}
-                </button>
-                <button className="panel-btn panel-btn--danger" disabled={loading === s.id} onClick={() => void remove(s.id)}>제거</button>
+                <div className="flex items-center gap-1.5">
+                  <Button variant="ghost" size="sm" disabled={loading === s.id} onClick={() => void toggle(s.id)}>
+                    {toggleLabel}
+                  </Button>
+                  <Button variant="danger" size="sm" disabled={loading === s.id} onClick={() => void remove(s.id)}>제거</Button>
+                </div>
               </div>
             )
           })}
@@ -142,21 +152,22 @@ export function McpPanel(): React.JSX.Element {
       )}
 
       {tab === 'recommended' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 12 }}>
+        <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
           {RECOMMENDED.map((rec) => {
             const installed = installedIds.has(rec.name)
             return (
-              <div key={rec.name} className="panel-card">
-                <div style={{ color: '#e0e0e0', fontWeight: 600, marginBottom: 4 }}>{rec.name}</div>
-                <div style={{ color: '#6a6a8a', fontSize: 11, marginBottom: 12 }}>{rec.command} {rec.args.join(' ')}</div>
-                <button
-                  className={`panel-btn ${installed ? 'panel-btn--success' : 'panel-btn--primary'}`}
-                  style={{ width: '100%' }}
+              <div key={rec.name} className="flex flex-col gap-2 rounded border border-border bg-surface px-3 py-3">
+                <div className="text-[13px] font-semibold text-fg">{rec.name}</div>
+                <div className="text-[11px] text-fg-ghost">{rec.command} {rec.args.join(' ')}</div>
+                <Button
+                  variant={installed ? 'outline' : 'default'}
+                  size="sm"
+                  className="w-full"
                   disabled={installed || loading === rec.name}
                   onClick={() => void installRecommended(rec)}
                 >
                   {loading === rec.name ? '설치 중...' : installed ? '✓ 설치됨' : '+ 설치'}
-                </button>
+                </Button>
               </div>
             )
           })}
@@ -164,14 +175,14 @@ export function McpPanel(): React.JSX.Element {
       )}
 
       {tab === 'custom' && (
-        <div className="panel-card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="flex flex-col gap-3 rounded border border-border bg-surface px-4 py-4">
           {(['name', 'command', 'args', 'env'] as const).map((field) => (
-            <div key={field}>
-              <label style={{ color: '#a0a0c0', fontSize: 12, display: 'block', marginBottom: 4 }}>
+            <div key={field} className="flex flex-col gap-1">
+              <label className="text-[11px] text-fg-ghost">
                 {field === 'name' ? '이름' : field === 'command' ? '실행 명령어' : field === 'args' ? '인수 (공백 구분)' : '환경변수 (JSON)'}
               </label>
               <input
-                style={{ width: '100%', background: '#0f1420', border: '1px solid #2a2a4a', borderRadius: 6, padding: '8px 12px', color: '#e0e0e0', fontSize: 13, boxSizing: 'border-box' }}
+                className="w-full rounded border border-border bg-bg px-3 py-2 text-[13px] text-fg placeholder:text-fg-ghost focus:outline-none focus:border-accent"
                 placeholder={
                   field === 'name' ? '예: my-custom-mcp' :
                   field === 'command' ? '예: npx' :
@@ -183,9 +194,9 @@ export function McpPanel(): React.JSX.Element {
               />
             </div>
           ))}
-          <button className="panel-btn panel-btn--primary" onClick={() => void addCustom()} disabled={!form.name || !form.command}>
+          <Button variant="default" onClick={() => void addCustom()} disabled={!form.name || !form.command}>
             + 추가 및 시작
-          </button>
+          </Button>
         </div>
       )}
     </div>
