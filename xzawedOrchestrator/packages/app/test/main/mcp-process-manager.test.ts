@@ -15,7 +15,7 @@ vi.mock('node:fs', () => ({
   readFileSync: vi.fn(() => '[]'),
   mkdirSync: vi.fn(),
 }))
-vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/test') } }))
+vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/test') } })) // NOSONAR
 
 import { McpProcessManager } from '../../src/main/mcp-process-manager.js'
 

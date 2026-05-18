@@ -7,7 +7,7 @@ vi.mock('electron', () => ({
     decryptString: vi.fn((b: Buffer) => b.toString().replace('-enc', '')),
   },
   shell: { openExternal: vi.fn() },
-  app: { getPath: vi.fn(() => '/tmp/test-userData') },
+  app: { getPath: vi.fn(() => '/tmp/test-userData') }, // NOSONAR
 }))
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(() => false),
