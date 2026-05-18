@@ -212,7 +212,9 @@ export async function sessionsRoutes(
           const content = err instanceof Error ? err.message : String(err)
           socket?.send(JSON.stringify({ type: 'error', content }))
         }
-      })()
+      })().catch((err: unknown) => {
+        app.log.error({ err, sessionId: req.params.id }, 'Unhandled error in message processing')
+      })
 
       return reply.status(202).send({ messageId: msg.id, status: 'accepted' })
     }

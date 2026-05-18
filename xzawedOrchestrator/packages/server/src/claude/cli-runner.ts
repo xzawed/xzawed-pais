@@ -50,6 +50,10 @@ export class CLIRunner implements ClaudeRunner {
       queue.close()
     })
 
-    yield* queue
+    try {
+      yield* queue
+    } finally {
+      if (proc.exitCode === null) proc.kill()
+    }
   }
 }
