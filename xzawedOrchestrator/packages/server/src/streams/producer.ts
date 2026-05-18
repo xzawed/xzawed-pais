@@ -4,7 +4,7 @@ import { getRedisClient } from './redis.client.js'
 const streamKey = (sessionId: string) => `orchestrator:to-manager:${sessionId}`
 
 export class StreamProducer {
-  private redisUrl: string
+  private readonly redisUrl: string
 
   constructor(redisUrl: string) {
     this.redisUrl = redisUrl
