@@ -14,6 +14,7 @@ export interface Config {
   remoteKeyPath?: string
   redisUrl: string
   managerUrl: string
+  databaseUrl?: string
 }
 
 export function loadConfig(): Config {
@@ -47,5 +48,6 @@ export function loadConfig(): Config {
     remoteKeyPath: process.env.REMOTE_KEY_PATH,
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
     managerUrl: process.env.MANAGER_URL ?? 'http://localhost:3001',
+    databaseUrl: process.env.DATABASE_URL,
   }
 }
