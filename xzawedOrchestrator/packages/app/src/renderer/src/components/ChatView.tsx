@@ -96,8 +96,8 @@ export function ChatView(): React.JSX.Element {
 
   if (!sessionId) {
     return (
-      <div className="chat-panel">
-        <div className="empty-state">Start a new session from the sidebar</div>
+      <div className="flex flex-1 flex-col overflow-hidden bg-bg">
+        <div className="flex flex-1 items-center justify-center text-fg-ghost text-sm">새 세션을 시작해주세요</div>
       </div>
     )
   }
@@ -114,8 +114,8 @@ export function ChatView(): React.JSX.Element {
       : null
 
   return (
-    <div className="chat-panel">
-      <div className="chat-messages">
+    <div className="flex flex-1 flex-col overflow-hidden bg-bg">
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-4 min-h-0">
         {messages.map((msg) => (
           <MessageBubble key={msg.id} message={msg} />
         ))}
@@ -123,10 +123,14 @@ export function ChatView(): React.JSX.Element {
           <MessageBubble key="streaming" message={streamingMessage} streaming />
         )}
         {isPending && !isStreaming && (
-          <div className="typing-indicator">
-            <span />
-            <span />
-            <span />
+          <div className="flex items-center gap-1 px-1">
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="h-1.5 w-1.5 rounded-full bg-accent"
+                style={{ animation: `pulse 1s ease-in-out ${i * 0.2}s infinite` }}
+              />
+            ))}
           </div>
         )}
         <div ref={messagesEndRef} />
