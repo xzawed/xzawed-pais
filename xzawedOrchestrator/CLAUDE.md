@@ -16,11 +16,14 @@ pnpm install
 # 서버 개발 모드
 cd packages/server && pnpm dev
 
-# 전체 테스트
+# 전체 테스트 (Vitest: unit + browser 모드)
 pnpm test
 
 # 특정 패키지 테스트
 cd packages/server && pnpm test
+
+# Playwright E2E 테스트 (Electron 앱 실행 필요 — 별도 빌드 선행)
+cd packages/app && pnpm build && pnpm test:e2e
 
 # 빌드
 pnpm build
@@ -50,6 +53,12 @@ packages/
 │           ├── task.ts               # Task 타입 (pending→running→completed/failed)
 │           └── task.store.ts         # TaskStore — 세션별 인메모리 Map 관리
 └── app/        # Electron 앱 (React 19 + Zustand + electron-vite)
+    ├── e2e/                          # Playwright E2E 테스트 (13건)
+    │   ├── fixtures.ts               # Electron 자동 실행 fixture (playwright._electron)
+    │   ├── chat-flow.spec.ts         # 채팅 흐름 4건
+    │   ├── github-status.spec.ts     # GitHub 패널 3건
+    │   ├── mcp-list.spec.ts          # MCP 패널 3건
+    │   └── settings.spec.ts          # 설정 모달 3건
     ├── src/main/
     │   ├── index.ts                  # IPC 채널 등록 (settings, github, mcp, plugin)
     │   ├── github-oauth-handler.ts   # OAuth 콜백 서버, safeStorage 토큰 암호화
@@ -111,6 +120,20 @@ packages/
 - **cmdk** — ⌘K CommandPalette (Spotlight 스타일)
 - **electron-vite + @tailwindcss/vite** — 빌드 파이프라인
 - **electron-builder** — Electron 앱 패키징 (package 스크립트)
+
+### 테스트 인프라
+
+- **Vitest 3** + `vitest.config.ts` `projects` API — `unit` (node) + `browser` (playwright/chromium) 두 프로젝트 분리
+  - `unit`: `test/**/*.test.ts` — 17건 (store, main 프로세스 유닛 테스트)
+  - `browser`: `src/renderer/src/__tests__/**/*.browser.test.tsx` — 14건 (컴포넌트 렌더링)
+  - 총 `pnpm test`: **41건** (app) + **79건** (server, 5건은 Redis 없으면 skip) = **120건**
+- **@vitest/browser + playwright** — 실제 Chromium에서 React 컴포넌트 렌더링 검증
+- **@testing-library/react** — 브라우저 모드 렌더링; `afterEach(cleanup)` 명시 필요
+- **@playwright/test** + `playwright._electron` — Electron E2E (`e2e/`, 13건, `pnpm test:e2e`)
+  - `e2e/fixtures.ts`: Electron 앱 자동 실행·종료 fixture
+  - data-testid/aria-label: ActivityBar·Sidebar·GitHubPanel·McpPanel·MessageInput·CodeBlock·PipelineStrip·ChatView에 추가
+  - CI: `playwright-e2e` 잡 (`ubuntu-latest`, `xvfb-run`, Electron 바이너리 다운로드)
+- **Redis 통합 테스트** (`packages/server/src/__tests__/redis-streams.integration.test.ts`) — 5건, `REDIS_URL` 없으면 skip
 
 ### 작업(Task) 생명주기
 
