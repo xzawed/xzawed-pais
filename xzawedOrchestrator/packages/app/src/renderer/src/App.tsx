@@ -14,6 +14,7 @@ import { McpPanel } from './components/McpPanel.js'
 import { PluginPanel } from './components/PluginPanel.js'
 import { CommandPalette } from './components/CommandPalette.js'
 import { TooltipProvider } from './components/ui/tooltip.js'
+import { StatusBar } from './components/layout/StatusBar.js'
 
 export function App(): React.JSX.Element {
   const { settings, updateSettings, setServerStatus } = useAppStore()
@@ -40,29 +41,37 @@ export function App(): React.JSX.Element {
 
   return (
     <TooltipProvider delayDuration={400}>
-      <div className="flex h-full w-full overflow-hidden bg-bg">
+      <div className="flex h-full w-full flex-col overflow-hidden bg-bg">
 
-        {/* 1. Activity Bar (44px) */}
-        <ActivityBar />
+        {/* 4-panel row (flex-1) */}
+        <div className="flex flex-1 overflow-hidden min-w-0">
 
-        {/* 2. Sidebar (210px) */}
-        <Sidebar />
+          {/* 1. Activity Bar (44px) */}
+          <ActivityBar />
 
-        {/* 3. Main Area (flex-1) */}
-        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-          {activePanel === 'chat' && (
-            <div className="flex flex-1 overflow-hidden">
-              <ChatView />
-              <DynamicPanel />
-            </div>
-          )}
-          {activePanel === 'github'  && <GitHubPanel />}
-          {activePanel === 'mcp'     && <McpPanel />}
-          {activePanel === 'plugins' && <PluginPanel />}
+          {/* 2. Sidebar (210px) */}
+          <Sidebar />
+
+          {/* 3. Main Area (flex-1) */}
+          <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+            {activePanel === 'chat' && (
+              <div className="flex flex-1 overflow-hidden">
+                <ChatView />
+                <DynamicPanel />
+              </div>
+            )}
+            {activePanel === 'github'  && <GitHubPanel />}
+            {activePanel === 'mcp'     && <McpPanel />}
+            {activePanel === 'plugins' && <PluginPanel />}
+          </div>
+
+          {/* 4. Right Panel (200px) — chat 패널에서만 표시 */}
+          {activePanel === 'chat' && <RightPanel />}
+
         </div>
 
-        {/* 4. Right Panel (200px) — chat 패널에서만 표시 */}
-        {activePanel === 'chat' && <RightPanel />}
+        {/* Status Bar */}
+        <StatusBar />
 
         {/* Overlays */}
         <SettingsModal />
