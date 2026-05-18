@@ -17,6 +17,7 @@ export interface Config {
   databaseUrl?: string
   userJwtSecret?: string
   serveWeb: boolean
+  githubTokenKey?: string
 }
 
 export function loadConfig(): Config {
@@ -53,5 +54,6 @@ export function loadConfig(): Config {
     databaseUrl: process.env.DATABASE_URL,
     userJwtSecret: process.env.USER_JWT_SECRET,
     serveWeb: process.env.SERVE_WEB === 'true',
+    githubTokenKey: process.env.GITHUB_TOKEN_ENCRYPTION_KEY,
   }
 }
