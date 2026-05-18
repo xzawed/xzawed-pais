@@ -11,6 +11,7 @@ import {
 
 export function CommandPalette(): React.JSX.Element {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
   const { settings, toggleSettings } = useAppStore()
   const { setActivePanel } = useIntegrationsStore()
   const { initSession } = useChatStore()
@@ -21,11 +22,17 @@ export function CommandPalette(): React.JSX.Element {
         e.preventDefault()
         setOpen((v) => !v)
       }
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') {
+        if (search) {
+          setSearch('')
+        } else {
+          setOpen(false)
+        }
+      }
     }
     globalThis.addEventListener('keydown', handler)
     return () => globalThis.removeEventListener('keydown', handler)
-  }, [])
+  }, [search])
 
   async function newSession(): Promise<void> {
     setOpen(false)
@@ -33,12 +40,17 @@ export function CommandPalette(): React.JSX.Element {
       const { sessionId } = await createSession(settings.serverUrl, settings.userId)
       initSession(sessionId)
       setActivePanel('chat')
-    } catch (e) { console.debug('newSession failed', e) }
+    } catch (e) { console.error('newSession failed', e) }
   }
 
   function navigate(panel: 'chat' | 'github' | 'mcp' | 'plugins'): void {
     setOpen(false)
     setActivePanel(panel)
+  }
+
+  function openSettings(): void {
+    setOpen(false)
+    toggleSettings()
   }
 
   return (
@@ -62,7 +74,7 @@ export function CommandPalette(): React.JSX.Element {
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
           >
             <Command>
-              <CommandInput placeholder="명령어 검색..." />
+              <CommandInput placeholder="명령어 검색..." value={search} onValueChange={setSearch} />
               <CommandList>
                 <CommandEmpty>결과 없음</CommandEmpty>
                 <CommandGroup heading="세션">
@@ -85,7 +97,7 @@ export function CommandPalette(): React.JSX.Element {
                   </CommandItem>
                 </CommandGroup>
                 <CommandGroup heading="기타">
-                  <CommandItem onSelect={() => { setOpen(false); toggleSettings() }}>
+                  <CommandItem onSelect={openSettings}>
                     <span>⚙</span> 설정 열기
                   </CommandItem>
                 </CommandGroup>
