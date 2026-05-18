@@ -103,6 +103,7 @@ AUTH=none                # none | jwt
 - **Claude tool-use 검증**: `runner.ts`의 `block.input`은 각 핸들러의 `inputSchema`로 런타임 검증 필요 (현재 부분 구현)
 - **AbortController 재사용** (`session.store.ts`): `abort()` 후 즉시 `new AbortController()` 교체 — `AbortSignal`은 단방향이므로 재사용 불가
 - **무한루프 방지** (`runner.ts`): 빈 `toolResults` 배열 가드 + `stop_reason`이 `end_turn`/`tool_use` 외면 `throw` — `max_tokens` 등 예상치 못한 종료 시 즉시 실패
+- **noUncheckedIndexedAccess 호환 필드 접근** (`streams/consumer.ts`): `string[]` 인덱싱 결과는 `string | undefined` — `fields[idx]!` 단언 대신 명시적 `if (rawStr === undefined) return null` 가드 사용 (S4325)
 
 ## 시스템 위치
 
