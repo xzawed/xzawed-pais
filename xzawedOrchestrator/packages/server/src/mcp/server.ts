@@ -1,9 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import type { SessionStore } from '../sessions/session.store.js'
+import type { InMemorySessionStore } from '../sessions/session.store.js'
 
-export function createMcpServer(store: SessionStore): McpServer {
+export function createMcpServer(store: InMemorySessionStore): McpServer {
   const server = new McpServer({
     name: 'xzawed-orchestrator',
     version: '0.1.0',
@@ -14,7 +14,7 @@ export function createMcpServer(store: SessionStore): McpServer {
     'xzawedOrchestrator에 새 세션을 생성합니다',
     { userId: z.string().describe('사용자 ID') },
     async ({ userId }) => {
-      const session = store.create(userId, 'cli')
+      const session = await store.create(userId, null, 'cli')
       return {
         content: [{ type: 'text', text: JSON.stringify({ sessionId: session.id }) }]
       }
@@ -26,7 +26,7 @@ export function createMcpServer(store: SessionStore): McpServer {
     '세션 상태를 조회합니다',
     { sessionId: z.string().describe('세션 ID') },
     async ({ sessionId }) => {
-      const session = store.findById(sessionId)
+      const session = await store.findById(sessionId)
       if (!session) {
         return { content: [{ type: 'text', text: JSON.stringify({ error: 'Session not found' }) }] }
       }
@@ -47,7 +47,7 @@ export function createMcpServer(store: SessionStore): McpServer {
   return server
 }
 
-export async function startMcpStdio(store: SessionStore): Promise<void> {
+export async function startMcpStdio(store: InMemorySessionStore): Promise<void> {
   const server = createMcpServer(store)
   const transport = new StdioServerTransport()
   await server.connect(transport)

@@ -11,24 +11,34 @@ export async function sessionWsRoutes(
     sessionConsumers,
     sessionCleanup,
     authHook,
+    userAuthHook,
   }: {
     store: SessionStore
     wsSessions: Map<string, WebSocket>
     sessionConsumers: Map<string, StreamConsumer>
     sessionCleanup: Map<string, () => void>
     authHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
+    userAuthHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
   }
 ): Promise<void> {
+  const effectiveAuthHook = userAuthHook ?? authHook
+
   app.get<{ Params: { id: string } }>(
     '/ws/sessions/:id',
-    { websocket: true as const, ...(authHook ? { preHandler: authHook } : {}) },
-    (socket, req) => {
+    { websocket: true as const, ...(effectiveAuthHook ? { preHandler: effectiveAuthHook } : {}) },
+    async (socket, req) => {
       const sessionId = req.params.id
-      const session = store.findById(sessionId)
+      const session = await store.findById(sessionId)
 
       if (!session) {
         socket.send(JSON.stringify({ type: 'error', content: 'Session not found' }))
         socket.close()
+        return
+      }
+
+      if (req.authUser && session.userId !== req.authUser.sub) {
+        socket.send(JSON.stringify({ type: 'error', content: 'Forbidden' }))
+        socket.close(1008)
         return
       }
 

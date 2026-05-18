@@ -6,7 +6,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { WebSocket } from 'ws'
 import type { Config } from './config.js'
 import type { ClaudeRunner } from './claude/runner.interface.js'
-import { SessionStore } from './sessions/session.store.js'
+import { InMemorySessionStore } from './sessions/session.store.js'
+import { PgSessionStore } from './sessions/pg-session.store.js'
+import { makeUserAuthHook } from './auth/user-auth.hook.js'
 import { createRunner } from './claude/runner.factory.js'
 import { ManagerClient } from './manager/manager.client.js'
 import { StreamProducer } from './streams/producer.js'
@@ -33,7 +35,7 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     app.addHook('onClose', async () => { await closePool() })
   }
 
-  const store = new SessionStore()
+  const store = dbPool ? new PgSessionStore(dbPool) : new InMemorySessionStore()
   const runner = runnerOverride ?? createRunner(config)
   const manager = new ManagerClient(config.managerUrl)
   const producer = new StreamProducer(config.redisUrl)
@@ -68,14 +70,20 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     await app.register(authRoutes, { pool: dbPool, userJwtSecret: config.userJwtSecret })
     await app.register(projectsRoutes, { pool: dbPool, userJwtSecret: config.userJwtSecret })
   }
+  const userAuthHook = (dbPool && config.userJwtSecret)
+    ? makeUserAuthHook(config.userJwtSecret)
+    : undefined
+
   await app.register(sessionsRoutes, {
     store, runner, wsSessions, manager,
     redisUrl: config.redisUrl, producer, sessionConsumers, sessionCleanup,
     anthropicClient,
     claudeModel: config.claudeModel,
     authHook,
+    pool: dbPool ?? undefined,
+    userAuthHook,
   })
-  await app.register(sessionWsRoutes, { store, wsSessions, sessionConsumers, sessionCleanup, authHook })
+  await app.register(sessionWsRoutes, { store, wsSessions, sessionConsumers, sessionCleanup, authHook, userAuthHook })
 
   return app
 }

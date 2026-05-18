@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import type { Pool } from 'pg'
 import type { WebSocket } from 'ws'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { ClaudeRunner } from '../claude/runner.interface.js'
@@ -9,6 +10,8 @@ import { StreamConsumer } from '../streams/consumer.js'
 import Anthropic from '@anthropic-ai/sdk'
 import { structureIntent } from '../claude/intent-structurer.js'
 import { TaskStore } from '../tasks/task.store.js'
+import { MessageRepo } from '../sessions/message.repo.js'
+import { assertProjectOwner } from '../auth/ownership.js'
 
 const messageStore = new Map<string, Message[]>()
 const claudeSessionIds = new Map<string, string>()
@@ -26,6 +29,8 @@ interface SessionsRoutesConfig {
   anthropicClient?: Anthropic
   claudeModel?: string
   authHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
+  pool?: Pool
+  userAuthHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
 }
 
 function handleConsumerMessage(
@@ -84,28 +89,45 @@ export async function sessionsRoutes(
 ): Promise<void> {
   const {
     store, runner, wsSessions, manager, redisUrl, producer,
-    sessionConsumers, sessionCleanup, anthropicClient, claudeModel, authHook,
+    sessionConsumers, sessionCleanup, anthropicClient, claudeModel,
+    authHook, pool, userAuthHook,
   } = config
-  const routeOpts = authHook ? { preHandler: authHook } : {}
 
-  app.post<{ Body: { userId: string } }>('/sessions', routeOpts, async (req, reply) => {
-    const { userId } = req.body
-    const session = store.create(userId ?? 'anonymous', 'cli')
-    messageStore.set(session.id, [])
+  const msgRepo = pool ? new MessageRepo(pool) : undefined
+  const effectiveAuthHook = userAuthHook ?? authHook
+  const routeOpts = effectiveAuthHook ? { preHandler: effectiveAuthHook } : {}
+
+  app.post<{ Body: { userId?: string; projectId?: string } }>('/sessions', routeOpts, async (req, reply) => {
+    let userId: string
+    let projectId: string | null = null
+
+    if (userAuthHook) {
+      if (!req.authUser) return reply.status(401).send({ error: 'Unauthorized' })
+      if (!req.body.projectId) return reply.status(400).send({ error: 'projectId is required' })
+      const project = await assertProjectOwner(req.authUser.sub, req.body.projectId, pool!, reply)
+      if (!project) return
+      userId = req.authUser.sub
+      projectId = project.id
+    } else {
+      userId = req.body.userId ?? 'anonymous'
+    }
+
+    const session = await store.create(userId, projectId, 'cli')
     claudeSessionIds.set(session.id, '')
+
+    if (!msgRepo) messageStore.set(session.id, [])
+
     sessionCleanup.set(session.id, () => {
-      messageStore.delete(session.id)
       claudeSessionIds.delete(session.id)
       taskStore.deleteBySessionId(session.id)
-      store.delete(session.id)
+      messageStore.delete(session.id)
+      void store.delete(session.id).catch(() => undefined)
     })
 
-    // Fire-and-forget with best-effort: session creation must not fail if Manager is unavailable.
     void manager.startSession(session.id).catch((err: unknown) => {
       req.log.warn({ err, sessionId: session.id }, 'Failed to start Manager session')
     })
 
-    // Start Manager response consumer for this session
     const consumer = new StreamConsumer(redisUrl)
     sessionConsumers.set(session.id, consumer)
     void consumer.start(session.id, async (msg) => {
@@ -120,8 +142,12 @@ export async function sessionsRoutes(
   })
 
   app.get<{ Params: { id: string } }>('/sessions/:id/messages', routeOpts, async (req, reply) => {
-    const session = store.findById(req.params.id)
+    const session = await store.findById(req.params.id)
     if (!session) return reply.status(404).send({ error: 'Session not found' })
+    if (req.authUser && session.userId !== req.authUser.sub) {
+      return reply.status(404).send({ error: 'Session not found' })
+    }
+    if (msgRepo) return reply.send(await msgRepo.findBySession(req.params.id))
     return messageStore.get(req.params.id) ?? []
   })
 
@@ -129,23 +155,31 @@ export async function sessionsRoutes(
     '/sessions/:id/messages',
     routeOpts,
     async (req, reply) => {
-      const session = store.findById(req.params.id)
+      const session = await store.findById(req.params.id)
       if (!session) return reply.status(404).send({ error: 'Session not found' })
-
-      const msg: Message = {
-        id: crypto.randomUUID(),
-        sessionId: req.params.id,
-        role: 'user',
-        content: req.body.content,
-        timestamp: Date.now(),
+      if (req.authUser && session.userId !== req.authUser.sub) {
+        return reply.status(404).send({ error: 'Session not found' })
       }
 
-      const history = messageStore.get(req.params.id) ?? []
-      history.push(msg)
-      // Snapshot taken synchronously before any event loop yield — prevents concurrent-request contamination
-      const snapshot = [...history]
+      const userMsgId = crypto.randomUUID()
+      let snapshot: Message[]
 
-      // Fire-and-forget: stream Claude response over WebSocket
+      if (msgRepo) {
+        await msgRepo.create(req.params.id, 'user', req.body.content)
+        snapshot = await msgRepo.findBySession(req.params.id)
+      } else {
+        const msg: Message = {
+          id: userMsgId,
+          sessionId: req.params.id,
+          role: 'user',
+          content: req.body.content,
+          timestamp: Date.now(),
+        }
+        const history = messageStore.get(req.params.id) ?? []
+        history.push(msg)
+        snapshot = [...history]
+      }
+
       void (async () => {
         const socket = wsSessions.get(req.params.id)
         const assistantMsgId = crypto.randomUUID()
@@ -164,6 +198,7 @@ export async function sessionsRoutes(
               )
             } else if (chunk.type === 'claude_session') {
               claudeSessionIds.set(req.params.id, chunk.content)
+              await store.updateClaudeSessionId(req.params.id, chunk.content)
             } else if (chunk.type === 'error') {
               socket?.send(JSON.stringify({ type: 'error', content: chunk.content }))
               return
@@ -172,17 +207,19 @@ export async function sessionsRoutes(
             }
           }
 
-          // Store finalized assistant message
-          const assistantMsg: Message = {
-            id: assistantMsgId,
-            sessionId: req.params.id,
-            role: 'assistant',
-            content: fullContent,
-            timestamp: Date.now(),
+          if (msgRepo) {
+            await msgRepo.create(req.params.id, 'assistant', fullContent)
+          } else {
+            const history = messageStore.get(req.params.id) ?? []
+            history.push({
+              id: assistantMsgId,
+              sessionId: req.params.id,
+              role: 'assistant',
+              content: fullContent,
+              timestamp: Date.now(),
+            })
           }
-          history.push(assistantMsg)
 
-          // Publish task_request to Redis stream (best-effort: don't block done if Manager unavailable)
           const intent = (anthropicClient && claudeModel)
             ? await structureIntent(fullContent, anthropicClient, claudeModel)
             : fullContent
@@ -190,10 +227,9 @@ export async function sessionsRoutes(
           taskStore.create(req.params.id, intent)
 
           try {
-            const msgId = crypto.randomUUID()
             await producer.publish({
               sessionId: req.params.id,
-              messageId: msgId,
+              messageId: crypto.randomUUID(),
               timestamp: Date.now(),
               type: 'task_request',
               payload: {
@@ -216,13 +252,16 @@ export async function sessionsRoutes(
         app.log.error({ err, sessionId: req.params.id }, 'Unhandled error in message processing')
       })
 
-      return reply.status(202).send({ messageId: msg.id, status: 'accepted' })
+      return reply.status(202).send({ messageId: userMsgId, status: 'accepted' })
     }
   )
 
   app.get<{ Params: { id: string } }>('/sessions/:id/tasks', routeOpts, async (req, reply) => {
-    const session = store.findById(req.params.id)
+    const session = await store.findById(req.params.id)
     if (!session) return reply.status(404).send({ error: 'Session not found' })
+    if (req.authUser && session.userId !== req.authUser.sub) {
+      return reply.status(404).send({ error: 'Session not found' })
+    }
     return { tasks: taskStore.findBySessionId(req.params.id) }
   })
 }
