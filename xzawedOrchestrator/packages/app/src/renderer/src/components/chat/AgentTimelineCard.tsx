@@ -29,6 +29,7 @@ export function AgentTimelineCard({ message, streaming = false }: Props): React.
 
   return (
     <motion.div
+      data-testid="agent-timeline-card"
       className="flex flex-col gap-0"
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}

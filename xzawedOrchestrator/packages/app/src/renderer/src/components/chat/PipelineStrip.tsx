@@ -25,6 +25,7 @@ export function PipelineStrip({ steps }: Props): React.JSX.Element {
             <motion.div
               layout
               key={step.status}
+              data-testid={`pipeline-step-${i}`}
               className={cn(
                 'flex-shrink-0 flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] border transition-colors duration-300',
                 step.status === 'done'  && 'bg-ok-bg text-ok border-ok/30',

@@ -43,6 +43,11 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
         run: pnpm install --frozen-lockfile
 
+      - name: Install Playwright browsers
+        if: matrix.service == 'xzawedOrchestrator'
+        working-directory: ${{ matrix.dir }}
+        run: pnpm --filter @xzawed/app exec playwright install --with-deps chromium
+
       - name: Build
         working-directory: ${{ matrix.dir }}
         env:
@@ -107,6 +112,88 @@ jobs:
       - name: Audit
         working-directory: ${{ matrix.service }}
         run: pnpm audit --audit-level=moderate
+
+  # ── Redis Streams Integration Tests ───────────────────────────────────────
+  redis-integration:
+    name: Redis Streams Integration Tests
+    runs-on: ubuntu-latest
+    needs: [turborepo, independent]
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://localhost:6379
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: xzawedOrchestrator/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: xzawedOrchestrator
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        working-directory: xzawedOrchestrator
+        run: pnpm build
+
+      - name: Run Redis Integration Tests
+        working-directory: xzawedOrchestrator/packages/server
+        env:
+          REDIS_URL: redis://localhost:6379
+        run: pnpm test -- --reporter=verbose src/__tests__/redis-streams.integration.test.ts
+
+  # ── Playwright E2E (Electron) ─────────────────────────────────────────────
+  playwright-e2e:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    needs: [turborepo]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: xzawedOrchestrator/pnpm-lock.yaml
+
+      - name: Install (with Electron binary)
+        working-directory: xzawedOrchestrator
+        run: pnpm install --frozen-lockfile
+
+      - name: Build app
+        working-directory: xzawedOrchestrator/packages/app
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: pnpm build
+
+      - name: Install Playwright system deps
+        working-directory: xzawedOrchestrator/packages/app
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Run E2E tests
+        working-directory: xzawedOrchestrator/packages/app
+        run: xvfb-run --server-args="-screen 0 1280x800x24" pnpm test:e2e
 
   # ── Copy-Paste Detection (PR only) ────────────────────────────────────────
   cpd:
@@ -339,12 +426,12 @@ jobs:
   all-checks-pass:
     name: All checks pass
     runs-on: ubuntu-latest
-    needs: [turborepo, independent]
+    needs: [turborepo, independent, redis-integration, playwright-e2e]
     if: always()
     steps:
       - name: Check results
         run: |
-          if [[ "${{ needs.turborepo.result }}" != "success" || "${{ needs.independent.result }}" != "success" ]]; then
+          if [[ "${{ needs.turborepo.result }}" != "success" || "${{ needs.independent.result }}" != "success" || "${{ needs.redis-integration.result }}" != "success" || "${{ needs.playwright-e2e.result }}" != "success" ]]; then
             echo "One or more jobs failed"
             exit 1
           fi
