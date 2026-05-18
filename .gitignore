@@ -31,6 +31,9 @@ logs/
 # 테스트 커버리지
 coverage/
 
+# Vitest browser mode 자동 스크린샷
+**/__screenshots__/
+
 # Turborepo
 .turbo/
 
