@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, type ReactNode } from 'react'
+import { jsx, jsxs, Fragment } from 'react/jsx-runtime'
+import { toJsxRuntime } from 'hast-util-to-jsx-runtime'
 import { getHighlighter, detectLang } from '../../lib/markdown.js'
 
 interface Props {
@@ -9,18 +11,30 @@ interface Props {
 }
 
 export function CodeBlock({ code, filename, lang, streaming = false }: Props): React.JSX.Element {
-  const [html, setHtml] = useState('')
+  const [node, setNode] = useState<ReactNode>(null)
   const [copied, setCopied] = useState(false)
   const language = lang ?? detectLang(filename)
 
   useEffect(() => {
     let cancelled = false
-    getHighlighter().then((hl) => {
-      if (cancelled) return
-      const highlighted = hl.codeToHtml(code, { lang: language, theme: 'dark-plus' })
-      setHtml(highlighted)
-    }).catch(() => setHtml(`<pre><code>${code}</code></pre>`))
-    return () => { cancelled = true }
+    getHighlighter()
+      .then((hl) => {
+        if (cancelled) return
+        const hast = hl.codeToHast(code, { lang: language, theme: 'dark-plus' })
+        setNode(toJsxRuntime(hast, { jsx, jsxs, Fragment }))
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setNode(
+            <pre className="px-3 py-2 text-[10px] text-fg-muted font-mono">
+              <code>{code}</code>
+            </pre>
+          )
+        }
+      })
+    return () => {
+      cancelled = true
+    }
   }, [code, language])
 
   async function handleCopy(): Promise<void> {
@@ -41,11 +55,10 @@ export function CodeBlock({ code, filename, lang, streaming = false }: Props): R
         </button>
       </div>
       <div className="relative overflow-x-auto">
-        {html ? (
-          <div
-            className="px-3 py-2 text-[10px] [&_pre]:!bg-transparent [&_pre]:!m-0 [&_pre]:!p-0"
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
+        {node ? (
+          <div className="px-3 py-2 text-[10px] [&_pre]:!bg-transparent [&_pre]:!m-0 [&_pre]:!p-0">
+            {node}
+          </div>
         ) : (
           <pre className="px-3 py-2 text-[10px] text-fg-muted font-mono">{code}</pre>
         )}
