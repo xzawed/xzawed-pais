@@ -33,6 +33,13 @@ export interface PlannerToManagerMessage {
   }
 }
 
+const UserContextSchema = z.object({
+  userId: z.string(),
+  projectId: z.string(),
+  workspaceRoot: z.string(),
+  githubRepo: z.object({ owner: z.string(), repo: z.string(), branch: z.string() }).optional(),
+})
+
 export const ManagerToPlannerMessageSchema = z.object({
   sessionId: z.string(),
   messageId: z.string(),
@@ -42,6 +49,7 @@ export const ManagerToPlannerMessageSchema = z.object({
     intent: z.string(),
     context: z.record(z.unknown()),
     priority: z.enum(['normal', 'high']),
+    userContext: UserContextSchema.optional(),
   }),
 })
 

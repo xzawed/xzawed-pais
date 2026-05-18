@@ -19,6 +19,13 @@ export interface WatcherToManagerMessage {
   }
 }
 
+const UserContextSchema = z.object({
+  userId: z.string(),
+  projectId: z.string(),
+  workspaceRoot: z.string(),
+  githubRepo: z.object({ owner: z.string(), repo: z.string(), branch: z.string() }).optional(),
+})
+
 export const ManagerToWatcherMessageSchema = z.object({
   sessionId: z.string(),
   messageId: z.string(),
@@ -34,6 +41,7 @@ export const ManagerToWatcherMessageSchema = z.object({
     ),
     debounceMs: z.number().int().nonnegative().optional(),
     context: z.record(z.unknown()),
+    userContext: UserContextSchema.optional(),
   }),
 })
 

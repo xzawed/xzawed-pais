@@ -30,9 +30,10 @@ export class Developer {
         payload.context,
       )
 
+      const workspaceRoot = payload.userContext?.workspaceRoot ?? this.config.workspaceRoot
       const artifacts: string[] = []
       for (const change of changes) {
-        await this.applyFn(change, this.config.workspaceRoot)
+        await this.applyFn(change, workspaceRoot)
         if (change.operation !== 'delete') {
           artifacts.push(change.path)
         }

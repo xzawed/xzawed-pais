@@ -7,9 +7,16 @@ interface BaseMessage {
   timestamp: number
 }
 
+export interface UserContext {
+  userId: string
+  projectId: string
+  workspaceRoot: string
+  githubRepo?: { owner: string; repo: string; branch: string } | undefined
+}
+
 export interface TaskRequestMessage extends BaseMessage {
   type: 'task_request'
-  payload: { intent: string; context: Record<string, unknown>; priority: 'normal' | 'high' }
+  payload: { intent: string; context: Record<string, unknown>; priority: 'normal' | 'high'; userContext?: UserContext | undefined }
 }
 
 export interface InfoResponseMessage extends BaseMessage {
