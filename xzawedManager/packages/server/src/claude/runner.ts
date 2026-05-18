@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { ToolRegistry } from '../tools/registry.js'
 import type { StreamProducer } from '../streams/producer.js'
 import type { SessionStore } from '../sessions/session.store.js'
+import type { UserContext } from '../types/user-context.js'
 
 const REQUEST_INFO_TOOL: Anthropic.Tool = {
   name: 'request_info',
@@ -22,6 +23,7 @@ export interface RunnerOptions {
   producer: StreamProducer
   sessionStore: SessionStore
   signal?: AbortSignal
+  userContext?: UserContext
 }
 
 export class ClaudeRunner {
@@ -32,7 +34,7 @@ export class ClaudeRunner {
   ) {}
 
   async run(options: RunnerOptions): Promise<string> {
-    const { sessionId, intent, context, producer, sessionStore, signal } = options
+    const { sessionId, intent, context, producer, sessionStore, signal, userContext } = options
 
     const messages: Anthropic.MessageParam[] = [
       {
@@ -105,7 +107,7 @@ export class ClaudeRunner {
             payload: { agentId: 'manager', content: `Starting ${block.name}...` },
           })
 
-          const result = await handler.execute(block.input, sessionId)
+          const result = await handler.execute(block.input, sessionId, userContext)
 
           await producer.publish({
             sessionId,

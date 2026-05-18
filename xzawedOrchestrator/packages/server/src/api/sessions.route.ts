@@ -226,6 +226,14 @@ export async function sessionsRoutes(
 
           taskStore.create(req.params.id, intent)
 
+          const userContext = session.projectId
+            ? {
+                userId: session.userId,
+                projectId: session.projectId,
+                workspaceRoot: `/workspace/${session.userId}/${session.projectId}`,
+              }
+            : undefined
+
           try {
             await producer.publish({
               sessionId: req.params.id,
@@ -236,6 +244,7 @@ export async function sessionsRoutes(
                 intent,
                 context: { history: snapshot.map((m) => ({ role: m.role, content: m.content })) },
                 priority: 'normal',
+                ...(userContext ? { userContext } : {}),
               },
             })
             socket?.send(JSON.stringify({ type: 'status', content: '전달 중...' }))

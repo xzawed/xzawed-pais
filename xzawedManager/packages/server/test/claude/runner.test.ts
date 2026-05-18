@@ -104,7 +104,7 @@ describe('ClaudeRunner', () => {
 
     expect(result).toBe('Planning complete.')
     expect(mockCreate).toHaveBeenCalledTimes(2)
-    expect(mockToolExecute).toHaveBeenCalledWith({ intent: 'build app', context: {} }, 'sess-1')
+    expect(mockToolExecute).toHaveBeenCalledWith({ intent: 'build app', context: {} }, 'sess-1', undefined)
     expect(mockPublish).toHaveBeenCalledTimes(3)
     expect(mockPublish.mock.calls[0]![0]).toMatchObject({ type: 'status_update', payload: { agentId: 'manager' } })
   })

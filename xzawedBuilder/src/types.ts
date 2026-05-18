@@ -22,6 +22,13 @@ export interface BuilderToManagerMessage {
   }
 }
 
+const UserContextSchema = z.object({
+  userId: z.string(),
+  projectId: z.string(),
+  workspaceRoot: z.string(),
+  githubRepo: z.object({ owner: z.string(), repo: z.string(), branch: z.string() }).optional(),
+})
+
 export const ManagerToBuilderMessageSchema = z.object({
   sessionId: z.string(),
   messageId: z.string(),
@@ -32,6 +39,7 @@ export const ManagerToBuilderMessageSchema = z.object({
     target: z.enum(['development', 'production']),
     command: z.string().optional(),
     context: z.record(z.unknown()),
+    userContext: UserContextSchema.optional(),
   }),
 })
 

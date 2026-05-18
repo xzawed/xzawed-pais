@@ -18,6 +18,13 @@ export interface DeveloperToManagerMessage {
   }
 }
 
+const UserContextSchema = z.object({
+  userId: z.string(),
+  projectId: z.string(),
+  workspaceRoot: z.string(),
+  githubRepo: z.object({ owner: z.string(), repo: z.string(), branch: z.string() }).optional(),
+})
+
 export const ManagerToDeveloperMessageSchema = z.object({
   sessionId: z.string(),
   messageId: z.string(),
@@ -27,6 +34,7 @@ export const ManagerToDeveloperMessageSchema = z.object({
     plan: z.string(),
     projectPath: z.string(),
     context: z.record(z.unknown()),
+    userContext: UserContextSchema.optional(),
   }),
 })
 

@@ -1,6 +1,7 @@
 import { Redis } from 'ioredis'
 import { z } from 'zod'
 import type { AnthropicInputSchema, ToolHandler } from './handler.interface.js'
+import type { UserContext } from '../types/user-context.js'
 
 const DEFAULT_TIMEOUT_MS = 120_000
 const BLOCK_STEP_MS = 5_000
@@ -27,7 +28,7 @@ export class RedisAgentHandler<TInput, TOutput>
     return this._redis
   }
 
-  async execute(input: TInput, sessionId: string): Promise<TOutput> {
+  async execute(input: TInput, sessionId: string, userContext?: UserContext): Promise<TOutput> {
     const requestStream = `manager:to-${this.agentName}:${sessionId}`
     const responseStream = `${this.agentName}:to-manager:${sessionId}`
 
@@ -37,12 +38,15 @@ export class RedisAgentHandler<TInput, TOutput>
     ) as [string, string[]][]
     let lastId = tip[0]?.[0] ?? '0-0'
 
+    const payload = userContext !== undefined
+      ? { ...(input as Record<string, unknown>), userContext }
+      : input
     await this.redis.xadd(requestStream, '*', 'data', JSON.stringify({
       sessionId,
       messageId: crypto.randomUUID(),
       timestamp: Date.now(),
       type: this.requestType,
-      payload: input,
+      payload,
     }))
 
     const deadline = Date.now() + this.timeoutMs

@@ -24,6 +24,13 @@ export interface SecurityToManagerMessage {
   }
 }
 
+const UserContextSchema = z.object({
+  userId: z.string(),
+  projectId: z.string(),
+  workspaceRoot: z.string(),
+  githubRepo: z.object({ owner: z.string(), repo: z.string(), branch: z.string() }).optional(),
+})
+
 export const ManagerToSecurityMessageSchema = z.object({
   sessionId: z.string(),
   messageId: z.string(),
@@ -34,6 +41,7 @@ export const ManagerToSecurityMessageSchema = z.object({
     projectPath: z.string(),
     severity: z.enum(['low', 'medium', 'high']),
     context: z.record(z.unknown()),
+    userContext: UserContextSchema.optional(),
   }),
 })
 
