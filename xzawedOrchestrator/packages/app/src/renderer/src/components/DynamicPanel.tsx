@@ -3,6 +3,7 @@ import type { UISpec, UIField } from '@xzawed/shared'
 import { useChatStore } from '../store/chat.store.js'
 import { useAppStore } from '../store/app.store.js'
 import { postMessage } from '../lib/api.js'
+import { Button } from './ui/button.js'
 
 interface FieldProps {
   field: UIField
@@ -10,12 +11,18 @@ interface FieldProps {
   onChange: (val: string) => void
 }
 
+const inputClass =
+  'w-full rounded border border-border bg-code px-2.5 py-1.5 text-[11px] text-fg outline-none focus:border-accent/60 transition-colors'
+
 function FormField({ field, value, onChange }: FieldProps): React.JSX.Element {
   if (field.type === 'textarea') {
     return (
-      <div className="form-field">
-        <label>{field.label}{field.required ? ' *' : ''}</label>
+      <div className="mb-3">
+        <label className="block text-[10px] text-fg-ghost mb-1">
+          {field.label}{field.required ? ' *' : ''}
+        </label>
         <textarea
+          className={inputClass}
           value={value}
           placeholder={field.placeholder ?? ''}
           onChange={(e) => onChange(e.target.value)}
@@ -26,9 +33,11 @@ function FormField({ field, value, onChange }: FieldProps): React.JSX.Element {
 
   if (field.type === 'select' && field.options) {
     return (
-      <div className="form-field">
-        <label>{field.label}{field.required ? ' *' : ''}</label>
-        <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <div className="mb-3">
+        <label className="block text-[10px] text-fg-ghost mb-1">
+          {field.label}{field.required ? ' *' : ''}
+        </label>
+        <select className={inputClass} value={value} onChange={(e) => onChange(e.target.value)}>
           <option value="">Select…</option>
           {field.options.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -42,10 +51,13 @@ function FormField({ field, value, onChange }: FieldProps): React.JSX.Element {
 
   if (field.type === 'number') {
     return (
-      <div className="form-field">
-        <label>{field.label}{field.required ? ' *' : ''}</label>
+      <div className="mb-3">
+        <label className="block text-[10px] text-fg-ghost mb-1">
+          {field.label}{field.required ? ' *' : ''}
+        </label>
         <input
           type="number"
+          className={inputClass}
           value={value}
           placeholder={field.placeholder ?? ''}
           onChange={(e) => onChange(e.target.value)}
@@ -57,10 +69,12 @@ function FormField({ field, value, onChange }: FieldProps): React.JSX.Element {
   if (field.type === 'checkbox_group' && field.options) {
     const checked: string[] = value ? value.split(',') : []
     return (
-      <div className="form-field">
-        <label>{field.label}{field.required ? ' *' : ''}</label>
+      <div className="mb-3">
+        <label className="block text-[10px] text-fg-ghost mb-1">
+          {field.label}{field.required ? ' *' : ''}
+        </label>
         {field.options.map((opt) => (
-          <label key={opt.value} style={{ display: 'flex', gap: 6, marginTop: 4, fontWeight: 'normal', color: '#ccc' }}>
+          <label key={opt.value} className="flex items-center gap-1.5 mt-1 text-[11px] text-fg-ghost font-normal">
             <input
               type="checkbox"
               checked={checked.includes(opt.value)}
@@ -80,10 +94,13 @@ function FormField({ field, value, onChange }: FieldProps): React.JSX.Element {
 
   // Default: text
   return (
-    <div className="form-field">
-      <label>{field.label}{field.required ? ' *' : ''}</label>
+    <div className="mb-3">
+      <label className="block text-[10px] text-fg-ghost mb-1">
+        {field.label}{field.required ? ' *' : ''}
+      </label>
       <input
         type="text"
+        className={inputClass}
         value={value}
         placeholder={field.placeholder ?? ''}
         onChange={(e) => onChange(e.target.value)}
@@ -121,18 +138,22 @@ function FormPanel({ spec }: FormPanelProps): React.JSX.Element {
 
   return (
     <div>
-      <h3>{spec.title ?? 'Form'}</h3>
-      {(spec.fields ?? []).map((field) => (
-        <FormField
-          key={field.id}
-          field={field}
-          value={values[field.id] ?? ''}
-          onChange={(val) => setValue(field.id, val)}
-        />
-      ))}
-      <button className="form-submit-btn" onClick={handleSubmit} disabled={submitting}>
-        {submitting ? 'Submitting…' : (spec.submitAction ?? 'Submit')}
-      </button>
+      <div className="border-b border-border px-4 py-2 text-[13px] font-semibold text-fg">
+        {spec.title ?? 'Form'}
+      </div>
+      <div className="flex-1 overflow-y-auto p-4">
+        {(spec.fields ?? []).map((field) => (
+          <FormField
+            key={field.id}
+            field={field}
+            value={values[field.id] ?? ''}
+            onChange={(val) => setValue(field.id, val)}
+          />
+        ))}
+        <Button onClick={handleSubmit} disabled={submitting} className="mt-2 w-full">
+          {submitting ? 'Submitting…' : (spec.submitAction ?? 'Submit')}
+        </Button>
+      </div>
     </div>
   )
 }
@@ -142,18 +163,22 @@ export function DynamicPanel(): React.JSX.Element {
 
   if (!uiSpec) {
     return (
-      <div className="dynamic-panel">
-        <h3>Context</h3>
-        <p style={{ color: '#4a4a6a', fontSize: 13 }}>
-          No active context. Start chatting to see dynamic panels here.
-        </p>
+      <div className="flex w-[280px] flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden">
+        <div className="border-b border-border px-4 py-2 text-[13px] font-semibold text-fg">
+          Context
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <p className="text-[13px] text-fg-ghost">
+            No active context. Start chatting to see dynamic panels here.
+          </p>
+        </div>
       </div>
     )
   }
 
   if (uiSpec.type === 'form') {
     return (
-      <div className="dynamic-panel">
+      <div className="flex w-[280px] flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden">
         <FormPanel spec={uiSpec as UISpec & { type: 'form' }} />
       </div>
     )
@@ -161,27 +186,37 @@ export function DynamicPanel(): React.JSX.Element {
 
   if (uiSpec.type === 'mockup_viewer') {
     return (
-      <div className="dynamic-panel">
-        <h3>{uiSpec.title ?? 'Mockup'}</h3>
-        <pre style={{ fontSize: 12, color: '#ccc', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-          {uiSpec.content ?? ''}
-        </pre>
+      <div className="flex w-[280px] flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden">
+        <div className="border-b border-border px-4 py-2 text-[13px] font-semibold text-fg">
+          {uiSpec.title ?? 'Mockup'}
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <pre className="text-[12px] text-fg-ghost whitespace-pre-wrap break-words">
+            {uiSpec.content ?? ''}
+          </pre>
+        </div>
       </div>
     )
   }
 
   if (uiSpec.type === 'progress_board') {
     return (
-      <div className="dynamic-panel">
-        <h3>{uiSpec.title ?? 'Progress'}</h3>
-        <p style={{ fontSize: 13, color: '#ccc' }}>{uiSpec.content ?? 'Working…'}</p>
+      <div className="flex w-[280px] flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden">
+        <div className="border-b border-border px-4 py-2 text-[13px] font-semibold text-fg">
+          {uiSpec.title ?? 'Progress'}
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          <p className="text-[13px] text-fg-ghost">{uiSpec.content ?? 'Working…'}</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="dynamic-panel">
-      <h3>Context</h3>
+    <div className="flex w-[280px] flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden">
+      <div className="border-b border-border px-4 py-2 text-[13px] font-semibold text-fg">
+        Context
+      </div>
     </div>
   )
 }
