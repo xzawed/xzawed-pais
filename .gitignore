@@ -38,4 +38,4 @@ coverage/
 .worktrees/
 build-output/
 .superpowers/
-.worktrees/
+report/
