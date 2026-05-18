@@ -21,7 +21,7 @@ export function App(): React.JSX.Element {
   const { activePanel } = useIntegrationsStore()
 
   useEffect(() => {
-    window.electronAPI
+    globalThis.electronAPI
       ?.getSettings()
       .then((saved) => updateSettings(saved))
       .catch(() => {})
@@ -34,8 +34,8 @@ export function App(): React.JSX.Element {
       const healthy = await checkHealth(settings.serverUrl)
       if (!cancelled) setServerStatus(healthy ? 'running' : 'stopped')
     }
-    void poll()
-    const id = setInterval(() => void poll(), 3000)
+    void poll().catch((e: unknown) => console.error('[App] poll error:', e))
+    const id = setInterval(() => { void poll().catch((e: unknown) => console.error('[App] poll error:', e)) }, 3000)
     return () => { cancelled = true; clearInterval(id) }
   }, [settings.serverUrl, setServerStatus])
 

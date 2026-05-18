@@ -27,7 +27,7 @@ export class CLIRunner implements ClaudeRunner {
           lastUserMessage,
         ]
 
-    const proc = spawn('claude', args, { env: process.env })
+    const proc = spawn('claude', args, { env: process.env, shell: false })
     const queue = new ChunkQueue()
 
     let buffer = ''

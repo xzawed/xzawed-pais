@@ -132,7 +132,7 @@ export function startOAuthFlow(mainWindow: BrowserWindow): Promise<string> {
         done(new Error('Unexpected OAuth URL — aborting'))
         return
       }
-      void shell.openExternal(authUrl)
+      shell.openExternal(authUrl).catch((err: unknown) => done(err))
     })
 
     server.on('error', (err) => done(err))

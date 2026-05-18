@@ -17,24 +17,24 @@ export function GitHubPanel(): React.JSX.Element {
 
   useEffect(() => {
     async function restoreStatus(): Promise<void> {
-      const status = await window.electronAPI?.githubGetStatus()
+      const status = await globalThis.electronAPI?.githubGetStatus()
       if (status?.connected && status.username && status.avatarUrl) {
         const { setGitHubConnected, setGitHubRepos } = useIntegrationsStore.getState()
         setGitHubConnected(status.username, status.avatarUrl)
-        const repos = await window.electronAPI?.githubListRepos() ?? []
+        const repos = await globalThis.electronAPI?.githubListRepos() ?? []
         setGitHubRepos(repos)
       }
     }
-    void restoreStatus()
+    void restoreStatus().catch((e: unknown) => console.error('[GitHubPanel] restoreStatus error:', e))
   }, [])
 
   async function handleConnect(): Promise<void> {
     setLoading(true); setError(null)
     try {
-      const result = await window.electronAPI?.githubConnect()
+      const result = await globalThis.electronAPI?.githubConnect()
       if (!result) throw new Error('연결 실패')
       setGitHubConnected(result.username, result.avatarUrl)
-      const repos = await window.electronAPI?.githubListRepos() ?? []
+      const repos = await globalThis.electronAPI?.githubListRepos() ?? []
       setGitHubRepos(repos)
     } catch (err) {
       setError(err instanceof Error ? err.message : '연결 중 오류가 발생했습니다')
@@ -47,7 +47,7 @@ export function GitHubPanel(): React.JSX.Element {
     if (loading) return
     setLoading(true)
     try {
-      await window.electronAPI?.githubDisconnect()
+      await globalThis.electronAPI?.githubDisconnect()
       disconnectGitHub()
     } catch (err) {
       setError(err instanceof Error ? err.message : '연결 해제 중 오류가 발생했습니다')
@@ -67,19 +67,7 @@ export function GitHubPanel(): React.JSX.Element {
         <p className="text-[11px] text-danger">{error}</p>
       )}
 
-      {!github.connected ? (
-        <div className="flex flex-col items-center gap-4 rounded border border-border bg-surface px-6 py-10">
-          <p className="text-[11px] text-fg-ghost text-center">
-            GitHub 계정을 연결하면 에이전트가 레포지토리 생성, 코드 push, PR 생성을 자동으로 수행합니다.
-          </p>
-          <Button variant="default" onClick={handleConnect} disabled={loading}>
-            {loading ? '브라우저에서 인증 중...' : '🐙 GitHub으로 로그인'}
-          </Button>
-          <p className="text-[11px] text-fg-ghost text-center">
-            GitHub OAuth App Client ID/Secret이 환경변수 GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET에 설정돼 있어야 합니다.
-          </p>
-        </div>
-      ) : (
+      {github.connected ? (
         <>
           <div className="flex items-center gap-4 rounded border border-border bg-surface px-4 py-3">
             {github.avatarUrl && (
@@ -123,6 +111,18 @@ export function GitHubPanel(): React.JSX.Element {
             ))}
           </div>
         </>
+      ) : (
+        <div className="flex flex-col items-center gap-4 rounded border border-border bg-surface px-6 py-10">
+          <p className="text-[11px] text-fg-ghost text-center">
+            GitHub 계정을 연결하면 에이전트가 레포지토리 생성, 코드 push, PR 생성을 자동으로 수행합니다.
+          </p>
+          <Button variant="default" onClick={handleConnect} disabled={loading}>
+            {loading ? '브라우저에서 인증 중...' : '🐙 GitHub으로 로그인'}
+          </Button>
+          <p className="text-[11px] text-fg-ghost text-center">
+            GitHub OAuth App Client ID/Secret이 환경변수 GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET에 설정돼 있어야 합니다.
+          </p>
+        </div>
       )}
     </div>
   )
