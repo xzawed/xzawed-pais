@@ -12,7 +12,7 @@ xzawedOrchestrator에서 사용하는 모든 환경변수를 설명합니다.
 |------|--------|------|-----------|------|
 | `MODE` | `local` | 아니오 | `local`, `remote` | 배포 환경. `local`은 단일 사용자 PC, `remote`는 클라우드/팀 서버 |
 | `PORT` | `3000` | 아니오 | 1–65535 | HTTP 서버 리슨 포트 |
-| `AUTH` | `none` | 아니오 | `none`, `jwt` | 인증 방식. `jwt`는 팀 서버에서 사용 (상세 구현 추후) |
+| `AUTH` | `none` | 아니오 | `none`, `jwt` | 인증 방식. `jwt`는 팀 서버에서 사용 |
 
 ---
 
@@ -48,6 +48,31 @@ xzawedOrchestrator에서 사용하는 모든 환경변수를 설명합니다.
 > **Note:** `CLAUDE_MODE=remote`일 때 `REMOTE_CLI_URL`과 `REMOTE_HOST` 중 하나는 반드시 설정해야 합니다. 둘 다 없으면 서버 기동 시 에러가 발생합니다.
 
 ---
+
+## 인증 (AUTH=jwt)
+
+| 변수 | 기본값 | 필수 | 설명 |
+|------|--------|------|------|
+| `SERVICE_JWT_SECRET` | — | `AUTH=jwt` 시 필수 (32자 이상) | 서비스 간 JWT 서명 시크릿 |
+| `USER_JWT_SECRET` | — | 사용자 인증 사용 시 필수 | 사용자 access token 서명 시크릿 |
+
+## 데이터베이스 (PostgreSQL)
+
+| 변수 | 기본값 | 필수 | 설명 |
+|------|--------|------|------|
+| `DATABASE_URL` | — | 사용자 인증 사용 시 필수 | PostgreSQL 연결 URL (`postgres://user:pass@host:5432/db`) |
+
+## GitHub 토큰 암호화
+
+| 변수 | 기본값 | 필수 | 설명 |
+|------|--------|------|------|
+| `GITHUB_TOKEN_ENCRYPTION_KEY` | — | GitHub PAT 저장 기능 사용 시 필수 | AES-256-GCM 암호화 키 (32바이트 base64) |
+
+## xzawedManager 연동
+
+| 변수 | 기본값 | 필수 | 설명 |
+|------|--------|------|------|
+| `MANAGER_URL` | `http://localhost:3001` | 아니오 | xzawedManager HTTP 엔드포인트 URL |
 
 ## Redis
 
@@ -89,7 +114,7 @@ PORT=3000
 
 # 인증 방식
 # none: 인증 없음 (개인 사용, 기본값)
-# jwt: JWT 인증 (팀 서버, 상세 구현 추후)
+# jwt: JWT 인증 (팀 서버 — SERVICE_JWT_SECRET, USER_JWT_SECRET, DATABASE_URL 필수)
 AUTH=none
 
 
