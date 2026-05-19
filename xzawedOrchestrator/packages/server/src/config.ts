@@ -21,12 +21,12 @@ export interface Config {
 }
 
 export function loadConfig(): Config {
-  const claudeMode = (process.env.CLAUDE_MODE ?? 'cli') as ClaudeMode
+  const claudeMode = (process.env.CLAUDE_MODE ?? 'api') as ClaudeMode
   const auth = (process.env.AUTH ?? 'none') as 'none' | 'jwt'
   const serviceJwtSecret = process.env.SERVICE_JWT_SECRET
 
   if (claudeMode === 'api' && !process.env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY is required when CLAUDE_MODE=api')
+    throw new Error('ANTHROPIC_API_KEY is required when CLAUDE_MODE=api. Set CLAUDE_MODE=cli to use Claude CLI subscription instead.')
   }
 
   if (claudeMode === 'remote' && !process.env.REMOTE_CLI_URL && !process.env.REMOTE_HOST) {

@@ -53,9 +53,15 @@ export async function installDocker(): Promise<void> {
   await shell.openExternal(urls[process.platform] ?? urls.linux)
 }
 
-export async function startAllServices(onLog: (line: string) => void): Promise<void> {
+export async function startAllServices(
+  onLog: (line: string) => void,
+  extraEnv: Record<string, string> = {},
+): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const proc = spawn('docker', ['compose', '-f', COMPOSE_FILE, 'up', '-d'], { shell: false })
+    const proc = spawn('docker', ['compose', '-f', COMPOSE_FILE, 'up', '-d'], {
+      shell: false,
+      env: { ...process.env, ...extraEnv },
+    })
     proc.stdout.on('data', (d: Buffer) => onLog(d.toString()))
     proc.stderr.on('data', (d: Buffer) => onLog(d.toString()))
     proc.on('close', (code: number) => (code === 0 ? resolve() : reject(new Error(`exit ${code}`))))
@@ -67,9 +73,12 @@ export async function stopAllServices(): Promise<void> {
   await spawnAsync('docker', ['compose', '-f', COMPOSE_FILE, 'down'])
 }
 
-export async function restartAllServices(onLog: (line: string) => void): Promise<void> {
+export async function restartAllServices(
+  onLog: (line: string) => void,
+  extraEnv: Record<string, string> = {},
+): Promise<void> {
   await stopAllServices()
-  await startAllServices(onLog)
+  await startAllServices(onLog, extraEnv)
 }
 
 export function validateServiceName(name: string): ServiceName {

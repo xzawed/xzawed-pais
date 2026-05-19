@@ -1,5 +1,23 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow, ipcMain, safeStorage, app } from 'electron'
+import fs from 'node:fs'
+import path from 'node:path'
 import { getServiceStatuses } from './docker-manager.js'
+import { getSetupConfig } from './setup-store.js'
+
+function buildDockerEnv(): Record<string, string> {
+  const cfg = getSetupConfig()
+  if (!cfg) return {}
+  const env: Record<string, string> = { CLAUDE_MODE: cfg.claudeMode }
+  if (cfg.claudeMode !== 'cli') {
+    try {
+      const encPath = path.join(app.getPath('userData'), 'api-key.enc')
+      const raw = fs.readFileSync(encPath)
+      const key = safeStorage.decryptString(raw)
+      if (key) env['ANTHROPIC_API_KEY'] = key
+    } catch { /* no key stored */ }
+  }
+  return env
+}
 
 let interval: ReturnType<typeof setInterval> | null = null
 
@@ -25,7 +43,7 @@ export function registerServiceIpc(win: BrowserWindow): void {
     const { startAllServices } = await import('./docker-manager.js')
     await startAllServices((line) => {
       if (!win.isDestroyed()) win.webContents.send('services:log', line)
-    })
+    }, buildDockerEnv())
   })
   ipcMain.handle('services:stop-all', async () => {
     const { stopAllServices } = await import('./docker-manager.js')
@@ -35,7 +53,7 @@ export function registerServiceIpc(win: BrowserWindow): void {
     const { restartAllServices } = await import('./docker-manager.js')
     await restartAllServices((line) => {
       if (!win.isDestroyed()) win.webContents.send('services:log', line)
-    })
+    }, buildDockerEnv())
   })
   ipcMain.handle('services:restart', async (_e, name: string) => {
     const { restartService } = await import('./docker-manager.js')

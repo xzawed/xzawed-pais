@@ -7,11 +7,6 @@ import { SSHRemoteRunner } from './ssh-remote-runner.js'
 
 export function createRunner(config: Config): ClaudeRunner {
   switch (config.claudeMode) {
-    case 'api':
-      return new APIRunner({
-        apiKey: config.anthropicApiKey!,
-        model: config.claudeModel,
-      })
     case 'remote':
       if (config.remoteCLIUrl) {
         return new HTTPRemoteRunner(config.remoteCLIUrl)
@@ -22,7 +17,12 @@ export function createRunner(config: Config): ClaudeRunner {
         config.remoteKeyPath!,
       )
     case 'cli':
-    default:
       return new CLIRunner()
+    case 'api':
+    default:
+      return new APIRunner({
+        apiKey: config.anthropicApiKey!,
+        model: config.claudeModel,
+      })
   }
 }
