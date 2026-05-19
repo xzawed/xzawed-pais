@@ -48,11 +48,26 @@ const BASE_CONFIG = {
 }
 
 async function startServer(): Promise<FastifyInstance> {
-  const app = await buildServer(
+  return buildServer(
     BASE_CONFIG,
-    { async *send() { yield { type: 'done' as const, content: '' } } }
+    { async *send() { yield { type: 'done' as const, content: '' } } },
   )
-  return app
+}
+
+async function assertRateLimited(
+  app: FastifyInstance,
+  url: string,
+  payload: string,
+  clientIp: string,
+  maxAllowed: number,
+): Promise<void> {
+  const headers = { 'Content-Type': 'application/json', 'x-forwarded-for': clientIp }
+  for (let i = 0; i < maxAllowed; i++) {
+    await app.inject({ method: 'POST', url, headers, payload })
+  }
+  const res = await app.inject({ method: 'POST', url, headers, payload })
+  expect(res.statusCode).toBe(429)
+  expect((res.json() as { error: string }).error).toBe('Too Many Requests')
 }
 
 describe('Auth rate limiting', () => {
@@ -62,42 +77,28 @@ describe('Auth rate limiting', () => {
 
   it('POST /auth/register — 6회 연속 시 429 반환', async () => {
     app = await startServer()
-
-    const body = JSON.stringify({ email: 'test@test.com', password: 'password123' })
-    const headers = { 'Content-Type': 'application/json', 'x-forwarded-for': '10.0.0.1' }
-
-    for (let i = 0; i < 5; i++) {
-      await app.inject({ method: 'POST', url: '/auth/register', headers, payload: body })
-    }
-    const res = await app.inject({ method: 'POST', url: '/auth/register', headers, payload: body })
-    expect(res.statusCode).toBe(429)
-    expect((res.json() as { error: string }).error).toBe('Too Many Requests')
+    await assertRateLimited(
+      app, '/auth/register',
+      JSON.stringify({ email: 'test@test.com', password: 'password123' }),
+      '10.0.0.1', 5, // NOSONAR
+    )
   })
 
   it('POST /auth/login — 6회 연속 시 429 반환', async () => {
     app = await startServer()
-
-    const body = JSON.stringify({ email: 'test@test.com', password: 'wrongpass' })
-    const headers = { 'Content-Type': 'application/json', 'x-forwarded-for': '10.0.0.2' }
-
-    for (let i = 0; i < 5; i++) {
-      await app.inject({ method: 'POST', url: '/auth/login', headers, payload: body })
-    }
-    const res = await app.inject({ method: 'POST', url: '/auth/login', headers, payload: body })
-    expect(res.statusCode).toBe(429)
-    expect((res.json() as { error: string }).error).toBe('Too Many Requests')
+    await assertRateLimited(
+      app, '/auth/login',
+      JSON.stringify({ email: 'test@test.com', password: 'wrongpass' }),
+      '10.0.0.2', 5, // NOSONAR
+    )
   })
 
   it('POST /auth/refresh — 21회 연속 시 429 반환', async () => {
     app = await startServer()
-
-    const body = JSON.stringify({ refreshToken: 'invalid' })
-    const headers = { 'Content-Type': 'application/json', 'x-forwarded-for': '10.0.0.3' }
-
-    for (let i = 0; i < 20; i++) {
-      await app.inject({ method: 'POST', url: '/auth/refresh', headers, payload: body })
-    }
-    const res = await app.inject({ method: 'POST', url: '/auth/refresh', headers, payload: body })
-    expect(res.statusCode).toBe(429)
+    await assertRateLimited(
+      app, '/auth/refresh',
+      JSON.stringify({ refreshToken: 'invalid' }),
+      '10.0.0.3', 20, // NOSONAR
+    )
   })
 })
