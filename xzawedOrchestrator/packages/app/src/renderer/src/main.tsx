@@ -7,9 +7,11 @@ import { App } from './App.js'
 const root = document.getElementById('root')
 if (!root) throw new Error('Root element not found')
 
+const initialPath = globalThis.location?.hash === '#test' ? '/chat' : '/'
+
 createRoot(root).render(
   <StrictMode>
-    <MemoryRouter initialEntries={['/']}>
+    <MemoryRouter initialEntries={[initialPath]}>
       <App />
     </MemoryRouter>
   </StrictMode>

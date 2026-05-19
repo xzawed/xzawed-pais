@@ -53,7 +53,8 @@ export function WebChatView({ serverUrl }: Readonly<Props>): React.JSX.Element {
 
   const connectWs = (sid: string): void => {
     const wsUrl = `${serverUrl.replace(/^http/, 'ws')}/ws/sessions/${sid}`
-    const ws = new WebSocket(wsUrl)
+    const protocols = accessToken ? [`bearer.${accessToken}`] : []
+    const ws = new WebSocket(wsUrl, protocols)
     wsRef.current = ws
 
     ws.onmessage = (ev) => {
