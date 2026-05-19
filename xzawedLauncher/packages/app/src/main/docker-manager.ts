@@ -1,26 +1,32 @@
-import { exec, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import path from 'node:path'
 import { app, shell } from 'electron'
 import type { DockerInstallStatus, ServiceName, ServiceState, ServiceStatus } from '@xzawed/launcher-shared'
+import { SERVICE_NAMES } from '@xzawed/launcher-shared'
 
 const COMPOSE_FILE = path.join(process.resourcesPath ?? app.getAppPath(), 'docker-compose.prod.yml')
 
-function execAsync(cmd: string): Promise<string> {
+function spawnAsync(bin: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    exec(cmd, (err, result) => {
-      if (err) reject(err)
-      else resolve(typeof result === 'string' ? result : result.stdout)
+    const chunks: string[] = []
+    const proc = spawn(bin, args, { shell: false })
+    proc.stdout.on('data', (d: Buffer) => chunks.push(d.toString()))
+    proc.stderr.on('data', (d: Buffer) => chunks.push(d.toString()))
+    proc.on('close', (code: number) => {
+      if (code === 0) resolve(chunks.join(''))
+      else reject(new Error(`exit ${code}: ${chunks.join('')}`))
     })
+    proc.on('error', reject)
   })
 }
 
 export async function checkDocker(): Promise<DockerInstallStatus> {
   try {
-    const out = await execAsync('docker info')
+    const out = await spawnAsync('docker', ['info'])
     return out.includes('Server') ? 'running' : 'installed-stopped'
   } catch {
     try {
-      await execAsync('docker --version')
+      await spawnAsync('docker', ['--version'])
       return 'installed-stopped'
     } catch {
       return 'not-installed'
@@ -29,13 +35,13 @@ export async function checkDocker(): Promise<DockerInstallStatus> {
 }
 
 export async function startDockerDesktop(): Promise<void> {
-  const cmds: Record<string, string> = {
-    win32: 'start "" "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe"',
-    darwin: 'open -a Docker',
-    linux: 'systemctl --user start docker-desktop',
+  const cmds: Record<string, [string, string[]]> = {
+    win32: ['cmd', ['/c', 'start', '', String.raw`C:\Program Files\Docker\Docker\Docker Desktop.exe`]],
+    darwin: ['open', ['-a', 'Docker']],
+    linux: ['systemctl', ['--user', 'start', 'docker-desktop']],
   }
-  const cmd = cmds[process.platform] ?? cmds.linux
-  await execAsync(cmd).catch(() => {})
+  const [bin, args] = cmds[process.platform] ?? cmds.linux
+  await spawnAsync(bin, args).catch(() => {})
 }
 
 export async function installDocker(): Promise<void> {
@@ -53,11 +59,12 @@ export async function startAllServices(onLog: (line: string) => void): Promise<v
     proc.stdout.on('data', (d: Buffer) => onLog(d.toString()))
     proc.stderr.on('data', (d: Buffer) => onLog(d.toString()))
     proc.on('close', (code: number) => (code === 0 ? resolve() : reject(new Error(`exit ${code}`))))
+    proc.on('error', reject)
   })
 }
 
 export async function stopAllServices(): Promise<void> {
-  await execAsync(`docker compose -f "${COMPOSE_FILE}" down`)
+  await spawnAsync('docker', ['compose', '-f', COMPOSE_FILE, 'down'])
 }
 
 export async function restartAllServices(onLog: (line: string) => void): Promise<void> {
@@ -65,12 +72,21 @@ export async function restartAllServices(onLog: (line: string) => void): Promise
   await startAllServices(onLog)
 }
 
+export function validateServiceName(name: string): ServiceName {
+  if (!(SERVICE_NAMES as readonly string[]).includes(name)) {
+    throw new Error(`Invalid service name: ${name}`)
+  }
+  return name as ServiceName
+}
+
 export async function restartService(name: string): Promise<void> {
-  await execAsync(`docker compose -f "${COMPOSE_FILE}" restart ${name}`)
+  const safe = validateServiceName(name)
+  await spawnAsync('docker', ['compose', '-f', COMPOSE_FILE, 'restart', safe])
 }
 
 export async function stopService(name: string): Promise<void> {
-  await execAsync(`docker compose -f "${COMPOSE_FILE}" stop ${name}`)
+  const safe = validateServiceName(name)
+  await spawnAsync('docker', ['compose', '-f', COMPOSE_FILE, 'stop', safe])
 }
 
 export async function getServiceStatuses(): Promise<ServiceState[]> {
@@ -80,9 +96,9 @@ export async function getServiceStatuses(): Promise<ServiceState[]> {
     builder: 3006, watcher: 3007, security: 3008,
   }
   try {
-    const out = await execAsync(`docker compose -f "${COMPOSE_FILE}" ps --format json`)
+    const out = await spawnAsync('docker', ['compose', '-f', COMPOSE_FILE, 'ps', '--format', 'json'])
     const rows = out.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
-    return rows.map((r: { Name: string; State: string; Health: string }) => {
+    return rows.map((r: { Name: string; State: string; Health?: string }) => {
       const name = r.Name.replace(/^xzawed[_-]/, '').replace(/[_-]\d+$/, '') as ServiceName
       let status: ServiceStatus = 'stopped'
       if (r.State === 'running' && r.Health === 'healthy') status = 'running'
