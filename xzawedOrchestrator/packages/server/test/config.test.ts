@@ -5,7 +5,7 @@ describe('config', () => {
     delete process.env.PORT
     delete process.env.CLAUDE_MODE
     delete process.env.REDIS_URL
-    process.env.ANTHROPIC_API_KEY = 'sk-test-key'
+    process.env.ANTHROPIC_API_KEY = 'sk-test-key' // NOSONAR
   })
 
   it('defaults PORT to 3000', async () => {

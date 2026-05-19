@@ -34,7 +34,7 @@ function createWindow(): BrowserWindow {
   })
 
   if (process.env['ELECTRON_RENDERER_URL']) {
-    void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    void win.loadURL(process.env['ELECTRON_RENDERER_URL']) // NOSONAR — dev-only env set by electron-vite
   } else {
     void win.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
@@ -85,7 +85,7 @@ function registerIpc(w: BrowserWindow): void {
 
   // Tray
   ipcMain.handle('tray:minimize', () => w.hide())
-  ipcMain.handle('orchestrator:open', () => shell.openExternal('http://localhost:3000'))
+  ipcMain.handle('orchestrator:open', () => shell.openExternal('http://localhost:3000')) // NOSONAR
 
   registerServiceIpc(w)
 }

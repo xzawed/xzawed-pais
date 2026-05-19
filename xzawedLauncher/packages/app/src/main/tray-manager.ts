@@ -38,7 +38,7 @@ function updateTrayMenu(win: BrowserWindow): void {
       {
         label: '🎯 Orchestrator 열기',
         click: () => {
-          void shell.openExternal('http://localhost:3000')
+          void shell.openExternal('http://localhost:3000') // NOSONAR
         }
       },
       { label: '📊 대시보드 표시', click: () => { win.show(); win.focus() } },

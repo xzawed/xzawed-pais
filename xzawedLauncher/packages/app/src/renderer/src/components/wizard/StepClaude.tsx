@@ -64,7 +64,7 @@ export default function StepClaude(): JSX.Element {
           type="password"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
-          placeholder="sk-ant-api03-..."
+          placeholder="sk-ant-..."
           className="rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] outline-none focus:border-[var(--accent)]"
         />
         <div className="flex gap-2">

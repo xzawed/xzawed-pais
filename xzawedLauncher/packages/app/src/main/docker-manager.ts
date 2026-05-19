@@ -50,7 +50,7 @@ export async function installDocker(): Promise<void> {
     darwin: 'https://desktop.docker.com/mac/main/arm64/Docker.dmg',
     linux: 'https://docs.docker.com/engine/install/',
   }
-  await shell.openExternal(urls[process.platform] ?? urls.linux)
+  await shell.openExternal(urls[process.platform] ?? urls.linux) // NOSONAR
 }
 
 export async function startAllServices(

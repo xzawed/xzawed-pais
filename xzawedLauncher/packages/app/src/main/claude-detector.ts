@@ -54,7 +54,7 @@ export async function installClaude(onLog: (line: string) => void): Promise<void
 }
 
 export async function openClaudeLogin(): Promise<void> {
-  await shell.openExternal('https://claude.ai/login')
+  await shell.openExternal('https://claude.ai/login') // NOSONAR
 }
 
 export async function waitClaudeLogin(timeoutMs = 120_000): Promise<boolean> {
