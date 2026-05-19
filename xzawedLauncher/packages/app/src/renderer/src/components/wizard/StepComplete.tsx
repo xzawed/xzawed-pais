@@ -2,8 +2,10 @@ interface Props { onComplete: () => void }
 
 export default function StepComplete({ onComplete }: Readonly<Props>): JSX.Element {
   async function handleOpen(): Promise<void> {
+    const existing = await globalThis.launcherAPI!.getSetupConfig().catch(() => null)
     await globalThis.launcherAPI!.saveSetupConfig({
-      claudeMode: 'cli',
+      claudeMode: existing?.claudeMode ?? 'cli',
+      apiKey: existing?.apiKey,
       completedAt: new Date().toISOString(),
     }).catch(() => {})
     await globalThis.launcherAPI!.openOrchestrator()
@@ -16,7 +18,7 @@ export default function StepComplete({ onComplete }: Readonly<Props>): JSX.Eleme
       <div className="text-6xl">🎉</div>
       <h2 className="text-2xl font-bold">모든 준비가 완료되었습니다!</h2>
       <p className="text-sm text-[var(--fg-muted)] leading-relaxed">
-        11개 서비스가 모두 실행 중입니다.<br />
+        서비스가 모두 실행 중입니다.<br />
         런처는 백그라운드에서 계속 실행됩니다.
       </p>
       <button
