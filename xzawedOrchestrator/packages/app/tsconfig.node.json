@@ -6,7 +6,7 @@
     "target": "ES2022",
     "lib": ["ES2022"],
     "module": "CommonJS",
-    "moduleResolution": "Node",
+    "moduleResolution": "Node16",
     "outDir": "out"
   }
 }

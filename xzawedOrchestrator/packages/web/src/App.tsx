@@ -3,9 +3,9 @@ import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-do
 import { LoginPage, RegisterPage, ProjectsPage, ProjectSettingsPage, useAuthStore } from '@xzawed/ui'
 import { WebChatView } from './WebChatView.js'
 
-const SERVER_URL = window.location.origin
+const SERVER_URL = globalThis.location.origin
 
-function RequireAuth({ children }: { children: React.ReactNode }): React.JSX.Element {
+function RequireAuth({ children }: Readonly<{ children: React.ReactNode }>): React.JSX.Element {
   const user = useAuthStore((s) => s.user)
   if (!user) return <Navigate to="/login" replace />
   return <>{children}</>

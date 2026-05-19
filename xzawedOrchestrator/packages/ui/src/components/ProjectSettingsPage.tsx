@@ -33,6 +33,12 @@ async function removeToken(serverUrl: string, projectId: string, token: string):
   if (!res.ok) throw new Error('Failed to delete token')
 }
 
+function TokenStatusBadge({ exists }: Readonly<{ exists: boolean | null }>): React.JSX.Element {
+  if (exists === null) return <span className="text-sm text-fg-muted">Loading…</span>
+  if (exists) return <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">Registered</span>
+  return <span className="rounded-full bg-surface-raised px-2 py-0.5 text-xs text-fg-muted">Not registered</span>
+}
+
 export function ProjectSettingsPage({ serverUrl, projectId, onBack }: Readonly<Props>): React.JSX.Element {
   const { accessToken } = useAuthStore()
   const [exists, setExists] = useState<boolean | null>(null)
@@ -48,7 +54,7 @@ export function ProjectSettingsPage({ serverUrl, projectId, onBack }: Readonly<P
       .catch(() => setExists(false))
   }, [serverUrl, projectId, accessToken])
 
-  const handleSave = async (e: React.FormEvent): Promise<void> => {
+  const handleSave = async (e: React.SyntheticEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault()
     if (!accessToken || !pat.trim()) return
     setSaving(true)
@@ -104,17 +110,7 @@ export function ProjectSettingsPage({ serverUrl, projectId, onBack }: Readonly<P
 
           <div className="mb-4 flex items-center gap-2">
             <span className="text-sm text-fg-muted">Status:</span>
-            {exists === null ? (
-              <span className="text-sm text-fg-muted">Loading…</span>
-            ) : exists ? (
-              <span className="rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success">
-                Registered
-              </span>
-            ) : (
-              <span className="rounded-full bg-surface-raised px-2 py-0.5 text-xs text-fg-muted">
-                Not registered
-              </span>
-            )}
+            <TokenStatusBadge exists={exists} />
           </div>
 
           <form onSubmit={(e) => void handleSave(e)} className="flex flex-col gap-3">
