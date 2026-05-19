@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import type { Pool } from 'pg'
+import rateLimit from '@fastify/rate-limit'
 import { UserRepo, toPublic } from '../auth/user.repo.js'
 import { RefreshRepo } from '../auth/refresh.repo.js'
 import { hashPassword, verifyPassword } from '../auth/password.js'
@@ -11,6 +12,12 @@ interface AuthRoutesConfig {
   userJwtSecret: string
 }
 
+function getClientIp(req: { headers: Record<string, string | string[] | undefined>; ip: string }): string {
+  const forwarded = req.headers['x-forwarded-for']
+  const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0]
+  return ip?.trim() ?? req.ip
+}
+
 export async function authRoutes(
   app: FastifyInstance,
   config: AuthRoutesConfig
@@ -20,8 +27,19 @@ export async function authRoutes(
   const refreshes = new RefreshRepo(pool)
   const authHook = makeUserAuthHook(userJwtSecret)
 
+  await app.register(rateLimit, {
+    global: false,
+    keyGenerator: (req) => getClientIp(req as Parameters<typeof getClientIp>[0]),
+    errorResponseBuilder: () => ({
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: 'Too many requests, please try again later',
+    }),
+  })
+
   app.post<{ Body: { email: string; password: string; displayName?: string } }>(
     '/auth/register',
+    { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const { email, password, displayName } = req.body
       if (!email || !password) {
@@ -50,6 +68,7 @@ export async function authRoutes(
 
   app.post<{ Body: { email: string; password: string } }>(
     '/auth/login',
+    { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const { email, password } = req.body
       if (!email || !password) {
@@ -75,6 +94,7 @@ export async function authRoutes(
 
   app.post<{ Body: { refreshToken: string } }>(
     '/auth/refresh',
+    { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } },
     async (req, reply) => {
       const { refreshToken } = req.body
       if (!refreshToken) return reply.status(400).send({ error: 'refreshToken is required' })

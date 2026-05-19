@@ -54,6 +54,21 @@ ws.on("message", (data) => {
 });
 ```
 
+### 인증이 필요한 경우
+
+서버가 `DATABASE_URL` + `USER_JWT_SECRET`으로 구성된 경우 WebSocket 연결에도 인증이 필요합니다.  
+브라우저 WebSocket API는 커스텀 헤더를 지원하지 않으므로 **`Sec-WebSocket-Protocol` 헤더에 `bearer.<accessToken>`** 형식으로 토큰을 전달합니다.
+
+```javascript
+const accessToken = "eyJhbGci..."; // /auth/login에서 발급받은 token
+const ws = new WebSocket(
+  `ws://localhost:3000/ws/sessions/${sessionId}`,
+  [`bearer.${accessToken}`]  // protocols 배열로 전달
+);
+```
+
+Node.js (ws 패키지) 또는 서버 간 통신에서는 표준 `Authorization: Bearer <token>` 헤더를 사용할 수 있습니다.
+
 ---
 
 ## 서버 → 클라이언트 이벤트
