@@ -67,7 +67,7 @@ pnpm install
 
 - `packages/shared` 의존성 설치
 - `packages/server` 의존성 설치 (Fastify, ioredis, @anthropic-ai/sdk 등)
-- `packages/app` 의존성 설치 (추후 구현)
+- `packages/app` 의존성 설치 (Electron 앱: React 19, Zustand, Tailwind CSS v4, shadcn/ui)
 - 루트 dev 의존성 설치 (Turborepo, TypeScript)
 
 ---

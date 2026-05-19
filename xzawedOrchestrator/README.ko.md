@@ -88,7 +88,7 @@ cd packages/server && pnpm dev
    ↕  Electron 앱 (IPC / WebSocket)
 🎯 xzawedOrchestrator   ← 이 프로젝트
    ↕  Redis Streams
-🗂️ xzawedManager        ← 별도 서비스 (추후)
+🗂️ xzawedManager        ← 별도 서비스 (포트 3001, 구현 완료)
    ↕  Redis Streams
    ├── 📋 xzawedPlanner    (기획자)
    ├── 💻 xzawedDeveloper  (개발자)
@@ -117,7 +117,7 @@ xzawedOrchestrator/
 └──────────────────────────────────────────────┼─────────────────┘
                                                │ Redis Streams
                                                ▼
-                                     🗂️ xzawedManager (추후)
+                                     🗂️ xzawedManager (포트 3001, 구현 완료)
 ```
 
 ---
