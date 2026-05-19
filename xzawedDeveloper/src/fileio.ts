@@ -8,7 +8,7 @@ export async function validatePath(filePath: string, workspaceRoot: string): Pro
 
   const resolved = path.resolve(workspaceRoot, filePath)
   const realFile = await fs.realpath(resolved).catch(() => resolved)
-  const realRoot = await fs.realpath(workspaceRoot).catch(() => resolvedRoot)
+  const realRoot = await fs.realpath(workspaceRoot).catch(() => workspaceRoot)
   const relative = path.relative(realRoot, realFile)
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
     throw new Error(`경로 거부: ${filePath}`)
