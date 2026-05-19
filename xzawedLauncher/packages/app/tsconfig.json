@@ -9,5 +9,6 @@
     "composite": true,
     "outDir": "out"
   },
-  "include": ["src/renderer/src"]
+  "include": ["src/renderer/src"],
+  "references": [{"path": "./tsconfig.node.json"}]
 }

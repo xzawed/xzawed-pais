@@ -4,7 +4,7 @@ const config: Configuration = {
   appId: 'com.xzawed.launcher',
   productName: 'xzawed Launcher',
   directories: { output: 'dist', buildResources: 'resources' },
-  files: ['out/**/*', 'resources/docker-compose.prod.yml'],
+  files: ['out/**/*'],
   extraResources: [{ from: 'resources/docker-compose.prod.yml', to: 'docker-compose.prod.yml' }],
   publish: {
     provider: 'github',
