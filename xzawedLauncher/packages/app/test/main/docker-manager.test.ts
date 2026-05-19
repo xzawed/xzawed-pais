@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { makeSpawnResult } from './_helpers.js'
 
 const spawnMock = vi.fn()
 
@@ -9,24 +10,6 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn() },
   app: { getAppPath: vi.fn(() => '/app') },
 }))
-
-function makeSpawnResult(stdout: string, exitCode = 0) {
-  const stdoutHandlers: ((d: Buffer) => void)[] = []
-  const closeHandlers: ((code: number) => void)[] = []
-  const proc = {
-    stdout: { on: vi.fn((event: string, cb: (d: Buffer) => void) => { if (event === 'data') stdoutHandlers.push(cb) }) },
-    stderr: { on: vi.fn() },
-    on: vi.fn((event: string, cb: ((code: number) => void) | ((e: Error) => void)) => {
-      if (event === 'close') closeHandlers.push(cb as (code: number) => void)
-    }),
-  }
-  // Emit stdout and close asynchronously
-  setTimeout(() => {
-    stdoutHandlers.forEach((h) => h(Buffer.from(stdout)))
-    closeHandlers.forEach((h) => h(exitCode))
-  }, 0)
-  return proc
-}
 
 let dm: typeof import('../../src/main/docker-manager.js')
 
