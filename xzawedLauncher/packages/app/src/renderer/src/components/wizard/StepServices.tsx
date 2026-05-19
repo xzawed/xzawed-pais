@@ -9,21 +9,27 @@ export default function StepServices(): JSX.Element {
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  async function startServices(signal: { cancelled: boolean }): Promise<void> {
+    setStarting(true)
+    setError(null)
+    try {
+      await globalThis.launcherAPI!.startAllServices()
+      const states = await globalThis.launcherAPI!.getServicesStatus()
+      if (signal.cancelled) return
+      setServices(states)
+      const allOk = states.every((s) => s.status === 'running')
+      if (allOk) setTimeout(() => { if (!signal.cancelled) setStep('complete') }, 600)
+    } catch (e) {
+      if (!signal.cancelled) setError(String(e))
+    } finally {
+      if (!signal.cancelled) setStarting(false)
+    }
+  }
+
   useEffect(() => {
-    void (async () => {
-      setStarting(true)
-      try {
-        await globalThis.launcherAPI!.startAllServices()
-        const states = await globalThis.launcherAPI!.getServicesStatus()
-        setServices(states)
-        const allOk = states.every((s) => s.status === 'running')
-        if (allOk) setTimeout(() => setStep('complete'), 600)
-      } catch (e) {
-        setError(String(e))
-      } finally {
-        setStarting(false)
-      }
-    })()
+    const signal = { cancelled: false }
+    void startServices(signal)
+    return () => { signal.cancelled = true }
   }, [setServices, setStep])
 
   useEffect(() => {
@@ -59,7 +65,7 @@ export default function StepServices(): JSX.Element {
         {logs.slice(-5).map((l, i) => <div key={i}>{l}</div>)}
       </div>
       {!starting && error && (
-        <button onClick={() => { setError(null); void globalThis.launcherAPI!.startAllServices() }}
+        <button onClick={() => { const sig = { cancelled: false }; void startServices(sig) }}
           className="rounded-lg border border-[var(--border)] py-2 text-sm text-[var(--fg-muted)]">
           재시도
         </button>

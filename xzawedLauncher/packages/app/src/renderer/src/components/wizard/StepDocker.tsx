@@ -5,14 +5,23 @@ export default function StepDocker(): JSX.Element {
   const { dockerStatus, isLoading, error, setDockerStatus, setLoading, setError, setStep } = useWizardStore()
 
   useEffect(() => {
+    let cancelled = false
+    let tid: ReturnType<typeof setTimeout>
     void (async () => {
       setLoading(true)
-      const status = await globalThis.launcherAPI!.checkDocker()
-      setDockerStatus(status)
-      setLoading(false)
-      if (status === 'running') setTimeout(() => setStep('claude'), 800)
+      try {
+        const status = await globalThis.launcherAPI!.checkDocker()
+        if (cancelled) return
+        setDockerStatus(status)
+        if (status === 'running') tid = setTimeout(() => setStep('claude'), 800)
+      } catch {
+        if (!cancelled) setError('Docker 상태 확인 중 오류가 발생했습니다.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     })()
-  }, [setDockerStatus, setLoading, setStep])
+    return () => { cancelled = true; clearTimeout(tid) }
+  }, [setDockerStatus, setLoading, setStep, setError])
 
   async function handleInstall(): Promise<void> {
     setDockerStatus('installing')

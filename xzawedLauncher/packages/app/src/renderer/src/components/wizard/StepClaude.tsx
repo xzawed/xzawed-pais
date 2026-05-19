@@ -2,34 +2,51 @@ import { useEffect, useState } from 'react'
 import { useWizardStore } from '../../stores/wizard.store.js'
 
 export default function StepClaude(): JSX.Element {
-  const { claudeStatus, claudeEmail, setClaudeStatus, setClaudeEmail, setStep } = useWizardStore()
+  const { claudeStatus, claudeEmail, setClaudeStatus, setStep } = useWizardStore()
   const [showApiForm, setShowApiForm] = useState(false)
   const [apiKey, setApiKey] = useState('')
   const [waiting, setWaiting] = useState(false)
 
   useEffect(() => {
+    let cancelled = false
+    let tid: ReturnType<typeof setTimeout>
     void (async () => {
-      const status = await globalThis.launcherAPI!.checkClaude()
-      setClaudeStatus(status)
-      if (status === 'logged-in') {
-        setTimeout(() => setStep('services'), 800)
+      try {
+        const status = await globalThis.launcherAPI!.checkClaude()
+        if (cancelled) return
+        setClaudeStatus(status)
+        if (status === 'logged-in') {
+          tid = setTimeout(() => { if (!cancelled) setStep('services') }, 800)
+        }
+      } catch {
+        if (!cancelled) setClaudeStatus('error')
       }
     })()
-  }, [setClaudeStatus, setClaudeEmail, setStep])
+    return () => { cancelled = true; clearTimeout(tid) }
+  }, [setClaudeStatus, setStep])
 
   async function handleBrowserLogin(): Promise<void> {
-    await globalThis.launcherAPI!.openClaudeLogin()
-    setWaiting(true)
-    const ok = await globalThis.launcherAPI!.waitClaudeLogin()
-    setWaiting(false)
-    if (ok) { setClaudeStatus('logged-in'); setStep('services') }
-    else setClaudeStatus('not-logged-in')
+    try {
+      await globalThis.launcherAPI!.openClaudeLogin()
+      setWaiting(true)
+      const ok = await globalThis.launcherAPI!.waitClaudeLogin()
+      if (ok) { setClaudeStatus('logged-in'); setStep('services') }
+      else setClaudeStatus('not-logged-in')
+    } catch {
+      setClaudeStatus('not-logged-in')
+    } finally {
+      setWaiting(false)
+    }
   }
 
   async function handleInstall(): Promise<void> {
     setClaudeStatus('installing')
-    await globalThis.launcherAPI!.installClaude()
-    setClaudeStatus('not-logged-in')
+    try {
+      await globalThis.launcherAPI!.installClaude()
+      setClaudeStatus('not-logged-in')
+    } catch {
+      setClaudeStatus('error')
+    }
   }
 
   async function handleSaveApiKey(): Promise<void> {
