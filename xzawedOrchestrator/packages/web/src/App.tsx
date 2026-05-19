@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react'
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { LoginPage, RegisterPage, ProjectsPage, useAuthStore } from '@xzawed/ui'
+import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom'
+import { LoginPage, RegisterPage, ProjectsPage, ProjectSettingsPage, useAuthStore } from '@xzawed/ui'
 import { WebChatView } from './WebChatView.js'
 
 const SERVER_URL = window.location.origin
@@ -14,6 +14,19 @@ function RequireAuth({ children }: { children: React.ReactNode }): React.JSX.Ele
 function RootRedirect(): React.JSX.Element {
   const user = useAuthStore((s) => s.user)
   return <Navigate to={user ? '/projects' : '/login'} replace />
+}
+
+function ProjectSettingsPageWrapper(): React.JSX.Element {
+  const { projectId } = useParams<{ projectId: string }>()
+  const navigate = useNavigate()
+  if (!projectId) return <Navigate to="/projects" replace />
+  return (
+    <ProjectSettingsPage
+      serverUrl={SERVER_URL}
+      projectId={projectId}
+      onBack={() => navigate('/projects')}
+    />
+  )
 }
 
 export function App(): React.JSX.Element {
@@ -68,6 +81,15 @@ export function App(): React.JSX.Element {
         element={
           <RequireAuth>
             <WebChatView serverUrl={SERVER_URL} />
+          </RequireAuth>
+        }
+      />
+
+      <Route
+        path="/projects/:projectId/settings"
+        element={
+          <RequireAuth>
+            <ProjectSettingsPageWrapper />
           </RequireAuth>
         }
       />

@@ -1,4 +1,5 @@
 const TOKEN_KEY = 'access_token'
+const REFRESH_TOKEN_KEY = 'refresh_token'
 
 type TokenAPI = {
   tokenGet?: () => Promise<string | null>
@@ -7,8 +8,8 @@ type TokenAPI = {
 }
 
 function getElectronTokenAPI(): TokenAPI | undefined {
-  if (typeof window === 'undefined') return undefined
-  return (window as unknown as { electronAPI?: TokenAPI }).electronAPI
+  if (typeof globalThis.window === 'undefined') return undefined
+  return (globalThis.window as unknown as { electronAPI?: TokenAPI }).electronAPI
 }
 
 export const tokenStorage = {
@@ -24,9 +25,18 @@ export const tokenStorage = {
     sessionStorage.setItem(TOKEN_KEY, token)
   },
 
+  async getRefreshToken(): Promise<string | null> {
+    return sessionStorage.getItem(REFRESH_TOKEN_KEY)
+  },
+
+  async setRefreshToken(token: string): Promise<void> {
+    sessionStorage.setItem(REFRESH_TOKEN_KEY, token)
+  },
+
   async clearTokens(): Promise<void> {
     const api = getElectronTokenAPI()
     if (api?.tokenClear) { await api.tokenClear(); return }
     sessionStorage.removeItem(TOKEN_KEY)
+    sessionStorage.removeItem(REFRESH_TOKEN_KEY)
   },
 }

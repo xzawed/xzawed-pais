@@ -11,7 +11,7 @@ async function fetchAuth(
   url: string,
   body: Record<string, string | undefined>,
   defaultError: string,
-): Promise<{ user: AuthUser; accessToken: string }> {
+): Promise<{ user: AuthUser; accessToken: string; refreshToken?: string }> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -21,7 +21,7 @@ async function fetchAuth(
     const b = (await res.json()) as { error?: string }
     throw new Error(b.error ?? defaultError)
   }
-  return (await res.json()) as { user: AuthUser; accessToken: string }
+  return (await res.json()) as { user: AuthUser; accessToken: string; refreshToken?: string }
 }
 
 interface AuthState {
@@ -42,12 +42,13 @@ export const useAuthStore = create<AuthState>()((set) => ({
   login: async (serverUrl, email, password) => {
     set({ isLoading: true })
     try {
-      const { user, accessToken } = await fetchAuth(
+      const { user, accessToken, refreshToken } = await fetchAuth(
         `${serverUrl}/auth/login`,
         { email, password },
         'Login failed',
       )
       await tokenStorage.setAccessToken(accessToken)
+      if (refreshToken) await tokenStorage.setRefreshToken(refreshToken)
       set({ user, accessToken, isLoading: false })
     } catch (err) {
       set({ isLoading: false })
@@ -58,12 +59,13 @@ export const useAuthStore = create<AuthState>()((set) => ({
   register: async (serverUrl, email, password, displayName) => {
     set({ isLoading: true })
     try {
-      const { user, accessToken } = await fetchAuth(
+      const { user, accessToken, refreshToken } = await fetchAuth(
         `${serverUrl}/auth/register`,
         { email, password, displayName },
         'Registration failed',
       )
       await tokenStorage.setAccessToken(accessToken)
+      if (refreshToken) await tokenStorage.setRefreshToken(refreshToken)
       set({ user, accessToken, isLoading: false })
     } catch (err) {
       set({ isLoading: false })
@@ -86,9 +88,33 @@ export const useAuthStore = create<AuthState>()((set) => ({
       if (res.ok) {
         const { user } = (await res.json()) as { user: AuthUser }
         set({ user, accessToken: token })
-      } else {
-        await tokenStorage.clearTokens()
+        return
       }
+      if (res.status === 401) {
+        const refreshToken = await tokenStorage.getRefreshToken()
+        if (!refreshToken) { await tokenStorage.clearTokens(); return }
+        const refreshRes = await fetch(`${serverUrl}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        })
+        if (!refreshRes.ok) { await tokenStorage.clearTokens(); return }
+        const { accessToken: newAt, refreshToken: newRt } =
+          (await refreshRes.json()) as { accessToken: string; refreshToken: string }
+        await tokenStorage.setAccessToken(newAt)
+        await tokenStorage.setRefreshToken(newRt)
+        const meRes = await fetch(`${serverUrl}/auth/me`, {
+          headers: { Authorization: `Bearer ${newAt}` },
+        })
+        if (meRes.ok) {
+          const { user } = (await meRes.json()) as { user: AuthUser }
+          set({ user, accessToken: newAt })
+        } else {
+          await tokenStorage.clearTokens()
+        }
+        return
+      }
+      await tokenStorage.clearTokens()
     } catch {
       // network error — keep token for retry, don't set user
     }
