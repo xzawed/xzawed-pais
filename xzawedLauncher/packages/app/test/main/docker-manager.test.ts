@@ -44,7 +44,7 @@ describe('DockerManager', () => {
   })
 
   it('checkDocker returns not-installed when both docker info and docker --version fail', async () => {
-    spawnMock.mockReturnValue(makeSpawnResult('', 1))
+    spawnMock.mockImplementation(() => makeSpawnResult('', 1))
     const status = await dm.checkDocker()
     expect(status).toBe('not-installed')
   })

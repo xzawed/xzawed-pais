@@ -44,7 +44,7 @@ describe('ClaudeDetector', () => {
   })
 
   it('checkClaude returns not-installed when claude spawn fails', async () => {
-    spawnMock.mockReturnValue(makeSpawnResult('', 1))
+    spawnMock.mockImplementation(() => makeSpawnResult('', 1))
     expect(await cd.checkClaude()).toBe('not-installed')
   })
 })
