@@ -14,6 +14,16 @@ vi.mock('ioredis', () => ({
   },
 }))
 
+function makeMsg(sessionId: string, intent = 'test'): OrchestratorToManagerMessage {
+  return {
+    sessionId,
+    messageId: `msg-${sessionId}`,
+    timestamp: 1000,
+    type: 'task_request',
+    payload: { intent, context: {}, priority: 'normal' },
+  }
+}
+
 describe('StreamConsumer', () => {
   beforeEach(() => {
     mockXreadgroup.mockReset()
@@ -80,13 +90,7 @@ describe('StreamConsumer', () => {
     const consumer = new StreamConsumer('redis://localhost:6379')
 
     let calls = 0
-    const msg: OrchestratorToManagerMessage = {
-      sessionId: 'sess-cq1',
-      messageId: 'msg-cq1',
-      timestamp: 1000,
-      type: 'task_request',
-      payload: { intent: 'test', context: {}, priority: 'normal' },
-    }
+    const msg = makeMsg('sess-cq1')
 
     mockXreadgroup.mockImplementation(async () => {
       calls++
@@ -106,15 +110,9 @@ describe('StreamConsumer', () => {
     expect(calls).toBeGreaterThanOrEqual(2)
   })
 
-  // CQ-4: xack must be called even when handler throws (try/finally guarantee)
-  it('CQ-4: xack is called even when handler throws (finally guarantee)', async () => {
-    const msg: OrchestratorToManagerMessage = {
-      sessionId: 'sess-cq4',
-      messageId: 'msg-cq4',
-      timestamp: 1000,
-      type: 'task_request',
-      payload: { intent: 'fail', context: {}, priority: 'normal' },
-    }
+  // CQ-4: xack must be called exactly once with correct args even when handler throws (try/finally guarantee)
+  it('CQ-4: xack is called exactly once with correct args when handler throws (finally guarantee)', async () => {
+    const msg = makeMsg('sess-cq4', 'fail')
 
     const { StreamConsumer } = await import('../../src/streams/consumer.js')
     const consumer = new StreamConsumer('redis://localhost:6379')
@@ -129,45 +127,16 @@ describe('StreamConsumer', () => {
       return null
     })
 
-    // Handler throws — xack must still be called (finally semantics)
+    // Handler throws — xack must still be called exactly once (finally semantics)
     const throwingHandler = vi.fn().mockRejectedValue(new Error('handler exploded'))
     await consumer.start('sess-cq4', throwingHandler)
 
     expect(throwingHandler).toHaveBeenCalledWith(msg)
+    expect(mockXack).toHaveBeenCalledTimes(1)
     expect(mockXack).toHaveBeenCalledWith(
       'orchestrator:to-manager:sess-cq4',
       'manager-consumers',
       '9999-0',
     )
-  })
-
-  // CQ-4 (structural): xack must be called exactly once even when handler throws
-  it('CQ-4: xack is called exactly once even when handler throws (not skipped by catch path)', async () => {
-    const msg: OrchestratorToManagerMessage = {
-      sessionId: 'sess-cq4b',
-      messageId: 'msg-cq4b',
-      timestamp: 1000,
-      type: 'task_request',
-      payload: { intent: 'fail2', context: {}, priority: 'normal' },
-    }
-
-    const { StreamConsumer } = await import('../../src/streams/consumer.js')
-    const consumer = new StreamConsumer('redis://localhost:6379')
-
-    let callCount = 0
-    mockXreadgroup.mockImplementation(async () => {
-      callCount++
-      if (callCount === 1) {
-        return [['orchestrator:to-manager:sess-cq4b', [['1111-0', ['data', JSON.stringify(msg)]]]]]
-      }
-      consumer.stop()
-      return null
-    })
-
-    const handler = vi.fn().mockRejectedValue(new Error('handler fail'))
-    await consumer.start('sess-cq4b', handler)
-
-    expect(mockXack).toHaveBeenCalledTimes(1)
-    expect(mockXack).toHaveBeenCalledWith('orchestrator:to-manager:sess-cq4b', 'manager-consumers', '1111-0')
   })
 })
