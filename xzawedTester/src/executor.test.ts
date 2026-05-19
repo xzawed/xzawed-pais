@@ -52,21 +52,21 @@ describe('exec', () => {
   beforeEach(() => vi.resetAllMocks())
 
   it('exitCode 0이면 success: true를 반환한다', async () => {
-    spawnMock.mockReturnValueOnce(makeMockProc(0, 'Build succeeded\n') as any)
+    spawnMock.mockReturnValueOnce(makeMockProc(0, 'Test passed\n') as any)
     const chunks: string[] = []
-    const result = await exec('pnpm build', '/project', (c) => { chunks.push(c) }, 5000)
+    const result = await exec('vitest run', '/project', (c) => { chunks.push(c) }, 5000)
     expect(result.success).toBe(true)
     expect(result.exitCode).toBe(0)
-    expect(result.output).toContain('Build succeeded')
+    expect(result.output).toContain('Test passed')
     expect(chunks).toHaveLength(1)
   })
 
   it('exitCode 1이면 success: false를 반환한다', async () => {
-    spawnMock.mockReturnValueOnce(makeMockProc(1, '', 'Error: type mismatch\n') as any)
-    const result = await exec('pnpm build', '/project', () => {}, 5000)
+    spawnMock.mockReturnValueOnce(makeMockProc(1, '', 'Error: assertion failed\n') as any)
+    const result = await exec('vitest run', '/project', () => {}, 5000)
     expect(result.success).toBe(false)
     expect(result.exitCode).toBe(1)
-    expect(result.output).toContain('Error: type mismatch')
+    expect(result.output).toContain('Error: assertion failed')
   })
 
   it('타임아웃 초과 시 reject한다', async () => {
@@ -74,10 +74,9 @@ describe('exec', () => {
     proc.stdout = new EventEmitter()
     proc.stderr = new EventEmitter()
     proc.kill = vi.fn()
-    // 절대 close 이벤트를 발행하지 않는 프로세스
     spawnMock.mockReturnValueOnce(proc as any)
 
-    await expect(exec('sleep 100', '/project', () => {}, 50)).rejects.toThrow('빌드 타임아웃')
+    await expect(exec('sleep 100', '/project', () => {}, 50)).rejects.toThrow('테스트 타임아웃')
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM')
   })
 })

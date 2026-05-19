@@ -10,6 +10,10 @@ export interface ExecResult {
 }
 
 export async function validatePath(projectPath: string, workspaceRoot: string): Promise<string> {
+  const resolvedRoot = path.resolve(workspaceRoot)
+  if (resolvedRoot === path.parse(resolvedRoot).root) {
+    throw new Error('WORKSPACE_ROOT must not be filesystem root')
+  }
   const realProject = await fs.realpath(projectPath).catch(() => path.resolve(projectPath))
   const realRoot = await fs.realpath(workspaceRoot).catch(() => path.resolve(workspaceRoot))
   const relative = path.relative(realRoot, realProject)

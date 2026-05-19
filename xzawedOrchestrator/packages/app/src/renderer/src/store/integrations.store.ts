@@ -14,7 +14,7 @@ export interface McpServerConfig {
   name: string
   command: string
   args: string[]
-  env: Record<string, string>
+  env?: Record<string, string>
   autoStart: boolean
 }
 

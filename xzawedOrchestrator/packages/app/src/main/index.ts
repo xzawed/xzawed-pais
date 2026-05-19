@@ -153,7 +153,7 @@ ipcMain.handle('token:clear', (): void => {
 
 // ── MCP ──────────────────────────────────────────────────────────────
 ipcMain.handle('mcp:list', () =>
-  mcpManager.listServers().map((s) => ({ ...s, status: mcpManager.getStatus(s.id) }))
+  mcpManager.listServers().map(({ env: _env, ...s }) => ({ ...s, status: mcpManager.getStatus(s.id) }))
 )
 ipcMain.handle('mcp:add',      (_e, config) => mcpManager.addServer(config))
 ipcMain.handle('mcp:remove',   (_e, id: string) => mcpManager.removeServer(id))

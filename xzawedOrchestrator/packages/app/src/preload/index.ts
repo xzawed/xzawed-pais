@@ -28,7 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // MCP
-  mcpList:     (): Promise<Array<{ id: string; name: string; command: string; args: string[]; env: Record<string, string>; autoStart: boolean; status: 'running' | 'stopped' | 'error' }>> => ipcRenderer.invoke('mcp:list'),
+  mcpList:     (): Promise<Array<{ id: string; name: string; command: string; args: string[]; autoStart: boolean; status: 'running' | 'stopped' | 'error' }>> => ipcRenderer.invoke('mcp:list'),
   mcpAdd:      (config: { id: string; name: string; command: string; args: string[]; env: Record<string, string>; autoStart: boolean }): Promise<void> => ipcRenderer.invoke('mcp:add', config),
   mcpRemove:   (id: string): Promise<void> => ipcRenderer.invoke('mcp:remove', id),
   mcpStart:    (id: string): Promise<void> => ipcRenderer.invoke('mcp:start', id),
