@@ -288,6 +288,216 @@ curl http://localhost:3000/sessions/550e8400-.../tasks
 
 ---
 
+## 프로젝트
+
+> 모든 `/projects` 엔드포인트는 Bearer token 인증이 필요합니다.
+
+### GET /projects
+
+현재 사용자의 프로젝트 목록을 조회합니다.
+
+**응답 200 OK**
+
+```json
+{
+  "projects": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "userId": "user-123",
+      "name": "My App",
+      "description": "A sample project",
+      "githubOwner": "octocat",
+      "githubRepo": "hello-world",
+      "githubBranch": "main",
+      "createdAt": "2026-05-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### POST /projects
+
+새 프로젝트를 생성합니다.
+
+**요청 본문**
+
+```json
+{
+  "name": "My App",
+  "description": "A sample project",
+  "githubOwner": "octocat",
+  "githubRepo": "hello-world",
+  "githubBranch": "main"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `name` | string | 예 | 프로젝트 이름 |
+| `description` | string | 아니오 | 프로젝트 설명 |
+| `githubOwner` | string | 아니오 | GitHub 소유자 (사용자명 또는 조직) |
+| `githubRepo` | string | 아니오 | GitHub 저장소 이름 |
+| `githubBranch` | string | 아니오 | 기본 브랜치 이름 |
+
+**응답 201 Created**
+
+```json
+{
+  "project": { "id": "550e8400-...", "name": "My App", ... }
+}
+```
+
+**응답 400 Bad Request** (name 누락 또는 빈 문자열)
+
+```json
+{
+  "error": "name is required"
+}
+```
+
+---
+
+### GET /projects/:id
+
+특정 프로젝트를 조회합니다. 소유자만 접근 가능합니다.
+
+**경로 파라미터**
+
+| 파라미터 | 타입 | 설명 |
+|----------|------|------|
+| `id` | string (UUID) | 프로젝트 ID |
+
+**응답 200 OK**
+
+```json
+{
+  "project": { "id": "550e8400-...", "name": "My App", ... }
+}
+```
+
+**응답 404 Not Found** (미존재 또는 타 사용자 소유)
+
+```json
+{
+  "error": "Project not found"
+}
+```
+
+---
+
+### PATCH /projects/:id
+
+프로젝트 정보를 수정합니다. 변경할 필드만 포함하면 됩니다.
+
+**경로 파라미터**
+
+| 파라미터 | 타입 | 설명 |
+|----------|------|------|
+| `id` | string (UUID) | 프로젝트 ID |
+
+**요청 본문** (변경할 필드만 포함)
+
+```json
+{
+  "name": "Updated Name",
+  "githubBranch": "develop"
+}
+```
+
+**응답 200 OK**
+
+```json
+{
+  "project": { "id": "550e8400-...", "name": "Updated Name", ... }
+}
+```
+
+---
+
+### DELETE /projects/:id
+
+프로젝트를 삭제합니다.
+
+**경로 파라미터**
+
+| 파라미터 | 타입 | 설명 |
+|----------|------|------|
+| `id` | string (UUID) | 프로젝트 ID |
+
+**응답 204 No Content**
+
+---
+
+### PUT /projects/:id/github-token
+
+프로젝트에 GitHub Personal Access Token(PAT)을 AES-256-GCM으로 암호화하여 저장합니다.
+
+**경로 파라미터**
+
+| 파라미터 | 타입 | 설명 |
+|----------|------|------|
+| `id` | string (UUID) | 프로젝트 ID |
+
+**요청 본문**
+
+```json
+{
+  "token": "ghp_xxxxxxxxxxxxxxxxxxxx"
+}
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|------|------|
+| `token` | string | 예 | GitHub PAT |
+
+**응답 204 No Content**
+
+**응답 503 Service Unavailable** (암호화 키 미설정)
+
+```json
+{
+  "error": "GitHub token storage not configured"
+}
+```
+
+---
+
+### DELETE /projects/:id/github-token
+
+저장된 GitHub PAT를 삭제합니다.
+
+**경로 파라미터**
+
+| 파라미터 | 타입 | 설명 |
+|----------|------|------|
+| `id` | string (UUID) | 프로젝트 ID |
+
+**응답 204 No Content**
+
+---
+
+### GET /projects/:id/github-token/status
+
+GitHub PAT 저장 여부를 조회합니다. 토큰 평문은 반환하지 않습니다.
+
+**경로 파라미터**
+
+| 파라미터 | 타입 | 설명 |
+|----------|------|------|
+| `id` | string (UUID) | 프로젝트 ID |
+
+**응답 200 OK**
+
+```json
+{
+  "exists": true
+}
+```
+
+---
+
 ## 프로젝트 GitHub 토큰
 
 | 메서드 | 경로 | 설명 | 인증 필요 |
@@ -308,6 +518,14 @@ curl http://localhost:3000/sessions/550e8400-.../tasks
 | `GET` | `/sessions/:id/messages` | 메시지 이력 조회 | `AUTH=jwt` 시 예 |
 | `POST` | `/sessions/:id/ui-actions` | UI 폼 제출 | `AUTH=jwt` 시 예 |
 | `GET` | `/sessions/:id/tasks` | 태스크 목록 조회 | `AUTH=jwt` 시 예 |
+| `GET` | `/projects` | 프로젝트 목록 조회 | Bearer token |
+| `POST` | `/projects` | 프로젝트 생성 | Bearer token |
+| `GET` | `/projects/:id` | 프로젝트 조회 | Bearer token |
+| `PATCH` | `/projects/:id` | 프로젝트 수정 | Bearer token |
+| `DELETE` | `/projects/:id` | 프로젝트 삭제 | Bearer token |
+| `PUT` | `/projects/:id/github-token` | GitHub PAT 저장 | Bearer token |
+| `DELETE` | `/projects/:id/github-token` | GitHub PAT 삭제 | Bearer token |
+| `GET` | `/projects/:id/github-token/status` | PAT 존재 여부 조회 | Bearer token |
 
 ---
 
