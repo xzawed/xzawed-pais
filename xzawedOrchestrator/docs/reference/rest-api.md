@@ -274,6 +274,30 @@ curl http://localhost:3000/sessions/550e8400-.../tasks
 
 ---
 
+## Auth 엔드포인트
+
+> **Rate Limiting**: `/auth/register`·`/auth/login`은 IP당 분당 5회, `/auth/refresh`는 IP당 분당 20회 제한. 초과 시 `429 Too Many Requests` 반환.
+
+| 메서드 | 경로 | 설명 | 인증 필요 |
+|--------|------|------|-----------|
+| `POST` | `/auth/register` | 이메일·패스워드 회원가입 | 아니오 |
+| `POST` | `/auth/login` | 이메일·패스워드 로그인 | 아니오 |
+| `POST` | `/auth/refresh` | Refresh token으로 Access token 재발급 (rotation) | 아니오 |
+| `POST` | `/auth/logout` | 현재 사용자의 모든 refresh token 무효화 | Bearer token |
+| `GET` | `/auth/me` | 현재 사용자 정보 조회 | Bearer token |
+
+---
+
+## 프로젝트 GitHub 토큰
+
+| 메서드 | 경로 | 설명 | 인증 필요 |
+|--------|------|------|-----------|
+| `PUT` | `/projects/:id/github-token` | GitHub PAT 저장 (AES-256-GCM 암호화) | Bearer token |
+| `DELETE` | `/projects/:id/github-token` | GitHub PAT 삭제 | Bearer token |
+| `GET` | `/projects/:id/github-token/status` | PAT 존재 여부 조회 `{ exists: boolean }` | Bearer token |
+
+---
+
 ## 엔드포인트 요약
 
 | 메서드 | 경로 | 설명 | 인증 필요 |
