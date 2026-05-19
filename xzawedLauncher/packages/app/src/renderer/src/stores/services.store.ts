@@ -13,6 +13,6 @@ export const useServicesStore = create<ServicesState>((set) => ({
   services: [],
   logs: [],
   setServices: (services) => set({ services }),
-  appendLog: (line) => set((s) => ({ logs: [...s.logs.slice(-200), line] })),
+  appendLog: (line) => set((s) => ({ logs: [...s.logs.slice(-199), line] })),
   clearLogs: () => set({ logs: [] }),
 }))
