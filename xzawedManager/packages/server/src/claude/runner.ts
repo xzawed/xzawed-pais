@@ -83,13 +83,17 @@ export class ClaudeRunner {
           if (block.type !== 'tool_use') continue
 
           if (block.name === 'request_info') {
-            const input = block.input as { question: string }
+            const inputObj = block.input as Record<string, unknown>
+            if (typeof inputObj['question'] !== 'string') {
+              throw new Error(`request_info tool call missing required 'question' field`)
+            }
+            const question = inputObj['question']
             await producer.publish({
               sessionId,
               messageId: crypto.randomUUID(),
               timestamp: Date.now(),
               type: 'info_request',
-              payload: { agentId: 'manager', content: input.question },
+              payload: { agentId: 'manager', content: question },
             })
             const answer = await sessionStore.waitForInfo(sessionId)
             toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: answer })
@@ -124,9 +128,10 @@ export class ClaudeRunner {
           })
         }
 
-        if (toolResults.length > 0) {
-          messages.push({ role: 'user', content: toolResults })
+        if (toolResults.length === 0) {
+          throw new Error('stop_reason was tool_use but no tool_use blocks found in response')
         }
+        messages.push({ role: 'user', content: toolResults })
       } else {
         throw new Error(`Unexpected stop_reason: ${response.stop_reason as string}`)
       }

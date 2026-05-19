@@ -175,4 +175,30 @@ describe('ClaudeRunner', () => {
       sessionStore,
     })).rejects.toThrow('Unknown tool: nonexistent_tool')
   })
+
+  it.each<[string, object[], string, string]>([
+    [
+      'CQ-2: request_info missing question field',
+      [{ type: 'tool_use', id: 'ri-1', name: 'request_info', input: { notQuestion: 42 } }],
+      'sess-cq2',
+      "request_info tool call missing required 'question' field",
+    ],
+    [
+      'CQ-3: stop_reason tool_use but no tool_use blocks',
+      [{ type: 'text', text: 'Hmm, no tools needed.' }],
+      'sess-cq3',
+      'stop_reason was tool_use but no tool_use blocks found in response',
+    ],
+  ])('%s', async (_, content, sessionId, errorMsg) => {
+    mockCreate.mockResolvedValueOnce({ stop_reason: 'tool_use', content })
+    const { runner, sessionStore, producer } = makeRunner(new ToolRegistry())
+    sessionStore.create(sessionId)
+    await expect(runner.run({
+      sessionId,
+      intent: 'test',
+      context: {},
+      producer,
+      sessionStore,
+    })).rejects.toThrow(errorMsg)
+  })
 })
