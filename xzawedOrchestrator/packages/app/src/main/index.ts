@@ -65,7 +65,11 @@ function createWindow(): void {
   if (process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    const isTest = process.env['NODE_ENV'] === 'test'
+    void mainWindow.loadFile(
+      join(__dirname, '../renderer/index.html'),
+      isTest ? { hash: 'test' } : undefined
+    )
   }
 }
 
