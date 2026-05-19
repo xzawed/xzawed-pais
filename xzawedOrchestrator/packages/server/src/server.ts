@@ -71,7 +71,11 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   await app.register(healthRoutes)
   if (dbPool && config.userJwtSecret) {
     await app.register(authRoutes, { pool: dbPool, userJwtSecret: config.userJwtSecret })
-    await app.register(projectsRoutes, { pool: dbPool, userJwtSecret: config.userJwtSecret })
+    await app.register(projectsRoutes, {
+      pool: dbPool,
+      userJwtSecret: config.userJwtSecret,
+      githubTokenEncryptionKey: config.githubTokenKey,
+    })
   }
   const userAuthHook = (dbPool && config.userJwtSecret)
     ? makeUserAuthHook(config.userJwtSecret)
