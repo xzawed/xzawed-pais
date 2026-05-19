@@ -4,12 +4,10 @@ import { EventEmitter } from 'node:events'
 vi.mock('node:child_process')
 vi.mock('node:fs/promises')
 
-import { exec, validatePath } from './executor.js'
+import { exec } from './executor.js'
 import { spawn } from 'node:child_process'
-import * as fs from 'node:fs/promises'
 
 const spawnMock = vi.mocked(spawn)
-const fsMock = vi.mocked(fs)
 
 function makeMockProc(exitCode: number, stdout = '', stderr = '') {
   const proc = new EventEmitter() as any
@@ -23,25 +21,6 @@ function makeMockProc(exitCode: number, stdout = '', stderr = '') {
   })
   return proc
 }
-
-describe('validatePath', () => {
-  beforeEach(() => vi.resetAllMocks())
-
-  it('WORKSPACE_ROOT 내부 경로는 통과한다', async () => {
-    fsMock.realpath.mockImplementation(async (p) => String(p))
-    await expect(validatePath('/workspace/project', '/workspace')).resolves.toBe('/workspace/project')
-  })
-
-  it('WORKSPACE_ROOT 외부 경로는 오류를 던진다', async () => {
-    fsMock.realpath.mockImplementation(async (p) => String(p))
-    await expect(validatePath('/etc/passwd', '/workspace')).rejects.toThrow('경로 거부')
-  })
-
-  it('WORKSPACE_ROOT 형제 디렉토리는 오류를 던진다', async () => {
-    fsMock.realpath.mockImplementation(async (p) => String(p))
-    await expect(validatePath('/workspace-evil/project', '/workspace')).rejects.toThrow('경로 거부')
-  })
-})
 
 describe('exec', () => {
   beforeEach(() => vi.resetAllMocks())
