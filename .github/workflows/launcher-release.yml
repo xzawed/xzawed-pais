@@ -1,0 +1,92 @@
+name: Launcher Release
+
+on:
+  push:
+    tags: ['launcher-v*']
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - name: Install dependencies
+        working-directory: xzawedLauncher
+        run: pnpm install --frozen-lockfile
+      - name: Build shared
+        working-directory: xzawedLauncher/packages/shared
+        run: pnpm build
+      - name: Package app
+        working-directory: xzawedLauncher/packages/app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-windows
+          path: xzawedLauncher/packages/app/dist/*.exe
+
+  build-macos:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - name: Install dependencies
+        working-directory: xzawedLauncher
+        run: pnpm install --frozen-lockfile
+      - name: Build shared
+        working-directory: xzawedLauncher/packages/shared
+        run: pnpm build
+      - name: Package app
+        working-directory: xzawedLauncher/packages/app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-macos
+          path: xzawedLauncher/packages/app/dist/*.dmg
+
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20, cache: pnpm }
+      - name: Install dependencies
+        working-directory: xzawedLauncher
+        run: pnpm install --frozen-lockfile
+      - name: Build shared
+        working-directory: xzawedLauncher/packages/shared
+        run: pnpm build
+      - name: Package app
+        working-directory: xzawedLauncher/packages/app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-linux
+          path: xzawedLauncher/packages/app/dist/*.AppImage
+
+  release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
