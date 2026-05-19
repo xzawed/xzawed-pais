@@ -94,7 +94,7 @@ describe('GitHub token API routes', () => {
     const emptyTokenPool = {
       query: vi.fn()
         .mockResolvedValueOnce({ rows: [PROJECT_ROW] } as QueryResult)
-        .mockResolvedValueOnce({ rows: [] } as QueryResult),
+        .mockResolvedValueOnce({ rows: [] as Record<string, unknown>[] } as unknown as QueryResult),
     } as unknown as Pool
     const app = await buildApp(emptyTokenPool)
     const res = await app.inject({
@@ -108,7 +108,7 @@ describe('GitHub token API routes', () => {
 
   it('타 사용자는 토큰 엔드포인트에 접근 불가 — 404', async () => {
     const otherPool = {
-      query: vi.fn().mockResolvedValue({ rows: [] } as QueryResult),
+      query: vi.fn().mockResolvedValue({ rows: [] as Record<string, unknown>[] } as unknown as QueryResult),
     } as unknown as Pool
     const app = await buildApp(otherPool)
     const res = await app.inject({
