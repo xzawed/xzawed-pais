@@ -14,7 +14,7 @@ interface FieldProps {
 const inputClass =
   'w-full rounded border border-border bg-code px-2.5 py-1.5 text-[11px] text-fg outline-none focus:border-accent/60 transition-colors'
 
-function FormField({ field, value, onChange }: FieldProps): React.JSX.Element {
+function FormField({ field, value, onChange }: Readonly<FieldProps>): React.JSX.Element {
   if (field.type === 'textarea') {
     return (
       <div className="mb-3">
@@ -113,7 +113,7 @@ interface FormPanelProps {
   spec: UISpec & { type: 'form' }
 }
 
-function FormPanel({ spec }: FormPanelProps): React.JSX.Element {
+function FormPanel({ spec }: Readonly<FormPanelProps>): React.JSX.Element {
   const { sessionId } = useChatStore()
   const { settings } = useAppStore()
   const [values, setValues] = useState<Record<string, string>>({})

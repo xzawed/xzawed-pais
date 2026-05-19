@@ -22,7 +22,7 @@ const AGENT_META: Record<AgentName, { icon: string; color: string; bgDone: strin
   Assistant: { icon: '🤖', color: 'text-fg-muted',       bgDone: 'border-border bg-surface',       bgActive: 'border-accent bg-accent-bg' },
 }
 
-export function AgentTimelineCard({ message, streaming = false }: Props): React.JSX.Element {
+export function AgentTimelineCard({ message, streaming = false }: Readonly<Props>): React.JSX.Element {
   const steps = parseAgentSteps(message.content, streaming)
 
   if (steps.length === 0) return <div />

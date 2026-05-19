@@ -42,7 +42,7 @@ src/
 
 ### 데이터 흐름
 
-1. Redis consumer → `security_audit` 수신 (`ManagerToSecurityMessage`)
+1. Redis consumer → `audit_request` 수신 (`ManagerToSecurityMessage`)
 2. `security.ts` → 3개 분석기 `Promise.all` (각 `.catch(()=>[])` 독립 실패)
    - `static.ts`: OWASP 규칙 패턴으로 소스 파일 스캔
    - `deps.ts`: `npm audit --json` / `pip audit` 실행
@@ -58,7 +58,7 @@ src/
 // 수신: manager:to-security:{sessionId}
 interface ManagerToSecurityMessage {
   sessionId: string; messageId: string; timestamp: number
-  type: 'security_audit' | 'abort'
+  type: 'audit_request' | 'abort'
   payload: {
     artifacts: string[]
     severity: 'low' | 'medium' | 'high'

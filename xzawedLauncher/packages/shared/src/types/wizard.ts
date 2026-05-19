@@ -4,7 +4,6 @@ export type ClaudeAuthMode = 'cli' | 'api'
 
 export interface SetupConfig {
   claudeMode: ClaudeAuthMode
-  apiKey?: string
   githubToken?: string
   completedAt: string  // ISO 8601
 }

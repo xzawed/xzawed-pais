@@ -6,7 +6,7 @@ interface Props {
   message: Message
 }
 
-export function UserBubble({ message }: Props): React.JSX.Element {
+export function UserBubble({ message }: Readonly<Props>): React.JSX.Element {
   return (
     <motion.div
       className="flex justify-end"

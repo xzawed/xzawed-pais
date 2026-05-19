@@ -46,3 +46,6 @@ coverage/
 build-output/
 .superpowers/
 report/
+
+# Superpowers 계획·스펙 아티팩트 (자동 생성, 커밋 불필요)
+docs/superpowers/

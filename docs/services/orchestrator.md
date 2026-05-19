@@ -41,8 +41,8 @@ src/
 
 | 모드 | 방식 | 용도 |
 |------|------|------|
-| `cli` (기본) | 로컬 Claude Code CLI 서브프로세스 | 개인 PC, 구독 요금만 |
-| `api` | Anthropic SDK 직접 호출 | API 키, 토큰당 과금 |
+| `api` (기본) | Anthropic SDK 직접 호출 | API 키, 토큰당 과금 |
+| `cli` | 로컬 Claude Code CLI 서브프로세스 | 개인 PC, 구독 요금만 (2026-06-15 이후 Agent SDK 추가 요금) |
 | `remote` | 원격 서버 CLI (SSH/HTTP) | 팀 서버 배포 |
 
 #### Claude 스트리밍 구현
@@ -98,7 +98,7 @@ CLAUDE_MODEL=claude-sonnet-4-6
 REDIS_URL=redis://localhost:6379
 PORT=3000
 MODE=local                     # local | remote
-CLAUDE_MODE=cli                # cli | api | remote
+CLAUDE_MODE=api                # api | cli | remote
 AUTH=none                      # none | jwt
 MANAGER_URL=http://localhost:3001  # xzawedManager URL
 SERVICE_JWT_SECRET=                # AUTH=jwt 시 필수 (32자 이상)

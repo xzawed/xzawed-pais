@@ -42,7 +42,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pluginUninstall: (id: string): Promise<void> => ipcRenderer.invoke('plugin:uninstall', id),
 
   // Auth token (safeStorage)
-  tokenGet:   (): Promise<string | null> => ipcRenderer.invoke('token:get'),
-  tokenSet:   (token: string): Promise<void> => ipcRenderer.invoke('token:set', token),
-  tokenClear: (): Promise<void> => ipcRenderer.invoke('token:clear'),
+  tokenGet:          (): Promise<string | null> => ipcRenderer.invoke('token:get'),
+  tokenSet:          (token: string): Promise<void> => ipcRenderer.invoke('token:set', token),
+  tokenClear:        (): Promise<void> => ipcRenderer.invoke('token:clear'),
+  refreshTokenGet:   (): Promise<string | null> => ipcRenderer.invoke('refresh-token:get'),
+  refreshTokenSet:   (token: string): Promise<void> => ipcRenderer.invoke('refresh-token:set', token),
 })

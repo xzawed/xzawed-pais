@@ -5,7 +5,6 @@ export default function StepComplete({ onComplete }: Readonly<Props>): JSX.Eleme
     const existing = await globalThis.launcherAPI!.getSetupConfig().catch(() => null)
     await globalThis.launcherAPI!.saveSetupConfig({
       claudeMode: existing?.claudeMode ?? 'cli',
-      apiKey: existing?.apiKey,
       completedAt: new Date().toISOString(),
     }).catch(() => {})
     await globalThis.launcherAPI!.openOrchestrator()

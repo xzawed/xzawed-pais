@@ -4,11 +4,11 @@ export function AuthCard({
   title,
   subtitle,
   children,
-}: {
+}: Readonly<{
   title: string
   subtitle: string
   children: React.ReactNode
-}): React.JSX.Element {
+}>): React.JSX.Element {
   return (
     <div className="flex min-h-screen items-center justify-center bg-bg">
       <div className="w-full max-w-sm space-y-6 rounded-xl border border-border bg-surface p-8">
@@ -29,14 +29,14 @@ export function FormField({
   onChange,
   required,
   minLength,
-}: {
+}: Readonly<{
   label: string
   type: string
   value: string
   onChange: (v: string) => void
   required?: boolean
   minLength?: number
-}): React.JSX.Element {
+}>): React.JSX.Element {
   return (
     <div>
       <label className="mb-1 block text-sm font-medium text-fg-muted">{label}</label>
@@ -56,11 +56,11 @@ export function SubmitButton({
   isLoading,
   label,
   loadingLabel,
-}: {
+}: Readonly<{
   isLoading: boolean
   label: string
   loadingLabel: string
-}): React.JSX.Element {
+}>): React.JSX.Element {
   return (
     <button
       type="submit"
@@ -72,7 +72,7 @@ export function SubmitButton({
   )
 }
 
-export function FormError({ message }: { message: string | null }): React.JSX.Element | null {
+export function FormError({ message }: Readonly<{ message: string | null }>): React.JSX.Element | null {
   if (message === null) return null
   return <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{message}</p>
 }

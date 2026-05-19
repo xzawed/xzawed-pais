@@ -6,7 +6,7 @@ interface Props {
   disabled: boolean
 }
 
-export function MessageInput({ onSend, disabled }: Props): React.JSX.Element {
+export function MessageInput({ onSend, disabled }: Readonly<Props>): React.JSX.Element {
   const [value, setValue] = useState('')
   const [focused, setFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)

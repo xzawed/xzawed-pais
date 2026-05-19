@@ -117,39 +117,55 @@ ipcMain.handle('github:list-repos', async () => {
 
 // ── Auth token (safeStorage) ─────────────────────────────────────────
 const TOKEN_FILE = 'auth-token.enc'
+const REFRESH_TOKEN_FILE = 'refresh-token.enc'
 
 function getTokenPath(): string {
   return join(app.getPath('userData'), TOKEN_FILE)
 }
 
-ipcMain.handle('token:get', (): string | null => {
-  const path = getTokenPath()
-  if (!existsSync(path)) return null
+function getRefreshTokenPath(): string {
+  return join(app.getPath('userData'), REFRESH_TOKEN_FILE)
+}
+
+function readEncryptedToken(filePath: string): string | null {
+  if (!existsSync(filePath)) return null
   try {
-    const encrypted = readFileSync(path)
+    const encrypted = readFileSync(filePath)
     return safeStorage.isEncryptionAvailable()
       ? safeStorage.decryptString(encrypted)
       : encrypted.toString('utf-8')
   } catch {
     return null
   }
-})
+}
 
-ipcMain.handle('token:set', (_e, token: string): void => {
+function writeEncryptedToken(filePath: string, token: string): void {
   const dir = app.getPath('userData')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   const data = safeStorage.isEncryptionAvailable()
     ? safeStorage.encryptString(token)
     : Buffer.from(token, 'utf-8')
-  writeFileSync(getTokenPath(), data)
-})
+  writeFileSync(filePath, data)
+}
+
+function deleteFileIfExists(filePath: string): void {
+  if (existsSync(filePath)) {
+    try { unlinkSync(filePath) } catch { /* ignore */ }
+  }
+}
+
+ipcMain.handle('token:get', (): string | null => readEncryptedToken(getTokenPath()))
+
+ipcMain.handle('token:set', (_e, token: string): void => writeEncryptedToken(getTokenPath(), token))
 
 ipcMain.handle('token:clear', (): void => {
-  const path = getTokenPath()
-  if (existsSync(path)) {
-    try { unlinkSync(path) } catch { /* ignore */ }
-  }
+  deleteFileIfExists(getTokenPath())
+  deleteFileIfExists(getRefreshTokenPath())
 })
+
+ipcMain.handle('refresh-token:get', (): string | null => readEncryptedToken(getRefreshTokenPath()))
+
+ipcMain.handle('refresh-token:set', (_e, token: string): void => writeEncryptedToken(getRefreshTokenPath(), token))
 
 // ── MCP ──────────────────────────────────────────────────────────────
 ipcMain.handle('mcp:list', () =>

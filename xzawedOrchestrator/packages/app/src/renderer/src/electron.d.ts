@@ -31,6 +31,8 @@ interface ElectronAPI {
   tokenGet(): Promise<string | null>
   tokenSet(token: string): Promise<void>
   tokenClear(): Promise<void>
+  refreshTokenGet(): Promise<string | null>
+  refreshTokenSet(token: string): Promise<void>
 }
 
 declare global {
