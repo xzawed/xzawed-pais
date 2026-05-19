@@ -50,9 +50,13 @@ export default function StepClaude(): JSX.Element {
   }
 
   async function handleSaveApiKey(): Promise<void> {
-    await globalThis.launcherAPI!.tokenSet(apiKey)
-    await globalThis.launcherAPI!.saveSetupConfig({ claudeMode: 'api', completedAt: new Date().toISOString() })
-    setStep('services')
+    try {
+      await globalThis.launcherAPI!.tokenSet(apiKey)
+      await globalThis.launcherAPI!.saveSetupConfig({ claudeMode: 'api', completedAt: new Date().toISOString() })
+      setStep('services')
+    } catch {
+      setClaudeStatus('error')
+    }
   }
 
   if (showApiForm) {
