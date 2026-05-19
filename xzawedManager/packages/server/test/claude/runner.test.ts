@@ -175,4 +175,45 @@ describe('ClaudeRunner', () => {
       sessionStore,
     })).rejects.toThrow('Unknown tool: nonexistent_tool')
   })
+
+  // CQ-2: Unchecked cast block.input as { question: string } — must validate at runtime
+  it('CQ-2: throws when request_info tool call is missing question field', async () => {
+    mockCreate.mockResolvedValueOnce({
+      stop_reason: 'tool_use',
+      content: [
+        { type: 'tool_use', id: 'ri-1', name: 'request_info', input: { notQuestion: 42 } },
+      ],
+    })
+
+    const { runner, sessionStore, producer } = makeRunner(new ToolRegistry())
+    sessionStore.create('sess-cq2')
+
+    await expect(runner.run({
+      sessionId: 'sess-cq2',
+      intent: 'test',
+      context: {},
+      producer,
+      sessionStore,
+    })).rejects.toThrow("request_info tool call missing required 'question' field")
+  })
+
+  // CQ-3: Silent loop when stop_reason='tool_use' but no tool_use blocks
+  it('CQ-3: throws immediately when stop_reason is tool_use but no tool_use blocks in response', async () => {
+    mockCreate.mockResolvedValueOnce({
+      stop_reason: 'tool_use',
+      // content has no tool_use blocks — only text
+      content: [{ type: 'text', text: 'Hmm, no tools needed.' }],
+    })
+
+    const { runner, sessionStore, producer } = makeRunner(new ToolRegistry())
+    sessionStore.create('sess-cq3')
+
+    await expect(runner.run({
+      sessionId: 'sess-cq3',
+      intent: 'test',
+      context: {},
+      producer,
+      sessionStore,
+    })).rejects.toThrow('stop_reason was tool_use but no tool_use blocks found in response')
+  })
 })

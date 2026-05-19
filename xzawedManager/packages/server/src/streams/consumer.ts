@@ -106,8 +106,9 @@ export class StreamConsumer {
       await handler(msg)
     } catch (err) {
       console.error(`[StreamConsumer] Handler error for message ${id}:`, err)
+    } finally {
+      await redis.xack(streamKey(sessionId), GROUP, id)
     }
-    await redis.xack(streamKey(sessionId), GROUP, id)
   }
 
   async start(sessionId: string, handler: MessageHandler): Promise<void> {
@@ -117,18 +118,24 @@ export class StreamConsumer {
     const consumerId = `manager-${process.pid}`
 
     while (this.running) {
-      const results = await redis.xreadgroup(
-        'GROUP', GROUP, consumerId,
-        'COUNT', '10', 'BLOCK', '2000',
-        'STREAMS', streamKey(sessionId), '>'
-      ) as [string, [string, string[]][]][] | null
+      try {
+        const results = await redis.xreadgroup(
+          'GROUP', GROUP, consumerId,
+          'COUNT', '10', 'BLOCK', '2000',
+          'STREAMS', streamKey(sessionId), '>'
+        ) as [string, [string, string[]][]][] | null
 
-      if (!results) continue
+        if (!results) continue
 
-      for (const [, entries] of results) {
-        for (const [id, fields] of entries) {
-          await this.processEntry(id, fields, sessionId, handler, redis)
+        for (const [, entries] of results) {
+          for (const [id, fields] of entries) {
+            await this.processEntry(id, fields, sessionId, handler, redis)
+          }
         }
+      } catch (err) {
+        if (!this.running) break
+        console.error(`[StreamConsumer] xreadgroup error (will retry in 1s):`, err)
+        await new Promise(r => setTimeout(r, 1000))
       }
     }
   }
