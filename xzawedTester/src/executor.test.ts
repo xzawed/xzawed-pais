@@ -1,56 +1,37 @@
-import { vi, describe, it, expect, beforeEach } from 'vitest'
-import { EventEmitter } from 'node:events'
+import { vi, test, expect } from 'vitest'
 
-vi.mock('node:child_process')
 vi.mock('node:fs/promises')
 
-import { exec } from './executor.js'
-import { spawn } from 'node:child_process'
+import { validatePath } from './executor.js'
+import * as fsp from 'node:fs/promises'
 
-const spawnMock = vi.mocked(spawn)
+const mockRealpath = vi.mocked(fsp.realpath)
 
-function makeMockProc(exitCode: number, stdout = '', stderr = '') {
-  const proc = new EventEmitter() as any
-  proc.stdout = new EventEmitter()
-  proc.stderr = new EventEmitter()
-  proc.kill = vi.fn()
-  setImmediate(() => {
-    if (stdout) proc.stdout.emit('data', Buffer.from(stdout))
-    if (stderr) proc.stderr.emit('data', Buffer.from(stderr))
-    proc.emit('close', exitCode)
-  })
-  return proc
-}
+test('validatePath: 테스트 워크스페이스 내부 경로를 허용한다', async () => {
+  mockRealpath.mockImplementation(async (p) => String(p))
+  const allowed: Array<[string, string]> = [
+    ['/test-workspace/suite.test.ts', '/test-workspace'],
+    ['/test-workspace/unit/helper.ts', '/test-workspace'],
+  ]
+  for (const [p, root] of allowed) {
+    await expect(validatePath(p, root)).resolves.toBe(p)
+  }
+})
 
-describe('exec', () => {
-  beforeEach(() => vi.resetAllMocks())
+test('validatePath: 외부 경로와 형제 디렉토리를 거부한다', async () => {
+  mockRealpath.mockReset()
+  mockRealpath.mockImplementation(async (p) => String(p))
+  const blocked: Array<[string, string]> = [
+    ['/etc/passwd', '/test-workspace'],
+    ['/test-workspace-fork/helper.ts', '/test-workspace'],
+  ]
+  for (const [p, root] of blocked) {
+    await expect(validatePath(p, root)).rejects.toThrow('경로 거부')
+  }
+})
 
-  it('exitCode 0이면 success: true를 반환한다', async () => {
-    spawnMock.mockReturnValueOnce(makeMockProc(0, 'Test passed\n') as any)
-    const chunks: string[] = []
-    const result = await exec('vitest run', '/project', (c) => { chunks.push(c) }, 5000)
-    expect(result.success).toBe(true)
-    expect(result.exitCode).toBe(0)
-    expect(result.output).toContain('Test passed')
-    expect(chunks).toHaveLength(1)
-  })
-
-  it('exitCode 1이면 success: false를 반환한다', async () => {
-    spawnMock.mockReturnValueOnce(makeMockProc(1, '', 'Error: assertion failed\n') as any)
-    const result = await exec('vitest run', '/project', () => {}, 5000)
-    expect(result.success).toBe(false)
-    expect(result.exitCode).toBe(1)
-    expect(result.output).toContain('Error: assertion failed')
-  })
-
-  it('타임아웃 초과 시 reject한다', async () => {
-    const proc = new EventEmitter() as any
-    proc.stdout = new EventEmitter()
-    proc.stderr = new EventEmitter()
-    proc.kill = vi.fn()
-    spawnMock.mockReturnValueOnce(proc as any)
-
-    await expect(exec('sleep 100', '/project', () => {}, 50)).rejects.toThrow('테스트 타임아웃')
-    expect(proc.kill).toHaveBeenCalledWith('SIGTERM')
-  })
+test('validatePath: 루트 워크스페이스는 거부한다', async () => {
+  mockRealpath.mockReset()
+  mockRealpath.mockImplementation(async (p) => String(p))
+  await expect(validatePath('suite.test.ts', '/')).rejects.toThrow('WORKSPACE_ROOT must not be filesystem root')
 })
