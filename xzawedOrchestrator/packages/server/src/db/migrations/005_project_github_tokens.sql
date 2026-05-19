@@ -1,5 +1,5 @@
 -- Per-project GitHub token encrypted storage
-CREATE TABLE project_github_tokens (
+CREATE TABLE IF NOT EXISTS project_github_tokens (
   project_id   UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   token_cipher BYTEA NOT NULL,
   token_iv     BYTEA NOT NULL,

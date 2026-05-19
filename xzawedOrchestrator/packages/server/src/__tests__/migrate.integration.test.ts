@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import { createPool, runMigrationsFromDir, closePool } from '../db/pool.js'
 
-const DATABASE_URL = process.env['TEST_DATABASE_URL'] ?? ''
+const DATABASE_URL = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL'] ?? ''
 const hasDb = DATABASE_URL !== ''
 
 describe.skipIf(!hasDb)('Migration runner', () => {
@@ -22,6 +22,7 @@ describe.skipIf(!hasDb)('Migration runner', () => {
   })
 
   afterAll(async () => {
+    await pool.query('DROP TABLE IF EXISTS _mt_test_a, _mt_test_b CASCADE').catch(() => {})
     await pool.query('DROP TABLE IF EXISTS schema_migrations CASCADE').catch(() => {})
     await rm(tmpDir, { recursive: true, force: true })
     await closePool()

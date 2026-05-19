@@ -1,4 +1,4 @@
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
   id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id           UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   project_id        UUID        NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -11,7 +11,7 @@ CREATE TABLE sessions (
 
 CREATE INDEX idx_sessions_user_project ON sessions(user_id, project_id);
 
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
   id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID        NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
   role       TEXT        NOT NULL CHECK (role IN ('user','assistant','system')),
