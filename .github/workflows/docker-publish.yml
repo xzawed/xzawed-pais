@@ -1,0 +1,46 @@
+name: Docker Publish
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'xzawed*/src/**'
+      - 'xzawed*/Dockerfile'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service:
+          - { name: orchestrator, context: xzawedOrchestrator }
+          - { name: manager,      context: xzawedManager }
+          - { name: planner,      context: xzawedPlanner }
+          - { name: developer,    context: xzawedDeveloper }
+          - { name: designer,     context: xzawedDesigner }
+          - { name: tester,       context: xzawedTester }
+          - { name: builder,      context: xzawedBuilder }
+          - { name: watcher,      context: xzawedWatcher }
+          - { name: security,     context: xzawedSecurity }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.service.name }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.context }}
+          push: true
+          tags: |
+            ghcr.io/xzawed/xzawed-${{ matrix.service.name }}:latest
+            ghcr.io/xzawed/xzawed-${{ matrix.service.name }}:${{ github.sha }}
