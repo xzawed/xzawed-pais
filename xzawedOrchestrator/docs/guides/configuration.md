@@ -132,7 +132,13 @@ REDIS_URL=redis://default:password@redis.railway.internal:6379
 MODE=remote
 PORT=3000
 AUTH=jwt
-# JWT_SECRET=your-secret-key  (추후 구현)
+SERVICE_JWT_SECRET=your-service-secret-key-min-32-chars
+USER_JWT_SECRET=your-user-jwt-secret-key-min-32-chars
+
+DATABASE_URL=postgres://user:password@db.example.com:5432/xzawed
+GITHUB_TOKEN_ENCRYPTION_KEY=<32바이트 base64 키>
+
+MANAGER_URL=http://manager.internal:3001
 
 CLAUDE_MODE=api
 ANTHROPIC_API_KEY=sk-ant-api03-...
