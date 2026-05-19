@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { validateWorkspaceRoot } from '@xzawed/agent-streams'
 
 export interface ExecResult {
   success: boolean
@@ -10,6 +11,7 @@ export interface ExecResult {
 }
 
 export async function validatePath(projectPath: string, workspaceRoot: string): Promise<string> {
+  validateWorkspaceRoot(workspaceRoot)
   const realProject = await fs.realpath(projectPath).catch(() => path.resolve(projectPath))
   const realRoot = await fs.realpath(workspaceRoot).catch(() => path.resolve(workspaceRoot))
   const relative = path.relative(realRoot, realProject)

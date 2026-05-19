@@ -16,7 +16,7 @@ interface ElectronAPI {
   githubListRepos(): Promise<GitHubRepo[]>
   onGitHubAuthComplete(cb: () => void): () => void
   // MCP
-  mcpList(): Promise<Array<{ id: string; name: string; command: string; args: string[]; env: Record<string, string>; autoStart: boolean; status: 'running' | 'stopped' | 'error' }>>
+  mcpList(): Promise<Array<{ id: string; name: string; command: string; args: string[]; autoStart: boolean; status: 'running' | 'stopped' | 'error' }>>
   mcpAdd(config: { id: string; name: string; command: string; args: string[]; env: Record<string, string>; autoStart: boolean }): Promise<void>
   mcpRemove(id: string): Promise<void>
   mcpStart(id: string): Promise<void>
