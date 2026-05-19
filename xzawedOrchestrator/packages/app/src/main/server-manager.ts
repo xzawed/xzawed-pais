@@ -16,12 +16,12 @@ export class ServerManager {
     this.proc = spawn(process.execPath, [entry], {
       env: {
         ...process.env,
-        PORT: '3000',
-        MODE: 'local',
-        AUTH: 'none',
-        CLAUDE_MODE: 'cli',
-        CLAUDE_MODEL: 'claude-sonnet-4-6',
-        REDIS_URL: 'redis://localhost:6379',
+        PORT: process.env['PORT'] ?? '3000',
+        MODE: process.env['MODE'] ?? 'local',
+        AUTH: process.env['AUTH'] ?? 'none',
+        CLAUDE_MODE: process.env['CLAUDE_MODE'] ?? 'cli',
+        CLAUDE_MODEL: process.env['CLAUDE_MODEL'] ?? 'claude-sonnet-4-6',
+        REDIS_URL: process.env['REDIS_URL'] ?? 'redis://localhost:6379',
       },
       stdio: 'inherit',
       shell: false,
