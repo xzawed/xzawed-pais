@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedTester는 xzawed 멀티 에이전트 시스템의 **테스트 실행 에이전트**다.
 xzawedManager로부터 프로젝트 경로를 받아 테스트를 실행하고 결과를 분석해 반환한다.
 
-현재 상태: **구현 완료 (28/28 테스트 통과)**
+현재 상태: **구현 완료 (31/31 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -28,7 +28,8 @@ src/
 ├── server.ts         # Fastify HTTP 서버 (/health, PORT=3005)
 ├── tester.ts         # 테스트 실행 조율 로직
 ├── detector.ts       # 프로젝트 타입·테스트 명령 자동 감지
-├── executor.ts       # child_process로 테스트 실행 (stdout/stderr 스트리밍)
+├── executor.ts       # child_process로 테스트 실행 (stdout/stderr 스트리밍); validatePath() — WORKSPACE_ROOT 검증
+├── executor.test.ts  # validatePath 경로 검증 3건 (for..of 루프)
 ├── types.ts          # 메시지 타입, TestFailure 정의
 ├── streams/
 │   ├── consumer.ts   # 구독: manager:to-tester:{sessionId}

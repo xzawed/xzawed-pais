@@ -141,7 +141,7 @@ packages/
 - **Vitest 3** + `vitest.config.ts` `projects` API — `unit` (node) + `browser` (playwright/chromium) 두 프로젝트 분리
   - `unit`: `test/**/*.test.ts` — 17건 (store, main 프로세스 유닛 테스트)
   - `browser`: `src/renderer/src/__tests__/**/*.browser.test.tsx` — 14건 (컴포넌트 렌더링)
-  - 총 `pnpm test`: **41건** (app) + **114건** (server, 10건은 Redis/DB 없으면 skip) + **6건** (ui, jsdom) = **161건**
+  - 총 `pnpm test`: **41건** (app) + **116건** (server, 10건은 Redis/DB 없으면 skip) + **6건** (ui, jsdom) = **163건**
 - **@vitest/browser + playwright** — 실제 Chromium에서 React 컴포넌트 렌더링 검증
 - **@testing-library/react** — 브라우저 모드 렌더링; `afterEach(cleanup)` 명시 필요
 - **@playwright/test** + `playwright._electron` — Electron E2E (`e2e/`, 13건, `pnpm test:e2e`)

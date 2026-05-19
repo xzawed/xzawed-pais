@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedSecurity는 xzawed 멀티 에이전트 시스템의 **보안 감사 에이전트**다.
 xzawedManager로부터 감사 요청을 받아 OWASP Top 10 기반 정적 분석, 의존성 취약점 검사, Claude AI 분석을 병렬로 실행하고 점수와 함께 결과를 반환한다.
 
-현재 상태: **구현 완료 (45/45 테스트 통과)**
+현재 상태: **구현 완료 (49/49 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -27,7 +27,8 @@ src/
 ├── config.ts             # 환경변수 검증 (zod)
 ├── server.ts             # Fastify HTTP 서버 (/health, PORT=3008)
 ├── security.ts           # 3개 분석기 Promise.all, 점수 계산, 심각도 필터링
-├── executor.ts           # child_process — npm audit / pip audit 실행
+├── executor.ts           # child_process — npm audit / pip audit 실행; validatePath() — WORKSPACE_ROOT 검증
+├── executor.test.ts      # validatePath 보안 검증 4건 (test.each)
 ├── types.ts              # SecurityIssue, ManagerToSecurityMessage 타입
 ├── analyzers/
 │   ├── static.ts         # OWASP 패턴 정적 분석 (소스 파일 직접 스캔)
