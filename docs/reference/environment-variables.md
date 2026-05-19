@@ -12,7 +12,7 @@ xzawedOrchestrator에서 사용하는 모든 환경변수를 설명합니다.
 |------|--------|------|-----------|------|
 | `MODE` | `local` | 아니오 | `local`, `remote` | 배포 환경. `local`은 단일 사용자 PC, `remote`는 클라우드/팀 서버 |
 | `PORT` | `3000` | 아니오 | 1–65535 | HTTP 서버 리슨 포트 |
-| `AUTH` | `none` | 아니오 | `none`, `jwt` | 인증 방식. `jwt`는 팀 서버에서 사용 (상세 구현 추후) |
+| `AUTH` | `none` | 아니오 | `none`, `jwt` | 인증 방식. `jwt`는 팀 서버에서 사용 (register/login/refresh/logout/me 엔드포인트 + IP Rate Limiting 구현 완료) |
 
 ---
 

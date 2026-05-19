@@ -128,7 +128,7 @@ REMOTE_USER=ubuntu
 REMOTE_KEY_PATH=~/.ssh/id_rsa
 ```
 
-> **Note:** RemoteCLIRunner의 SSH 구현은 현재 CLIRunner 폴백으로 처리되며, 상세 구현은 추후 릴리스에서 제공됩니다.
+> **Note:** `REMOTE_CLI_URL` 설정 시 `HTTPRemoteRunner`(NDJSON 스트리밍), 미설정 시 `SSHRemoteRunner`(SSH + exec)가 사용됩니다.
 
 ---
 
