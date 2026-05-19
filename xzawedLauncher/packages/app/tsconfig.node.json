@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ESNext",
+    "module": "CommonJS",
+    "moduleResolution": "Node16",
+    "skipLibCheck": true,
+    "outDir": "out"
+  },
+  "include": ["src/main", "src/preload", "electron.vite.config.ts"]
+}
