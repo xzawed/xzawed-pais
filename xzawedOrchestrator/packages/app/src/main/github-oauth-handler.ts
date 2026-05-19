@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto'
 import { shell, safeStorage, app } from 'electron'
 import type { BrowserWindow } from 'electron'
 
-const CALLBACK_PORT = 54321
+const CALLBACK_PORT = Number(process.env['GITHUB_OAUTH_CALLBACK_PORT'] ?? '54321')
 
 function tokenFilePath(): string {
   const dir = app.getPath('userData')
