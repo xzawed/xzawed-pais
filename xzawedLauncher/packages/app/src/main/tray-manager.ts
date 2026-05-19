@@ -1,6 +1,7 @@
 import { Tray, Menu, nativeImage, BrowserWindow, app, shell } from 'electron'
 import path from 'node:path'
 import type { ServiceState } from '@xzawed/launcher-shared'
+import { buildDockerEnv } from './service-monitor.js'
 
 let tray: Tray | null = null
 
@@ -47,7 +48,7 @@ function updateTrayMenu(win: BrowserWindow): void {
         label: '▶️ 전체 시작',
         click: () => {
           void import('./docker-manager.js').then(({ startAllServices }) =>
-            startAllServices(() => {}).catch(() => {})
+            startAllServices(() => {}, buildDockerEnv()).catch(() => {})
           )
         }
       },
@@ -61,7 +62,7 @@ function updateTrayMenu(win: BrowserWindow): void {
         label: '↺ 전체 재시작',
         click: () => {
           void import('./docker-manager.js').then(({ restartAllServices }) =>
-            restartAllServices(() => {}).catch(() => {})
+            restartAllServices(() => {}, buildDockerEnv()).catch(() => {})
           )
         }
       },

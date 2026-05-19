@@ -5,6 +5,8 @@ type TokenAPI = {
   tokenGet?: () => Promise<string | null>
   tokenSet?: (token: string) => Promise<void>
   tokenClear?: () => Promise<void>
+  refreshTokenGet?: () => Promise<string | null>
+  refreshTokenSet?: (token: string) => Promise<void>
 }
 
 function getElectronTokenAPI(): TokenAPI | undefined {
@@ -26,10 +28,14 @@ export const tokenStorage = {
   },
 
   async getRefreshToken(): Promise<string | null> {
+    const api = getElectronTokenAPI()
+    if (api?.refreshTokenGet) return api.refreshTokenGet()
     return sessionStorage.getItem(REFRESH_TOKEN_KEY)
   },
 
   async setRefreshToken(token: string): Promise<void> {
+    const api = getElectronTokenAPI()
+    if (api?.refreshTokenSet) { await api.refreshTokenSet(token); return }
     sessionStorage.setItem(REFRESH_TOKEN_KEY, token)
   },
 

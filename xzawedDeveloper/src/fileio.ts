@@ -1,13 +1,10 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { validateWorkspaceRoot } from '@xzawed/agent-streams'
 import type { FileChange } from './types.js'
 
 export async function validatePath(filePath: string, workspaceRoot: string): Promise<string> {
-  // Prevent WORKSPACE_ROOT from being filesystem root — would allow any absolute path to pass
-  const resolvedRoot = path.resolve(workspaceRoot)
-  if (resolvedRoot === path.parse(resolvedRoot).root) {
-    throw new Error('WORKSPACE_ROOT must not be filesystem root')
-  }
+  validateWorkspaceRoot(workspaceRoot)
 
   const resolved = path.resolve(workspaceRoot, filePath)
   const realFile = await fs.realpath(resolved).catch(() => resolved)

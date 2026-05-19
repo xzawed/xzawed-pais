@@ -4,7 +4,7 @@ import path from 'node:path'
 import { getServiceStatuses } from './docker-manager.js'
 import { getSetupConfig } from './setup-store.js'
 
-function buildDockerEnv(): Record<string, string> {
+export function buildDockerEnv(): Record<string, string> {
   const cfg = getSetupConfig()
   if (!cfg) return {}
   const env: Record<string, string> = { CLAUDE_MODE: cfg.claudeMode }

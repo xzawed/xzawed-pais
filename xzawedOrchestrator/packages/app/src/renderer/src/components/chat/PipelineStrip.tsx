@@ -7,7 +7,7 @@ interface Props {
   steps: AgentStep[]
 }
 
-export function PipelineStrip({ steps }: Props): React.JSX.Element {
+export function PipelineStrip({ steps }: Readonly<Props>): React.JSX.Element {
   if (steps.length === 0) return <div />
 
   return (

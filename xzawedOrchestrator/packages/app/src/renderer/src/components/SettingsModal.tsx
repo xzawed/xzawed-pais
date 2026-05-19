@@ -20,7 +20,7 @@ export function SettingsModal(): React.JSX.Element {
   function handleSave(): void {
     const updated = { serverUrl: localUrl, mode: localMode, userId: localUserId }
     updateSettings(updated)
-    window.electronAPI?.setSettings(updated).catch(console.error)
+    globalThis.electronAPI?.setSettings(updated).catch(console.error)
     toggleSettings()
   }
 

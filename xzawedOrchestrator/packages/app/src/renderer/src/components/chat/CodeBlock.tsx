@@ -10,7 +10,7 @@ interface Props {
   streaming?: boolean
 }
 
-export function CodeBlock({ code, filename, lang, streaming = false }: Props): React.JSX.Element {
+export function CodeBlock({ code, filename, lang, streaming = false }: Readonly<Props>): React.JSX.Element {
   const [node, setNode] = useState<ReactNode>(null)
   const [copied, setCopied] = useState(false)
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)

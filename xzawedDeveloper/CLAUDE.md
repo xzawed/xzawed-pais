@@ -64,14 +64,15 @@ interface DeveloperToManagerMessage {
   sessionId: string; messageId: string; timestamp: number
   type: 'develop_complete' | 'error'
   payload: {
-    changes?: FileChange[]
+    artifacts?: string[]
+    summary?: string
     content: string
   }
 }
 
 interface FileChange {
   path: string
-  action: 'create' | 'update' | 'delete'
+  operation: 'create' | 'modify' | 'delete'
   content?: string
 }
 ```
