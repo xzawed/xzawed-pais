@@ -5,7 +5,7 @@ describe('config', () => {
     delete process.env.PORT
     delete process.env.CLAUDE_MODE
     delete process.env.REDIS_URL
-    delete process.env.ANTHROPIC_API_KEY
+    process.env.ANTHROPIC_API_KEY = 'sk-test-key' // NOSONAR
   })
 
   it('defaults PORT to 3000', async () => {
@@ -21,15 +21,15 @@ describe('config', () => {
     expect(config.port).toBe(4000)
   })
 
-  it('defaults CLAUDE_MODE to cli', async () => {
+  it('defaults CLAUDE_MODE to api', async () => {
     const { loadConfig } = await import('../src/config.js')
     const config = loadConfig()
-    expect(config.claudeMode).toBe('cli')
+    expect(config.claudeMode).toBe('api')
   })
 
   it('throws when CLAUDE_MODE=api but ANTHROPIC_API_KEY missing', async () => {
     process.env.CLAUDE_MODE = 'api'
-    delete process.env.ANTHROPIC_API_KEY
+    delete process.env.ANTHROPIC_API_KEY  // NOSONAR
     const { loadConfig } = await import('../src/config.js')
     expect(() => loadConfig()).toThrow('ANTHROPIC_API_KEY')
   })
