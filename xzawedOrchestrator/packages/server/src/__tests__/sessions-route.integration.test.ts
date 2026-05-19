@@ -208,4 +208,47 @@ describe('sessions route integration', () => {
     expect(body.tasks[0].intent).toContain('OK, I will build the feature')
     ws.close()
   })
+
+  it('POST /sessions/:id/ui-actions returns 404 for unknown session', async () => {
+    ;({ app, port } = await startServer(makeMockRunner([])))
+
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/does-not-exist/ui-actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'submit', data: {} }),
+    })
+    expect(res.status).toBe(404)
+    const body = (await res.json()) as { error: string }
+    expect(body.error).toBe('Session not found')
+  })
+
+  it('POST /sessions/:id/ui-actions returns 400 when action is missing', async () => {
+    ;({ app, port } = await startServer(makeMockRunner([])))
+    const { sessionId, ws } = await createConnectedSession(port)
+
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/${sessionId}/ui-actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: { key: 'value' } }),
+    })
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: string }
+    expect(body.error).toBe('action is required')
+    ws.close()
+  })
+
+  it('POST /sessions/:id/ui-actions returns 202 accepted for valid session and action', async () => {
+    ;({ app, port } = await startServer(makeMockRunner([])))
+    const { sessionId, ws } = await createConnectedSession(port)
+
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/${sessionId}/ui-actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'submit_requirements', data: { service_type: 'ecommerce' } }),
+    })
+    expect(res.status).toBe(202)
+    const body = (await res.json()) as { status: string }
+    expect(body.status).toBe('accepted')
+    ws.close()
+  })
 })

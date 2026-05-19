@@ -273,4 +273,41 @@ export async function sessionsRoutes(
     }
     return { tasks: taskStore.findBySessionId(req.params.id) }
   })
+
+  app.post<{
+    Params: { id: string }
+    Body: { action: string; data: Record<string, unknown> }
+  }>(
+    '/sessions/:id/ui-actions',
+    routeOpts,
+    async (req, reply) => {
+      const session = await store.findById(req.params.id)
+      if (!session) return reply.status(404).send({ error: 'Session not found' })
+      if (req.authUser && session.userId !== req.authUser.sub) {
+        return reply.status(404).send({ error: 'Session not found' })
+      }
+      const { action, data } = req.body
+      if (!action || typeof action !== 'string') {
+        return reply.status(400).send({ error: 'action is required' })
+      }
+
+      try {
+        await producer.publish({
+          sessionId: req.params.id,
+          messageId: crypto.randomUUID(),
+          timestamp: Date.now(),
+          type: 'info_response',
+          payload: {
+            intent: action,
+            context: data ?? {},
+            priority: 'normal',
+          },
+        })
+      } catch (publishErr: unknown) {
+        app.log.warn({ err: publishErr }, 'Redis publish failed for ui-action')
+      }
+
+      return reply.status(202).send({ status: 'accepted' })
+    }
+  )
 }

@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (67/67 테스트)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트 3건 추가 (`REDIS_URL` 없으면 skip → 로컬 64/64).
+현재 상태: **구현 완료 (70/70 테스트)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트 3건 추가 (`REDIS_URL` 없으면 skip → 로컬 70/70).
 
 설계 스펙: `docs/specs/2026-05-15-manager-design.md`
 
