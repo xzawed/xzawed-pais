@@ -1,6 +1,6 @@
-import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'node:path'
-import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { ServerManager } from './server-manager.js'
 import { McpProcessManager } from './mcp-process-manager.js'
 import { PluginManager } from './plugin-manager.js'
@@ -11,6 +11,13 @@ import {
   fetchGitHubUser,
   fetchUserRepos,
 } from './github-oauth-handler.js'
+import {
+  readToken,
+  writeToken,
+  readRefreshToken,
+  writeRefreshToken,
+  clearTokenFiles,
+} from './token-storage-main.js'
 
 export interface AppSettings {
   serverUrl: string
@@ -116,56 +123,11 @@ ipcMain.handle('github:list-repos', async () => {
 })
 
 // ── Auth token (safeStorage) ─────────────────────────────────────────
-const TOKEN_FILE = 'auth-token.enc'
-const REFRESH_TOKEN_FILE = 'refresh-token.enc'
-
-function getTokenPath(): string {
-  return join(app.getPath('userData'), TOKEN_FILE)
-}
-
-function getRefreshTokenPath(): string {
-  return join(app.getPath('userData'), REFRESH_TOKEN_FILE)
-}
-
-function readEncryptedToken(filePath: string): string | null {
-  if (!existsSync(filePath)) return null
-  try {
-    const encrypted = readFileSync(filePath)
-    return safeStorage.isEncryptionAvailable()
-      ? safeStorage.decryptString(encrypted)
-      : encrypted.toString('utf-8')
-  } catch {
-    return null
-  }
-}
-
-function writeEncryptedToken(filePath: string, token: string): void {
-  const dir = app.getPath('userData')
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-  const data = safeStorage.isEncryptionAvailable()
-    ? safeStorage.encryptString(token)
-    : Buffer.from(token, 'utf-8')
-  writeFileSync(filePath, data)
-}
-
-function deleteFileIfExists(filePath: string): void {
-  if (existsSync(filePath)) {
-    try { unlinkSync(filePath) } catch { /* ignore */ }
-  }
-}
-
-ipcMain.handle('token:get', (): string | null => readEncryptedToken(getTokenPath()))
-
-ipcMain.handle('token:set', (_e, token: string): void => writeEncryptedToken(getTokenPath(), token))
-
-ipcMain.handle('token:clear', (): void => {
-  deleteFileIfExists(getTokenPath())
-  deleteFileIfExists(getRefreshTokenPath())
-})
-
-ipcMain.handle('refresh-token:get', (): string | null => readEncryptedToken(getRefreshTokenPath()))
-
-ipcMain.handle('refresh-token:set', (_e, token: string): void => writeEncryptedToken(getRefreshTokenPath(), token))
+ipcMain.handle('token:get', (): string | null => readToken())
+ipcMain.handle('token:set', (_e, token: string): void => writeToken(token))
+ipcMain.handle('token:clear', (): void => clearTokenFiles())
+ipcMain.handle('refresh-token:get', (): string | null => readRefreshToken())
+ipcMain.handle('refresh-token:set', (_e, token: string): void => writeRefreshToken(token))
 
 // ── MCP ──────────────────────────────────────────────────────────────
 ipcMain.handle('mcp:list', () =>
