@@ -5,14 +5,14 @@ FROM base AS shared-build
 WORKDIR /workspace/xzawedShared
 COPY xzawedShared/package.json xzawedShared/pnpm-lock.yaml xzawedShared/tsconfig.json ./
 COPY xzawedShared/src ./src
-RUN pnpm install --frozen-lockfile && pnpm build
+RUN pnpm install --frozen-lockfile --ignore-scripts && pnpm build
 
 FROM base AS service-deps
 WORKDIR /workspace/xzawedPlanner
 COPY --from=shared-build /workspace/xzawedShared/dist /workspace/xzawedShared/dist
 COPY --from=shared-build /workspace/xzawedShared/package.json /workspace/xzawedShared/package.json
 COPY xzawedPlanner/pnpm-lock.yaml xzawedPlanner/package.json ./
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM service-deps AS service-build
 COPY xzawedPlanner/src ./src
