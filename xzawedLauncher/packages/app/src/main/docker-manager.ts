@@ -82,10 +82,10 @@ export async function restartAllServices(
 }
 
 export function validateServiceName(name: string): ServiceName {
-  if (!(SERVICE_NAMES as readonly string[]).includes(name)) {
-    throw new Error(`Invalid service name: ${name}`)
+  for (const safe of SERVICE_NAMES) {
+    if (safe === name) return safe
   }
-  return name as ServiceName
+  throw new Error(`Invalid service name: ${name}`)
 }
 
 export async function restartService(name: string): Promise<void> {
