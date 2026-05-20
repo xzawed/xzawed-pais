@@ -26,4 +26,5 @@ COPY --from=service-build /workspace/xzawedPlanner/package.json ./
 COPY --from=service-deps /workspace/xzawedPlanner/node_modules ./node_modules
 
 EXPOSE 3002
+USER node
 CMD ["node", "dist/index.js"]

@@ -28,4 +28,5 @@ COPY --from=deps /app/packages/server/node_modules ./packages/server/node_module
 
 EXPOSE 3000
 WORKDIR /app/packages/server
+USER node
 CMD ["node", "dist/index.js"]

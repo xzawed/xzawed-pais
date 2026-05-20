@@ -26,4 +26,5 @@ COPY --from=service-build /workspace/xzawedSecurity/package.json ./
 COPY --from=service-deps /workspace/xzawedSecurity/node_modules ./node_modules
 
 EXPOSE 3008
+USER node
 CMD ["node", "dist/index.js"]
