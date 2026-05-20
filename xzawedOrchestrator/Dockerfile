@@ -1,4 +1,4 @@
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 RUN corepack enable && corepack prepare pnpm@10 --activate
 WORKDIR /app
 
@@ -6,13 +6,13 @@ FROM base AS deps
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/server/package.json ./packages/server/
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM deps AS build
 COPY . .
-RUN pnpm build
+RUN pnpm --filter @xzawed/shared build && pnpm --filter @xzawed/server build
 
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 RUN corepack enable && corepack prepare pnpm@10 --activate
 WORKDIR /app
 
@@ -28,4 +28,5 @@ COPY --from=deps /app/packages/server/node_modules ./packages/server/node_module
 
 EXPOSE 3000
 WORKDIR /app/packages/server
+USER node
 CMD ["node", "dist/index.js"]

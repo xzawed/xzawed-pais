@@ -71,8 +71,8 @@ services:
   # ── Planner (port 3002) ─────────────────────────────────────────────────────
   planner:
     build:
-      context: ./xzawedPlanner
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: xzawedPlanner/Dockerfile
     ports:
       - "3002:3002"
     env_file: ./xzawedPlanner/.env
@@ -87,8 +87,8 @@ services:
   # ── Developer (port 3003) ───────────────────────────────────────────────────
   developer:
     build:
-      context: ./xzawedDeveloper
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: xzawedDeveloper/Dockerfile
     ports:
       - "3003:3003"
     env_file: ./xzawedDeveloper/.env
@@ -105,8 +105,8 @@ services:
   # ── Designer (port 3004) ────────────────────────────────────────────────────
   designer:
     build:
-      context: ./xzawedDesigner
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: xzawedDesigner/Dockerfile
     ports:
       - "3004:3004"
     env_file: ./xzawedDesigner/.env
@@ -121,8 +121,8 @@ services:
   # ── Tester (port 3005) ──────────────────────────────────────────────────────
   tester:
     build:
-      context: ./xzawedTester
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: xzawedTester/Dockerfile
     ports:
       - "3005:3005"
     env_file: ./xzawedTester/.env
@@ -139,8 +139,8 @@ services:
   # ── Builder (port 3006) ─────────────────────────────────────────────────────
   builder:
     build:
-      context: ./xzawedBuilder
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: xzawedBuilder/Dockerfile
     ports:
       - "3006:3006"
     env_file: ./xzawedBuilder/.env
@@ -157,8 +157,8 @@ services:
   # ── Watcher (port 3007) ─────────────────────────────────────────────────────
   watcher:
     build:
-      context: ./xzawedWatcher
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: xzawedWatcher/Dockerfile
     ports:
       - "3007:3007"
     env_file: ./xzawedWatcher/.env
@@ -175,8 +175,8 @@ services:
   # ── Security (port 3008) ────────────────────────────────────────────────────
   security:
     build:
-      context: ./xzawedSecurity
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: xzawedSecurity/Dockerfile
     ports:
       - "3008:3008"
     env_file: ./xzawedSecurity/.env
