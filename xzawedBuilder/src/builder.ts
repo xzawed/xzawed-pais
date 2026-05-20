@@ -1,4 +1,6 @@
-import { detectBuildCommand } from './detector.js'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import { detectBuildInfo } from './detector.js'
 import { exec, validatePath } from './executor.js'
 import type { Producer } from './streams/producer.js'
 import type { ClaudeRunner } from './claude/runner.js'
@@ -38,15 +40,25 @@ export class Builder {
 
     try {
       const validatedPath = await validatePath(projectPath, this.config.workspaceRoot)
-      const buildCmd = command ?? await detectBuildCommand(validatedPath)
 
-      if (payload.command) {
-        validateBuildCommand(payload.command)
+      let buildCmd: string
+      let buildRoot: string
+
+      if (command) {
+        validateBuildCommand(command)
+        buildCmd = command
+        buildRoot = validatedPath
+      } else {
+        const detected = await detectBuildInfo(validatedPath, this.config.workspaceRoot)
+        buildCmd = detected.command
+        buildRoot = detected.buildRoot
       }
+
+      await this.runPreInstall(buildRoot, sessionId)
 
       const { success, output, duration } = await exec(
         buildCmd,
-        validatedPath,
+        buildRoot,
         async (chunk) => {
           await this.producer.publish(sessionId, this.makeProgress(sessionId, chunk))
         },
@@ -77,6 +89,26 @@ export class Builder {
         payload: { content: e instanceof Error ? e.message : String(e) },
       })
     }
+  }
+
+  private async runPreInstall(buildRoot: string, sessionId: string): Promise<void> {
+    const hasPkg = await fs.access(path.join(buildRoot, 'package.json')).then(() => true).catch(() => false)
+    if (!hasPkg) return
+
+    const hasModules = await fs.access(path.join(buildRoot, 'node_modules')).then(() => true).catch(() => false)
+    if (hasModules) return
+
+    const hasPnpmLock = await fs.access(path.join(buildRoot, 'pnpm-lock.yaml')).then(() => true).catch(() => false)
+    const installCmd = hasPnpmLock ? 'pnpm install' : 'npm install'
+
+    await exec(
+      installCmd,
+      buildRoot,
+      async (chunk) => {
+        await this.producer.publish(sessionId, this.makeProgress(sessionId, chunk))
+      },
+      this.config.buildTimeoutMs,
+    )
   }
 
   private makeProgress(sessionId: string, content: string): BuilderToManagerMessage {

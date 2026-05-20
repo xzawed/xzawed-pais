@@ -20,6 +20,7 @@ COPY xzawedBuilder/tsconfig.json ./
 RUN pnpm build
 
 FROM node:22-alpine AS runner
+RUN corepack enable && corepack prepare pnpm@10 --activate
 WORKDIR /app
 COPY --from=service-build /workspace/xzawedBuilder/dist ./dist
 COPY --from=service-build /workspace/xzawedBuilder/package.json ./
