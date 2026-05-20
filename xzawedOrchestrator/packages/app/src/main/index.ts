@@ -12,11 +12,11 @@ import {
   fetchUserRepos,
 } from './github-oauth-handler.js'
 import {
-  readEncryptedToken,
-  writeEncryptedToken,
-  deleteFileIfExists,
-  getTokenPath,
-  getRefreshTokenPath,
+  readToken,
+  writeToken,
+  readRefreshToken,
+  writeRefreshToken,
+  clearTokenFiles,
 } from './token-storage-main.js'
 
 export interface AppSettings {
@@ -123,18 +123,11 @@ ipcMain.handle('github:list-repos', async () => {
 })
 
 // ── Auth token (safeStorage) ─────────────────────────────────────────
-ipcMain.handle('token:get', (): string | null => readEncryptedToken(getTokenPath()))
-
-ipcMain.handle('token:set', (_e, token: string): void => writeEncryptedToken(getTokenPath(), token))
-
-ipcMain.handle('token:clear', (): void => {
-  deleteFileIfExists(getTokenPath())
-  deleteFileIfExists(getRefreshTokenPath())
-})
-
-ipcMain.handle('refresh-token:get', (): string | null => readEncryptedToken(getRefreshTokenPath()))
-
-ipcMain.handle('refresh-token:set', (_e, token: string): void => writeEncryptedToken(getRefreshTokenPath(), token))
+ipcMain.handle('token:get', (): string | null => readToken())
+ipcMain.handle('token:set', (_e, token: string): void => writeToken(token))
+ipcMain.handle('token:clear', (): void => clearTokenFiles())
+ipcMain.handle('refresh-token:get', (): string | null => readRefreshToken())
+ipcMain.handle('refresh-token:set', (_e, token: string): void => writeRefreshToken(token))
 
 // ── MCP ──────────────────────────────────────────────────────────────
 ipcMain.handle('mcp:list', () =>

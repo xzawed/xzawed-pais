@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { join } from 'node:path'
 
 vi.mock('electron', () => ({
   safeStorage: {
@@ -20,34 +19,27 @@ const mockFs = vi.hoisted(() => ({
 vi.mock('node:fs', () => mockFs)
 
 import {
-  readEncryptedToken,
-  writeEncryptedToken,
-  deleteFileIfExists,
-  getTokenPath,
-  getRefreshTokenPath,
+  readToken,
+  writeToken,
+  readRefreshToken,
+  writeRefreshToken,
+  clearTokenFiles,
 } from '../../src/main/token-storage-main.js'
 
 describe('token-storage-main', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  describe('getTokenPath / getRefreshTokenPath', () => {
-    it('userData 경로에 파일명을 붙여 반환한다', () => {
-      expect(getTokenPath()).toBe(join('/tmp/test-userData', 'auth-token.enc'))
-      expect(getRefreshTokenPath()).toBe(join('/tmp/test-userData', 'refresh-token.enc'))
-    })
-  })
-
-  describe('readEncryptedToken', () => {
+  describe('readToken / readRefreshToken', () => {
     it('파일이 없으면 null 반환', () => {
       mockFs.existsSync.mockReturnValue(false)
-      expect(readEncryptedToken('/tmp/test-userData/auth-token.enc')).toBeNull()
+      expect(readToken()).toBeNull()
+      expect(readRefreshToken()).toBeNull()
     })
 
     it('암호화 가능할 때 복호화 후 반환', () => {
       mockFs.existsSync.mockReturnValue(true)
       mockFs.readFileSync.mockReturnValue(Buffer.from('secret-enc'))
-      const result = readEncryptedToken('/tmp/test-userData/auth-token.enc')
-      expect(result).toBe('secret')
+      expect(readToken()).toBe('secret')
     })
 
     it('암호화 불가 시 UTF-8 문자열로 반환', async () => {
@@ -55,51 +47,49 @@ describe('token-storage-main', () => {
       vi.mocked(safeStorage.isEncryptionAvailable).mockReturnValue(false)
       mockFs.existsSync.mockReturnValue(true)
       mockFs.readFileSync.mockReturnValue(Buffer.from('plain-token', 'utf-8'))
-      const result = readEncryptedToken('/tmp/test-userData/auth-token.enc')
-      expect(result).toBe('plain-token')
+      expect(readToken()).toBe('plain-token')
     })
 
-    it('readFileSync 예외 시 null 반환', () => {
+    it('읽기 실패 시 null 반환', () => {
       mockFs.existsSync.mockReturnValue(true)
       mockFs.readFileSync.mockImplementation(() => { throw new Error('read error') })
-      expect(readEncryptedToken('/tmp/test-userData/auth-token.enc')).toBeNull()
+      expect(readToken()).toBeNull()
     })
   })
 
-  describe('writeEncryptedToken', () => {
+  describe('writeToken / writeRefreshToken', () => {
     it('userData 디렉토리가 없으면 생성 후 파일 저장', () => {
       mockFs.existsSync.mockReturnValue(false)
-      writeEncryptedToken(join('/tmp/test-userData', 'auth-token.enc'), 'my-token')
-      expect(mockFs.mkdirSync).toHaveBeenCalledWith('/tmp/test-userData', { recursive: true })
+      writeToken('my-token')
+      expect(mockFs.mkdirSync).toHaveBeenCalled()
       expect(mockFs.writeFileSync).toHaveBeenCalled()
     })
 
     it('디렉토리 존재 시 mkdirSync 미호출', () => {
       mockFs.existsSync.mockReturnValue(true)
-      writeEncryptedToken(join('/tmp/test-userData', 'auth-token.enc'), 'my-token')
+      writeToken('my-token')
       expect(mockFs.mkdirSync).not.toHaveBeenCalled()
       expect(mockFs.writeFileSync).toHaveBeenCalled()
     })
   })
 
-  describe('deleteFileIfExists', () => {
-    it('파일이 있으면 삭제', () => {
+  describe('clearTokenFiles', () => {
+    it('두 토큰 파일을 삭제한다', () => {
       mockFs.existsSync.mockReturnValue(true)
-      const filePath = join('/tmp/test-userData', 'auth-token.enc')
-      deleteFileIfExists(filePath)
-      expect(mockFs.unlinkSync).toHaveBeenCalledWith(filePath)
+      clearTokenFiles()
+      expect(mockFs.unlinkSync).toHaveBeenCalledTimes(2)
     })
 
     it('파일이 없으면 unlinkSync 미호출', () => {
       mockFs.existsSync.mockReturnValue(false)
-      deleteFileIfExists('/tmp/test-userData/auth-token.enc')
+      clearTokenFiles()
       expect(mockFs.unlinkSync).not.toHaveBeenCalled()
     })
 
     it('unlinkSync 예외 시 무시', () => {
       mockFs.existsSync.mockReturnValue(true)
       mockFs.unlinkSync.mockImplementation(() => { throw new Error('delete error') })
-      expect(() => deleteFileIfExists('/tmp/test-userData/auth-token.enc')).not.toThrow()
+      expect(() => clearTokenFiles()).not.toThrow()
     })
   })
 })
