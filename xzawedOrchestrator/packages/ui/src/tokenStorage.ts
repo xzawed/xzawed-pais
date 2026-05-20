@@ -10,8 +10,7 @@ type TokenAPI = {
 }
 
 function getElectronTokenAPI(): TokenAPI | undefined {
-  if (typeof globalThis.window === 'undefined') return undefined
-  return (globalThis.window as unknown as { electronAPI?: TokenAPI }).electronAPI
+  return (globalThis as unknown as { electronAPI?: TokenAPI }).electronAPI
 }
 
 export const tokenStorage = {
