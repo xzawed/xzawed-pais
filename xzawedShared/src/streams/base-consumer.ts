@@ -44,6 +44,18 @@ export class BaseConsumer<TMessage> {
         }
       } catch (e: unknown) {
         if (!this.running) return
+        // Re-create consumer group if the stream/group was lost (e.g., Redis restart/flush).
+        if (e instanceof Error && e.message.includes('NOGROUP')) {
+          try {
+            await this.redis.xgroup('CREATE', stream, this.consumerGroup, '$', 'MKSTREAM')
+          } catch (createErr: unknown) {
+            if (!(createErr instanceof Error && createErr.message.includes('BUSYGROUP'))) {
+              console.error('[Consumer] failed to re-create group:', createErr)
+            }
+          }
+          retryDelay = INITIAL_RETRY_DELAY_MS
+          continue
+        }
         console.error(`[Consumer] xreadgroup error, retrying in ${retryDelay}ms:`, e)
         await this.sleep(retryDelay)
         retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY_MS)

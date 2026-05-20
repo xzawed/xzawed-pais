@@ -2,14 +2,17 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 
 vi.mock('./detector.js')
 vi.mock('./executor.js')
+vi.mock('node:fs/promises')
 
 import { Builder } from './builder.js'
 import * as detector from './detector.js'
 import * as executor from './executor.js'
+import * as fs from 'node:fs/promises'
 import type { ManagerToBuilderMessage } from './types.js'
 
 const detectorMock = vi.mocked(detector)
 const executorMock = vi.mocked(executor)
+const fsMock = vi.mocked(fs)
 
 const mockConfig = {
   workspaceRoot: '/workspace',
@@ -41,8 +44,10 @@ describe('Builder', () => {
     builder = new Builder(producer as any, runner as any, mockConfig)
 
     executorMock.validatePath.mockResolvedValue('/workspace/project')
-    detectorMock.detectBuildCommand.mockResolvedValue('pnpm build')
+    detectorMock.detectBuildInfo.mockResolvedValue({ command: 'pnpm build', buildRoot: '/workspace/project' })
     executorMock.exec.mockResolvedValue({ success: true, output: 'Build OK', exitCode: 0, duration: 100 })
+    // Default: no package.json → skip pre-install
+    fsMock.access.mockRejectedValue(new Error('ENOENT'))
   })
 
   it('성공 빌드 시 build_complete(success:true)를 발행한다', async () => {
@@ -66,9 +71,9 @@ describe('Builder', () => {
     expect(completeCall![1].payload.errors).toHaveLength(1)
   })
 
-  it('커스텀 command가 있으면 detector를 호출하지 않는다', async () => {
+  it('커스텀 command가 있으면 detectBuildInfo를 호출하지 않는다', async () => {
     await builder.handle(buildRequest({ command: 'make build' }))
-    expect(detectorMock.detectBuildCommand).not.toHaveBeenCalled()
+    expect(detectorMock.detectBuildInfo).not.toHaveBeenCalled()
     expect(executorMock.exec).toHaveBeenCalledWith('make build', expect.any(String), expect.any(Function), 5000)
   })
 
@@ -104,5 +109,68 @@ describe('Builder', () => {
     const errorCall = calls.find(([, msg]) => msg.type === 'error')
     expect(errorCall).toBeDefined()
     expect(errorCall![1].payload.content).toContain('Shell metacharacters')
+  })
+
+  it('detectBuildInfo가 반환한 buildRoot에서 exec를 실행한다', async () => {
+    detectorMock.detectBuildInfo.mockResolvedValue({ command: 'pnpm run build', buildRoot: '/workspace' })
+    await builder.handle(buildRequest({ projectPath: '/workspace/sub' }))
+    expect(executorMock.exec).toHaveBeenCalledWith('pnpm run build', '/workspace', expect.any(Function), 5000)
+  })
+
+  describe('pre-install', () => {
+    it('package.json이 있고 node_modules가 없으면 npm install을 먼저 실행한다', async () => {
+      fsMock.access.mockImplementation(async (p) => {
+        const filePath = String(p)
+        if (filePath.endsWith('package.json')) return undefined as any
+        throw new Error('ENOENT') // node_modules, pnpm-lock.yaml 없음
+      })
+      executorMock.exec.mockResolvedValue({ success: true, output: '', exitCode: 0, duration: 50 })
+
+      await builder.handle(buildRequest())
+
+      const execCalls = executorMock.exec.mock.calls
+      expect(execCalls[0][0]).toBe('npm install')
+      expect(execCalls[1][0]).toBe('pnpm build')
+    })
+
+    it('pnpm-lock.yaml이 있으면 pnpm install을 사용한다', async () => {
+      fsMock.access.mockImplementation(async (p) => {
+        const filePath = String(p)
+        if (filePath.endsWith('package.json')) return undefined as any
+        if (filePath.endsWith('pnpm-lock.yaml')) return undefined as any
+        throw new Error('ENOENT') // node_modules 없음
+      })
+      executorMock.exec.mockResolvedValue({ success: true, output: '', exitCode: 0, duration: 50 })
+
+      await builder.handle(buildRequest())
+
+      const execCalls = executorMock.exec.mock.calls
+      expect(execCalls[0][0]).toBe('pnpm install')
+    })
+
+    it('node_modules가 이미 있으면 install을 건너뛴다', async () => {
+      fsMock.access.mockImplementation(async (p) => {
+        const filePath = String(p)
+        if (filePath.endsWith('package.json')) return undefined as any
+        if (filePath.endsWith('node_modules')) return undefined as any
+        throw new Error('ENOENT')
+      })
+      executorMock.exec.mockResolvedValue({ success: true, output: 'Build OK', exitCode: 0, duration: 100 })
+
+      await builder.handle(buildRequest())
+
+      const execCalls = executorMock.exec.mock.calls
+      expect(execCalls).toHaveLength(1)
+      expect(execCalls[0][0]).toBe('pnpm build')
+    })
+
+    it('package.json이 없으면 install을 건너뛴다', async () => {
+      fsMock.access.mockRejectedValue(new Error('ENOENT'))
+      await builder.handle(buildRequest())
+
+      const execCalls = executorMock.exec.mock.calls
+      expect(execCalls).toHaveLength(1)
+      expect(execCalls[0][0]).toBe('pnpm build')
+    })
   })
 })

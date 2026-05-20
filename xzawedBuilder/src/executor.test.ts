@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events'
 
 vi.mock('node:child_process')
 vi.mock('node:fs/promises')
+vi.mock('@xzawed/agent-streams', () => ({ validateWorkspaceRoot: vi.fn() }))
 
 import { exec, validatePath } from './executor.js'
 import { spawn } from 'node:child_process'

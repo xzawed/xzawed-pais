@@ -1,8 +1,9 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
+import path from 'node:path'
 
 vi.mock('node:fs/promises')
 
-import { detectBuildCommand } from './detector.js'
+import { detectBuildCommand, detectBuildInfo } from './detector.js'
 import * as fs from 'node:fs/promises'
 
 const fsMock = vi.mocked(fs)
@@ -104,5 +105,56 @@ describe('detectBuildCommand', () => {
   it('아무 파일도 없으면 오류를 던진다', async () => {
     fsMock.access.mockRejectedValue(new Error('ENOENT'))
     await expect(detectBuildCommand('/project')).rejects.toThrow('빌드 명령을 감지할 수 없음')
+  })
+
+  // --- fallback: walk up to workspaceRoot ---
+
+  it('projectPath에 빌드 파일 없으면 부모 디렉토리를 탐색한다', async () => {
+    fsMock.access.mockImplementation(async (p) => {
+      const filePath = String(p)
+      // package.json은 부모에만 존재 — 자식 경로에는 없음
+      if (filePath.endsWith('package.json') && !filePath.includes('todo-api')) return undefined as any
+      throw new Error('ENOENT')
+    })
+    fsMock.readFile.mockResolvedValueOnce(
+      JSON.stringify({ devDependencies: { typescript: '^5.0.0' } }) as any
+    )
+    const result = await detectBuildCommand('/workspace/todo-api', '/workspace')
+    expect(result).toBe('pnpm run build')
+  })
+
+  it('workspaceRoot까지 탐색해도 없으면 오류를 던진다', async () => {
+    fsMock.access.mockRejectedValue(new Error('ENOENT'))
+    await expect(detectBuildCommand('/workspace/deep/sub', '/workspace')).rejects.toThrow('빌드 명령을 감지할 수 없음')
+  })
+})
+
+describe('detectBuildInfo', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it('감지된 명령어와 buildRoot를 함께 반환한다', async () => {
+    mockAccess('Cargo.toml')
+    const result = await detectBuildInfo('/project')
+    expect(result.command).toBe('cargo build --release')
+    expect(result.buildRoot).toBe(path.resolve('/project'))
+  })
+
+  it('walk-up 시 실제 빌드 파일이 있는 디렉토리를 buildRoot로 반환한다', async () => {
+    fsMock.access.mockImplementation(async (p) => {
+      const filePath = String(p)
+      if (filePath.endsWith('package.json') && !filePath.includes('sub')) return undefined as any
+      throw new Error('ENOENT')
+    })
+    fsMock.readFile.mockResolvedValueOnce(JSON.stringify({ devDependencies: { typescript: '^5.0.0' } }) as any)
+    const result = await detectBuildInfo('/workspace/sub', '/workspace')
+    expect(result.command).toBe('pnpm run build')
+    expect(result.buildRoot).toBe(path.resolve('/workspace'))
+  })
+
+  it('아무 파일도 없으면 오류를 던진다', async () => {
+    fsMock.access.mockRejectedValue(new Error('ENOENT'))
+    await expect(detectBuildInfo('/project')).rejects.toThrow('빌드 명령을 감지할 수 없음')
   })
 })

@@ -29,7 +29,10 @@ export class RedisAgentHandler<TInput, TOutput>
   }
 
   async execute(input: TInput, sessionId: string, userContext?: UserContext): Promise<TOutput> {
-    const requestStream = `manager:to-${this.agentName}:${sessionId}`
+    // Agents subscribe to a single shared stream (manager:to-{agent}:default).
+    // Session routing is handled via the sessionId embedded in the message payload;
+    // responses arrive on the session-specific stream {agent}:to-manager:{sessionId}.
+    const requestStream = `manager:to-${this.agentName}:default`
     const responseStream = `${this.agentName}:to-manager:${sessionId}`
 
     // Get tip BEFORE sending to avoid missing responses in the race window

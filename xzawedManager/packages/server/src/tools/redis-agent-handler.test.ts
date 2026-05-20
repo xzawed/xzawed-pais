@@ -81,13 +81,13 @@ describe('RedisAgentHandler', () => {
     expect(mockRedis.xread).toHaveBeenCalledTimes(2)
   })
 
-  it('올바른 요청 스트림에 XADD한다', async () => {
+  it('올바른 요청 스트림에 XADD한다 (default 공유 스트림)', async () => {
     mockRedis.xread.mockResolvedValueOnce(
       makeMsg('build_complete', { success: true, output: '', artifacts: [] })
     )
     await handler.execute({ projectPath: '/app' }, 'sess-42')
     expect(mockRedis.xadd).toHaveBeenCalledWith(
-      'manager:to-builder:sess-42', '*', 'data', expect.stringContaining('"type":"build_request"')
+      'manager:to-builder:default', '*', 'data', expect.stringContaining('"type":"build_request"')
     )
   })
 
