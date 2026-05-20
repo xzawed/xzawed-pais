@@ -47,7 +47,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           cache-dependency-path: ${{ matrix.dir }}/pnpm-lock.yaml
 
@@ -109,7 +109,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           cache-dependency-path: ${{ matrix.service }}/pnpm-lock.yaml
 
@@ -146,7 +146,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           cache-dependency-path: xzawedLauncher/pnpm-lock.yaml
 
@@ -214,7 +214,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           cache-dependency-path: xzawedOrchestrator/pnpm-lock.yaml
 
@@ -246,7 +246,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
           cache-dependency-path: xzawedOrchestrator/pnpm-lock.yaml
 
