@@ -30,7 +30,10 @@ export class Developer {
         payload.context,
       )
 
-      const workspaceRoot = payload.userContext?.workspaceRoot ?? this.config.workspaceRoot
+      // Always use the verified service configuration for workspaceRoot.
+      // Any workspaceRoot value supplied by the LLM or forwarded via userContext is
+      // untrusted input and must not be used as the path-validation base.
+      const workspaceRoot = this.config.workspaceRoot
       const artifacts: string[] = []
       for (const change of changes) {
         await this.applyFn(change, workspaceRoot)
