@@ -78,6 +78,7 @@ async function saveAssistantMessage(
   }
   const history = messageStore.get(sessionId) ?? []
   history.push({ id: assistantMsgId, sessionId, role: 'assistant', content: fullContent, timestamp: Date.now() })
+  messageStore.set(sessionId, history)
 }
 
 async function publishTaskToManager(

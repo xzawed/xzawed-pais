@@ -7,6 +7,15 @@ export interface AuthUser {
   displayName?: string | undefined
 }
 
+type ElectronAuthAPI = {
+  authRestore?: (serverUrl: string) => Promise<{ user: AuthUser | null; accessToken?: string }>
+  tokenClear?: () => Promise<void>
+}
+
+function getElectronAuthAPI(): ElectronAuthAPI | undefined {
+  return (globalThis as unknown as { electronAPI?: ElectronAuthAPI }).electronAPI
+}
+
 async function fetchAuth(
   url: string,
   body: Record<string, string | undefined>,
@@ -79,6 +88,21 @@ export const useAuthStore = create<AuthState>()((set) => ({
   },
 
   restore: async (serverUrl) => {
+    // In Electron: use main-process proxy to avoid token read-back to renderer
+    const electronAPI = getElectronAuthAPI()
+    if (electronAPI?.authRestore) {
+      try {
+        const result = await electronAPI.authRestore(serverUrl)
+        if (result.user && result.accessToken) {
+          set({ user: result.user, accessToken: result.accessToken })
+        }
+      } catch {
+        // network error — keep logged-out state
+      }
+      return
+    }
+
+    // Web/browser fallback: use sessionStorage-backed tokenStorage
     const token = await tokenStorage.getAccessToken()
     if (!token) return
     try {

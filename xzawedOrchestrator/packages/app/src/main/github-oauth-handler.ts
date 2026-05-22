@@ -119,7 +119,7 @@ export function startOAuthFlow(mainWindow: BrowserWindow): Promise<string> {
       done(new Error('OAuth flow timed out after 5 minutes'))
     }, 5 * 60 * 1000)
 
-    server.listen(CALLBACK_PORT, () => {
+    server.listen(CALLBACK_PORT, '127.0.0.1', () => {
       const clientId = process.env['GITHUB_CLIENT_ID'] ?? ''
       const authUrl =
         `https://github.com/login/oauth/authorize` +

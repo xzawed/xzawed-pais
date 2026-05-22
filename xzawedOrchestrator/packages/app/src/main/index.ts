@@ -82,7 +82,20 @@ function createWindow(): void {
 
 // ── Settings ─────────────────────────────────────────────────────────
 ipcMain.handle('settings:get', (): AppSettings => readSettings())
-ipcMain.handle('settings:set', (_e, settings: AppSettings): void => writeSettings(settings))
+ipcMain.handle('settings:set', (_e, settings: AppSettings): void => {
+  if (settings.serverUrl !== undefined && settings.serverUrl !== '') {
+    let parsed: URL
+    try {
+      parsed = new URL(settings.serverUrl)
+    } catch {
+      throw new Error(`Invalid serverUrl: ${settings.serverUrl}`)
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error(`serverUrl must use http or https scheme: ${settings.serverUrl}`)
+    }
+  }
+  writeSettings(settings)
+})
 
 // ── GitHub ───────────────────────────────────────────────────────────
 ipcMain.handle('github:connect', async () => {
@@ -123,11 +136,53 @@ ipcMain.handle('github:list-repos', async () => {
 })
 
 // ── Auth token (safeStorage) ─────────────────────────────────────────
-ipcMain.handle('token:get', (): string | null => readToken())
+// token:get and refresh-token:get are intentionally NOT exposed to the renderer.
+// Raw tokens must not be readable by the renderer process. Use auth:restore instead.
 ipcMain.handle('token:set', (_e, token: string): void => writeToken(token))
 ipcMain.handle('token:clear', (): void => clearTokenFiles())
-ipcMain.handle('refresh-token:get', (): string | null => readRefreshToken())
 ipcMain.handle('refresh-token:set', (_e, token: string): void => writeRefreshToken(token))
+
+// ── Auth restore (proxy — token stays in main process) ────────────────
+ipcMain.handle('auth:restore', async (_e, serverUrl: string) => {
+  const token = readToken()
+  if (!token) return { user: null }
+  try {
+    const res = await fetch(`${serverUrl}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (res.ok) {
+      const { user } = (await res.json()) as { user: { id: string; email: string; displayName?: string } }
+      return { user, accessToken: token }
+    }
+    if (res.status === 401) {
+      const refreshToken = readRefreshToken()
+      if (!refreshToken) { clearTokenFiles(); return { user: null } }
+      const refreshRes = await fetch(`${serverUrl}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      })
+      if (!refreshRes.ok) { clearTokenFiles(); return { user: null } }
+      const { accessToken: newAt, refreshToken: newRt } =
+        (await refreshRes.json()) as { accessToken: string; refreshToken: string }
+      writeToken(newAt)
+      writeRefreshToken(newRt)
+      const meRes = await fetch(`${serverUrl}/auth/me`, {
+        headers: { Authorization: `Bearer ${newAt}` },
+      })
+      if (meRes.ok) {
+        const { user } = (await meRes.json()) as { user: { id: string; email: string; displayName?: string } }
+        return { user, accessToken: newAt }
+      }
+      clearTokenFiles()
+      return { user: null }
+    }
+    clearTokenFiles()
+    return { user: null }
+  } catch {
+    return { user: null }
+  }
+})
 
 // ── MCP ──────────────────────────────────────────────────────────────
 ipcMain.handle('mcp:list', () =>
