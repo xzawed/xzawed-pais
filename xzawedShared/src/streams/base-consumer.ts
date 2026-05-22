@@ -3,6 +3,7 @@ import type { ZodType } from 'zod'
 
 const INITIAL_RETRY_DELAY_MS = 1_000
 const MAX_RETRY_DELAY_MS = 30_000
+const MAX_MESSAGE_BYTES = 10 * 1024 * 1024 // 10 MiB
 
 export class BaseConsumer<TMessage> {
   private running = false
@@ -69,10 +70,24 @@ export class BaseConsumer<TMessage> {
   private async processMessages(stream: string, messages: [string, string[]][]) {
     for (const [msgId, fields] of messages) {
       const dataIdx = fields.indexOf('data')
-      if (dataIdx === -1) continue
+      if (dataIdx === -1) {
+        console.error('[Consumer] missing data field, skipping')
+        await this.redis.xack(stream, this.consumerGroup, msgId)
+        continue
+      }
 
       const raw = fields[dataIdx + 1]
-      if (raw === undefined) continue
+      if (raw === undefined) {
+        console.error('[Consumer] data field has no value, skipping')
+        await this.redis.xack(stream, this.consumerGroup, msgId)
+        continue
+      }
+
+      if (Buffer.byteLength(raw, 'utf8') > MAX_MESSAGE_BYTES) {
+        console.error('[Consumer] message too large, skipping')
+        await this.redis.xack(stream, this.consumerGroup, msgId)
+        continue
+      }
 
       let parsed: ReturnType<typeof this.schema.safeParse>
       try {

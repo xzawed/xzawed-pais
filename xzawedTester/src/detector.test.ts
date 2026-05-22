@@ -61,6 +61,21 @@ describe('buildCommandWithFiles', () => {
   it('returns base command unchanged when no files', () => {
     expect(buildCommandWithFiles('vitest run', [])).toBe('vitest run')
   })
+
+  it('rejects testFiles paths containing shell metacharacters', () => {
+    const dangerous = [
+      'foo.test.ts; rm -rf /',
+      'foo.test.ts && cat /etc/passwd',
+      'foo.test.ts | tee /tmp/out',
+      'foo.test.ts`whoami`',
+      'foo.test.ts $HOME',
+      'foo.test.ts > /tmp/x',
+      'foo.test.ts\necho pwned',
+    ]
+    for (const filePath of dangerous) {
+      expect(() => buildCommandWithFiles('vitest run', [filePath])).toThrow('Shell metacharacters')
+    }
+  })
 })
 
 describe('parseTestCounts', () => {
