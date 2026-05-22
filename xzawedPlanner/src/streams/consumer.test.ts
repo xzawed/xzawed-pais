@@ -2,8 +2,10 @@ import { vi, describe, it, expect } from 'vitest'
 import { Consumer } from './consumer.js'
 import type { ManagerToPlannerMessage } from '../types.js'
 
+const TEST_SESSION_ID = '00000000-0000-0000-0000-000000000001'
+
 const planRequest: ManagerToPlannerMessage = {
-  sessionId: 'sess-1',
+  sessionId: TEST_SESSION_ID,
   messageId: 'msg-1',
   timestamp: 1000,
   type: 'plan_request',

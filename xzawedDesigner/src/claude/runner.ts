@@ -1,5 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { z } from 'zod'
+import { ComponentSpecSchema, UISpecSchema } from '../types.js'
 import type { ComponentSpec, UISpec } from '../types.js'
+
+const DesignResponseSchema = z.object({
+  components: z.array(ComponentSpecSchema).min(1),
+  uiSpec: UISpecSchema.optional(),
+})
+
+const API_TIMEOUT_MS = 30_000
 
 const SYSTEM_PROMPT = `You are a UI/UX design agent. Given a design intent and context, produce component specifications.
 
@@ -51,20 +60,25 @@ export class ClaudeRunner {
     designSystem: string,
   ): Promise<{ components: ComponentSpec[]; uiSpec: UISpec }> {
     try {
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: [
-            `Intent: ${intent}`,
-            `Framework: ${targetFramework}`,
-            `Design System: ${designSystem}`,
-            `Context: ${JSON.stringify(context, null, 2)}`,
-          ].join('\n'),
-        }],
-      })
+      const response = await Promise.race([
+        this.client.messages.create({
+          model: this.model,
+          max_tokens: 4096,
+          system: SYSTEM_PROMPT,
+          messages: [{
+            role: 'user',
+            content: [
+              `Intent: ${intent}`,
+              `Framework: ${targetFramework}`,
+              `Design System: ${designSystem}`,
+              `Context: ${JSON.stringify(context, null, 2)}`,
+            ].join('\n'),
+          }],
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
+        ),
+      ])
 
       const text = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -93,18 +107,22 @@ export class ClaudeRunner {
     if (start === -1 || end === -1) return this.fallback(intent)
 
     try {
-      const parsed = JSON.parse(cleaned.slice(start, end + 1)) as Record<string, unknown>
-      const components = Array.isArray(parsed['components'])
-        ? (parsed['components'] as ComponentSpec[])
-        : []
-      if (components.length === 0) return this.fallback(intent)
-
-      const uiSpec = (parsed['uiSpec'] as UISpec | undefined) ?? {
-        type: 'mockup_viewer' as const,
-        title: intent.slice(0, 60),
-        content: intent,
+      const raw: unknown = JSON.parse(cleaned.slice(start, end + 1))
+      const result = DesignResponseSchema.safeParse(raw)
+      if (!result.success) {
+        console.warn('[Designer] response validation failed:', result.error.issues)
+        return this.fallback(intent)
       }
-      return { components, uiSpec }
+
+      const { components, uiSpec } = result.data
+      return {
+        components,
+        uiSpec: uiSpec ?? {
+          type: 'mockup_viewer',
+          title: intent.slice(0, 60),
+          content: intent,
+        },
+      }
     } catch {
       return this.fallback(intent)
     }
