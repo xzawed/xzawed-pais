@@ -16,30 +16,31 @@ jobs:
     strategy:
       matrix:
         service:
-          - { name: orchestrator, context: xzawedOrchestrator }
-          - { name: manager,      context: xzawedManager }
-          - { name: planner,      context: xzawedPlanner }
-          - { name: developer,    context: xzawedDeveloper }
-          - { name: designer,     context: xzawedDesigner }
-          - { name: tester,       context: xzawedTester }
-          - { name: builder,      context: xzawedBuilder }
-          - { name: watcher,      context: xzawedWatcher }
-          - { name: security,     context: xzawedSecurity }
+          - { name: orchestrator, dir: xzawedOrchestrator }
+          - { name: manager,      dir: xzawedManager }
+          - { name: planner,      dir: xzawedPlanner }
+          - { name: developer,    dir: xzawedDeveloper }
+          - { name: designer,     dir: xzawedDesigner }
+          - { name: tester,       dir: xzawedTester }
+          - { name: builder,      dir: xzawedBuilder }
+          - { name: watcher,      dir: xzawedWatcher }
+          - { name: security,     dir: xzawedSecurity }
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Log in to GHCR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push ${{ matrix.service.name }}
-        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
-          context: ${{ matrix.service.context }}
+          context: .
+          file: ${{ matrix.service.dir }}/Dockerfile
           push: true
           tags: |
             ghcr.io/xzawed/xzawed-${{ matrix.service.name }}:latest
