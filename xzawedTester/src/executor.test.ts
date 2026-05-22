@@ -35,3 +35,12 @@ test('validatePath: 루트 워크스페이스는 거부한다', async () => {
   mockRealpath.mockImplementation(async (p) => String(p))
   await expect(validatePath('suite.test.ts', '/')).rejects.toThrow('WORKSPACE_ROOT must not be filesystem root')
 })
+
+test('validatePath: 존재하지 않는 경로는 거부한다 (TOCTOU 방지)', async () => {
+  mockRealpath.mockReset()
+  // First call (targetPath) rejects — simulates non-existent path
+  mockRealpath.mockRejectedValueOnce(new Error('ENOENT'))
+  // Second call (workspaceRoot) would succeed, but we never reach it
+  mockRealpath.mockImplementation(async (p) => String(p))
+  await expect(validatePath('/test-workspace/ghost.ts', '/test-workspace')).rejects.toThrow('경로 거부')
+})
