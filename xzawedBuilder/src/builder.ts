@@ -54,6 +54,7 @@ export class Builder {
         buildRoot = detected.buildRoot
       }
 
+      await this.stripPackageManagerField(buildRoot)
       await this.runPreInstall(buildRoot, sessionId)
 
       const { success, output, duration } = await exec(
@@ -88,6 +89,20 @@ export class Builder {
         type: 'error',
         payload: { content: e instanceof Error ? e.message : String(e) },
       })
+    }
+  }
+
+  private async stripPackageManagerField(buildRoot: string): Promise<void> {
+    const pkgPath = path.join(buildRoot, 'package.json')
+    try {
+      const content = await fs.readFile(pkgPath, 'utf-8')
+      const pkg = JSON.parse(content) as Record<string, unknown>
+      if ('packageManager' in pkg) {
+        delete pkg.packageManager
+        await fs.writeFile(pkgPath, JSON.stringify(pkg, null, 2), 'utf-8')
+      }
+    } catch {
+      // package.json 없거나 파싱 불가: 무시
     }
   }
 

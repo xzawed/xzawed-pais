@@ -38,7 +38,7 @@ export async function exec(
     const proc = spawn(bin, cmdArgs, {
       cwd,
       shell: false,
-      env: { ...process.env, COREPACK_ENABLE_STRICT: '0', COREPACK_ENABLE_AUTO_PIN: '0', COREPACK_ENABLE_NETWORK: '0' },
+      env: { ...process.env, COREPACK_ENABLE_STRICT: '0', COREPACK_ENABLE_AUTO_PIN: '0' },
     })
     let settled = false
 
