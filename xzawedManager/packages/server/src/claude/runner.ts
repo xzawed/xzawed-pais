@@ -126,7 +126,7 @@ export class ClaudeRunner {
 
       const response = await this.client.messages.create({
         model: this.model,
-        max_tokens: 4096,
+        max_tokens: 8192,
         system: 'You are xzawedManager, a project orchestration agent. Use the available tools to fulfill the task request.',
         messages,
         tools,
