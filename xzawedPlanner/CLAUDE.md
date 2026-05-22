@@ -27,7 +27,7 @@ pnpm build     # tsc 컴파일
 | Claude SDK | `@anthropic-ai/sdk` |
 | Redis | `ioredis` |
 | 스키마 검증 | `zod` |
-| 테스트 | Vitest 2 |
+| 테스트 | Vitest 3 |
 | 패키지 매니저 | pnpm |
 
 ## 아키텍처

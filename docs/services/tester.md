@@ -2,7 +2,7 @@
 
 **역할:** xzawedManager로부터 테스트 실행 요청을 받아 테스트를 수행하고 결과를 반환한다.
 
-**포트:** 3005 | **상태:** 구현 완료 (28/28 테스트)
+**포트:** 3005 | **상태:** 구현 완료 (32/32 테스트)
 
 ---
 
@@ -49,7 +49,7 @@ interface TesterToManagerMessage {
   sessionId: string
   messageId: string
   timestamp: number
-  type: 'test_complete' | 'test_progress' | 'error'
+  type: 'test_complete' | 'error'
   payload: {
     success?: boolean
     passed?: number

@@ -2,7 +2,7 @@
 
 **역할:** xzawedManager로부터 코드 아티팩트를 받아 OWASP Top 10 기반으로 보안 취약점을 분석하고 점수와 수정 제안을 반환한다.
 
-**포트:** 3008 | **상태:** 구현 완료 (45/45 테스트)
+**포트:** 3008 | **상태:** 구현 완료 (49/49 테스트)
 
 ---
 
@@ -89,7 +89,6 @@ REDIS_URL=redis://localhost:6379
 PORT=3008
 MODE=local
 WORKSPACE_ROOT=f:/DEVELOPMENT/SOURCE
-SECURITY_SESSION_ID=security-default  # 선택: 기본 세션 ID
 ```
 
 ## 핵심 명령어

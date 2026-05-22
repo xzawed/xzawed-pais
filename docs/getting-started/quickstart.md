@@ -12,7 +12,7 @@
 
 | 항목 | 최소 버전 | 확인 명령 |
 |------|-----------|-----------|
-| Node.js | 20.0.0 | `node --version` |
+| Node.js | 22.0.0 | `node --version` |
 | pnpm | 9.0.0 | `pnpm --version` |
 | Git | — | `git --version` |
 
@@ -23,8 +23,8 @@
 ## 1단계: 저장소 클론 및 설치
 
 ```bash
-git clone https://github.com/xzawed/orchestrator.git
-cd orchestrator
+git clone https://github.com/xzawed/xzawed-pais.git
+cd xzawed-pais
 pnpm install
 ```
 

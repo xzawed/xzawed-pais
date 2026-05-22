@@ -2,7 +2,7 @@
 
 **역할:** xzawedManager로부터 빌드 요청을 수신하여 실행하고 결과 아티팩트를 반환한다.
 
-**포트:** 3006 | **상태:** 완성 (v0.2.0) — 39개 단위 테스트 통과
+**포트:** 3006 | **상태:** 완성 (v0.2.0) — 49개 단위 테스트 통과
 
 ---
 
@@ -26,7 +26,7 @@ src/
 ## 데이터 흐름
 
 1. Redis consumer → `build_request` 수신 (`ManagerToBuilderMessage`)
-2. `detector.ts` → `Cargo.toml`, `Makefile`, `package.json`(의존성 기반), `go.mod` 순서로 **하드코딩 명령어** 결정 (`scripts.build` 미신뢰)
+2. `detector.ts` → `projectPath`에서 `workspaceRoot`까지 부모 디렉토리를 탐색하며 `Cargo.toml`, `Makefile`, `package.json`(의존성 기반), `go.mod` 순서로 **하드코딩 명령어** 결정 (`scripts.build` 미신뢰)
 3. `executor.ts` → child_process 실행, stdout/stderr 스트리밍
 4. 실패 시 `claude/runner.ts` → 오류 분석 및 `BuildError[]` suggestion 생성
 5. Redis producer → `build_complete` 또는 `error` 발행

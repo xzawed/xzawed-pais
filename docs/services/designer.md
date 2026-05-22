@@ -49,7 +49,7 @@ interface DesignerToManagerMessage {
   sessionId: string
   messageId: string
   timestamp: number
-  type: 'design_complete' | 'design_progress' | 'error'
+  type: 'design_complete' | 'error'
   payload: {
     components?: ComponentSpec[]
     uiSpec?: UISpec

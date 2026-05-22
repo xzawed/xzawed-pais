@@ -11,11 +11,13 @@ async function detectBuildCommand(projectPath: string): Promise<string>
 ```
 
 감지 순서 (우선순위):
-1. `package.json` 존재 + `scripts.build` 필드 있음 → 해당 값 사용
-   `package.json` 존재 + `scripts.build` 필드 없음 → `pnpm run build` (기본값)
-2. `Cargo.toml` 존재 → `cargo build --release`
-3. `Makefile` 존재 → `make build`
-4. 위 모두 없음 → Error('빌드 명령을 감지할 수 없음')
+1. `Cargo.toml` 존재 → `cargo build --release`
+2. `Makefile` 존재 → `make build`
+3. `package.json` 존재 → 의존성(`vite`, `webpack`, `typescript` 등) 기반으로 `pnpm run build` 결정 (`scripts.build` 값 미신뢰)
+4. `go.mod` 존재 → `go build ./...`
+5. 위 모두 없음 → Error('빌드 명령을 감지할 수 없음')
+
+> 감지 시 `projectPath`에서 시작해 `workspaceRoot`까지 부모 디렉토리를 순서대로 탐색한다.
 
 ### executor.ts
 

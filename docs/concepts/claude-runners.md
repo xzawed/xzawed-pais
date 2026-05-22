@@ -10,8 +10,8 @@ xzawedOrchestrator는 세 가지 Claude 실행 모드를 지원합니다. 모두
 
 | 모드 | 환경변수 | 방식 | 비용 | 요구 사항 |
 |------|----------|------|------|-----------|
-| **CLI** (기본) | `CLAUDE_MODE=cli` | 로컬 설치된 Claude Code CLI 서브프로세스 | Claude 구독 요금만 | 로컬에 Claude CLI 설치 |
-| **API** | `CLAUDE_MODE=api` | Anthropic SDK 직접 호출 | 토큰당 과금 | `ANTHROPIC_API_KEY` 환경변수 |
+| **API** (기본) | `CLAUDE_MODE=api` | Anthropic SDK 직접 호출 | 토큰당 과금 | `ANTHROPIC_API_KEY` 환경변수 |
+| **CLI** | `CLAUDE_MODE=cli` | 로컬 설치된 Claude Code CLI 서브프로세스 | Claude 구독 요금만 | 로컬에 Claude CLI 설치 |
 | **원격 CLI** | `CLAUDE_MODE=remote` | 원격 서버의 Claude CLI 사용 | 서버 운영 비용 | `REMOTE_CLI_URL` 또는 SSH 설정 |
 
 ---
@@ -30,9 +30,10 @@ CLAUDE_MODE=cli
 Fastify 서버
     │
     ▼ child_process.spawn('claude', [
+    │   '--print',
     │   '--output-format', 'stream-json',
-    │   '--no-interactive',
-    │   '<user message>'
+    │   '--verbose',
+    │   '--', '<user message>'
     │ ])
     │
     ▼ stdout readline 스트리밍
@@ -145,13 +146,15 @@ interface RunOptions {
   model?: string
   systemPrompt?: string
   signal?: AbortSignal
+  claudeSessionId?: string  // CLI 세션 재개용 ID (--resume 플래그)
 }
 
 // Chunk 타입
 type Chunk =
   | { type: 'text'; content: string }
-  | { type: 'done'; content: '' }
+  | { type: 'done'; content: string }
   | { type: 'error'; content: string }
+  | { type: 'claude_session'; content: string }  // CLI 세션 ID 전파
 ```
 
 ### 모드 선택 팩토리
@@ -160,13 +163,16 @@ type Chunk =
 // packages/server/src/claude/runner.factory.ts
 function createRunner(config: Config): ClaudeRunner {
   switch (config.claudeMode) {
-    case 'api':
-      return new APIRunner({ apiKey: config.anthropicApiKey!, model: config.claudeModel })
     case 'remote':
-      return new RemoteCLIRunner(config)  // 또는 CLIRunner 폴백
+      if (config.remoteCLIUrl) {
+        return new HTTPRemoteRunner(config.remoteCLIUrl)
+      }
+      return new SSHRemoteRunner(config.remoteHost!, config.remoteUser!, config.remoteKeyPath!)
     case 'cli':
-    default:
       return new CLIRunner()
+    case 'api':
+    default:
+      return new APIRunner({ apiKey: config.anthropicApiKey!, model: config.claudeModel })
   }
 }
 ```
@@ -176,13 +182,13 @@ function createRunner(config: Config): ClaudeRunner {
 ## 모드 선택 가이드
 
 ```
-Claude CLI가 로컬에 설치되어 있나요?
-├── 예 → CLI 모드 (CLAUDE_MODE=cli)
-│         가장 경제적 (구독 요금만)
+Anthropic API 키가 있나요?
+├── 예 → API 모드 (CLAUDE_MODE=api) ← 기본값
+│         토큰당 과금, 즉시 사용 가능
 │
-└── 아니오 ──→ Anthropic API 키가 있나요?
-               ├── 예 → API 모드 (CLAUDE_MODE=api)
-               │         토큰당 과금이지만 즉시 사용 가능
+└── 아니오 ──→ Claude CLI가 로컬에 설치되어 있나요?
+               ├── 예 → CLI 모드 (CLAUDE_MODE=cli)
+               │         가장 경제적 (구독 요금만)
                │
                └── 아니오 → 원격 서버가 있나요?
                             ├── 예 → 원격 CLI 모드 (CLAUDE_MODE=remote)

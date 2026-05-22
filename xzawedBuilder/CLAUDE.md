@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedBuilder는 xzawed 멀티 에이전트 시스템의 **빌드 에이전트**다.
 xzawedManager로부터 프로젝트 경로와 빌드 타깃을 받아 빌드를 실행하고 결과 아티팩트를 반환한다.
 
-현재 상태: **구현 완료 (v0.2.0)** — 39개 단위 테스트 통과, `pnpm build` 정상. 스펙: `docs/specs/2026-05-15-builder-design.md`
+현재 상태: **구현 완료 (49/49 테스트 통과)** — `pnpm build` 정상. 스펙: `docs/specs/2026-05-15-builder-design.md`
 
 ## 핵심 명령어
 
@@ -58,6 +58,12 @@ interface ManagerToBuilderMessage {
     target: 'development' | 'production'
     command?: string   // 없으면 자동 감지
     context: Record<string, unknown>
+    userContext?: {
+      userId: string
+      projectId: string
+      workspaceRoot: string
+      githubRepo?: { owner: string; repo: string; branch: string }
+    }
   }
 }
 
