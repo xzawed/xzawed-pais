@@ -28,11 +28,11 @@ interface ElectronAPI {
   pluginToggle(id: string): Promise<void>
   pluginUninstall(id: string): Promise<void>
   // Auth token
-  tokenGet(): Promise<string | null>
+  // NOTE: tokenGet and refreshTokenGet are intentionally absent — use authRestore.
   tokenSet(token: string): Promise<void>
   tokenClear(): Promise<void>
-  refreshTokenGet(): Promise<string | null>
   refreshTokenSet(token: string): Promise<void>
+  authRestore(serverUrl: string): Promise<{ user: { id: string; email: string; displayName?: string }; accessToken: string } | null>
 }
 
 declare global {

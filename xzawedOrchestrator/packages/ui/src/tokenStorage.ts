@@ -2,10 +2,10 @@ const TOKEN_KEY = 'access_token'
 const REFRESH_TOKEN_KEY = 'refresh_token'
 
 type TokenAPI = {
-  tokenGet?: () => Promise<string | null>
+  // NOTE: tokenGet and refreshTokenGet are intentionally absent — raw tokens
+  // must never be read back into the renderer. Use authRestore for session recovery.
   tokenSet?: (token: string) => Promise<void>
   tokenClear?: () => Promise<void>
-  refreshTokenGet?: () => Promise<string | null>
   refreshTokenSet?: (token: string) => Promise<void>
 }
 
@@ -15,8 +15,8 @@ function getElectronTokenAPI(): TokenAPI | undefined {
 
 export const tokenStorage = {
   async getAccessToken(): Promise<string | null> {
-    const api = getElectronTokenAPI()
-    if (api?.tokenGet) return api.tokenGet()
+    // In Electron context raw token read-back is not available; caller must use
+    // authRestore (via auth.store.ts) to obtain a fresh token from main process.
     return sessionStorage.getItem(TOKEN_KEY)
   },
 
@@ -27,8 +27,8 @@ export const tokenStorage = {
   },
 
   async getRefreshToken(): Promise<string | null> {
-    const api = getElectronTokenAPI()
-    if (api?.refreshTokenGet) return api.refreshTokenGet()
+    // In Electron context raw refresh-token read-back is not available; the main
+    // process handles token refresh internally via auth:restore.
     return sessionStorage.getItem(REFRESH_TOKEN_KEY)
   },
 

@@ -37,6 +37,11 @@ export function loadConfig(): Config {
     throw new Error('SERVICE_JWT_SECRET must be at least 32 characters when AUTH=jwt')
   }
 
+  const userJwtSecret = process.env.USER_JWT_SECRET
+  if (auth === 'jwt' && (!userJwtSecret || userJwtSecret.length < 32)) {
+    throw new Error('USER_JWT_SECRET must be at least 32 characters when AUTH=jwt')
+  }
+
   return {
     port: Number.parseInt(process.env.PORT ?? '3000', 10),
     mode: (process.env.MODE ?? 'local') as 'local' | 'remote',
@@ -52,7 +57,7 @@ export function loadConfig(): Config {
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
     managerUrl: process.env.MANAGER_URL ?? 'http://localhost:3001',
     databaseUrl: process.env.DATABASE_URL,
-    userJwtSecret: process.env.USER_JWT_SECRET,
+    userJwtSecret,
     serveWeb: process.env.SERVE_WEB === 'true',
     githubTokenKey: process.env.GITHUB_TOKEN_ENCRYPTION_KEY,
   }

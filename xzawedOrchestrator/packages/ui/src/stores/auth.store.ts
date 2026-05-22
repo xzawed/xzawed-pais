@@ -79,6 +79,26 @@ export const useAuthStore = create<AuthState>()((set) => ({
   },
 
   restore: async (serverUrl) => {
+    // In Electron, delegate the entire restore flow to main process via auth:restore.
+    // This keeps raw tokens off the renderer and avoids the need to read them back.
+    type ElectronAuthAPI = {
+      authRestore?: (url: string) => Promise<{ user: AuthUser; accessToken: string } | null>
+    }
+    const electronAPI = (globalThis as unknown as { electronAPI?: ElectronAuthAPI }).electronAPI
+    if (electronAPI?.authRestore) {
+      try {
+        const result = await electronAPI.authRestore(serverUrl)
+        if (result) {
+          await tokenStorage.setAccessToken(result.accessToken)
+          set({ user: result.user, accessToken: result.accessToken })
+        }
+      } catch {
+        // network error in main process — keep state as-is
+      }
+      return
+    }
+
+    // Web / non-Electron path: read token from sessionStorage and call server directly.
     const token = await tokenStorage.getAccessToken()
     if (!token) return
     try {

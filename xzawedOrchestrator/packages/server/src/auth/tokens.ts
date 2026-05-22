@@ -22,7 +22,7 @@ export function issueAccessToken(
 }
 
 export function verifyAccessToken(token: string, secret: string): AccessTokenPayload {
-  return jwt.verify(token, secret) as AccessTokenPayload
+  return jwt.verify(token, secret, { algorithms: ['HS256'] }) as AccessTokenPayload
 }
 
 export function issueRefreshToken(): IssuedRefreshToken {
