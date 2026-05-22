@@ -103,6 +103,14 @@ describe('Builder', () => {
     expect(errorCall![1].payload.content).toContain('Build command not allowed')
   })
 
+  it('make 단독 prefix는 허용되지 않는다 (make build만 허용)', async () => {
+    await builder.handle(buildRequest({ command: 'make evil-target' }))
+    const calls = producer.publish.mock.calls
+    const errorCall = calls.find(([, msg]) => msg.type === 'error')
+    expect(errorCall).toBeDefined()
+    expect(errorCall![1].payload.content).toContain('Build command not allowed')
+  })
+
   it('shell 메타문자가 포함된 command는 error 메시지를 발행한다', async () => {
     await builder.handle(buildRequest({ command: 'pnpm build; rm -rf /' }))
     const calls = producer.publish.mock.calls
@@ -113,6 +121,11 @@ describe('Builder', () => {
 
   it('detectBuildInfo가 반환한 buildRoot에서 exec를 실행한다', async () => {
     detectorMock.detectBuildInfo.mockResolvedValue({ command: 'pnpm run build', buildRoot: '/workspace' })
+    // validatePath is called for both projectPath and detected buildRoot — return validated path each time
+    executorMock.validatePath
+      .mockResolvedValueOnce('/workspace/sub') // for projectPath
+      .mockResolvedValueOnce('/workspace')     // for detected.buildRoot
+      .mockResolvedValueOnce('/workspace')     // defence-in-depth before runPreInstall
     await builder.handle(buildRequest({ projectPath: '/workspace/sub' }))
     expect(executorMock.exec).toHaveBeenCalledWith('pnpm run build', '/workspace', expect.any(Function), 5000)
   })

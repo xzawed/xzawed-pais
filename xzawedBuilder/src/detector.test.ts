@@ -26,7 +26,7 @@ describe('detectBuildCommand', () => {
 
   it('Cargo.toml이 있으면 cargo build --release를 반환한다', async () => {
     mockAccess('Cargo.toml')
-    const result = await detectBuildCommand('/project')
+    const result = await detectBuildCommand('/project', '/')
     expect(result).toBe('cargo build --release')
   })
 
@@ -34,7 +34,7 @@ describe('detectBuildCommand', () => {
 
   it('Cargo.toml이 없고 Makefile이 있으면 make build를 반환한다', async () => {
     mockAccess('Makefile')
-    const result = await detectBuildCommand('/project')
+    const result = await detectBuildCommand('/project', '/')
     expect(result).toBe('make build')
   })
 
@@ -45,7 +45,7 @@ describe('detectBuildCommand', () => {
     fsMock.readFile.mockResolvedValueOnce(
       JSON.stringify({ devDependencies: { vite: '^5.0.0' } }) as any
     )
-    const result = await detectBuildCommand('/project')
+    const result = await detectBuildCommand('/project', '/')
     expect(result).toBe('pnpm run build')
   })
 
@@ -54,7 +54,7 @@ describe('detectBuildCommand', () => {
     fsMock.readFile.mockResolvedValueOnce(
       JSON.stringify({ devDependencies: { webpack: '^5.0.0' } }) as any
     )
-    const result = await detectBuildCommand('/project')
+    const result = await detectBuildCommand('/project', '/')
     expect(result).toBe('pnpm run build')
   })
 
@@ -63,14 +63,14 @@ describe('detectBuildCommand', () => {
     fsMock.readFile.mockResolvedValueOnce(
       JSON.stringify({ devDependencies: { typescript: '^5.0.0' } }) as any
     )
-    const result = await detectBuildCommand('/project')
+    const result = await detectBuildCommand('/project', '/')
     expect(result).toBe('pnpm run build')
   })
 
   it('package.json에 알려진 빌드 도구가 없으면 기본값 pnpm run build를 반환한다', async () => {
     mockAccess('package.json')
     fsMock.readFile.mockResolvedValueOnce(JSON.stringify({ name: 'myapp' }) as any)
-    const result = await detectBuildCommand('/project')
+    const result = await detectBuildCommand('/project', '/')
     expect(result).toBe('pnpm run build')
   })
 
@@ -79,7 +79,7 @@ describe('detectBuildCommand', () => {
     fsMock.readFile.mockResolvedValueOnce(
       JSON.stringify({ scripts: { build: 'rm -rf / && echo pwned' } }) as any
     )
-    const result = await detectBuildCommand('/project')
+    const result = await detectBuildCommand('/project', '/')
     // Must NOT return the injected script — always returns a hardcoded safe command
     expect(result).toBe('pnpm run build')
     expect(result).not.toContain('pwned')
@@ -88,7 +88,7 @@ describe('detectBuildCommand', () => {
   it('package.json 파싱 실패 시 pnpm run build를 반환한다', async () => {
     mockAccess('package.json')
     fsMock.readFile.mockRejectedValueOnce(new Error('EACCES'))
-    const result = await detectBuildCommand('/project')
+    const result = await detectBuildCommand('/project', '/')
     expect(result).toBe('pnpm run build')
   })
 
@@ -96,7 +96,7 @@ describe('detectBuildCommand', () => {
 
   it('package.json도 없고 go.mod가 있으면 go build ./...를 반환한다', async () => {
     mockAccess('go.mod')
-    const result = await detectBuildCommand('/project')
+    const result = await detectBuildCommand('/project', '/')
     expect(result).toBe('go build ./...')
   })
 
@@ -104,7 +104,7 @@ describe('detectBuildCommand', () => {
 
   it('아무 파일도 없으면 오류를 던진다', async () => {
     fsMock.access.mockRejectedValue(new Error('ENOENT'))
-    await expect(detectBuildCommand('/project')).rejects.toThrow('빌드 명령을 감지할 수 없음')
+    await expect(detectBuildCommand('/project', '/')).rejects.toThrow('빌드 명령을 감지할 수 없음')
   })
 
   // --- fallback: walk up to workspaceRoot ---
@@ -136,7 +136,7 @@ describe('detectBuildInfo', () => {
 
   it('감지된 명령어와 buildRoot를 함께 반환한다', async () => {
     mockAccess('Cargo.toml')
-    const result = await detectBuildInfo('/project')
+    const result = await detectBuildInfo('/project', '/')
     expect(result.command).toBe('cargo build --release')
     expect(result.buildRoot).toBe(path.resolve('/project'))
   })
@@ -155,6 +155,10 @@ describe('detectBuildInfo', () => {
 
   it('아무 파일도 없으면 오류를 던진다', async () => {
     fsMock.access.mockRejectedValue(new Error('ENOENT'))
-    await expect(detectBuildInfo('/project')).rejects.toThrow('빌드 명령을 감지할 수 없음')
+    await expect(detectBuildInfo('/project', '/')).rejects.toThrow('빌드 명령을 감지할 수 없음')
+  })
+
+  it('workspaceRoot 외부 projectPath는 오류를 던진다', async () => {
+    await expect(detectBuildInfo('/etc/passwd', '/workspace')).rejects.toThrow('경로 거부')
   })
 })
