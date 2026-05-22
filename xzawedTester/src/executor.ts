@@ -34,7 +34,11 @@ export async function exec(
     const parts = command.trim().split(/\s+/)
     const bin = parts[0] ?? command.trim()
     const cmdArgs = parts.slice(1)
-    const proc = spawn(bin, cmdArgs, { cwd, shell: false })
+    const proc = spawn(bin, cmdArgs, {
+      cwd,
+      shell: false,
+      env: { ...process.env, COREPACK_ENABLE_STRICT: '0', COREPACK_ENABLE_AUTO_PIN: '0', COREPACK_ENABLE_NETWORK: '0' },
+    })
     let settled = false
 
     const settle = (fn: () => void) => {
