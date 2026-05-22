@@ -112,7 +112,7 @@ describe('filterBySeverity', () => {
   it('high includes only high and critical', () => {
     const result = filterBySeverity(issues, 'high')
     expect(result).toHaveLength(2)
-    expect(result.map((i) => i.id).sort()).toEqual(['cr', 'h'])
+    expect(result.map((i) => i.id).sort((a, b) => a.localeCompare(b))).toEqual(['cr', 'h'])
   })
 })
 
