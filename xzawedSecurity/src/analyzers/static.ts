@@ -3,6 +3,8 @@ import path from 'node:path'
 import type { SecurityIssue } from '../types.js'
 import { validatePath } from '../executor.js'
 
+const MAX_FILE_SIZE_BYTES = 1_048_576 // 1 MB
+
 interface StaticRule {
   id: string
   pattern: RegExp
@@ -16,7 +18,7 @@ interface StaticRule {
 const RULES: StaticRule[] = [
   {
     id: 'S001',
-    pattern: /password\s*[:=]\s*['"][^'"]{1,}/gi,
+    pattern: /password\s*[:=]\s*['"`][^'"`]{1,}/gi,
     severity: 'critical',
     category: 'exposure',
     description: '하드코딩된 패스워드',
@@ -61,22 +63,35 @@ const RULES: StaticRule[] = [
   },
 ]
 
+const CONCURRENCY_LIMIT = 5
+
 export async function analyzeFiles(
   filePaths: string[],
   workspaceRoot: string,
 ): Promise<SecurityIssue[]> {
-  const issues: SecurityIssue[] = []
-  for (const filePath of filePaths) {
-    const fileIssues = await analyzeFile(filePath, workspaceRoot)
-    issues.push(...fileIssues)
+  const results: SecurityIssue[][] = []
+  for (let i = 0; i < filePaths.length; i += CONCURRENCY_LIMIT) {
+    const batch = filePaths.slice(i, i + CONCURRENCY_LIMIT)
+    const batchResults = await Promise.all(batch.map((fp) => analyzeFile(fp, workspaceRoot)))
+    results.push(...batchResults)
   }
-  return issues
+  return results.flat()
 }
 
 async function analyzeFile(filePath: string, workspaceRoot: string): Promise<SecurityIssue[]> {
   let validPath: string
   try {
     validPath = await validatePath(filePath, workspaceRoot)
+  } catch {
+    return []
+  }
+
+  try {
+    const stat = await fs.stat(validPath)
+    if (stat.size > MAX_FILE_SIZE_BYTES) {
+      console.warn(`[static] skipping oversized file (${stat.size} bytes): ${validPath}`)
+      return []
+    }
   } catch {
     return []
   }

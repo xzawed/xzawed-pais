@@ -1,7 +1,7 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
 vi.mock('node:fs/promises', () => ({
-  default: { readFile: vi.fn() },
+  default: { readFile: vi.fn(), stat: vi.fn() },
 }))
 
 vi.mock('../executor.js', () => ({
@@ -13,11 +13,14 @@ import { validatePath } from '../executor.js'
 import { analyzeFiles } from './static.js'
 
 const mockReadFile = vi.mocked(fs.readFile)
+const mockStat = vi.mocked(fs.stat)
 const mockValidatePath = vi.mocked(validatePath)
 
 beforeEach(() => {
   vi.clearAllMocks()
   mockValidatePath.mockImplementation((p: string) => Promise.resolve(p))
+  // default: small file, within size limit
+  mockStat.mockResolvedValue({ size: 100 } as never)
 })
 
 describe('analyzeFiles', () => {
