@@ -41,12 +41,12 @@ const UserContextSchema = z.object({
 })
 
 export const ManagerToPlannerMessageSchema = z.object({
-  sessionId: z.string(),
+  sessionId: z.string().uuid(),
   messageId: z.string(),
   timestamp: z.number(),
   type: z.enum(['plan_request', 'abort']),
   payload: z.object({
-    intent: z.string(),
+    intent: z.string().min(1).max(4000),
     context: z.record(z.unknown()),
     priority: z.enum(['normal', 'high']),
     userContext: UserContextSchema.optional(),

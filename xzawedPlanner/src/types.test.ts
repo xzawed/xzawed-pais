@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { ManagerToPlannerMessageSchema } from './types.js'
 
 const validPlanRequest = {
-  sessionId: 'sess-1',
+  sessionId: '00000000-0000-0000-0000-000000000001',
   messageId: 'msg-1',
   timestamp: 1000,
   type: 'plan_request',
