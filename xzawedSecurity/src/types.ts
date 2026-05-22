@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { z } from 'zod'
 
 export interface SecurityIssue {
@@ -37,7 +38,12 @@ export const ManagerToSecurityMessageSchema = z.object({
   timestamp: z.number(),
   type: z.enum(['audit_request', 'abort']),
   payload: z.object({
-    artifacts: z.array(z.string()),
+    artifacts: z.array(
+      z.string().refine(
+        (s) => !path.isAbsolute(s) && !s.includes('..'),
+        { message: 'artifacts must be relative paths without path traversal' },
+      ),
+    ),
     projectPath: z.string(),
     severity: z.enum(['low', 'medium', 'high']),
     context: z.record(z.unknown()),

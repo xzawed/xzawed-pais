@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { promisify } from 'node:util'
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -18,15 +18,18 @@ interface NpmAuditOutput {
   vulnerabilities?: Record<string, NpmAuditVuln>
 }
 
-async function hasCommand(cmd: string): Promise<boolean> {
+function resolveNpmPath(): string | null {
   const whichCmd = process.platform === 'win32' ? 'where' : 'which'
   try {
-    await execFileAsync(whichCmd, [cmd], { timeout: 5_000 })
-    return true
+    const result = execFileSync(whichCmd, ['npm'], { encoding: 'utf-8', timeout: 5_000 })
+    const firstLine = result.trim().split(/\r?\n/)[0] ?? ''
+    return firstLine.length > 0 ? firstLine : null
   } catch {
-    return false
+    return null
   }
 }
+
+const NPM_PATH = resolveNpmPath()
 
 function mapSeverity(s: string): SecurityIssue['severity'] {
   if (s === 'critical') return 'critical'
@@ -47,8 +50,7 @@ export async function auditDeps(
     return []
   }
 
-  const npmAvailable = await hasCommand('npm')
-  if (!npmAvailable) {
+  if (NPM_PATH === null) {
     console.warn('[deps] npm not found — dependency audit skipped')
     return []
   }
@@ -56,7 +58,7 @@ export async function auditDeps(
   let stdout = ''
   try {
     const result = await execFileAsync(
-      'npm',
+      NPM_PATH,
       ['audit', '--json', '--audit-level=none'],
       { cwd: validPath, timeout: AUDIT_TIMEOUT_MS }
     )
