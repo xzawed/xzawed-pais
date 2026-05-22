@@ -2,6 +2,9 @@ import { vi, describe, it, expect } from 'vitest'
 import { Producer } from './producer.js'
 import type { PlannerToManagerMessage } from '../types.js'
 
+const SESSION_A = '00000000-0000-0000-0000-000000000001'
+const SESSION_B = '00000000-0000-0000-0000-000000000002'
+
 function makeRedis() {
   return { xadd: vi.fn().mockResolvedValue('1-0') }
 }
@@ -22,9 +25,9 @@ describe('Producer', () => {
   it('plan_complete를 올바른 스트림에 발행한다', async () => {
     const redis = makeRedis()
     const producer = new Producer(redis as any)
-    await producer.publish('sess-1', planComplete('sess-1'))
+    await producer.publish(SESSION_A, planComplete(SESSION_A))
     expect(redis.xadd).toHaveBeenCalledWith(
-      'planner:to-manager:sess-1',
+      `planner:to-manager:${SESSION_A}`,
       '*',
       'data',
       expect.stringContaining('"type":"plan_complete"')
@@ -34,9 +37,9 @@ describe('Producer', () => {
   it('sessionId가 다르면 다른 스트림에 발행한다', async () => {
     const redis = makeRedis()
     const producer = new Producer(redis as any)
-    await producer.publish('sess-2', planComplete('sess-2'))
+    await producer.publish(SESSION_B, planComplete(SESSION_B))
     expect(redis.xadd).toHaveBeenCalledWith(
-      'planner:to-manager:sess-2',
+      `planner:to-manager:${SESSION_B}`,
       '*',
       'data',
       expect.any(String)
@@ -47,7 +50,7 @@ describe('Producer', () => {
     const redis = makeRedis()
     const producer = new Producer(redis as any)
     const msg: PlannerToManagerMessage = {
-      sessionId: 'sess-1',
+      sessionId: SESSION_A,
       messageId: 'msg-2',
       timestamp: 2000,
       type: 'info_request',
@@ -56,12 +59,19 @@ describe('Producer', () => {
         uiSpec: { type: 'form', fields: [] },
       },
     }
-    await producer.publish('sess-1', msg)
+    await producer.publish(SESSION_A, msg)
     expect(redis.xadd).toHaveBeenCalledWith(
-      'planner:to-manager:sess-1',
+      `planner:to-manager:${SESSION_A}`,
       '*',
       'data',
       expect.stringContaining('"type":"info_request"')
     )
+  })
+
+  it('비 UUID sessionId는 오류를 던진다', async () => {
+    const redis = makeRedis()
+    const producer = new Producer(redis as any)
+    await expect(producer.publish('invalid-session', planComplete('invalid-session'))).rejects.toThrow()
+    expect(redis.xadd).not.toHaveBeenCalled()
   })
 })

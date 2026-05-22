@@ -41,12 +41,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pluginToggle:    (id: string): Promise<void> => ipcRenderer.invoke('plugin:toggle', id),
   pluginUninstall: (id: string): Promise<void> => ipcRenderer.invoke('plugin:uninstall', id),
 
-  // Auth token (safeStorage)
-  // NOTE: tokenGet and refreshTokenGet are intentionally absent — raw tokens must
-  // not be read back into the renderer. Use authRestore for session recovery.
+  // Auth token (safeStorage — write-only from renderer; token:get/refresh-token:get removed for security)
   tokenSet:          (token: string): Promise<void> => ipcRenderer.invoke('token:set', token),
   tokenClear:        (): Promise<void> => ipcRenderer.invoke('token:clear'),
   refreshTokenSet:   (token: string): Promise<void> => ipcRenderer.invoke('refresh-token:set', token),
-  authRestore: (serverUrl: string): Promise<{ user: { id: string; email: string; displayName?: string }; accessToken: string } | null> =>
+
+  // Auth restore proxy: main reads stored token, calls server, returns user+accessToken
+  authRestore:       (serverUrl: string): Promise<{ user: { id: string; email: string; displayName?: string } | null; accessToken?: string }> =>
     ipcRenderer.invoke('auth:restore', serverUrl),
 })

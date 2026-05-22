@@ -27,12 +27,11 @@ interface ElectronAPI {
   pluginInstall(pkg: string, type: 'claude-code' | 'xzawed'): Promise<void>
   pluginToggle(id: string): Promise<void>
   pluginUninstall(id: string): Promise<void>
-  // Auth token
-  // NOTE: tokenGet and refreshTokenGet are intentionally absent — use authRestore.
+  // Auth token (write-only from renderer; raw token reads are proxied through auth:restore)
   tokenSet(token: string): Promise<void>
   tokenClear(): Promise<void>
   refreshTokenSet(token: string): Promise<void>
-  authRestore(serverUrl: string): Promise<{ user: { id: string; email: string; displayName?: string }; accessToken: string } | null>
+  authRestore(serverUrl: string): Promise<{ user: { id: string; email: string; displayName?: string } | null; accessToken?: string }>
 }
 
 declare global {

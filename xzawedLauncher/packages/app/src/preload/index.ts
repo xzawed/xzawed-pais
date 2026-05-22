@@ -42,12 +42,14 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   getServicesStatus: (): Promise<ServiceState[]> =>
     ipcRenderer.invoke('services:get-status'),
   onServicesUpdate: (cb: (states: ServiceState[]) => void) => {
-    ipcRenderer.on('services:update', (_e, states) => cb(states))
-    return (): void => { ipcRenderer.removeAllListeners('services:update') }
+    const listener = (_e: Electron.IpcRendererEvent, states: ServiceState[]): void => cb(states)
+    ipcRenderer.on('services:update', listener)
+    return (): void => { ipcRenderer.removeListener('services:update', listener) }
   },
   onLogLine: (cb: (line: string) => void) => {
-    ipcRenderer.on('services:log', (_e, line) => cb(line))
-    return (): void => { ipcRenderer.removeAllListeners('services:log') }
+    const listener = (_e: Electron.IpcRendererEvent, line: string): void => cb(line)
+    ipcRenderer.on('services:log', listener)
+    return (): void => { ipcRenderer.removeListener('services:log', listener) }
   },
 
   // Updater
@@ -56,8 +58,9 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   installUpdate: (): Promise<void> =>
     ipcRenderer.invoke('updater:install'),
   onUpdateAvailable: (cb: (info: { version: string; releaseNotes: string }) => void) => {
-    ipcRenderer.on('updater:available', (_e, info) => cb(info))
-    return (): void => { ipcRenderer.removeAllListeners('updater:available') }
+    const listener = (_e: Electron.IpcRendererEvent, info: { version: string; releaseNotes: string }): void => cb(info)
+    ipcRenderer.on('updater:available', listener)
+    return (): void => { ipcRenderer.removeListener('updater:available', listener) }
   },
 
   // Token (safeStorage)

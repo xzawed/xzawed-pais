@@ -26,5 +26,14 @@ export async function applyChange(change: FileChange, workspaceRoot: string): Pr
   }
 
   await fs.mkdir(path.dirname(validated), { recursive: true })
-  await fs.writeFile(validated, change.content ?? '', 'utf-8')
+  // Atomic write: write to a temp file then rename to avoid partial writes on crash.
+  const tmpPath = `${validated}.tmp.${Date.now()}`
+  try {
+    await fs.writeFile(tmpPath, change.content ?? '', 'utf-8')
+    await fs.rename(tmpPath, validated)
+  } catch (err) {
+    // Best-effort cleanup of the temp file; ignore cleanup errors.
+    await fs.unlink(tmpPath).catch(() => undefined)
+    throw err
+  }
 }

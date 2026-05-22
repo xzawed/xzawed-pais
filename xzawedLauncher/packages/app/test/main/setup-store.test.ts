@@ -3,6 +3,10 @@ import fs from 'node:fs'
 
 vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp/xzawed-launcher-test') }, // NOSONAR
+  safeStorage: {
+    encryptString: vi.fn((s: string) => Buffer.from(`enc:${s}`)),
+    decryptString: vi.fn((b: Buffer) => b.toString().replace(/^enc:/, '')),
+  },
 }))
 
 let setupStore: typeof import('../../src/main/setup-store.js')

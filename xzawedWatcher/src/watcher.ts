@@ -34,6 +34,11 @@ export class Watcher {
     }
 
     try {
+      // Check capacity BEFORE creating the chokidar instance (prevents MAX_WATCHERS race)
+      if (this.store.size >= this.config.maxWatchers) {
+        throw new Error(`최대 감시자 수(${this.config.maxWatchers}개) 초과`)
+      }
+
       const validPath = await validatePath(payload.projectPath, this.config.workspaceRoot)
       const debounceMs = payload.debounceMs ?? this.config.debounceMs
       const watcherId = crypto.randomUUID()

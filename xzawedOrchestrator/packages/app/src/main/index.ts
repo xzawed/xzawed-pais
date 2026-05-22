@@ -83,9 +83,16 @@ function createWindow(): void {
 // ── Settings ─────────────────────────────────────────────────────────
 ipcMain.handle('settings:get', (): AppSettings => readSettings())
 ipcMain.handle('settings:set', (_e, settings: AppSettings): void => {
-  const parsed = new URL(settings.serverUrl)
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`Unsupported serverUrl protocol: ${parsed.protocol}`)
+  if (settings.serverUrl !== undefined && settings.serverUrl !== '') {
+    let parsed: URL
+    try {
+      parsed = new URL(settings.serverUrl)
+    } catch {
+      throw new Error(`Invalid serverUrl: ${settings.serverUrl}`)
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error(`serverUrl must use http or https scheme: ${settings.serverUrl}`)
+    }
   }
   writeSettings(settings)
 })
@@ -135,45 +142,54 @@ ipcMain.handle('token:set', (_e, token: string): void => writeToken(token))
 ipcMain.handle('token:clear', (): void => clearTokenFiles())
 ipcMain.handle('refresh-token:set', (_e, token: string): void => writeRefreshToken(token))
 
-// auth:restore — main-process proxy: reads stored tokens, calls /auth/me (or
-// /auth/refresh on 401), stores the new tokens, and returns {user, accessToken}
+// ── Auth restore (proxy — token stays in main process) ────────────────
+// auth:restore — main-process proxy: validates serverUrl (SSRF), reads stored tokens,
+// calls /auth/me (or /auth/refresh on 401), stores new tokens, returns {user, accessToken}
 // so the renderer never touches the raw token value.
-ipcMain.handle('auth:restore', async (_e, serverUrl: string): Promise<{ user: { id: string; email: string; displayName?: string }; accessToken: string } | null> => {
-  const parsed = new URL(serverUrl)
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`Unsupported serverUrl protocol: ${parsed.protocol}`)
-  }
+ipcMain.handle('auth:restore', async (_e, serverUrl: string) => {
+  // Validate serverUrl to prevent SSRF
+  try {
+    const u = new URL(serverUrl)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return { user: null }
+  } catch { return { user: null } }
   const token = readToken()
-  if (!token) return null
-  const meRes = await fetch(`${serverUrl}/auth/me`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (meRes.ok) {
-    const { user } = (await meRes.json()) as { user: { id: string; email: string; displayName?: string } }
-    return { user, accessToken: token }
-  }
-  if (meRes.status === 401) {
-    const refreshToken = readRefreshToken()
-    if (!refreshToken) { clearTokenFiles(); return null }
-    const refreshRes = await fetch(`${serverUrl}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
+  if (!token) return { user: null }
+  try {
+    const res = await fetch(`${serverUrl}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
     })
-    if (!refreshRes.ok) { clearTokenFiles(); return null }
-    const { accessToken: newAt, refreshToken: newRt } =
-      (await refreshRes.json()) as { accessToken: string; refreshToken: string }
-    writeToken(newAt)
-    writeRefreshToken(newRt)
-    const meRes2 = await fetch(`${serverUrl}/auth/me`, {
-      headers: { Authorization: `Bearer ${newAt}` },
-    })
-    if (!meRes2.ok) { clearTokenFiles(); return null }
-    const { user } = (await meRes2.json()) as { user: { id: string; email: string; displayName?: string } }
-    return { user, accessToken: newAt }
+    if (res.ok) {
+      const { user } = (await res.json()) as { user: { id: string; email: string; displayName?: string } }
+      return { user, accessToken: token }
+    }
+    if (res.status === 401) {
+      const refreshToken = readRefreshToken()
+      if (!refreshToken) { clearTokenFiles(); return { user: null } }
+      const refreshRes = await fetch(`${serverUrl}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      })
+      if (!refreshRes.ok) { clearTokenFiles(); return { user: null } }
+      const { accessToken: newAt, refreshToken: newRt } =
+        (await refreshRes.json()) as { accessToken: string; refreshToken: string }
+      writeToken(newAt)
+      writeRefreshToken(newRt)
+      const meRes = await fetch(`${serverUrl}/auth/me`, {
+        headers: { Authorization: `Bearer ${newAt}` },
+      })
+      if (meRes.ok) {
+        const { user } = (await meRes.json()) as { user: { id: string; email: string; displayName?: string } }
+        return { user, accessToken: newAt }
+      }
+      clearTokenFiles()
+      return { user: null }
+    }
+    clearTokenFiles()
+    return { user: null }
+  } catch {
+    return { user: null }
   }
-  clearTokenFiles()
-  return null
 })
 
 // ── MCP ──────────────────────────────────────────────────────────────

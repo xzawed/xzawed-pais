@@ -1,6 +1,8 @@
 const TOKEN_KEY = 'access_token'
 const REFRESH_TOKEN_KEY = 'refresh_token'
 
+// tokenGet and refreshTokenGet are intentionally omitted: raw tokens must not be read
+// back to the renderer in Electron. Use auth:restore IPC for session restoration.
 type TokenAPI = {
   // NOTE: tokenGet and refreshTokenGet are intentionally absent — raw tokens
   // must never be read back into the renderer. Use authRestore for session recovery.

@@ -2,6 +2,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import type { Step, UISpec } from '../types.js'
 
+const API_TIMEOUT_MS = 30_000
+
 const StepSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1).max(200),
@@ -68,15 +70,20 @@ export class ClaudeRunner {
     priority: 'normal' | 'high'
   ): Promise<{ steps: Step[]; estimatedTime: string } | ClarificationNeeded> {
     try {
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: 2048,
-        system: SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: `Intent: ${intent}\nPriority: ${priority}\nContext: ${JSON.stringify(context, null, 2)}`,
-        }],
-      })
+      const response = await Promise.race([
+        this.client.messages.create({
+          model: this.model,
+          max_tokens: 2048,
+          system: SYSTEM_PROMPT,
+          messages: [{
+            role: 'user',
+            content: `Intent: ${intent}\nPriority: ${priority}\nContext: ${JSON.stringify(context, null, 2)}`,
+          }],
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
+        ),
+      ])
 
       const text = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -87,7 +94,14 @@ export class ClaudeRunner {
       const end = text.lastIndexOf('}')
       if (start === -1 || end === -1) return this.fallback(intent)
 
-      const parsed = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>
+      let parsed: Record<string, unknown>
+      try {
+        const raw: unknown = JSON.parse(text.slice(start, end + 1))
+        if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return this.fallback(intent)
+        parsed = raw as Record<string, unknown>
+      } catch {
+        return this.fallback(intent)
+      }
 
       if (parsed.clarification_needed === true) {
         const ClarificationFieldSchema = z.object({
