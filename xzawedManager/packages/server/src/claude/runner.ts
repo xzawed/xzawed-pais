@@ -77,10 +77,11 @@ export class ClaudeRunner {
     const result = await handler.execute(block.input, sessionId, userContext)
     await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
 
+    const resultStr = JSON.stringify(result)
     return {
       type: 'tool_result',
       tool_use_id: block.id,
-      content: JSON.stringify(result),
+      content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
     }
   }
 
@@ -126,8 +127,8 @@ export class ClaudeRunner {
 
       const response = await this.client.messages.create({
         model: this.model,
-        max_tokens: 8192,
-        system: 'You are xzawedManager, a project orchestration agent. Use the available tools to fulfill the task request.',
+        max_tokens: 16384,
+        system: 'You are xzawedManager, a project orchestration agent. Use the available tools to fulfill the task request. Keep your responses concise — always prefer calling a tool over writing lengthy analysis.',
         messages,
         tools,
       })
