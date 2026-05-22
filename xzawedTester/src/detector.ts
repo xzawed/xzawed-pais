@@ -37,28 +37,28 @@ export function parseTestCounts(output: string): { passed: number; failed: numbe
   let passed = 0
   let failed = 0
 
+  // Jest: "Tests: 3 failed, 42 passed" — must match before generic pattern
+  // because Jest also outputs "Test Suites: 1 passed" which generic regex matches first
+  const jestMatch = output.match(/^Tests:\s+(?:(\d+)\s+failed,\s*)?(\d+)\s+passed/m)
+  if (jestMatch) {
+    return {
+      failed: jestMatch[1] ? Number.parseInt(jestMatch[1], 10) : 0,
+      passed: jestMatch[2] ? Number.parseInt(jestMatch[2], 10) : 0,
+    }
+  }
+
   // Vitest: "42 passed" / "3 failed"
   const vitestPassed = output.match(/(\d+)\s+passed/)
   const vitestFailed = output.match(/(\d+)\s+failed/)
   if (vitestPassed) passed = Number.parseInt(vitestPassed[1] ?? '0', 10)
   if (vitestFailed) failed = Number.parseInt(vitestFailed[1] ?? '0', 10)
-
-  // Jest: "Tests: 3 failed, 42 passed"
-  if (passed === 0 && failed === 0) {
-    const jestMatch = output.match(/Tests:\s+(?:(\d+)\s+failed,\s*)?(\d+)\s+passed/)
-    if (jestMatch) {
-      failed = jestMatch[1] ? Number.parseInt(jestMatch[1], 10) : 0
-      passed = jestMatch[2] ? Number.parseInt(jestMatch[2], 10) : 0
-    }
-  }
+  if (passed > 0 || failed > 0) return { passed, failed }
 
   // cargo test: "42 passed; 3 failed"
-  if (passed === 0 && failed === 0) {
-    const cargoMatch = output.match(/(\d+)\s+passed;\s*(\d+)\s+failed/)
-    if (cargoMatch) {
-      passed = Number.parseInt(cargoMatch[1] ?? '0', 10)
-      failed = Number.parseInt(cargoMatch[2] ?? '0', 10)
-    }
+  const cargoMatch = output.match(/(\d+)\s+passed;\s*(\d+)\s+failed/)
+  if (cargoMatch) {
+    passed = Number.parseInt(cargoMatch[1] ?? '0', 10)
+    failed = Number.parseInt(cargoMatch[2] ?? '0', 10)
   }
 
   return { passed, failed }

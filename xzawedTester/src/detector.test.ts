@@ -78,6 +78,13 @@ describe('parseTestCounts', () => {
     expect(failed).toBe(3)
   })
 
+  it('parses jest output with Test Suites line (counts tests not suites)', () => {
+    const output = 'Test Suites: 1 passed, 1 total\nTests: 26 passed, 26 total'
+    const { passed, failed } = parseTestCounts(output)
+    expect(passed).toBe(26)
+    expect(failed).toBe(0)
+  })
+
   it('returns 0/0 for unrecognized output', () => {
     const { passed, failed } = parseTestCounts('no test info here')
     expect(passed).toBe(0)
