@@ -50,13 +50,23 @@ describe('Builder', () => {
     fsMock.access.mockRejectedValue(new Error('ENOENT'))
   })
 
+  const getMsg = (type: string) =>
+    producer.publish.mock.calls.find(([, msg]) => msg.type === type)?.[1]
+
+  const expectError = (substring: string) => {
+    const msg = getMsg('error')
+    expect(msg).toBeDefined()
+    expect(msg!.payload.content).toContain(substring)
+  }
+
+  const getCompleteMsg = () => getMsg('build_complete')
+
   it('성공 빌드 시 build_complete(success:true)를 발행한다', async () => {
     await builder.handle(buildRequest())
-    const calls = producer.publish.mock.calls
-    const completeCall = calls.find(([, msg]) => msg.type === 'build_complete')
-    expect(completeCall).toBeDefined()
-    expect(completeCall![1].payload.success).toBe(true)
-    expect(completeCall![1].payload.errors).toHaveLength(0)
+    const completeMsg = getCompleteMsg()
+    expect(completeMsg).toBeDefined()
+    expect(completeMsg!.payload.success).toBe(true)
+    expect(completeMsg!.payload.errors).toHaveLength(0)
   })
 
   it('실패 빌드 시 Claude를 호출하고 build_complete(success:false)를 발행한다', async () => {
@@ -65,10 +75,9 @@ describe('Builder', () => {
 
     await builder.handle(buildRequest())
     expect(runner.analyzeBuildFailure).toHaveBeenCalledWith('Error: ...')
-    const calls = producer.publish.mock.calls
-    const completeCall = calls.find(([, msg]) => msg.type === 'build_complete')
-    expect(completeCall![1].payload.success).toBe(false)
-    expect(completeCall![1].payload.errors).toHaveLength(1)
+    const completeMsg = getCompleteMsg()
+    expect(completeMsg!.payload.success).toBe(false)
+    expect(completeMsg!.payload.errors).toHaveLength(1)
   })
 
   it('커스텀 command가 있으면 detectBuildInfo를 호출하지 않는다', async () => {
@@ -80,10 +89,7 @@ describe('Builder', () => {
   it('경로 검증 실패 시 error 메시지를 발행한다', async () => {
     executorMock.validatePath.mockRejectedValue(new Error('경로 거부: /etc/passwd'))
     await builder.handle(buildRequest({ projectPath: '/etc/passwd' }))
-    const calls = producer.publish.mock.calls
-    const errorCall = calls.find(([, msg]) => msg.type === 'error')
-    expect(errorCall).toBeDefined()
-    expect(errorCall![1].payload.content).toContain('경로 거부')
+    expectError('경로 거부')
   })
 
   it('abort 메시지는 무시한다', async () => {
@@ -97,22 +103,26 @@ describe('Builder', () => {
 
   it('허용되지 않은 커스텀 command는 error 메시지를 발행한다', async () => {
     await builder.handle(buildRequest({ command: 'rm -rf /' }))
-    const calls = producer.publish.mock.calls
-    const errorCall = calls.find(([, msg]) => msg.type === 'error')
-    expect(errorCall).toBeDefined()
-    expect(errorCall![1].payload.content).toContain('Build command not allowed')
+    expectError('Build command not allowed')
+  })
+
+  it('make 단독 prefix는 허용되지 않는다 (make build만 허용)', async () => {
+    await builder.handle(buildRequest({ command: 'make evil-target' }))
+    expectError('Build command not allowed')
   })
 
   it('shell 메타문자가 포함된 command는 error 메시지를 발행한다', async () => {
     await builder.handle(buildRequest({ command: 'pnpm build; rm -rf /' }))
-    const calls = producer.publish.mock.calls
-    const errorCall = calls.find(([, msg]) => msg.type === 'error')
-    expect(errorCall).toBeDefined()
-    expect(errorCall![1].payload.content).toContain('Shell metacharacters')
+    expectError('Shell metacharacters')
   })
 
   it('detectBuildInfo가 반환한 buildRoot에서 exec를 실행한다', async () => {
     detectorMock.detectBuildInfo.mockResolvedValue({ command: 'pnpm run build', buildRoot: '/workspace' })
+    // validatePath is called for both projectPath and detected buildRoot — return validated path each time
+    executorMock.validatePath
+      .mockResolvedValueOnce('/workspace/sub') // for projectPath
+      .mockResolvedValueOnce('/workspace')     // for detected.buildRoot
+      .mockResolvedValueOnce('/workspace')     // defence-in-depth before runPreInstall
     await builder.handle(buildRequest({ projectPath: '/workspace/sub' }))
     expect(executorMock.exec).toHaveBeenCalledWith('pnpm run build', '/workspace', expect.any(Function), 5000)
   })

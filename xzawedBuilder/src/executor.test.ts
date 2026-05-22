@@ -42,6 +42,15 @@ describe('validatePath', () => {
     fsMock.realpath.mockImplementation(async (p) => String(p))
     await expect(validatePath('/workspace-evil/project', '/workspace')).rejects.toThrow('경로 거부')
   })
+
+  it('존재하지 않는 경로(realpath 실패)는 path.resolve 폴백 없이 오류를 던진다', async () => {
+    // projectPath realpath fails → must throw, not silently resolve
+    fsMock.realpath.mockImplementation(async (p) => {
+      if (String(p).includes('nonexistent')) throw new Error('ENOENT')
+      return String(p)
+    })
+    await expect(validatePath('/workspace/nonexistent', '/workspace')).rejects.toThrow('경로 거부')
+  })
 })
 
 describe('exec', () => {
@@ -65,7 +74,7 @@ describe('exec', () => {
     expect(result.output).toContain('Error: type mismatch')
   })
 
-  it('타임아웃 초과 시 reject한다', async () => {
+  it('타임아웃 초과 시 reject하고 SIGTERM을 보낸다', async () => {
     const proc = new EventEmitter() as any
     proc.stdout = new EventEmitter()
     proc.stderr = new EventEmitter()
@@ -75,5 +84,35 @@ describe('exec', () => {
 
     await expect(exec('sleep 100', '/project', () => {}, 50)).rejects.toThrow('빌드 타임아웃')
     expect(proc.kill).toHaveBeenCalledWith('SIGTERM')
+  })
+
+  it('타임아웃 후 프로세스가 종료되면 SIGKILL 타이머를 취소한다', async () => {
+    vi.useFakeTimers()
+    const proc = new EventEmitter() as any
+    proc.stdout = new EventEmitter()
+    proc.stderr = new EventEmitter()
+    proc.kill = vi.fn()
+    spawnMock.mockReturnValueOnce(proc as any)
+
+    const promise = exec('sleep 100', '/project', () => {}, 100)
+    vi.advanceTimersByTime(100) // trigger timeout → SIGTERM
+    proc.emit('close', 0) // process exits after SIGTERM
+    await expect(promise).rejects.toThrow('빌드 타임아웃')
+    expect(proc.kill).toHaveBeenCalledWith('SIGTERM')
+    expect(proc.kill).not.toHaveBeenCalledWith('SIGKILL')
+    vi.useRealTimers()
+  })
+
+  it('빈 명령어는 Promise 외부에서 즉시 오류를 던진다', async () => {
+    await expect(exec('', '/project', () => {}, 5000)).rejects.toThrow('Empty command')
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('출력이 최대 크기를 초과하면 잘린다', async () => {
+    const bigChunk = 'x'.repeat(11 * 1024 * 1024) // 11 MiB > 10 MiB limit
+    spawnMock.mockReturnValueOnce(makeMockProc(0, bigChunk) as any)
+    const result = await exec('pnpm build', '/project', () => {}, 5000)
+    expect(result.output).toContain('잘렸습니다')
+    expect(Buffer.byteLength(result.output)).toBeLessThan(12 * 1024 * 1024)
   })
 })

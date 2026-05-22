@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { detectBuildInfo } from './detector.js'
 import { exec, validatePath } from './executor.js'
@@ -9,7 +10,7 @@ import type { Config } from './config.js'
 
 const ALLOWED_PREFIXES = [
   'pnpm', 'npm', 'npx', 'yarn',
-  'cargo build', 'make', 'cmake',
+  'cargo build', 'make build', 'cmake',
   'gradle', 'mvn', 'go build',
   'tsc', 'webpack', 'vite build',
 ]
@@ -51,10 +52,13 @@ export class Builder {
       } else {
         const detected = await detectBuildInfo(validatedPath, this.config.workspaceRoot)
         buildCmd = detected.command
-        buildRoot = detected.buildRoot
+        // Validate the detected buildRoot to prevent directory-traversal via detector
+        buildRoot = await validatePath(detected.buildRoot, this.config.workspaceRoot)
       }
 
       await this.stripPackageManagerField(buildRoot)
+      // Validate buildRoot again as the cwd before pre-install (defence-in-depth)
+      await validatePath(buildRoot, this.config.workspaceRoot)
       await this.runPreInstall(buildRoot, sessionId)
 
       const { success, output, duration } = await exec(
@@ -99,7 +103,14 @@ export class Builder {
       const pkg = JSON.parse(content) as Record<string, unknown>
       if ('packageManager' in pkg) {
         delete pkg.packageManager
-        await fs.writeFile(pkgPath, JSON.stringify(pkg, null, 2), 'utf-8')
+        const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'xzawed-builder-'))
+        const tmpPath = path.join(tmpDir, 'package.json')
+        try {
+          await fs.writeFile(tmpPath, JSON.stringify(pkg, null, 2), 'utf-8')
+          await fs.rename(tmpPath, pkgPath)
+        } finally {
+          await fs.rm(tmpDir, { recursive: true, force: true })
+        }
       }
     } catch {
       // package.json 없거나 파싱 불가: 무시
