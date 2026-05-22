@@ -2,7 +2,7 @@ import type { Pool } from 'pg'
 import type { SessionState } from '../sessions/session.store.js'
 
 export class SessionRepo {
-  constructor(private pool: Pool) {}
+  constructor(private readonly pool: Pool) {}
 
   async insert(sessionId: string): Promise<void> {
     await this.pool.query(

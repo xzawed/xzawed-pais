@@ -3,7 +3,7 @@ import type { ToolHandler } from './handler.interface.js'
 
 export class ToolRegistry {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private handlers = new Map<string, ToolHandler<any, any>>()
+  private readonly handlers = new Map<string, ToolHandler<any, any>>()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   register(handler: ToolHandler<any, any>): void {
