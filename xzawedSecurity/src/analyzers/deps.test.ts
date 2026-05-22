@@ -1,6 +1,9 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
-vi.mock('node:child_process', () => ({ execFile: vi.fn() }))
+vi.mock('node:child_process', () => ({
+  execFile: vi.fn(),
+  execFileSync: vi.fn().mockReturnValue('/usr/bin/npm\n'),
+}))
 
 vi.mock('node:fs/promises', () => ({
   default: { access: vi.fn() },
@@ -44,7 +47,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mockValidatePath.mockImplementation((p: string) => Promise.resolve(p))
   mockAccess.mockResolvedValue(undefined as never)
-  // default: npm where/which check succeeds
+  // default: npm audit succeeds with empty output
   mockExecFile.mockImplementation(cbSuccess() as never)
 })
 
@@ -66,9 +69,7 @@ describe('auditDeps', () => {
   })
 
   it('parses npm audit JSON output into SecurityIssue[]', async () => {
-    mockExecFile
-      .mockImplementationOnce(cbSuccess() as never)
-      .mockImplementationOnce(cbSuccess(npmAuditOutput) as never)
+    mockExecFile.mockImplementationOnce(cbSuccess(npmAuditOutput) as never)
 
     const result = await auditDeps('/workspace/app', '/workspace')
     expect(result).toHaveLength(2)
@@ -78,13 +79,11 @@ describe('auditDeps', () => {
   })
 
   it('reads stdout from error object when npm audit exits non-zero', async () => {
-    mockExecFile
-      .mockImplementationOnce(cbSuccess() as never)
-      .mockImplementationOnce(
-        ((_c: unknown, _a: unknown, _o: unknown, cb: (err: { stdout: string }) => void) => {
-          cb({ stdout: npmAuditOutput })
-        }) as never,
-      )
+    mockExecFile.mockImplementationOnce(
+      ((_c: unknown, _a: unknown, _o: unknown, cb: (err: { stdout: string }) => void) => {
+        cb({ stdout: npmAuditOutput })
+      }) as never,
+    )
 
     const result = await auditDeps('/workspace/app', '/workspace')
     expect(result).toHaveLength(2)
@@ -100,18 +99,14 @@ describe('auditDeps', () => {
         },
       },
     })
-    mockExecFile
-      .mockImplementationOnce(cbSuccess() as never)
-      .mockImplementationOnce(cbSuccess(output) as never)
+    mockExecFile.mockImplementationOnce(cbSuccess(output) as never)
 
     const result = await auditDeps('/workspace/app', '/workspace')
     expect(result[0]?.severity).toBe('medium')
   })
 
   it('returns [] when npm audit returns invalid JSON', async () => {
-    mockExecFile
-      .mockImplementationOnce(cbSuccess() as never)
-      .mockImplementationOnce(cbSuccess('not json') as never)
+    mockExecFile.mockImplementationOnce(cbSuccess('not json') as never)
 
     const result = await auditDeps('/workspace/app', '/workspace')
     expect(result).toEqual([])
