@@ -20,47 +20,50 @@ export class BaseConsumer<TMessage> {
 
   async start(sessionId: string): Promise<void> {
     const stream = `${this.streamPrefix}:${sessionId}`
-
-    try {
-      await this.redis.xgroup('CREATE', stream, this.consumerGroup, '$', 'MKSTREAM')
-    } catch (e: unknown) {
-      if (!(e instanceof Error && e.message.includes('BUSYGROUP'))) throw e
-    }
+    await this.ensureGroup(stream)
 
     this.running = true
     let retryDelay = INITIAL_RETRY_DELAY_MS
 
     while (this.running) {
-      try {
-        const results = await this.redis.xreadgroup(
-          'GROUP', this.consumerGroup, this.consumerName,
-          'COUNT', '1', 'BLOCK', '1000',
-          'STREAMS', stream, '>',
-        ) as unknown as [string, [string, string[]][]][] | null
-
-        retryDelay = INITIAL_RETRY_DELAY_MS
-        if (results && results.length > 0) {
-          await this.processMessages(stream, results[0][1])
-        }
-      } catch (e: unknown) {
-        if (!this.running) return
-        // Re-create consumer group if the stream/group was lost (e.g., Redis restart/flush).
-        if (e instanceof Error && e.message.includes('NOGROUP')) {
-          try {
-            await this.redis.xgroup('CREATE', stream, this.consumerGroup, '$', 'MKSTREAM')
-          } catch (createErr: unknown) {
-            if (!(createErr instanceof Error && createErr.message.includes('BUSYGROUP'))) {
-              console.error('[Consumer] failed to re-create group:', createErr)
-            }
-          }
-          retryDelay = INITIAL_RETRY_DELAY_MS
-          continue
-        }
-        console.error(`[Consumer] xreadgroup error, retrying in ${retryDelay}ms:`, e)
-        await this.sleep(retryDelay)
-        retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY_MS)
-      }
+      retryDelay = await this.readOnce(stream, retryDelay)
     }
+  }
+
+  private async ensureGroup(stream: string): Promise<void> {
+    try {
+      await this.redis.xgroup('CREATE', stream, this.consumerGroup, '$', 'MKSTREAM')
+    } catch (e: unknown) {
+      if (!(e instanceof Error && e.message.includes('BUSYGROUP'))) throw e
+    }
+  }
+
+  private async readOnce(stream: string, retryDelay: number): Promise<number> {
+    try {
+      const results = await this.redis.xreadgroup(
+        'GROUP', this.consumerGroup, this.consumerName,
+        'COUNT', '1', 'BLOCK', '1000',
+        'STREAMS', stream, '>',
+      ) as unknown as [string, [string, string[]][]][] | null
+
+      if (results && results.length > 0) {
+        await this.processMessages(stream, results[0][1])
+      }
+      return INITIAL_RETRY_DELAY_MS
+    } catch (e: unknown) {
+      return this.handleReadError(stream, retryDelay, e)
+    }
+  }
+
+  private async handleReadError(stream: string, retryDelay: number, e: unknown): Promise<number> {
+    if (!this.running) return retryDelay
+    if (e instanceof Error && e.message.includes('NOGROUP')) {
+      await this.ensureGroup(stream)
+      return INITIAL_RETRY_DELAY_MS
+    }
+    console.error(`[Consumer] xreadgroup error, retrying in ${retryDelay}ms:`, e)
+    await this.sleep(retryDelay)
+    return Math.min(retryDelay * 2, MAX_RETRY_DELAY_MS)
   }
 
   private async processMessages(stream: string, messages: [string, string[]][]) {

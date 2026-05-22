@@ -18,9 +18,9 @@ Rules:
 - Apply ALL changes described in the plan`
 
 export class ClaudeRunner {
-  private client: Anthropic
+  private readonly client: Anthropic
 
-  constructor(private apiKey: string, private model: string) {
+  constructor(private readonly apiKey: string, private readonly model: string) {
     this.client = new Anthropic({ apiKey })
   }
 
