@@ -4,137 +4,111 @@
 
 xzawedOrchestrator를 클라우드에 배포하거나 팀이 공유 서버를 운영하는 방법을 안내합니다.
 
----
+## 사전 조건
 
-## 원격 모드 아키텍처
-
-```
-사용자 PC                     클라우드 (Railway 등)
-┌──────────────────┐  HTTPS  ┌──────────────────────────┐
-│  Electron 앱     │ ◄─────► │  Fastify 서버 (PORT=3000) │
-│  또는 API 클라이│   WSS   │                          │
-│  언트            │         │  Redis (원격 인스턴스)    │
-└──────────────────┘         │                          │
-                              │  Claude CLI 또는 API     │
-                              └──────────────────────────┘
-```
+- Docker 또는 Node.js 22 이상이 설치된 서버
+- 원격 Redis 인스턴스
+- Anthropic API 키
+- HTTPS 종단 처리 (리버스 프록시 또는 플랫폼 제공)
 
 ---
 
-## Railway 배포 예시
+## 아키텍처
 
-Railway는 Node.js 서비스와 Redis를 간편하게 배포할 수 있습니다.
-
-### 1단계: Railway 프로젝트 생성
-
-```bash
-# Railway CLI 설치
-npm install -g @railway/cli
-
-# 로그인
-railway login
-
-# 프로젝트 생성
-railway init
 ```
-
-### 2단계: Redis 인스턴스 추가
-
-Railway 대시보드 또는 CLI에서 Redis 플러그인을 추가합니다.
-
-```bash
-railway add --plugin redis
-```
-
-Railway는 자동으로 `REDIS_URL` 환경변수를 설정합니다.
-
-### 3단계: 환경변수 설정
-
-```bash
-railway variables set MODE=remote
-railway variables set PORT=3000
-railway variables set AUTH=none
-railway variables set CLAUDE_MODE=api
-railway variables set ANTHROPIC_API_KEY=sk-ant-...
-railway variables set CLAUDE_MODEL=claude-sonnet-4-6
-```
-
-### 4단계: 배포
-
-```bash
-railway deploy
-```
-
-### 5단계: 배포 확인
-
-```bash
-# Railway가 제공하는 URL 확인
-railway domain
-
-# 헬스체크
-curl https://your-app.railway.app/health
+사용자 PC                         클라우드
+┌────────────────┐  HTTPS/WSS  ┌──────────────────────────────┐
+│  Electron 앱   │ ◄─────────► │  Fastify 서버 (PORT=3000)    │
+│  또는 API 클라 │             │                              │
+│  이언트        │             │  Redis (원격 인스턴스)        │
+└────────────────┘             │                              │
+                               │  Anthropic API               │
+                               └──────────────────────────────┘
 ```
 
 ---
 
 ## Docker로 배포
 
-`packages/server`에서 Docker 이미지를 빌드합니다.
+xzawedOrchestrator 루트의 `Dockerfile`을 사용합니다.
 
-### Dockerfile 예시
-
-```dockerfile
-FROM node:22-alpine AS base
-RUN corepack enable && corepack prepare pnpm@10 --activate
-
-FROM base AS builder
-WORKDIR /app
-COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/server/package.json ./packages/server/
-RUN pnpm install --frozen-lockfile --ignore-scripts
-
-COPY packages/shared ./packages/shared
-COPY packages/server ./packages/server
-RUN pnpm build
-
-FROM node:22-alpine AS runner
-RUN corepack enable && corepack prepare pnpm@10 --activate
-WORKDIR /app
-ENV NODE_ENV=production
-COPY --from=builder /app/packages/server/dist ./dist
-COPY --from=builder /app/packages/shared/dist ./node_modules/@xzawed/shared/dist
-COPY --from=builder /app/packages/server/node_modules ./node_modules
-
-EXPOSE 3000
-USER node
-CMD ["node", "dist/index.js"]
-```
+### 1단계: 이미지 빌드
 
 ```bash
-# 이미지 빌드
+cd xzawedOrchestrator
 docker build -t xzawed-orchestrator .
+```
 
-# 실행
+실제 Dockerfile은 `deps` → `build` → `runner` 3단계 멀티스테이지 빌드를 사용합니다:
+
+- `deps`: 의존성만 설치 (`pnpm install --frozen-lockfile --ignore-scripts`)
+- `build`: TypeScript 컴파일 (`pnpm --filter @xzawed/shared build && pnpm --filter @xzawed/server build`)
+- `runner`: 빌드 결과물과 `node_modules`만 복사, `USER node`로 실행
+
+### 2단계: 컨테이너 실행
+
+```bash
 docker run -p 3000:3000 \
   -e MODE=remote \
+  -e AUTH=none \
   -e CLAUDE_MODE=api \
   -e ANTHROPIC_API_KEY=sk-ant-... \
+  -e CLAUDE_MODEL=claude-sonnet-4-6 \
   -e REDIS_URL=redis://your-redis:6379 \
   xzawed-orchestrator
 ```
 
 ---
 
+## Railway 배포
+
+### 1단계: Railway CLI 설치 및 로그인
+
+```bash
+npm install -g @railway/cli
+railway login
+railway init
+```
+
+### 2단계: Redis 인스턴스 추가
+
+```bash
+railway add --plugin redis
+```
+
+Railway는 `REDIS_URL` 환경변수를 자동으로 주입합니다.
+
+### 3단계: 환경변수 설정
+
+```bash
+railway variables set MODE=remote
+railway variables set AUTH=none
+railway variables set CLAUDE_MODE=api
+railway variables set ANTHROPIC_API_KEY=sk-ant-...
+railway variables set CLAUDE_MODEL=claude-sonnet-4-6
+```
+
+### 4단계: 배포 및 확인
+
+```bash
+railway deploy
+
+# 헬스체크
+curl https://your-app.railway.app/health
+# {"status":"ok","timestamp":...}
+```
+
+---
+
 ## 팀 모드 설정
 
-팀원이 공유 서버에 접속하는 팀 모드입니다.
+`AUTH=jwt`를 사용하면 서비스 간 요청에 JWT 인증이 적용됩니다. `SERVICE_JWT_SECRET`은 32자 이상이어야 합니다.
 
 ```env
 MODE=remote
 PORT=3000
 AUTH=jwt
-SERVICE_JWT_SECRET=your-strong-32-char-secret-here  # 32자 이상 필수
+SERVICE_JWT_SECRET=your-strong-32-char-secret-here
 
 CLAUDE_MODE=api
 ANTHROPIC_API_KEY=sk-ant-...
@@ -143,18 +117,22 @@ CLAUDE_MODEL=claude-sonnet-4-6
 REDIS_URL=redis://default:password@redis.example.com:6379
 ```
 
-각 팀원은 자신의 `userId`로 세션을 생성하며, 세션은 Redis Streams 키에 `sessionId`가 포함되어 **완전히 격리**됩니다.
+사용자 인증(`/auth/*`, `/projects`)을 활성화하려면 추가로 설정합니다:
+
+```env
+USER_JWT_SECRET=another-32-char-secret
+DATABASE_URL=postgres://user:pass@db.example.com:5432/xzawed
+```
 
 ---
 
-## 보안 고려사항
+## 보안 설정
 
-### HTTPS 강제
+### HTTPS 강제 (nginx 예시)
 
-`MODE=remote`일 때 반드시 HTTPS + WSS를 사용하세요.
+WebSocket 업그레이드를 포함한 리버스 프록시 설정입니다.
 
-```bash
-# nginx 리버스 프록시 예시
+```nginx
 server {
     listen 443 ssl;
     server_name your-domain.com;
@@ -172,29 +150,38 @@ server {
 }
 ```
 
-### API 키 관리
+### CORS 설정
 
-```bash
-# 절대 .env 파일을 git에 커밋하지 마세요
-echo ".env" >> .gitignore
-echo ".env.local" >> .gitignore
+`MODE=remote`일 때 `ALLOWED_ORIGINS`를 설정하지 않으면 CORS가 전면 차단됩니다. 허용할 오리진을 쉼표로 구분하여 지정합니다.
 
-# 환경변수는 배포 플랫폼의 비밀 관리 기능을 사용하세요
-# Railway: railway variables set KEY=VALUE
-# AWS: AWS Secrets Manager 또는 Parameter Store
+```env
+ALLOWED_ORIGINS=https://your-domain.com,https://app.your-domain.com
 ```
+
+`MODE=local`에서는 CORS 제한이 없습니다.
 
 ### Redis 인증
 
-운영 환경에서는 Redis에 비밀번호를 설정하세요.
+운영 환경 Redis에는 반드시 비밀번호를 설정합니다.
 
 ```env
 REDIS_URL=redis://default:strong-password@redis.example.com:6379
 ```
 
-### 헬스체크 엔드포인트
+### API 키 관리
 
-배포 플랫폼의 헬스체크를 `GET /health`로 설정하세요. 인증 없이 접근 가능한 유일한 엔드포인트입니다.
+```bash
+# .env 파일은 절대 git에 커밋하지 않습니다
+echo ".env" >> .gitignore
+
+# 배포 플랫폼의 비밀 관리 기능을 사용합니다
+# Railway: railway variables set KEY=VALUE
+# AWS: AWS Secrets Manager 또는 Parameter Store
+```
+
+### 헬스체크
+
+배포 플랫폼의 헬스체크를 `GET /health`로 설정합니다. 이 엔드포인트는 인증 없이 접근 가능한 유일한 엔드포인트입니다.
 
 ---
 
@@ -202,21 +189,14 @@ REDIS_URL=redis://default:strong-password@redis.example.com:6379
 
 | 환경 | `MODE` | `AUTH` | `CLAUDE_MODE` | Redis |
 |------|--------|--------|---------------|-------|
-| 개발 | `local` | `none` | `cli` or `api` | 로컬 또는 인메모리 |
-| 개인 서버 | `remote` | `none` | `api` | 원격 Redis |
-| 팀 서버 | `remote` | `jwt` | `api` | 원격 Redis (HA) |
+| 로컬 개발 | `local` | `none` | `cli` 또는 `api` | 로컬 또는 인메모리 |
+| 개인 원격 서버 | `remote` | `none` | `api` | 원격 Redis |
+| 팀 서버 | `remote` | `jwt` | `api` | 원격 Redis |
 
 ---
 
 ## 다음 단계
 
 - [MCP 서버 통합](mcp-integration.md) — Claude Code 연동
-- [환경변수 목록](../reference/environment-variables.md) — 전체 설정 참조
-
----
-
-## 관련 문서
-
-- [설정 옵션 완전 가이드](configuration.md)
-- [Redis Streams 메시징](../concepts/redis-streams.md)
-- [REST API 레퍼런스](../reference/rest-api.md)
+- [환경변수 전체 목록](../reference/environment-variables.md) — 전체 설정 참조
+- [REST API 레퍼런스](../reference/rest-api.md) — API 엔드포인트

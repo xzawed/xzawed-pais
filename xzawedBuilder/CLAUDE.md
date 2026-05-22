@@ -1,48 +1,44 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# CLAUDE.md — xzawedBuilder
 
 ## 프로젝트 개요
 
 xzawedBuilder는 xzawed 멀티 에이전트 시스템의 **빌드 에이전트**다.
 xzawedManager로부터 프로젝트 경로와 빌드 타깃을 받아 빌드를 실행하고 결과 아티팩트를 반환한다.
 
-현재 상태: **구현 완료 (49/49 테스트 통과)** — `pnpm build` 정상. 스펙: `docs/specs/2026-05-15-builder-design.md`
+**현재 상태: 구현 완료 (49/49 테스트 통과)**
 
 ## 핵심 명령어
 
 ```bash
+# xzawedShared 먼저 빌드 필수
+cd ../xzawedShared && pnpm install && pnpm build && cd ../xzawedBuilder
+
 pnpm install       # 의존성 설치
 pnpm dev           # tsx watch 개발 모드
 pnpm test          # Vitest 전체 테스트
-pnpm test <file>   # 단일 파일 테스트
-pnpm build         # TypeScript 컴파일
+pnpm test <파일>   # 단일 파일 테스트
+pnpm build         # TypeScript 컴파일 → dist/
 ```
 
-## 아키텍처
+## 디렉토리 구조
 
 ```
 src/
-├── index.ts          # 진입점: Redis consumer 시작
-├── config.ts         # 환경변수 검증 (zod)
-├── server.ts         # Fastify HTTP 서버 (/health, PORT=3006)
-├── builder.ts        # 빌드 조율 로직
-├── detector.ts       # 프로젝트 타입·빌드 명령 자동 감지
-├── executor.ts       # child_process로 빌드 실행 (스트리밍 출력)
+├── index.ts              # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
+├── config.ts             # 환경변수 검증 (Zod) — workspaceRoot, buildTimeoutMs 포함
+├── server.ts             # Fastify HTTP 서버 (/health, PORT=3006)
+├── builder.ts            # 빌드 조율 — validateBuildCommand(), stripPackageManagerField(), runPreInstall()
+├── detector.ts           # 빌드 명령 감지 — projectPath→workspaceRoot 상향 탐색 (detectBuildInfo)
+├── executor.ts           # spawn(shell:false) 실행; validatePath() — WORKSPACE_ROOT 검증
+├── types.ts              # BuildError, ManagerToBuilderMessageSchema, BuilderToManagerMessage
 ├── streams/
-│   ├── consumer.ts   # 구독: manager:to-builder:{sessionId}
-│   └── producer.ts   # 발행: builder:to-manager:{sessionId}
+│   ├── consumer.ts       # BaseConsumer 확장 — manager:to-builder:{sessionId}
+│   ├── consumer.test.ts
+│   ├── producer.ts       # builder:to-manager:{sessionId} 발행
+│   └── producer.test.ts
 └── claude/
-    └── runner.ts     # 빌드 실패 오류 분석 (Anthropic SDK)
+    └── runner.ts         # Anthropic SDK — 빌드 로그 → BuildError[] 분석
 ```
-
-### 데이터 흐름
-
-1. Redis consumer → `build_request` 수신 (`ManagerToBuilderMessage`)
-2. `detector.ts` → `package.json` scripts, `Cargo.toml` 등으로 빌드 명령 결정
-3. `executor.ts` → child_process 실행, stdout/stderr 스트리밍
-4. 실패 시 `claude/runner.ts` → 오류 분석 및 `BuildError[]` suggestion 생성
-5. Redis producer → `build_complete` 또는 `error` 발행 (`BuilderToManagerMessage`)
 
 ## Redis Streams 인터페이스
 
@@ -56,14 +52,9 @@ interface ManagerToBuilderMessage {
   payload: {
     projectPath: string
     target: 'development' | 'production'
-    command?: string   // 없으면 자동 감지
+    command?: string              // 없으면 의존성 기반 자동 감지
     context: Record<string, unknown>
-    userContext?: {
-      userId: string
-      projectId: string
-      workspaceRoot: string
-      githubRepo?: { owner: string; repo: string; branch: string }
-    }
+    userContext?: { userId: string; projectId: string; workspaceRoot: string }
   }
 }
 
@@ -73,9 +64,9 @@ interface BuilderToManagerMessage {
   type: 'build_complete' | 'build_progress' | 'error'
   payload: {
     success?: boolean
-    output?: string        // 빌드 로그
-    artifacts?: string[]   // 생성된 파일 경로
-    duration?: number      // ms
+    output?: string               // 빌드 로그 전체
+    artifacts?: string[]          // 생성된 파일 경로
+    duration?: number             // ms
     errors?: BuildError[]
     content: string
   }
@@ -86,30 +77,33 @@ interface BuildError { file?: string; line?: number; message: string; suggestion
 
 ## 환경 변수
 
-```env
-ANTHROPIC_API_KEY=sk-...
-CLAUDE_MODEL=claude-sonnet-4-6
-REDIS_URL=redis://localhost:6379
-PORT=3006
-MODE=local
-WORKSPACE_ROOT=/path/to/workspace  # 절대경로 필수
-BUILD_TIMEOUT_MS=120000
-```
+| 변수 | 필수 | 기본값 | 설명 |
+|---|---|---|---|
+| `ANTHROPIC_API_KEY` | 필수 | — | Anthropic API 인증 키 |
+| `CLAUDE_MODEL` | 선택 | `claude-sonnet-4-6` | Claude 모델 |
+| `REDIS_URL` | 선택 | `redis://localhost:6379` | Redis 연결 URL |
+| `PORT` | 선택 | `3006` | HTTP 서버 포트 |
+| `MODE` | 선택 | `local` | 실행 모드 |
+| `WORKSPACE_ROOT` | 필수 | — | 허용 경로 상한선 (절대경로, 파일시스템 루트 불가) |
+| `BUILD_TIMEOUT_MS` | 선택 | `120000` | 빌드 타임아웃 (ms) |
 
-## 보안 고려사항
+## 구현 참고사항
 
-- `WORKSPACE_ROOT` 외부 경로 빌드 차단 (path traversal 방지)
-- `BUILD_TIMEOUT_MS` 강제 적용 (기본 120초)
-- **커맨드 인젝션 방지**: `executor.ts`는 `spawn(bin, args, {shell:false})` 사용 — `shell:true` 금지
-- **Redis 커맨드 검증**: `builder.ts`의 `validateBuildCommand()` — allowlist + 셸 메타문자 차단
-- **`package.json scripts` 미신뢰**: `detector.ts`는 `scripts.build` 값을 읽지 않음 — 의존성 기반 하드코딩 명령어만 반환
-- **빈 명령어 가드** (`executor.ts`): `command.trim()` 결과가 빈 문자열이면 즉시 `throw` — `spawn(undefined, ...)` 호출 방지
+**보안 패턴**
+- `validateBuildCommand()`: `ALLOWED_PREFIXES`(`pnpm`, `npm`, `npx`, `yarn`, `cargo build`, `make`, `cmake`, `gradle`, `mvn`, `go build`, `tsc`, `webpack`, `vite build`) + 셸 메타문자 이중 차단
+- `detector.ts`: `package.json scripts.build`는 신뢰하지 않음 — 의존성 기반 하드코딩 명령어만 반환
+- `executor.ts`: `spawn(bin, args, {shell:false})` 고정. `bin`이 빈 문자열이면 즉시 throw
+- `validatePath()`: `validateWorkspaceRoot()` 후 `fs.realpath`로 심볼릭 링크 우회 차단
 
-## xzawed 생태계 연결
+**전처리 단계 (builder.ts)**
+- `stripPackageManagerField()`: Corepack 충돌 방지를 위해 빌드 전 `package.json`의 `packageManager` 필드 제거
+- `runPreInstall()`: `node_modules` 없을 때만 실행; `pnpm-lock.yaml` 있으면 `pnpm install`, 없으면 `npm install`
 
-xzawedManager의 `build_project` 도구가 이 서비스로 위임된다.
-Manager의 `tools/build-project.ts`는 `RedisAgentHandler` 기반으로 연결 완료.
+**빌드 명령 감지 (detector.ts)**
+- `detectBuildInfo()`: `projectPath`에서 `workspaceRoot`까지 상향 탐색 → Cargo.toml → Makefile → package.json → go.mod 순서
 
-전체 suite: 현재 저장소 루트
-- xzawedOrchestrator (완성, 참조 구현) → xzawedManager (완성, 64/64) → xzawedBuilder / xzawedPlanner / xzawedDeveloper / xzawedTester / xzawedDesigner / xzawedWatcher / xzawedSecurity
-- 에이전트 간 통신: Redis Streams (ioredis), 포트 3002–3008
+**스트리밍:** stdout/stderr 청크를 즉시 `build_progress`로 발행 (버퍼링 없음)
+
+**아키텍처 상세:** `docs/services/builder-architecture.md`
+
+**Manager 연결:** `xzawedManager/packages/server/src/tools/build-project.ts` (`createBuildProjectHandler`)

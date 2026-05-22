@@ -1,38 +1,29 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# CLAUDE.md — xzawedShared
 
 ## 프로젝트 개요
 
-xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.  
-7개 독립 에이전트 서비스(Planner, Developer, Designer, Tester, Builder, Watcher, Security)가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자와 경로 보안 유틸리티를 제공한다.
+xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
+7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자와 경로 보안 유틸리티를 제공한다.
 
-현재 상태: **구현 완료 (2/2 테스트)** — BaseConsumer 제네릭 추상 클래스, validateWorkspaceRoot 유틸리티, 타입 익스포트
+**현재 상태: 구현 완료 (2/2 테스트 통과)**
 
 ## 핵심 명령어
 
 ```bash
-# 의존성 설치
-pnpm install
-
-# 빌드 (다른 서비스 테스트 전 반드시 먼저 실행)
-pnpm build
-
-# 타입 체크
-pnpm typecheck
-
-# 테스트
-pnpm test
+pnpm install       # 의존성 설치
+pnpm build         # TypeScript 컴파일 → dist/ (다른 서비스 테스트 전 반드시 먼저 실행)
+pnpm typecheck     # tsc 타입 체크
+pnpm test          # Vitest 테스트
 ```
 
-## 아키텍처
+## 디렉토리 구조
 
 ```
 src/
-├── index.ts                  # 패키지 진입점 — BaseConsumer, validateWorkspaceRoot 익스포트
-├── workspace-guard.ts        # validateWorkspaceRoot() — 파일시스템 루트 WORKSPACE_ROOT 거부
+├── index.ts                     # 패키지 진입점 — BaseConsumer, validateWorkspaceRoot 익스포트
+├── workspace-guard.ts           # validateWorkspaceRoot() — 파일시스템 루트 거부
 ├── streams/
-│   └── base-consumer.ts      # BaseConsumer<T> 제네릭 추상 클래스
+│   └── base-consumer.ts         # BaseConsumer<T> 제네릭 클래스
 └── __tests__/
     └── workspace-guard.test.ts  # validateWorkspaceRoot 2건 테스트
 ```
@@ -40,28 +31,40 @@ src/
 ## BaseConsumer 패턴
 
 ```typescript
-abstract class BaseConsumer<T> {
-  abstract parseMessage(data: Record<string, string>): T | null
-  async start(sessionId: string, onMessage: (msg: T) => Promise<void>): Promise<void>
-  stop(): void
+class BaseConsumer<TMessage> {
+  constructor(
+    redis: Redis,
+    onMessage: (msg: TMessage) => Promise<void>,
+    consumerGroup: string,
+    consumerName: string,
+    streamPrefix: string,            // 예: 'manager:to-tester'
+    schema: ZodType<TMessage>,       // safeParse로 메시지 검증
+    sleep?: (ms: number) => Promise<void>  // 테스트용 주입
+  )
+
+  async start(sessionId: string): Promise<void>  // XREADGROUP 루프 시작
+  stop(): void                                    // 루프 중단
 }
 ```
 
-- `parseMessage()`: Redis 원시 필드 맵 → 타입 `T` 변환 (safeParse 사용 권장)
-- `start()`: Redis XREADGROUP 루프, `try/finally`로 xack 보장 (PEL 누수 방지)
-- `stop()`: 루프 중단 플래그 설정
+**동작 세부사항:**
+- `start(sessionId)`: 스트림 `${streamPrefix}:${sessionId}` 구독. Consumer Group 자동 생성 (BUSYGROUP 무시)
+- 메시지 처리: `JSON.parse(raw)` → `schema.safeParse()` → `onMessage()` → `xack` (`try/finally`로 xack 보장)
+- 파싱/검증 실패 시: 경고 로그 출력 후 xack하고 skip (프로세스 중단 없음)
+- 오류 재시도: 1초부터 시작해 최대 30초까지 지수 백오프
 
 ## validateWorkspaceRoot 패턴
 
 ```typescript
 import { validateWorkspaceRoot } from '@xzawed/agent-streams'
 
-// validatePath() 최상단에서 호출
+// executor.ts의 validatePath() 최상단에서 호출
 validateWorkspaceRoot(workspaceRoot)  // 파일시스템 루트(/, C:\)이면 즉시 throw
 ```
 
-- `validateWorkspaceRoot(workspaceRoot)`: `path.resolve` 후 `path.parse().root`와 동일하면 `Error('WORKSPACE_ROOT must not be filesystem root')` throw
-- Builder, Tester, Watcher, Security 4개 서비스의 `executor.ts`에서 공통 사용
+`path.resolve(workspaceRoot) === path.parse(resolved).root`이면 `Error('WORKSPACE_ROOT must not be filesystem root')` throw.
+
+Builder, Tester, Watcher, Security 4개 서비스의 `executor.ts`에서 공통 사용.
 
 ## 의존 관계
 
@@ -80,4 +83,4 @@ xzawedTester / xzawedBuilder / xzawedWatcher / xzawedSecurity
 
 ## 환경 변수
 
-없음. 이 패키지는 순수 라이브러리이며 직접 실행되지 않는다.
+없음. 순수 라이브러리이며 직접 실행되지 않는다.
