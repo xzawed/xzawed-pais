@@ -136,14 +136,22 @@ ipcMain.handle('github:list-repos', async () => {
 })
 
 // ── Auth token (safeStorage) ─────────────────────────────────────────
-// token:get and refresh-token:get are intentionally NOT exposed to the renderer.
-// Raw tokens must not be readable by the renderer process. Use auth:restore instead.
+// NOTE: token:get and refresh-token:get are intentionally absent — raw tokens
+// must never be returned to the renderer. Use auth:restore for session recovery.
 ipcMain.handle('token:set', (_e, token: string): void => writeToken(token))
 ipcMain.handle('token:clear', (): void => clearTokenFiles())
 ipcMain.handle('refresh-token:set', (_e, token: string): void => writeRefreshToken(token))
 
 // ── Auth restore (proxy — token stays in main process) ────────────────
+// auth:restore — main-process proxy: validates serverUrl (SSRF), reads stored tokens,
+// calls /auth/me (or /auth/refresh on 401), stores new tokens, returns {user, accessToken}
+// so the renderer never touches the raw token value.
 ipcMain.handle('auth:restore', async (_e, serverUrl: string) => {
+  // Validate serverUrl to prevent SSRF
+  try {
+    const u = new URL(serverUrl)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return { user: null }
+  } catch { return { user: null } }
   const token = readToken()
   if (!token) return { user: null }
   try {
