@@ -7,7 +7,18 @@ import { checkClaude, installClaude, openClaudeLogin, waitClaudeLogin, getClaude
 import { startMonitoring, stopMonitoring, registerServiceIpc } from './service-monitor.js'
 import { createTray, updateTrayIcon } from './tray-manager.js'
 import { initUpdater, checkForUpdates } from './updater.js'
-import type { SetupConfig } from '@xzawed/launcher-shared'
+
+// Runtime SetupConfig validation (TypeScript types are erased at runtime)
+function isValidSetupConfig(value: unknown): value is { claudeMode: 'cli' | 'api'; completedAt: string; githubToken?: string } {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  if (v['claudeMode'] !== 'cli' && v['claudeMode'] !== 'api') return false
+  if (typeof v['completedAt'] !== 'string' || v['completedAt'].length === 0) return false
+  if ('githubToken' in v && v['githubToken'] !== undefined) {
+    if (typeof v['githubToken'] !== 'string' || v['githubToken'].length > 256) return false
+  }
+  return true
+}
 
 let win: BrowserWindow | null = null
 
@@ -21,6 +32,7 @@ function createWindow(): BrowserWindow {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     show: false,
@@ -50,7 +62,10 @@ function registerIpc(w: BrowserWindow): void {
   // Setup
   ipcMain.handle('setup:is-complete', () => isSetupComplete())
   ipcMain.handle('setup:get-config', () => getSetupConfig())
-  ipcMain.handle('setup:save-config', (_e, config: SetupConfig) => saveSetupConfig(config))
+  ipcMain.handle('setup:save-config', (_e, config: unknown) => {
+    if (!isValidSetupConfig(config)) return { success: false, error: 'Invalid config' }
+    return saveSetupConfig(config)
+  })
 
   // Docker
   ipcMain.handle('docker:check', () => checkDocker())
@@ -73,7 +88,10 @@ function registerIpc(w: BrowserWindow): void {
       return safeStorage.decryptString(raw)
     } catch { return null }
   })
-  ipcMain.handle('token:set', (_e, key: string) => {
+  ipcMain.handle('token:set', (_e, key: unknown) => {
+    if (typeof key !== 'string' || key.length === 0 || key.length > 512) {
+      return { success: false, error: 'Invalid key' }
+    }
     const enc = safeStorage.encryptString(key)
     const p = encKeyPath()
     fs.mkdirSync(path.dirname(p), { recursive: true })

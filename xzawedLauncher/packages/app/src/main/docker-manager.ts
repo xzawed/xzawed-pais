@@ -35,8 +35,10 @@ export async function checkDocker(): Promise<DockerInstallStatus> {
 }
 
 export async function startDockerDesktop(): Promise<void> {
+  const programFiles = process.env['PROGRAMFILES'] ?? 'C:\\Program Files'
+  const dockerDesktopExe = path.join(programFiles, 'Docker', 'Docker', 'Docker Desktop.exe')
   const cmds: Record<string, [string, string[]]> = {
-    win32: ['cmd', ['/c', 'start', '', String.raw`C:\Program Files\Docker\Docker\Docker Desktop.exe`]],
+    win32: ['cmd', ['/c', 'start', '', dockerDesktopExe]],
     darwin: ['open', ['-a', 'Docker']],
     linux: ['systemctl', ['--user', 'start', 'docker-desktop']],
   }
