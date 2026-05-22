@@ -1,8 +1,18 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
+const SHELL_METACHAR_RE = /[;&|`$><\n\r]/
+
 export function buildCommandWithFiles(baseCmd: string, testFiles: string[]): string {
   if (testFiles.length === 0) return baseCmd
+  for (const filePath of testFiles) {
+    if (SHELL_METACHAR_RE.test(filePath)) {
+      throw new Error(`Shell metacharacters are not permitted in testFiles path: ${filePath}`)
+    }
+    if (path.isAbsolute(filePath) && path.parse(filePath).root === filePath) {
+      throw new Error(`Filesystem root path is not permitted in testFiles: ${filePath}`)
+    }
+  }
   return `${baseCmd} ${testFiles.join(' ')}`
 }
 
