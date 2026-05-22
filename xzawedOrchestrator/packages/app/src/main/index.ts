@@ -73,10 +73,10 @@ function createWindow(): void {
     void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']) // NOSONAR — dev-only env set by electron-vite
   } else {
     const isTest = process.env['NODE_ENV'] === 'test'
-    void mainWindow.loadFile(
+    mainWindow.loadFile(
       join(__dirname, '../renderer/index.html'),
       isTest ? { hash: 'test' } : undefined
-    )
+    ).catch((err: unknown) => console.error('[main] loadFile error:', err))
   }
 }
 

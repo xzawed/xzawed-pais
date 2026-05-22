@@ -3,11 +3,11 @@ interface Props {
   onClose: () => void
 }
 
-export default function UpdateModal({ info, onClose }: Readonly<Props>) {
-  async function handleUpdate(): Promise<void> {
-    await globalThis.launcherAPI!.installUpdate()
-  }
+async function handleUpdate(): Promise<void> {
+  await globalThis.launcherAPI!.installUpdate()
+}
 
+export default function UpdateModal({ info, onClose }: Readonly<Props>) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="w-80 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl">

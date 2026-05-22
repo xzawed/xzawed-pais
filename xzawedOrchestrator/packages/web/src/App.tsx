@@ -34,7 +34,7 @@ export function App(): React.JSX.Element {
   const navigate = useNavigate()
 
   useEffect(() => {
-    void restore(SERVER_URL)
+    restore(SERVER_URL).catch((e: unknown) => console.error('[App] restore error:', e))
   }, [restore])
 
   return (

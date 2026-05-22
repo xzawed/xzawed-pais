@@ -28,15 +28,45 @@ const JWT_ERRORS: Record<string, string> = {
   FST_JWT_AUTHORIZATION_TOKEN_EXPIRED: 'Token expired',
 }
 
+function makeJwtAuthHook(
+  config: Config,
+): ((req: FastifyRequest, reply: FastifyReply) => Promise<void>) | undefined {
+  if (config.auth !== 'jwt') return undefined
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    await req.jwtVerify().catch(async (err: unknown) => {
+      const code = (err as { code?: string }).code ?? ''
+      await reply.status(401).send({ error: JWT_ERRORS[code] ?? 'Invalid token' })
+    })
+  }
+}
+
+async function setupDatabase(
+  app: FastifyInstance,
+  config: Config,
+): Promise<import('pg').Pool | null> {
+  if (!config.databaseUrl) return null
+  const dbPool = createPool(config.databaseUrl)
+  await runMigrations(dbPool)
+  app.addHook('onClose', async () => { await closePool() })
+  return dbPool
+}
+
+async function registerAuthRoutes(
+  app: FastifyInstance,
+  dbPool: import('pg').Pool,
+  config: Config,
+): Promise<void> {
+  await app.register(authRoutes, { pool: dbPool, userJwtSecret: config.userJwtSecret! })
+  await app.register(projectsRoutes, {
+    pool: dbPool,
+    userJwtSecret: config.userJwtSecret!,
+    githubTokenEncryptionKey: config.githubTokenKey,
+  })
+}
+
 export async function buildServer(config: Config, runnerOverride?: ClaudeRunner): Promise<FastifyInstance> {
   const app = Fastify({ logger: config.mode !== 'local' })
-
-  let dbPool = null as import('pg').Pool | null
-  if (config.databaseUrl) {
-    dbPool = createPool(config.databaseUrl)
-    await runMigrations(dbPool)
-    app.addHook('onClose', async () => { await closePool() })
-  }
+  const dbPool = await setupDatabase(app, config)
 
   const store = dbPool ? new PgSessionStore(dbPool) : new InMemorySessionStore()
   const runner = runnerOverride ?? createRunner(config)
@@ -50,32 +80,22 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     : undefined
 
   const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(s => s.trim()).filter(Boolean) ?? []
-  await app.register(cors, {
-    origin: config.mode === 'local' ? false : (allowedOrigins.length > 0 ? allowedOrigins : false),
-  })
+  let corsOrigin: string[] | false = false
+  if (config.mode !== 'local' && allowedOrigins.length > 0) {
+    corsOrigin = allowedOrigins
+  }
+  await app.register(cors, { origin: corsOrigin })
 
   if (config.auth === 'jwt' && config.serviceJwtSecret) {
     await app.register(jwtPlugin, { secret: config.serviceJwtSecret })
   }
 
-  const authHook = config.auth === 'jwt'
-    ? async (req: FastifyRequest, reply: FastifyReply) => {
-        await req.jwtVerify().catch(async (err: unknown) => {
-          const code = (err as { code?: string }).code ?? ''
-          await reply.status(401).send({ error: JWT_ERRORS[code] ?? 'Invalid token' })
-        })
-      }
-    : undefined
+  const authHook = makeJwtAuthHook(config)
 
   await app.register(websocket)
   await app.register(healthRoutes)
   if (dbPool && config.userJwtSecret) {
-    await app.register(authRoutes, { pool: dbPool, userJwtSecret: config.userJwtSecret })
-    await app.register(projectsRoutes, {
-      pool: dbPool,
-      userJwtSecret: config.userJwtSecret,
-      githubTokenEncryptionKey: config.githubTokenKey,
-    })
+    await registerAuthRoutes(app, dbPool, config)
   }
   const userAuthHook = (dbPool && config.userJwtSecret)
     ? makeUserAuthHook(config.userJwtSecret)
@@ -96,7 +116,12 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     const webDist = join(fileURLToPath(import.meta.url), '../../../../web/dist')
     await app.register(staticPlugin, { root: webDist, prefix: '/' })
     app.setNotFoundHandler((_req, reply) => {
-      void reply.sendFile('index.html')
+      const result: unknown = reply.sendFile('index.html')
+      if (result instanceof Promise) {
+        result.catch((err: unknown) => {
+          app.log.error(err, 'Failed to send index.html')
+        })
+      }
     })
   }
 

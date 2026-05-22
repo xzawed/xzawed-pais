@@ -9,6 +9,39 @@ function validateRemoteUrl(url: string): void {
   }
 }
 
+function tryParseChunk(line: string): Chunk | null {
+  try {
+    return JSON.parse(line) as Chunk
+  } catch {
+    return null
+  }
+}
+
+async function* readNdjsonStream(body: ReadableStream<Uint8Array>): AsyncIterable<Chunk> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const [lines, remainder] = splitLines(buffer, decoder.decode(value, { stream: true }))
+      buffer = remainder
+      for (const line of lines) {
+        if (!line.trim()) continue
+        const chunk = tryParseChunk(line)
+        if (chunk !== null) yield chunk
+      }
+    }
+    if (buffer.trim()) {
+      const chunk = tryParseChunk(buffer)
+      if (chunk !== null) yield chunk
+    }
+  } finally {
+    reader.cancel().catch(() => { /* ignore cancel errors */ })
+  }
+}
+
 export class HTTPRemoteRunner implements ClaudeRunner {
   constructor(private readonly remoteUrl: string) {
     validateRemoteUrl(remoteUrl)
@@ -38,32 +71,7 @@ export class HTTPRemoteRunner implements ClaudeRunner {
         return
       }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          const [lines, remainder] = splitLines(buffer, decoder.decode(value, { stream: true }))
-          buffer = remainder
-          for (const line of lines) {
-            if (!line.trim()) continue
-            try {
-              yield JSON.parse(line) as Chunk
-            } catch { /* ignore unparseable lines */ }
-          }
-        }
-
-        if (buffer.trim()) {
-          try {
-            yield JSON.parse(buffer) as Chunk
-          } catch { /* ignore */ }
-        }
-      } finally {
-        reader.cancel().catch(() => { /* ignore cancel errors */ })
-      }
+      yield* readNdjsonStream(response.body)
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         yield { type: 'error', content: 'Request aborted' }
