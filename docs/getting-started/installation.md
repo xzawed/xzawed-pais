@@ -1,50 +1,85 @@
-[홈](../index.md) > [가이드](.) > 설치 및 환경 설정
+[홈](../README.md) > [시작하기](./) > 설치
 
-# 설치 및 환경 설정
+# 설치
 
-xzawedOrchestrator를 개발하거나 운영하기 위한 환경을 구성하는 방법을 안내합니다.
+xzawedPAIS를 로컬 환경에서 실행하기 위한 환경 구성과 설치 절차를 설명한다.
 
 ---
 
-## Prerequisites
+## 사전 요구 사항
 
-### 필수 항목
+### 필수
 
-| 항목 | 최소 버전 | 설치 방법 |
-|------|-----------|-----------|
+| 도구 | 최소 버전 | 설치 |
+|------|-----------|------|
 | Node.js | 22.0.0 | [nodejs.org](https://nodejs.org/) 또는 `nvm install 22` |
-| pnpm | 9.0.0 | `npm install -g pnpm` |
+| pnpm | 10.0.0 | `npm install -g pnpm` |
 | Git | — | [git-scm.com](https://git-scm.com/) |
+| Redis | 7.0 | 아래 설치 방법 참고 |
 
-### 선택 항목
+> Redis는 서비스 간 메시지 전달에 필수다. Redis 없이는 에이전트 간 통신이 불가능하다.
 
-| 항목 | 용도 | 설치 방법 |
-|------|------|-----------|
-| Redis | 7.0+ | 없으면 인메모리 폴백 사용. 운영 환경에서는 필수 |
-| Claude CLI | `CLAUDE_MODE=cli` 사용 시 | `npm install -g @anthropic-ai/claude-code` |
+### 선택
+
+| 도구 | 용도 |
+|------|------|
+| Claude CLI (`@anthropic-ai/claude-code`) | `CLAUDE_MODE=cli` 사용 시 필요 |
+| Docker + Docker Compose | 전체 스택을 컨테이너로 실행할 때 필요 |
 
 ---
 
-## 1단계: Node.js 설치 확인
+## 1단계: Node.js 버전 확인
 
 ```bash
 node --version
-# v22.0.0 이상이어야 합니다
+# v22.0.0 이상이어야 한다
 
-npm --version
-# 10.0.0 이상 권장
+pnpm --version
+# 10.0.0 이상이어야 한다
+```
+
+`pnpm`이 설치되어 있지 않으면 다음을 실행한다.
+
+```bash
+npm install -g pnpm
 ```
 
 ---
 
-## 2단계: pnpm 설치
+## 2단계: Redis 설치
+
+### macOS (Homebrew)
 
 ```bash
-npm install -g pnpm
-
-pnpm --version
-# 9.0.0 이상이어야 합니다
+brew install redis
+brew services start redis
 ```
+
+### Ubuntu / Debian
+
+```bash
+sudo apt-get update
+sudo apt-get install redis-server
+sudo systemctl start redis-server
+sudo systemctl enable redis-server
+```
+
+### Windows (WSL2 권장)
+
+```bash
+# WSL2 터미널에서
+sudo apt-get install redis-server
+sudo service redis-server start
+```
+
+### Redis 연결 확인
+
+```bash
+redis-cli ping
+# PONG
+```
+
+`PONG`이 출력되면 Redis가 정상 동작 중이다.
 
 ---
 
@@ -59,159 +94,145 @@ cd xzawed-pais
 
 ## 4단계: 의존성 설치
 
+### xzawedShared 먼저 빌드
+
+독립 에이전트 서비스(Planner, Developer, Designer, Tester, Builder, Watcher, Security)는 공유 라이브러리 `@xzawed/agent-streams`에 의존한다. 해당 서비스를 실행하기 전에 반드시 먼저 빌드한다.
+
 ```bash
-pnpm install
+cd xzawedShared && pnpm install && pnpm build && cd ..
 ```
 
-이 명령은 다음을 수행합니다.
+### Orchestrator / Manager (Turborepo)
 
-- `packages/shared` 의존성 설치
-- `packages/server` 의존성 설치 (Fastify, ioredis, @anthropic-ai/sdk 등)
-- `packages/app` 의존성 설치 (Electron 앱: React 19, Zustand, Tailwind CSS v4, shadcn/ui)
-- 루트 dev 의존성 설치 (Turborepo, TypeScript)
+```bash
+cd xzawedOrchestrator
+pnpm install
+pnpm build
+```
+
+```bash
+cd xzawedManager
+pnpm install
+pnpm build
+```
+
+### 나머지 에이전트 서비스
+
+Planner, Developer, Designer, Tester, Builder, Watcher, Security 각 디렉토리에서 동일하게 실행한다.
+
+```bash
+cd xzawedPlanner   # 또는 xzawedDeveloper, xzawedDesigner 등
+pnpm install
+pnpm build
+```
 
 ---
 
-## 5단계: 환경변수 설정
+## 5단계: 환경 변수 설정
+
+각 서비스 디렉토리에 `.env.example`이 있다. `.env`로 복사한 뒤 필요한 값을 입력한다.
 
 ```bash
-cp .env.example .env
+# 예: Orchestrator
+cp xzawedOrchestrator/.env.example xzawedOrchestrator/.env
 ```
 
-`.env` 파일을 편집기로 열어 필요한 값을 입력합니다.
+`xzawedOrchestrator/.env` 최소 구성:
 
 ```env
-# 서버 모드: local | remote
-MODE=local
-
-# 서버 포트
-PORT=3000
-
-# 인증: none | jwt
-AUTH=none
-
 # Claude 실행 모드: api | cli | remote (기본값: api)
 CLAUDE_MODE=api
 ANTHROPIC_API_KEY=sk-ant-...
 CLAUDE_MODEL=claude-sonnet-4-6
 
-# Redis (없으면 인메모리 폴백)
+# Redis
 REDIS_URL=redis://localhost:6379
+
+# Manager 서비스 URL
+MANAGER_URL=http://localhost:3001
+
+# 서버
+PORT=3000
+MODE=local
+AUTH=none
 ```
 
-> **Tip:** Claude CLI 구독을 사용하려면 `CLAUDE_MODE=cli`로 변경하고 `ANTHROPIC_API_KEY` 줄을 제거하세요. Claude CLI가 설치되어 있어야 합니다.
+`xzawedManager/.env` 최소 구성:
+
+```env
+ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_MODEL=claude-sonnet-4-6
+REDIS_URL=redis://localhost:6379
+PORT=3001
+MODE=local
+```
+
+나머지 에이전트 서비스도 각각의 `.env.example`을 복사하여 `ANTHROPIC_API_KEY`와 `REDIS_URL`을 설정한다. xzawedWatcher는 Claude API를 사용하지 않으므로 `ANTHROPIC_API_KEY`가 필요 없다.
+
+> 설정 옵션 전체 목록은 [환경 변수 레퍼런스](../reference/environment-variables.md)와 [설정 가이드](../guides/configuration.md)를 참고한다.
 
 ---
 
-## 6단계: Redis 설치 (선택)
+## 6단계: 서버 실행 확인
 
-### macOS (Homebrew)
-
-```bash
-brew install redis
-brew services start redis
-```
-
-### Ubuntu/Debian
+### Orchestrator
 
 ```bash
-sudo apt-get update
-sudo apt-get install redis-server
-sudo systemctl start redis-server
-```
-
-### Windows (WSL2 권장)
-
-```bash
-# WSL2에서
-sudo apt-get install redis-server
-sudo service redis-server start
-```
-
-### Redis 연결 확인
-
-```bash
-redis-cli ping
-# PONG 이 출력되면 정상
-```
-
----
-
-## 7단계: 빌드 및 테스트
-
-```bash
-# TypeScript 빌드
-pnpm build
-
-# 전체 테스트 실행
-pnpm test
-```
-
-모든 테스트가 통과하면 설치가 완료된 것입니다.
-
----
-
-## 8단계: 서버 실행 확인
-
-```bash
-cd packages/server
+cd xzawedOrchestrator/packages/server
 pnpm dev
 ```
 
 ```
 xzawedOrchestrator server running on port 3000
-CLAUDE_MODE=cli | MODE=local
+CLAUDE_MODE=api | MODE=local
 ```
 
-다른 터미널에서 헬스체크를 실행합니다.
+별도 터미널에서 헬스체크를 실행한다.
 
 ```bash
 curl http://localhost:3000/health
 ```
 
 ```json
-{"status":"ok","timestamp":1747267200000}
+{"status":"ok","timestamp":1748000000000}
 ```
 
 ---
 
-## 설치 문제 해결
+## 문제 해결
 
-### pnpm install 실패
+### `pnpm install` 실패
 
 ```bash
-# node_modules 초기화 후 재시도
-rm -rf node_modules packages/*/node_modules
+rm -rf node_modules **/node_modules
 pnpm install
 ```
 
-### TypeScript 빌드 오류
+### TypeScript 빌드 오류: `Cannot find module '@xzawed/agent-streams'`
+
+xzawedShared를 아직 빌드하지 않았다. [4단계: 의존성 설치](#4단계-의존성-설치)의 xzawedShared 빌드를 먼저 실행한다.
 
 ```bash
-# shared 패키지를 먼저 빌드
-cd packages/shared && pnpm build
-cd ../server && pnpm build
+cd xzawedShared && pnpm install && pnpm build
 ```
 
-### Redis 연결 실패
+### Redis 연결 오류
 
-Redis가 없어도 서버는 인메모리 폴백으로 동작합니다. 다음 에러가 표시되어도 서버는 정상 실행됩니다.
+`redis-cli ping`으로 Redis 동작 여부를 확인한다. Redis가 실행 중이 아니면 [2단계: Redis 설치](#2단계-redis-설치)를 다시 확인한다.
 
-```
-Redis connection failed, falling back to in-memory store
+### Node.js 버전 오류: `The engine "node" is incompatible`
+
+`node --version`이 `v22.0.0` 미만이면 Node.js를 업그레이드해야 한다. `nvm`을 사용하면 다음과 같이 전환한다.
+
+```bash
+nvm install 22
+nvm use 22
 ```
 
 ---
 
 ## 다음 단계
 
-- [퀵스타트](../quickstart.md) — 첫 세션 만들기
-- [설정 옵션 완전 가이드](configuration.md) — 모든 설정값 상세
-- [로컬 배포](local-deployment.md) — 로컬 환경 최적화
-
----
-
-## 관련 문서
-
-- [환경변수 목록](../reference/environment-variables.md)
-- [Claude 실행 모드](../concepts/claude-runners.md)
+- [퀵스타트](quickstart.md) — 서버를 시작하고 첫 메시지를 전송한다
+- [설정 가이드](../guides/configuration.md) — 모든 환경 변수와 시나리오별 설정 예제
+- [로컬 배포](../guides/local-deployment.md) — 개인 PC 환경 최적화

@@ -1,82 +1,56 @@
-[홈](../index.md) > [가이드](.) > 설정 옵션 완전 가이드
+[홈](../index.md) > [가이드](.) > 설정 가이드
 
-# 설정 옵션 완전 가이드
+# 설정 가이드
 
-xzawedOrchestrator의 모든 설정 옵션과 시나리오별 `.env` 파일 예시를 설명합니다.
+xzawedOrchestrator의 환경변수를 설정하고 시나리오별 `.env` 파일을 구성하는 방법을 안내합니다.
+
+## 사전 조건
+
+- xzawedOrchestrator 소스 체크아웃 완료
+- 아래 중 하나:
+  - Anthropic API 키 (`CLAUDE_MODE=api` 사용 시)
+  - 로컬에 Claude CLI 설치 (`CLAUDE_MODE=cli` 사용 시)
 
 ---
 
-## 설정 방법
-
-모든 설정은 프로젝트 루트의 `.env` 파일 또는 실행 환경의 환경변수로 제공합니다.
+## .env 파일 생성
 
 ```bash
-# .env 파일 생성
-cp .env.example .env
-
-# 또는 환경변수로 직접 설정
-PORT=4000 CLAUDE_MODE=api pnpm dev
+cp xzawedOrchestrator/.env.example xzawedOrchestrator/.env
 ```
 
----
-
-## 전체 설정 목록
-
-### 서버 모드
-
-| 변수 | 기본값 | 가능한 값 | 설명 |
-|------|--------|-----------|------|
-| `MODE` | `local` | `local`, `remote` | 배포 환경. `local`은 단일 사용자 PC, `remote`는 클라우드 서버 |
-| `PORT` | `3000` | 1–65535 | HTTP 서버 리슨 포트 |
-| `AUTH` | `none` | `none`, `jwt` | 인증 방식. `jwt`는 팀 서버 환경에서 사용 |
-| `SERVICE_JWT_SECRET` | — | 32자 이상 문자열 | `AUTH=jwt` 시 필수. 서비스 간 JWT 서명 키 |
-| `USER_JWT_SECRET` | — | 문자열 | 사용자 인증용 JWT 서명 키 (사용자 세션 인증 활성화 시) |
-
-### Claude 실행기
-
-| 변수 | 기본값 | 가능한 값 | 설명 |
-|------|--------|-----------|------|
-| `CLAUDE_MODE` | `api` | `api`, `cli`, `remote` | Claude 실행 방식 |
-| `ANTHROPIC_API_KEY` | — | `sk-ant-...` | `CLAUDE_MODE=api` 시 필수 |
-| `CLAUDE_MODEL` | `claude-sonnet-4-6` | 모델 ID | API 모드에서 사용할 Claude 모델 |
-
-### 원격 CLI 모드
-
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `REMOTE_CLI_URL` | — | `CLAUDE_MODE=remote` 시 HTTP 래퍼 URL |
-| `REMOTE_HOST` | — | SSH 원격 호스트 (예: `my.server.com`) |
-| `REMOTE_USER` | — | SSH 사용자 (예: `ubuntu`) |
-| `REMOTE_KEY_PATH` | — | SSH 프라이빗 키 경로 (예: `~/.ssh/id_rsa`) |
-
-### Redis
-
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `REDIS_URL` | `redis://localhost:6379` | Redis 연결 URL. 없으면 인메모리 폴백 |
-
-### 데이터베이스 및 외부 서비스
-
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `DATABASE_URL` | — | PostgreSQL 연결 URL. 미설정 시 인메모리 세션 저장 |
-| `MANAGER_URL` | `http://localhost:3001` | xzawedManager HTTP 엔드포인트 URL |
-| `GITHUB_TOKEN_ENCRYPTION_KEY` | — | GitHub 토큰 암호화 키 (GitHub 연동 시) |
-| `SERVE_WEB` | `false` | `true`로 설정 시 정적 웹 UI 서빙 활성화 |
-
-### Electron 앱 (클라이언트 설정)
-
-| 변수 | 기본값 | 설명 |
-|------|--------|------|
-| `SERVER_URL` | — | `MODE=remote` 시 Electron 앱이 접속할 서버 URL |
+모든 설정은 `.env` 파일 또는 환경변수로 제공합니다. 환경변수가 `.env` 파일보다 우선합니다.
 
 ---
 
-## 시나리오별 .env 예시
+## Claude 실행 모드 선택
 
-### 시나리오 1: 로컬 개발 (API 키)
+`CLAUDE_MODE`는 Claude를 어떤 방식으로 실행할지 결정합니다.
 
-가장 일반적인 개발 환경입니다. Anthropic API 키만 있으면 즉시 시작할 수 있습니다.
+| 값 | 동작 | 필수 조건 |
+|----|------|-----------|
+| `api` | Anthropic SDK 직접 호출 (기본값) | `ANTHROPIC_API_KEY` |
+| `cli` | 로컬 `claude` CLI 서브프로세스 실행 | Claude CLI 설치 |
+| `remote` | 원격 서버의 Claude CLI 사용 | `REMOTE_CLI_URL` 또는 SSH 변수 |
+
+---
+
+## 인증 방식 선택
+
+`AUTH` 변수로 서비스 간 인증 방식을 설정합니다.
+
+| 값 | 용도 |
+|----|------|
+| `none` | 인증 없음. 개인 로컬 환경에 적합 (기본값) |
+| `jwt` | JWT 인증. 팀 공유 서버 환경에서 사용. `SERVICE_JWT_SECRET` 필수 |
+
+사용자 인증(`/auth/*`, `/projects` 엔드포인트)은 `DATABASE_URL`과 `USER_JWT_SECRET`을 모두 설정할 때 별도로 활성화됩니다.
+
+---
+
+## 시나리오별 설정 예시
+
+### 시나리오 1: 로컬 개발 — API 키 사용
 
 ```env
 MODE=local
@@ -90,9 +64,9 @@ CLAUDE_MODEL=claude-sonnet-4-6
 REDIS_URL=redis://localhost:6379
 ```
 
-### 시나리오 2: 로컬 개발 (Claude CLI 구독)
+### 시나리오 2: 로컬 개발 — Claude CLI 구독 사용
 
-Claude CLI 구독을 사용하는 경우입니다. Claude CLI가 로컬에 설치되어 있어야 합니다.
+Claude CLI(`claude` 명령어)가 로컬에 설치되어 있어야 합니다.
 
 ```env
 MODE=local
@@ -104,9 +78,9 @@ CLAUDE_MODE=cli
 REDIS_URL=redis://localhost:6379
 ```
 
-### 시나리오 3: 로컬 개발 (Redis 없음)
+### 시나리오 3: 로컬 개발 — Redis 없음
 
-Redis 없이 인메모리 폴백으로 실행합니다. 개발·테스트에만 권장합니다.
+Redis 없이 인메모리 폴백으로 실행합니다. 서버 재시작 시 모든 세션 데이터가 초기화됩니다.
 
 ```env
 MODE=local
@@ -116,12 +90,10 @@ AUTH=none
 CLAUDE_MODE=api
 ANTHROPIC_API_KEY=sk-ant-api03-...
 
-# REDIS_URL 없으면 자동으로 인메모리 폴백 사용
+# REDIS_URL 미설정 시 자동으로 인메모리 폴백 사용
 ```
 
-### 시나리오 4: 개인 원격 서버 (Railway)
-
-클라우드 서버에 배포할 때 사용합니다.
+### 시나리오 4: 개인 원격 서버
 
 ```env
 MODE=remote
@@ -137,13 +109,13 @@ REDIS_URL=redis://default:password@redis.railway.internal:6379
 
 ### 시나리오 5: 팀 공유 서버
 
-팀원이 JWT 인증으로 접속하는 팀 서버 설정입니다.
+`SERVICE_JWT_SECRET`은 32자 이상이어야 합니다. 미달 시 서버 기동에 실패합니다.
 
 ```env
 MODE=remote
 PORT=3000
 AUTH=jwt
-SERVICE_JWT_SECRET=your-strong-32-char-secret-here  # 32자 이상 필수
+SERVICE_JWT_SECRET=your-strong-32-char-secret-here
 
 CLAUDE_MODE=api
 ANTHROPIC_API_KEY=sk-ant-api03-...
@@ -152,9 +124,7 @@ CLAUDE_MODEL=claude-sonnet-4-6
 REDIS_URL=redis://default:password@redis.example.com:6379
 ```
 
-### 시나리오 6: 원격 Claude CLI (HTTP 래퍼)
-
-원격 서버에 Claude CLI가 설치되어 있고 HTTP로 노출된 경우입니다.
+### 시나리오 6: 원격 Claude CLI — HTTP 래퍼
 
 ```env
 MODE=local
@@ -167,9 +137,7 @@ REMOTE_CLI_URL=https://claude-proxy.my-server.com
 REDIS_URL=redis://localhost:6379
 ```
 
-### 시나리오 7: 원격 Claude CLI (SSH)
-
-SSH로 원격 서버의 Claude CLI를 사용하는 경우입니다.
+### 시나리오 7: 원격 Claude CLI — SSH
 
 ```env
 MODE=local
@@ -188,24 +156,18 @@ REDIS_URL=redis://localhost:6379
 
 ## 설정 유효성 검사
 
-서버 시작 시 `config.ts`에서 설정값을 검증합니다. 필수 값이 누락된 경우 명확한 에러 메시지와 함께 서버 기동이 실패합니다.
+서버 시작 시 `packages/server/src/config.ts`에서 필수 값을 검증합니다. 검증 실패 시 다음 메시지와 함께 프로세스가 종료됩니다.
 
-```
-Error: ANTHROPIC_API_KEY is required when CLAUDE_MODE=api
-Error: REMOTE_CLI_URL or REMOTE_HOST is required when CLAUDE_MODE=remote
-```
+| 조건 | 에러 메시지 |
+|------|-------------|
+| `CLAUDE_MODE=api`이고 `ANTHROPIC_API_KEY` 없음 | `ANTHROPIC_API_KEY is required when CLAUDE_MODE=api. Set CLAUDE_MODE=cli to use Claude CLI subscription instead.` |
+| `CLAUDE_MODE=remote`이고 `REMOTE_CLI_URL`과 `REMOTE_HOST` 모두 없음 | `REMOTE_CLI_URL or REMOTE_HOST is required when CLAUDE_MODE=remote` |
+| `AUTH=jwt`이고 `SERVICE_JWT_SECRET`이 없거나 32자 미만 | `SERVICE_JWT_SECRET must be at least 32 characters when AUTH=jwt` |
 
 ---
 
 ## 다음 단계
 
-- [로컬 단일 사용자 배포](local-deployment.md)
-- [원격/팀 서버 배포](remote-deployment.md)
-- [환경변수 전체 목록](../reference/environment-variables.md)
-
----
-
-## 관련 문서
-
-- [Claude 실행 모드](../concepts/claude-runners.md)
-- [설치 가이드](installation.md)
+- [로컬 배포](local-deployment.md) — 로컬 환경에서 실행
+- [원격/팀 서버 배포](remote-deployment.md) — 클라우드 배포
+- [환경변수 전체 목록](../reference/environment-variables.md) — 모든 변수의 타입·기본값·설명

@@ -1,54 +1,44 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# CLAUDE.md — xzawedSecurity
 
 ## 프로젝트 개요
 
 xzawedSecurity는 xzawed 멀티 에이전트 시스템의 **보안 감사 에이전트**다.
-xzawedManager로부터 감사 요청을 받아 OWASP Top 10 기반 정적 분석, 의존성 취약점 검사, Claude AI 분석을 병렬로 실행하고 점수와 함께 결과를 반환한다.
+xzawedManager로부터 감사 요청을 받아 OWASP Top 10 기반 정적 분석, 의존성 취약점 검사, Claude AI 분석을 병렬로 실행하고 보안 점수와 수정 제안을 반환한다.
 
-현재 상태: **구현 완료 (49/49 테스트 통과)**
+**현재 상태: 구현 완료 (49/49 테스트 통과)**
 
 ## 핵심 명령어
 
 ```bash
+# xzawedShared 먼저 빌드 필수
+cd ../xzawedShared && pnpm install && pnpm build && cd ../xzawedSecurity
+
 pnpm install       # 의존성 설치
 pnpm dev           # tsx watch 개발 모드
 pnpm test          # Vitest 전체 테스트
-pnpm test <file>   # 단일 파일 테스트
-pnpm build         # TypeScript 컴파일
+pnpm test <파일>   # 단일 파일 테스트
+pnpm build         # TypeScript 컴파일 → dist/
 ```
 
-## 아키텍처
+## 디렉토리 구조
 
 ```
 src/
-├── index.ts              # 진입점: Redis consumer 시작
-├── config.ts             # 환경변수 검증 (zod)
+├── index.ts              # 진입점: config 로드, Redis 연결, 모든 컴포넌트 초기화
+├── config.ts             # 환경변수 검증 (Zod)
 ├── server.ts             # Fastify HTTP 서버 (/health, PORT=3008)
-├── security.ts           # 3개 분석기 Promise.all, 점수 계산, 심각도 필터링
-├── executor.ts           # child_process — npm audit / pip audit 실행; validatePath() — WORKSPACE_ROOT 검증
-├── executor.test.ts      # validatePath 보안 검증 4건 (test.each)
-├── types.ts              # SecurityIssue, ManagerToSecurityMessage 타입
+├── security.ts           # 3개 분석기 Promise.all, calculateScore(), filterBySeverity()
+├── executor.ts           # validatePath() — WORKSPACE_ROOT 경로 검증
+├── types.ts              # SecurityIssue, ManagerToSecurityMessageSchema
 ├── analyzers/
-│   ├── static.ts         # OWASP 패턴 정적 분석 (소스 파일 직접 스캔)
-│   └── deps.ts           # 의존성 취약점 감사 (execFile npm/pip audit)
+│   ├── static.ts         # OWASP 패턴 5개 규칙으로 소스 파일 직접 스캔
+│   └── deps.ts           # npm audit --json 실행 → SecurityIssue[] 변환
 ├── streams/
-│   ├── consumer.ts       # 구독: manager:to-security:{sessionId}
-│   └── producer.ts       # 발행: security:to-manager:{sessionId}
+│   ├── consumer.ts       # BaseConsumer 확장 — manager:to-security:{sessionId}
+│   └── producer.ts       # security:to-manager:{sessionId} 발행
 └── claude/
-    └── runner.ts         # Anthropic SDK — OWASP 컨텍스트 기반 분석
+    └── runner.ts         # Anthropic SDK — OWASP 컨텍스트 기반 추가 분석
 ```
-
-### 데이터 흐름
-
-1. Redis consumer → `audit_request` 수신 (`ManagerToSecurityMessage`)
-2. `security.ts` → 3개 분석기 `Promise.all` (각 `.catch(()=>[])` 독립 실패)
-   - `static.ts`: OWASP 규칙 패턴으로 소스 파일 스캔
-   - `deps.ts`: `npm audit --json` / `pip audit` 실행
-   - `claude/runner.ts`: Claude API로 추가 OWASP 분석
-3. 전체 이슈에서 점수 계산 → `minSeverity`로 필터링
-4. Redis producer → `security_complete` 발행
 
 ## Redis Streams 인터페이스
 
@@ -60,20 +50,21 @@ interface ManagerToSecurityMessage {
   sessionId: string; messageId: string; timestamp: number
   type: 'audit_request' | 'abort'
   payload: {
-    artifacts: string[]
-    severity: 'low' | 'medium' | 'high'
-    projectPath: string
+    artifacts: string[]                         // 감사 대상 파일 경로 목록
+    projectPath: string                         // 의존성 감사 기준 경로
+    severity: 'low' | 'medium' | 'high'         // 최소 보고 심각도
     context: Record<string, unknown>
+    userContext?: { userId: string; projectId: string; workspaceRoot: string }
   }
 }
 
 // 발신: security:to-manager:{sessionId}
 interface SecurityToManagerMessage {
   sessionId: string; messageId: string; timestamp: number
-  type: 'security_complete' | 'error'
+  type: 'audit_complete' | 'error'
   payload: {
     issues?: SecurityIssue[]
-    score?: number
+    score?: number                              // 0-100 (높을수록 안전)
     summary?: string
     content: string
   }
@@ -83,35 +74,42 @@ interface SecurityIssue {
   id: string
   severity: 'low' | 'medium' | 'high' | 'critical'
   category: string
-  file: string
-  line?: number
-  description: string
-  suggestion: string
-  cwe?: string
+  file: string; line?: number
+  description: string; suggestion: string; cwe?: string
 }
 ```
 
 ## 환경 변수
 
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-CLAUDE_MODEL=claude-sonnet-4-6
-REDIS_URL=redis://localhost:6379
-PORT=3008
-MODE=local
-WORKSPACE_ROOT=/path/to/workspace  # 절대경로 필수
-SECURITY_SESSION_ID=security-default
-```
+| 변수 | 필수 | 기본값 | 설명 |
+|---|---|---|---|
+| `ANTHROPIC_API_KEY` | 필수 | — | Anthropic API 인증 키 |
+| `CLAUDE_MODEL` | 선택 | `claude-sonnet-4-6` | Claude 모델 |
+| `REDIS_URL` | 선택 | `redis://localhost:6379` | Redis 연결 URL |
+| `PORT` | 선택 | `3008` | HTTP 서버 포트 |
+| `MODE` | 선택 | `local` | 실행 모드 |
+| `WORKSPACE_ROOT` | 필수 | — | 허용 경로 상한선 (절대경로, 파일시스템 루트 불가) |
 
 ## 구현 참고사항
 
-- 점수 계산: `Math.max(0, 100 - (critical×40 + high×15 + medium×5 + low×1))`
-- `static.ts`의 `cwe` 필드: `exactOptionalPropertyTypes` 때문에 조건부 할당 필수 (`if (rule.cwe) issue.cwe = rule.cwe`)
-- `deps.ts` 목: `vi.fn()` 직접 팩토리 내부 사용 후 `vi.mocked(execFile)` 접근 (hoisting 오류 방지)
-- Manager 연결: `xzawedManager/packages/server/src/tools/security-audit.ts` (`createSecurityAuditHandler`)
+**점수 계산:** `Math.max(0, 100 - (critical×40 + high×15 + medium×5 + low×1))`
 
-## xzawed 생태계 연결
+**정적 분석 규칙 (static.ts):**
 
-전체 suite: 현재 저장소 루트
-- 에이전트 간 통신: Redis Streams (ioredis), 포트 3002–3008
-- 설계 스펙: `docs/services/security.md`
+| ID | 대상 | 심각도 | CWE |
+|---|---|---|---|
+| S001 | `password[:=]['"]...` | critical | CWE-798 |
+| S002 | `sk-ant-...` | critical | CWE-312 |
+| S003 | `eval(` | high | CWE-94 |
+| S004 | `innerHTML =` | high | CWE-79 |
+| S005 | `.query(` + 문자열 연결 | high | CWE-89 |
+
+**구현 주의사항**
+- `static.ts`의 `cwe` 필드: `exactOptionalPropertyTypes`로 인해 `if (rule.cwe !== undefined) issue.cwe = rule.cwe` 조건부 할당 필수
+- `deps.ts`: `npm audit`은 취약점 발견 시 비정상 종료코드 반환 → catch에서도 `e.stdout` 파싱
+- `deps.ts` severity 매핑: `moderate` → `medium`
+- `deps.ts` 목(mock): `vi.fn()` 직접 팩토리 내부 사용 후 `vi.mocked(execFile)` 접근 (hoisting 오류 방지)
+- 분석기 독립성: 각 `.catch(() => [])` — 하나가 실패해도 나머지 결과 반환
+- `executor.test.ts`: `test.each([3개 케이스])` + `test(1개)` = 4개 테스트
+
+**Manager 연결:** `xzawedManager/packages/server/src/tools/security-audit.ts` (`createSecurityAuditHandler`)

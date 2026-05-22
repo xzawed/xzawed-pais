@@ -1,82 +1,120 @@
-[홈](index.md) > 퀵스타트
+[홈](../README.md) > [시작하기](./) > 퀵스타트
 
 # 퀵스타트
 
-5분 안에 xzawedOrchestrator 서버를 실행하고 첫 번째 세션을 만드는 방법을 안내합니다.
+저장소 클론부터 첫 메시지 전송까지의 최단 경로를 설명한다.
 
 ---
 
-## Prerequisites
-
-시작 전에 아래 항목이 설치되어 있는지 확인하세요.
+## 사전 요구 사항
 
 | 항목 | 최소 버전 | 확인 명령 |
 |------|-----------|-----------|
 | Node.js | 22.0.0 | `node --version` |
-| pnpm | 9.0.0 | `pnpm --version` |
+| pnpm | 10.0.0 | `pnpm --version` |
+| Redis | 7.0 | `redis-cli ping` |
 | Git | — | `git --version` |
 
-> **Note:** Redis와 Claude CLI는 선택 사항입니다. Redis가 없으면 인메모리 폴백을, Claude CLI가 없으면 `CLAUDE_MODE=api`로 전환하세요.
+환경이 구성되어 있지 않으면 [설치](installation.md)를 먼저 완료한다.
 
 ---
 
-## 1단계: 저장소 클론 및 설치
+## 1단계: 저장소 클론 및 의존성 설치
 
 ```bash
 git clone https://github.com/xzawed/xzawed-pais.git
 cd xzawed-pais
-pnpm install
+```
+
+공유 라이브러리를 먼저 빌드한다.
+
+```bash
+cd xzawedShared && pnpm install && pnpm build && cd ..
+```
+
+Orchestrator와 Manager 의존성을 설치한다.
+
+```bash
+cd xzawedOrchestrator && pnpm install && pnpm build && cd ..
+cd xzawedManager && pnpm install && pnpm build && cd ..
 ```
 
 ---
 
-## 2단계: 환경변수 설정
+## 2단계: 환경 변수 설정
 
 ```bash
-cp .env.example .env
+cp xzawedOrchestrator/.env.example xzawedOrchestrator/.env
+cp xzawedManager/.env.example xzawedManager/.env
 ```
 
-기본 설정(`.env.example`)으로 로컬 환경에서 즉시 실행 가능합니다. Claude API를 사용하려면 `.env`를 열어 수정하세요.
+`xzawedOrchestrator/.env`를 편집하여 API 키를 입력한다.
 
 ```env
-# Claude CLI가 없는 경우: api 모드로 변경
 CLAUDE_MODE=api
 ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_MODEL=claude-sonnet-4-6
+REDIS_URL=redis://localhost:6379
+MANAGER_URL=http://localhost:3001
+PORT=3000
+MODE=local
+AUTH=none
+```
+
+`xzawedManager/.env`를 편집한다.
+
+```env
+ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_MODEL=claude-sonnet-4-6
+REDIS_URL=redis://localhost:6379
+PORT=3001
+MODE=local
 ```
 
 ---
 
-## 3단계: 서버 시작
+## 3단계: 서비스 시작
+
+터미널을 두 개 열고 각각 실행한다.
+
+**터미널 1 — Manager:**
 
 ```bash
-cd packages/server
+cd xzawedManager/packages/server
 pnpm dev
 ```
 
-아래와 같은 출력이 나오면 성공입니다.
+```
+xzawedManager server running on port 3001
+```
+
+**터미널 2 — Orchestrator:**
+
+```bash
+cd xzawedOrchestrator/packages/server
+pnpm dev
+```
 
 ```
 xzawedOrchestrator server running on port 3000
-CLAUDE_MODE=cli | MODE=local
+CLAUDE_MODE=api | MODE=local
 ```
 
 ---
 
-## 4단계: 서버 상태 확인
+## 4단계: 헬스체크 확인
 
 ```bash
 curl http://localhost:3000/health
 ```
 
 ```json
-{"status":"ok","timestamp":1747267200000}
+{"status":"ok","timestamp":1748000000000}
 ```
 
 ---
 
-## 5단계: 첫 번째 세션 만들기
-
-새 대화 세션을 생성합니다.
+## 5단계: 세션 생성
 
 ```bash
 curl -X POST http://localhost:3000/sessions \
@@ -88,7 +126,11 @@ curl -X POST http://localhost:3000/sessions \
 {"sessionId":"550e8400-e29b-41d4-a716-446655440000"}
 ```
 
-반환된 `sessionId`로 메시지를 전송합니다.
+---
+
+## 6단계: 메시지 전송
+
+반환된 `sessionId`로 메시지를 전송한다.
 
 ```bash
 SESSION_ID="550e8400-e29b-41d4-a716-446655440000"
@@ -104,12 +146,11 @@ curl -X POST http://localhost:3000/sessions/$SESSION_ID/messages \
 
 ---
 
-## 6단계: WebSocket으로 실시간 응답 받기
+## 7단계: WebSocket으로 실시간 응답 수신
 
-서버는 메시지를 비동기로 처리하고 WebSocket으로 결과를 스트리밍합니다.
+서버는 메시지를 비동기로 처리하고 WebSocket으로 결과를 스트리밍한다.
 
 ```javascript
-// 브라우저 또는 Node.js WebSocket 클라이언트
 const ws = new WebSocket(`ws://localhost:3000/ws/sessions/${SESSION_ID}`);
 
 ws.onmessage = (event) => {
@@ -118,25 +159,21 @@ ws.onmessage = (event) => {
 };
 ```
 
+수신되는 이벤트 예시:
+
 ```json
 {"type":"connected","sessionId":"550e8400-..."}
-{"type":"chunk","content":"네, 쇼핑몰 서비스 구현을 도와드리겠습니다."}
+{"type":"chunk","content":"요구사항 파악을 시작합니다."}
 {"type":"done"}
 ```
+
+WebSocket 이벤트 타입 전체 목록은 [WebSocket 레퍼런스](../reference/websocket.md)를 참고한다.
 
 ---
 
 ## 다음 단계
 
-- [설치 가이드](guides/installation.md) — Redis, Claude CLI 등 전체 환경 구성
-- [설정 옵션 완전 가이드](guides/configuration.md) — 모든 설정 값 설명
-- [아키텍처 개요](concepts/architecture.md) — 시스템 구조 이해
-- [REST API 레퍼런스](reference/rest-api.md) — 전체 API 엔드포인트
-
----
-
-## 관련 문서
-
-- [환경변수 목록](reference/environment-variables.md)
-- [Claude 실행 모드](concepts/claude-runners.md)
-- [세션 수명주기](concepts/sessions.md)
+- [설정 가이드](../guides/configuration.md) — 모든 환경 변수 설명과 시나리오별 예제
+- [플랫폼 개요](../concepts/overview.md) — 에이전트 계층 구조와 동작 원리
+- [REST API 레퍼런스](../reference/rest-api.md) — 전체 API 엔드포인트
+- [Claude 실행 모드](../concepts/claude-runners.md) — `api` / `cli` / `remote` 비교
