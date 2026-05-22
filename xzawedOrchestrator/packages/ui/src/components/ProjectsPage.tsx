@@ -18,7 +18,7 @@ export function ProjectsPage({ serverUrl, onSelectProject, onLogout }: Readonly<
 
   useEffect(() => {
     if (accessToken) {
-      void fetchProjects(serverUrl, accessToken).catch((e: unknown) => console.error('[ProjectsPage] fetch:', e))
+      fetchProjects(serverUrl, accessToken).catch((e: unknown) => console.error('[ProjectsPage] fetch:', e))
     }
   }, [serverUrl, accessToken, fetchProjects])
 
@@ -95,8 +95,9 @@ export function ProjectsPage({ serverUrl, onSelectProject, onLogout }: Readonly<
               <p className="text-sm text-danger">{createError}</p>
             )}
             <div>
-              <label className="mb-1 block text-sm font-medium text-fg-muted">Name</label>
+              <label htmlFor="project-name" className="mb-1 block text-sm font-medium text-fg-muted">Name</label>
               <input
+                id="project-name"
                 value={newName}
                 onChange={(e) => {
                   setNewName(e.target.value)
@@ -112,8 +113,9 @@ export function ProjectsPage({ serverUrl, onSelectProject, onLogout }: Readonly<
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-fg-muted">Slug</label>
+              <label htmlFor="project-slug" className="mb-1 block text-sm font-medium text-fg-muted">Slug</label>
               <input
+                id="project-slug"
                 value={newSlug}
                 onChange={(e) => setNewSlug(e.target.value)}
                 required

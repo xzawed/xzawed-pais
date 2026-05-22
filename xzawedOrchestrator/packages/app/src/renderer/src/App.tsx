@@ -35,7 +35,7 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     if (settings.serverUrl) {
-      void restore(settings.serverUrl)
+      restore(settings.serverUrl).catch((e: unknown) => console.error('[App] restore error:', e))
     }
   }, [settings.serverUrl, restore])
 

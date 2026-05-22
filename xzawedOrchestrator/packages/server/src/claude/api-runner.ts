@@ -8,8 +8,8 @@ interface APIRunnerOptions {
 }
 
 export class APIRunner implements ClaudeRunner {
-  private client: Anthropic
-  private model: string
+  private readonly client: Anthropic
+  private readonly model: string
 
   constructor(options: APIRunnerOptions) {
     this.client = new Anthropic({ apiKey: options.apiKey })

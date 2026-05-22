@@ -2,10 +2,10 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import type { Pool } from 'pg'
 import type { WebSocket } from 'ws'
 import type { SessionStore } from '../sessions/session.store.js'
-import type { ClaudeRunner } from '../claude/runner.interface.js'
+import type { ClaudeRunner, RunOptions } from '../claude/runner.interface.js'
 import type { ManagerClient } from '../manager/manager.client.js'
 import type { StreamProducer } from '../streams/producer.js'
-import type { Message, ManagerToOrchestratorMessage } from '@xzawed/shared'
+import type { Message, ManagerToOrchestratorMessage, Chunk } from '@xzawed/shared'
 import { StreamConsumer } from '../streams/consumer.js'
 import Anthropic from '@anthropic-ai/sdk'
 import { structureIntent } from '../claude/intent-structurer.js'
@@ -16,6 +16,100 @@ import { assertProjectOwner } from '../auth/ownership.js'
 const messageStore = new Map<string, Message[]>()
 const claudeSessionIds = new Map<string, string>()
 const taskStore = new TaskStore()
+
+interface ChunkProcessResult {
+  fullContent: string
+  aborted: boolean
+}
+
+async function processChunk(
+  chunk: Chunk,
+  sessionId: string,
+  assistantMsgId: string,
+  socket: WebSocket | undefined,
+  store: SessionStore,
+  accumulator: { fullContent: string },
+): Promise<'continue' | 'error' | 'done'> {
+  if (chunk.type === 'text') {
+    accumulator.fullContent += chunk.content
+    socket?.send(JSON.stringify({ type: 'chunk', messageId: assistantMsgId, content: chunk.content }))
+    return 'continue'
+  }
+  if (chunk.type === 'claude_session') {
+    claudeSessionIds.set(sessionId, chunk.content)
+    await store.updateClaudeSessionId(sessionId, chunk.content)
+    return 'continue'
+  }
+  if (chunk.type === 'error') {
+    socket?.send(JSON.stringify({ type: 'error', content: chunk.content }))
+    return 'error'
+  }
+  if (chunk.type === 'done') return 'done'
+  return 'continue'
+}
+
+async function processRunnerChunks(
+  runner: ClaudeRunner,
+  snapshot: Message[],
+  runOptions: RunOptions,
+  sessionId: string,
+  assistantMsgId: string,
+  socket: WebSocket | undefined,
+  store: SessionStore,
+): Promise<ChunkProcessResult> {
+  const acc = { fullContent: '' }
+  for await (const chunk of runner.send(snapshot, runOptions)) {
+    const result = await processChunk(chunk, sessionId, assistantMsgId, socket, store, acc)
+    if (result === 'error') return { fullContent: acc.fullContent, aborted: true }
+    if (result === 'done') break
+  }
+  return { fullContent: acc.fullContent, aborted: false }
+}
+
+async function saveAssistantMessage(
+  sessionId: string,
+  assistantMsgId: string,
+  fullContent: string,
+  msgRepo: MessageRepo | undefined,
+): Promise<void> {
+  if (msgRepo) {
+    await msgRepo.create(sessionId, 'assistant', fullContent)
+    return
+  }
+  const history = messageStore.get(sessionId) ?? []
+  history.push({ id: assistantMsgId, sessionId, role: 'assistant', content: fullContent, timestamp: Date.now() })
+}
+
+async function publishTaskToManager(
+  producer: StreamProducer,
+  sessionId: string,
+  intent: string,
+  snapshot: Message[],
+  session: { userId: string; projectId?: string | null },
+  socket: WebSocket | undefined,
+  log: FastifyInstance['log'],
+): Promise<void> {
+  const userContext = session.projectId
+    ? { userId: session.userId, projectId: session.projectId, workspaceRoot: `/workspace/${session.userId}/${session.projectId}` }
+    : undefined
+  try {
+    await producer.publish({
+      sessionId,
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now(),
+      type: 'task_request',
+      payload: {
+        intent,
+        context: { history: snapshot.map((m) => ({ role: m.role, content: m.content })) },
+        priority: 'normal',
+        ...(userContext ? { userContext } : {}),
+      },
+    })
+    socket?.send(JSON.stringify({ type: 'status', content: '전달 중...' }))
+  } catch (publishErr: unknown) {
+    log.warn({ err: publishErr }, 'Redis publish failed — Manager unavailable, skipping forwarding')
+  }
+}
 
 interface SessionsRoutesConfig {
   store: SessionStore
@@ -180,45 +274,20 @@ export async function sessionsRoutes(
         snapshot = [...history]
       }
 
-      void (async () => {
+      ;(async () => {
         const socket = wsSessions.get(req.params.id)
         const assistantMsgId = crypto.randomUUID()
 
         try {
           const storedClaudeSessionId = claudeSessionIds.get(req.params.id)
-          const runOptions = {
-            ...(storedClaudeSessionId ? { claudeSessionId: storedClaudeSessionId } : {}),
-          }
-          let fullContent = ''
-          for await (const chunk of runner.send(snapshot, runOptions)) {
-            if (chunk.type === 'text') {
-              fullContent += chunk.content
-              socket?.send(
-                JSON.stringify({ type: 'chunk', messageId: assistantMsgId, content: chunk.content })
-              )
-            } else if (chunk.type === 'claude_session') {
-              claudeSessionIds.set(req.params.id, chunk.content)
-              await store.updateClaudeSessionId(req.params.id, chunk.content)
-            } else if (chunk.type === 'error') {
-              socket?.send(JSON.stringify({ type: 'error', content: chunk.content }))
-              return
-            } else if (chunk.type === 'done') {
-              break
-            }
-          }
+          const runOptions: RunOptions = storedClaudeSessionId ? { claudeSessionId: storedClaudeSessionId } : {}
 
-          if (msgRepo) {
-            await msgRepo.create(req.params.id, 'assistant', fullContent)
-          } else {
-            const history = messageStore.get(req.params.id) ?? []
-            history.push({
-              id: assistantMsgId,
-              sessionId: req.params.id,
-              role: 'assistant',
-              content: fullContent,
-              timestamp: Date.now(),
-            })
-          }
+          const { fullContent, aborted } = await processRunnerChunks(
+            runner, snapshot, runOptions, req.params.id, assistantMsgId, socket, store,
+          )
+          if (aborted) return
+
+          await saveAssistantMessage(req.params.id, assistantMsgId, fullContent, msgRepo)
 
           const intent = (anthropicClient && claudeModel)
             ? await structureIntent(fullContent, anthropicClient, claudeModel)
@@ -226,31 +295,7 @@ export async function sessionsRoutes(
 
           taskStore.create(req.params.id, intent)
 
-          const userContext = session.projectId
-            ? {
-                userId: session.userId,
-                projectId: session.projectId,
-                workspaceRoot: `/workspace/${session.userId}/${session.projectId}`,
-              }
-            : undefined
-
-          try {
-            await producer.publish({
-              sessionId: req.params.id,
-              messageId: crypto.randomUUID(),
-              timestamp: Date.now(),
-              type: 'task_request',
-              payload: {
-                intent,
-                context: { history: snapshot.map((m) => ({ role: m.role, content: m.content })) },
-                priority: 'normal',
-                ...(userContext ? { userContext } : {}),
-              },
-            })
-            socket?.send(JSON.stringify({ type: 'status', content: '전달 중...' }))
-          } catch (publishErr: unknown) {
-            app.log.warn({ err: publishErr }, 'Redis publish failed — Manager unavailable, skipping forwarding')
-          }
+          await publishTaskToManager(producer, req.params.id, intent, snapshot, session, socket, app.log)
 
           socket?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
         } catch (err) {

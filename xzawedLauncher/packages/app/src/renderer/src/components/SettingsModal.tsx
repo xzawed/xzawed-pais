@@ -25,8 +25,8 @@ export default function SettingsModal({ onClose }: Readonly<Props>) {
         </div>
         <div className="flex flex-col gap-4">
           <div>
-            <label className="mb-1 block text-xs font-semibold text-[var(--fg-muted)]">Anthropic API 키 (선택)</label>
-            <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+            <label htmlFor="settings-api-key" className="mb-1 block text-xs font-semibold text-[var(--fg-muted)]">Anthropic API 키 (선택)</label>
+            <input id="settings-api-key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)}
               placeholder="sk-ant-..."
               className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-raised)] px-3 py-2 text-sm text-[var(--fg)] placeholder:text-[var(--fg-muted)] outline-none focus:border-[var(--accent)]" />
           </div>

@@ -31,7 +31,7 @@ async function main() {
   })
 }
 
-main().catch((err) => {
+await main().catch((err: unknown) => {
   console.error('Fatal:', err)
   process.exit(1)
 })

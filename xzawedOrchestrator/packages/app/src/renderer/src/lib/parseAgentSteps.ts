@@ -31,12 +31,11 @@ const TAG_MAP: Record<string, AgentName> = {
 
 const AGENT_TAG_RE = /^\[([A-Z]{2,3})\]\s?/
 
-export function parseAgentSteps(content: string, isStreaming = false): AgentStep[] {
-  if (!content.trim()) return []
+type Segment = { tag: string | null; lines: string[] }
 
-  const lines = content.split('\n')
-  const segments: Array<{ tag: string | null; lines: string[] }> = []
-  let current: { tag: string | null; lines: string[] } | null = null
+function segmentLines(lines: string[]): Segment[] {
+  const segments: Segment[] = []
+  let current: Segment | null = null
 
   for (const line of lines) {
     const match = line.match(AGENT_TAG_RE)
@@ -49,6 +48,19 @@ export function parseAgentSteps(content: string, isStreaming = false): AgentStep
     }
   }
   if (current) segments.push(current)
+  return segments
+}
+
+function segmentToStep(s: Segment, isLast: boolean, isStreaming: boolean): AgentStep {
+  const agentName: AgentName = s.tag ? (TAG_MAP[s.tag] ?? 'Assistant') : 'Assistant'
+  const status: StepStatus = isLast && isStreaming ? 'active' : 'done'
+  return { agentName, status, content: s.lines.join('\n').trim() }
+}
+
+export function parseAgentSteps(content: string, isStreaming = false): AgentStep[] {
+  if (!content.trim()) return []
+
+  const segments = segmentLines(content.split('\n'))
 
   if (segments.length === 0) return []
 
@@ -60,12 +72,6 @@ export function parseAgentSteps(content: string, isStreaming = false): AgentStep
     }]
   }
 
-  return segments
-    .filter((s) => s.tag !== null || s.lines.some((l) => l.trim()))
-    .map((s, i, arr) => {
-      const agentName: AgentName = s.tag ? (TAG_MAP[s.tag] ?? 'Assistant') : 'Assistant'
-      const isLast = i === arr.length - 1
-      const status: StepStatus = isLast && isStreaming ? 'active' : 'done'
-      return { agentName, status, content: s.lines.join('\n').trim() }
-    })
+  const filtered = segments.filter((s) => s.tag !== null || s.lines.some((l) => l.trim()))
+  return filtered.map((s, i) => segmentToStep(s, i === filtered.length - 1, isStreaming))
 }

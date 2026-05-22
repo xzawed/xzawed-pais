@@ -6,7 +6,7 @@ function validateManagerUrl(url: string): void {
 }
 
 export class ManagerClient {
-  constructor(private baseUrl: string) {
+  constructor(private readonly baseUrl: string) {
     validateManagerUrl(baseUrl)
   }
 

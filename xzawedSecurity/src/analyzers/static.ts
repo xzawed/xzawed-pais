@@ -25,7 +25,7 @@ const RULES: StaticRule[] = [
   },
   {
     id: 'S002',
-    pattern: /sk-ant-[a-zA-Z0-9\-]{20,}/g,
+    pattern: /sk-ant-[a-zA-Z0-9-]{20,}/g,
     severity: 'critical',
     category: 'exposure',
     description: 'Anthropic API 키 노출',
@@ -66,44 +66,55 @@ export async function analyzeFiles(
   workspaceRoot: string,
 ): Promise<SecurityIssue[]> {
   const issues: SecurityIssue[] = []
-
   for (const filePath of filePaths) {
-    let validPath: string
-    try {
-      validPath = await validatePath(filePath, workspaceRoot)
-    } catch {
-      continue
-    }
+    const fileIssues = await analyzeFile(filePath, workspaceRoot)
+    issues.push(...fileIssues)
+  }
+  return issues
+}
 
-    let content: string
-    try {
-      content = await fs.readFile(validPath, 'utf-8')
-    } catch {
-      continue
-    }
+async function analyzeFile(filePath: string, workspaceRoot: string): Promise<SecurityIssue[]> {
+  let validPath: string
+  try {
+    validPath = await validatePath(filePath, workspaceRoot)
+  } catch {
+    return []
+  }
 
-    const lines = content.split('\n')
+  let content: string
+  try {
+    content = await fs.readFile(validPath, 'utf-8')
+  } catch {
+    return []
+  }
 
-    for (const rule of RULES) {
-      for (let i = 0; i < lines.length; i++) {
-        rule.pattern.lastIndex = 0
-        const line = lines[i]
-        if (line !== undefined && rule.pattern.test(line)) {
-          const issue: SecurityIssue = {
-            id: `${rule.id}-${path.basename(filePath)}-${i + 1}`,
-            severity: rule.severity,
-            category: rule.category,
-            file: filePath,
-            line: i + 1,
-            description: rule.description,
-            suggestion: rule.suggestion,
-          }
-          if (rule.cwe !== undefined) issue.cwe = rule.cwe
-          issues.push(issue)
-        }
+  return scanLines(content.split('\n'), filePath)
+}
+
+function scanLines(lines: string[], filePath: string): SecurityIssue[] {
+  const issues: SecurityIssue[] = []
+  for (const rule of RULES) {
+    for (let i = 0; i < lines.length; i++) {
+      rule.pattern.lastIndex = 0
+      const line = lines[i]
+      if (line !== undefined && rule.pattern.test(line)) {
+        issues.push(buildIssue(rule, filePath, i + 1))
       }
     }
   }
-
   return issues
+}
+
+function buildIssue(rule: StaticRule, filePath: string, lineNumber: number): SecurityIssue {
+  const issue: SecurityIssue = {
+    id: `${rule.id}-${path.basename(filePath)}-${lineNumber}`,
+    severity: rule.severity,
+    category: rule.category,
+    file: filePath,
+    line: lineNumber,
+    description: rule.description,
+    suggestion: rule.suggestion,
+  }
+  if (rule.cwe !== undefined) issue.cwe = rule.cwe
+  return issue
 }

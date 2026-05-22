@@ -1,8 +1,8 @@
 import type { Task, TaskStatus } from './task.js'
 
 export class TaskStore {
-  private tasks = new Map<string, Task>()
-  private bySession = new Map<string, Set<string>>()
+  private readonly tasks = new Map<string, Task>()
+  private readonly bySession = new Map<string, Set<string>>()
 
   create(sessionId: string, intent: string): Task {
     const task: Task = {

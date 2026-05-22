@@ -3,6 +3,7 @@ import type { ToolRegistry } from '../tools/registry.js'
 import type { StreamProducer } from '../streams/producer.js'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { UserContext } from '../types/user-context.js'
+import type { ManagerToOrchestratorMessage } from '../types/streams.js'
 
 const REQUEST_INFO_TOOL: Anthropic.Tool = {
   name: 'request_info',
@@ -32,6 +33,75 @@ export class ClaudeRunner {
     private readonly model: string,
     private readonly registry: ToolRegistry,
   ) {}
+
+  private async publishStatus(
+    producer: StreamProducer,
+    sessionId: string,
+    content: string,
+    type: ManagerToOrchestratorMessage['type'] = 'status_update',
+  ): Promise<void> {
+    await producer.publish({
+      sessionId,
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now(),
+      type,
+      payload: { agentId: 'manager', content },
+    })
+  }
+
+  private async handleRequestInfoTool(
+    block: Anthropic.ToolUseBlock,
+    sessionId: string,
+    producer: StreamProducer,
+    sessionStore: SessionStore,
+  ): Promise<Anthropic.ToolResultBlockParam> {
+    const inputObj = block.input as Record<string, unknown>
+    if (typeof inputObj['question'] !== 'string') {
+      throw new TypeError(`request_info tool call missing required 'question' field`)
+    }
+    await this.publishStatus(producer, sessionId, inputObj['question'], 'info_request')
+    const answer = await sessionStore.waitForInfo(sessionId)
+    return { type: 'tool_result', tool_use_id: block.id, content: answer }
+  }
+
+  private async handleAgentTool(
+    block: Anthropic.ToolUseBlock,
+    sessionId: string,
+    producer: StreamProducer,
+    userContext?: UserContext,
+  ): Promise<Anthropic.ToolResultBlockParam> {
+    const handler = this.registry.get(block.name)
+    if (!handler) throw new Error(`Unknown tool: ${block.name}`)
+
+    await this.publishStatus(producer, sessionId, `Starting ${block.name}...`)
+    const result = await handler.execute(block.input, sessionId, userContext)
+    await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
+
+    return {
+      type: 'tool_result',
+      tool_use_id: block.id,
+      content: JSON.stringify(result),
+    }
+  }
+
+  private async processToolUseBlocks(
+    blocks: Anthropic.ContentBlock[],
+    sessionId: string,
+    producer: StreamProducer,
+    sessionStore: SessionStore,
+    userContext?: UserContext,
+  ): Promise<Anthropic.ToolResultBlockParam[]> {
+    const toolResults: Anthropic.ToolResultBlockParam[] = []
+    for (const block of blocks) {
+      if (block.type !== 'tool_use') continue
+      if (block.name === 'request_info') {
+        toolResults.push(await this.handleRequestInfoTool(block, sessionId, producer, sessionStore))
+      } else {
+        toolResults.push(await this.handleAgentTool(block, sessionId, producer, userContext))
+      }
+    }
+    return toolResults
+  }
 
   async run(options: RunnerOptions): Promise<string> {
     const { sessionId, intent, context, producer, sessionStore, signal, userContext } = options
@@ -77,57 +147,9 @@ export class ClaudeRunner {
       }
 
       if (response.stop_reason === 'tool_use') {
-        const toolResults: Anthropic.ToolResultBlockParam[] = []
-
-        for (const block of response.content) {
-          if (block.type !== 'tool_use') continue
-
-          if (block.name === 'request_info') {
-            const inputObj = block.input as Record<string, unknown>
-            if (typeof inputObj['question'] !== 'string') {
-              throw new Error(`request_info tool call missing required 'question' field`)
-            }
-            const question = inputObj['question']
-            await producer.publish({
-              sessionId,
-              messageId: crypto.randomUUID(),
-              timestamp: Date.now(),
-              type: 'info_request',
-              payload: { agentId: 'manager', content: question },
-            })
-            const answer = await sessionStore.waitForInfo(sessionId)
-            toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: answer })
-            continue
-          }
-
-          const handler = this.registry.get(block.name)
-          if (!handler) throw new Error(`Unknown tool: ${block.name}`)
-
-          await producer.publish({
-            sessionId,
-            messageId: crypto.randomUUID(),
-            timestamp: Date.now(),
-            type: 'status_update',
-            payload: { agentId: 'manager', content: `Starting ${block.name}...` },
-          })
-
-          const result = await handler.execute(block.input, sessionId, userContext)
-
-          await producer.publish({
-            sessionId,
-            messageId: crypto.randomUUID(),
-            timestamp: Date.now(),
-            type: 'status_update',
-            payload: { agentId: 'manager', content: `Completed ${block.name}: ${JSON.stringify(result)}` },
-          })
-
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id,
-            content: JSON.stringify(result),
-          })
-        }
-
+        const toolResults = await this.processToolUseBlocks(
+          response.content, sessionId, producer, sessionStore, userContext,
+        )
         if (toolResults.length === 0) {
           throw new Error('stop_reason was tool_use but no tool_use blocks found in response')
         }

@@ -62,7 +62,7 @@ export async function exec(
       Promise.resolve(onChunk(str)).catch(() => {})
     })
 
-    proc.on('close', (code: number | null) => {
+    proc.on('close', (code: number | null = 1) => {
       const exitCode = code ?? 1
       settle(() =>
         resolve({

@@ -62,7 +62,7 @@ export default function StepServices(): JSX.Element {
       </div>
       {error && <p className="text-xs text-red-400">{error}</p>}
       <div className="rounded-md bg-black/60 p-2 font-mono text-[10px] text-green-400 h-16 overflow-hidden">
-        {logs.slice(-5).map((l, i) => <div key={i}>{l}</div>)}
+        {logs.slice(-5).map((l, i) => <div key={`${i}:${l}`}>{l}</div>)}
       </div>
       {!starting && error && (
         <button onClick={() => { const sig = { cancelled: false }; void startServices(sig) }}

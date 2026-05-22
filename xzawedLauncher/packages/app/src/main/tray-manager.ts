@@ -22,11 +22,17 @@ export function createTray(win: BrowserWindow): Tray {
   return tray
 }
 
+function resolveTrayStatus(hasError: boolean, hasWarn: boolean): 'error' | 'warn' | 'ok' {
+  if (hasError) return 'error'
+  if (hasWarn) return 'warn'
+  return 'ok'
+}
+
 export function updateTrayIcon(states: ServiceState[]): void {
   if (!tray) return
   const hasError = states.some((s) => s.status === 'error')
   const hasWarn = states.some((s) => s.status === 'starting' || s.status === 'restarting')
-  const status = hasError ? 'error' : hasWarn ? 'warn' : 'ok'
+  const status = resolveTrayStatus(hasError, hasWarn)
   try {
     tray.setImage(nativeImage.createFromPath(getIconPath(status)))
   } catch { /* icon file absent in dev */ }

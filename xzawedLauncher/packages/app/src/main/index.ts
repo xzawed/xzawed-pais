@@ -36,7 +36,7 @@ function createWindow(): BrowserWindow {
   if (process.env['ELECTRON_RENDERER_URL']) {
     void win.loadURL(process.env['ELECTRON_RENDERER_URL']) // NOSONAR — dev-only env set by electron-vite
   } else {
-    void win.loadFile(path.join(__dirname, '../renderer/index.html'))
+    win.loadFile(path.join(__dirname, '../renderer/index.html')).catch((err: unknown) => console.error('[main] loadFile error:', err))
   }
 
   return win

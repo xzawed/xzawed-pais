@@ -158,65 +158,66 @@ function FormPanel({ spec }: Readonly<FormPanelProps>): React.JSX.Element {
   )
 }
 
+const panelClass = 'flex w-[280px] flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden'
+const headerClass = 'border-b border-border px-4 py-2 text-[13px] font-semibold text-fg'
+
+function EmptyPanel(): React.JSX.Element {
+  return (
+    <div className={panelClass}>
+      <div className={headerClass}>Context</div>
+      <div className="flex-1 overflow-y-auto p-4">
+        <p className="text-[13px] text-fg-ghost">
+          No active context. Start chatting to see dynamic panels here.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function MockupViewerPanel({ spec }: Readonly<{ spec: UISpec }>): React.JSX.Element {
+  return (
+    <div className={panelClass}>
+      <div className={headerClass}>{spec.title ?? 'Mockup'}</div>
+      <div className="flex-1 overflow-y-auto p-4">
+        <pre className="text-[12px] text-fg-ghost whitespace-pre-wrap break-words">
+          {spec.content ?? ''}
+        </pre>
+      </div>
+    </div>
+  )
+}
+
+function ProgressBoardPanel({ spec }: Readonly<{ spec: UISpec }>): React.JSX.Element {
+  return (
+    <div className={panelClass}>
+      <div className={headerClass}>{spec.title ?? 'Progress'}</div>
+      <div className="flex-1 overflow-y-auto p-4">
+        <p className="text-[13px] text-fg-ghost">{spec.content ?? 'Working…'}</p>
+      </div>
+    </div>
+  )
+}
+
 export function DynamicPanel(): React.JSX.Element {
   const { uiSpec } = useChatStore()
 
-  if (!uiSpec) {
-    return (
-      <div className="flex w-[280px] flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden">
-        <div className="border-b border-border px-4 py-2 text-[13px] font-semibold text-fg">
-          Context
-        </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          <p className="text-[13px] text-fg-ghost">
-            No active context. Start chatting to see dynamic panels here.
-          </p>
-        </div>
-      </div>
-    )
-  }
+  if (!uiSpec) return <EmptyPanel />
 
   if (uiSpec.type === 'form') {
     return (
-      <div className="flex w-[280px] flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden">
+      <div className={panelClass}>
         <FormPanel spec={uiSpec as UISpec & { type: 'form' }} />
       </div>
     )
   }
 
-  if (uiSpec.type === 'mockup_viewer') {
-    return (
-      <div className="flex w-[280px] flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden">
-        <div className="border-b border-border px-4 py-2 text-[13px] font-semibold text-fg">
-          {uiSpec.title ?? 'Mockup'}
-        </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          <pre className="text-[12px] text-fg-ghost whitespace-pre-wrap break-words">
-            {uiSpec.content ?? ''}
-          </pre>
-        </div>
-      </div>
-    )
-  }
+  if (uiSpec.type === 'mockup_viewer') return <MockupViewerPanel spec={uiSpec} />
 
-  if (uiSpec.type === 'progress_board') {
-    return (
-      <div className="flex w-[280px] flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden">
-        <div className="border-b border-border px-4 py-2 text-[13px] font-semibold text-fg">
-          {uiSpec.title ?? 'Progress'}
-        </div>
-        <div className="flex-1 overflow-y-auto p-4">
-          <p className="text-[13px] text-fg-ghost">{uiSpec.content ?? 'Working…'}</p>
-        </div>
-      </div>
-    )
-  }
+  if (uiSpec.type === 'progress_board') return <ProgressBoardPanel spec={uiSpec} />
 
   return (
-    <div className="flex w-[280px] flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden">
-      <div className="border-b border-border px-4 py-2 text-[13px] font-semibold text-fg">
-        Context
-      </div>
+    <div className={panelClass}>
+      <div className={headerClass}>Context</div>
     </div>
   )
 }

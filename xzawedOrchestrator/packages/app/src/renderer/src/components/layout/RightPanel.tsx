@@ -49,7 +49,7 @@ export function RightPanel(): React.JSX.Element {
         )}
         {logLines.map((line, i) => (
           <motion.div
-            key={i}
+            key={`${i}:${line}`}
             initial={{ opacity: 0, y: 3 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}

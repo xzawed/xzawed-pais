@@ -21,6 +21,17 @@ function parseData(fields: string[]): Record<string, unknown> | null {
   }
 }
 
+type RedisReadResult = [string, [string, string[]][]][]
+
+function hasPlanComplete(results: RedisReadResult): boolean {
+  for (const [, entries] of results) {
+    for (const [, fields] of entries) {
+      if (parseData(fields)?.['type'] === 'plan_complete') return true
+    }
+  }
+  return false
+}
+
 describe.skipIf(!hasRedis)('Redis Streams Integration', () => {
   let redis: Redis
   const usedKeys: string[] = []
@@ -134,7 +145,7 @@ describe.skipIf(!hasRedis)('Redis Streams Integration', () => {
         for (const [, entries] of results) {
           for (const [, fields] of entries) {
             const req = parseData(fields)
-            if (req === null || req['type'] !== 'plan_request') continue
+            if (req?.['type'] !== 'plan_request') continue
 
             const response = {
               sessionId,
@@ -228,22 +239,14 @@ describe.skipIf(!hasRedis)('Redis Streams Integration', () => {
 
     async function pollWithTimeout(): Promise<void> {
       while (Date.now() < deadline) {
-        const remaining = deadline - Date.now()
-        if (remaining <= 0) break
+        if (deadline - Date.now() <= 0) break
 
         const results = (await redis.xread(
           'COUNT', '10',
           'STREAMS', responseStream, '0-0'
-        )) as [string, [string, string[]][]][] | null
+        )) as RedisReadResult | null
 
-        if (results) {
-          for (const [, entries] of results) {
-            for (const [, fields] of entries) {
-              const msg = parseData(fields)
-              if (msg?.['type'] === 'plan_complete') return
-            }
-          }
-        }
+        if (results && hasPlanComplete(results)) return
 
         await new Promise((r) => setTimeout(r, 20))
       }
