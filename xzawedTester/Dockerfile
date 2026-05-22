@@ -20,6 +20,11 @@ COPY xzawedTester/tsconfig.json ./
 RUN pnpm build
 
 FROM node:22-alpine AS runner
+ENV COREPACK_HOME=/opt/corepack-cache
+RUN mkdir -p /opt/corepack-cache && \
+    corepack enable && \
+    corepack prepare pnpm@10 --activate && \
+    chown -R node:node /opt/corepack-cache
 WORKDIR /app
 COPY --from=service-build /workspace/xzawedTester/dist ./dist
 COPY --from=service-build /workspace/xzawedTester/package.json ./
