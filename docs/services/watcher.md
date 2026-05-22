@@ -2,7 +2,7 @@
 
 **역할:** 프로젝트 파일 시스템을 감시하고 변경 이벤트를 xzawedManager로 스트리밍한다. Claude API 미사용 — chokidar 기반 순수 파일 감시.
 
-**포트:** 3007 | **상태:** 구현 완료 (26/26 테스트)
+**포트:** 3007 | **상태:** 구현 완료 (27/27 테스트)
 
 ---
 
@@ -35,8 +35,8 @@ interface ManagerToWatcherMessage {
   type: 'watch_request' | 'stop_watch' | 'abort'
   payload: {
     projectPath: string
-    patterns?: string[]          // glob 패턴 (기본: '**/*')
-    ignorePatterns?: string[]    // 제외 패턴 (예: 'node_modules/**')
+    triggers: string[]           // 상대경로 glob 패턴 (절대경로·'..' 포함 불가)
+    debounceMs?: number          // 이벤트 디바운스 ms (기본: 300)
     context: Record<string, unknown>
   }
 }
@@ -49,16 +49,17 @@ interface WatcherToManagerMessage {
   sessionId: string
   messageId: string
   timestamp: number
-  type: 'watch_event' | 'watch_started' | 'watch_stopped' | 'error'
+  type: 'watch_started' | 'file_changed' | 'watch_stopped' | 'error'
   payload: {
-    events?: FileEvent[]
+    watcherId?: string
+    changes?: FileEvent[]
     content: string
   }
 }
 
 interface FileEvent {
-  type: 'add' | 'change' | 'unlink' | 'addDir' | 'unlinkDir'
   path: string
+  event: 'add' | 'change' | 'unlink'
   timestamp: number
 }
 ```
@@ -76,6 +77,7 @@ PORT=3007
 MODE=local
 WORKSPACE_ROOT=f:/DEVELOPMENT/SOURCE
 MAX_WATCHERS=10
+DEBOUNCE_MS=300
 ```
 
 ## 핵심 명령어

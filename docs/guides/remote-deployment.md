@@ -84,21 +84,22 @@ curl https://your-app.railway.app/health
 ### Dockerfile 예시
 
 ```dockerfile
-FROM node:20-alpine AS base
-RUN npm install -g pnpm
+FROM node:22-alpine AS base
+RUN corepack enable && corepack prepare pnpm@10 --activate
 
 FROM base AS builder
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json tsconfig.base.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/server/package.json ./packages/server/
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY packages/shared ./packages/shared
 COPY packages/server ./packages/server
 RUN pnpm build
 
-FROM base AS runner
+FROM node:22-alpine AS runner
+RUN corepack enable && corepack prepare pnpm@10 --activate
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/packages/server/dist ./dist
@@ -106,6 +107,7 @@ COPY --from=builder /app/packages/shared/dist ./node_modules/@xzawed/shared/dist
 COPY --from=builder /app/packages/server/node_modules ./node_modules
 
 EXPOSE 3000
+USER node
 CMD ["node", "dist/index.js"]
 ```
 

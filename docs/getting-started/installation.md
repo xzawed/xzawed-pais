@@ -12,7 +12,7 @@ xzawedOrchestrator를 개발하거나 운영하기 위한 환경을 구성하는
 
 | 항목 | 최소 버전 | 설치 방법 |
 |------|-----------|-----------|
-| Node.js | 20.0.0 | [nodejs.org](https://nodejs.org/) 또는 `nvm install 20` |
+| Node.js | 22.0.0 | [nodejs.org](https://nodejs.org/) 또는 `nvm install 22` |
 | pnpm | 9.0.0 | `npm install -g pnpm` |
 | Git | — | [git-scm.com](https://git-scm.com/) |
 
@@ -29,7 +29,7 @@ xzawedOrchestrator를 개발하거나 운영하기 위한 환경을 구성하는
 
 ```bash
 node --version
-# v20.0.0 이상이어야 합니다
+# v22.0.0 이상이어야 합니다
 
 npm --version
 # 10.0.0 이상 권장
@@ -51,8 +51,8 @@ pnpm --version
 ## 3단계: 저장소 클론
 
 ```bash
-git clone https://github.com/xzawed/orchestrator.git
-cd orchestrator
+git clone https://github.com/xzawed/xzawed-pais.git
+cd xzawed-pais
 ```
 
 ---
@@ -90,18 +90,16 @@ PORT=3000
 # 인증: none | jwt
 AUTH=none
 
-# Claude 실행 모드: cli | api | remote
-CLAUDE_MODE=cli
-
-# API 모드 시 필요
-# ANTHROPIC_API_KEY=sk-ant-...
-# CLAUDE_MODEL=claude-sonnet-4-6
+# Claude 실행 모드: api | cli | remote (기본값: api)
+CLAUDE_MODE=api
+ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_MODEL=claude-sonnet-4-6
 
 # Redis (없으면 인메모리 폴백)
 REDIS_URL=redis://localhost:6379
 ```
 
-> **Tip:** `CLAUDE_MODE=cli`이고 Claude CLI가 설치되어 있지 않다면 `CLAUDE_MODE=api`로 변경하고 `ANTHROPIC_API_KEY`를 설정하세요.
+> **Tip:** Claude CLI 구독을 사용하려면 `CLAUDE_MODE=cli`로 변경하고 `ANTHROPIC_API_KEY` 줄을 제거하세요. Claude CLI가 설치되어 있어야 합니다.
 
 ---
 

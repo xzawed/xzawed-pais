@@ -34,8 +34,7 @@ interface ManagerToDeveloperMessage {
   timestamp: number
   type: 'develop_request' | 'abort'
   payload: {
-    intent: string
-    steps: Step[]
+    plan: string             // 구현 지시 (자연어 계획)
     projectPath: string
     context: Record<string, unknown>
   }
@@ -49,18 +48,12 @@ interface DeveloperToManagerMessage {
   sessionId: string
   messageId: string
   timestamp: number
-  type: 'develop_complete' | 'develop_progress' | 'info_request' | 'error'
+  type: 'develop_complete' | 'error'
   payload: {
-    changes?: FileChange[]   // 생성·수정·삭제된 파일
+    artifacts?: string[]     // 생성·수정된 파일 경로 목록
+    summary?: string
     content: string
-    uiSpec?: UISpec
   }
-}
-
-interface FileChange {
-  path: string
-  type: 'create' | 'modify' | 'delete'
-  content?: string
 }
 ```
 

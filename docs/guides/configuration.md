@@ -29,12 +29,14 @@ PORT=4000 CLAUDE_MODE=api pnpm dev
 | `MODE` | `local` | `local`, `remote` | 배포 환경. `local`은 단일 사용자 PC, `remote`는 클라우드 서버 |
 | `PORT` | `3000` | 1–65535 | HTTP 서버 리슨 포트 |
 | `AUTH` | `none` | `none`, `jwt` | 인증 방식. `jwt`는 팀 서버 환경에서 사용 |
+| `SERVICE_JWT_SECRET` | — | 32자 이상 문자열 | `AUTH=jwt` 시 필수. 서비스 간 JWT 서명 키 |
+| `USER_JWT_SECRET` | — | 문자열 | 사용자 인증용 JWT 서명 키 (사용자 세션 인증 활성화 시) |
 
 ### Claude 실행기
 
 | 변수 | 기본값 | 가능한 값 | 설명 |
 |------|--------|-----------|------|
-| `CLAUDE_MODE` | `cli` | `cli`, `api`, `remote` | Claude 실행 방식 |
+| `CLAUDE_MODE` | `api` | `api`, `cli`, `remote` | Claude 실행 방식 |
 | `ANTHROPIC_API_KEY` | — | `sk-ant-...` | `CLAUDE_MODE=api` 시 필수 |
 | `CLAUDE_MODEL` | `claude-sonnet-4-6` | 모델 ID | API 모드에서 사용할 Claude 모델 |
 
@@ -53,6 +55,15 @@ PORT=4000 CLAUDE_MODE=api pnpm dev
 |------|--------|------|
 | `REDIS_URL` | `redis://localhost:6379` | Redis 연결 URL. 없으면 인메모리 폴백 |
 
+### 데이터베이스 및 외부 서비스
+
+| 변수 | 기본값 | 설명 |
+|------|--------|------|
+| `DATABASE_URL` | — | PostgreSQL 연결 URL. 미설정 시 인메모리 세션 저장 |
+| `MANAGER_URL` | `http://localhost:3001` | xzawedManager HTTP 엔드포인트 URL |
+| `GITHUB_TOKEN_ENCRYPTION_KEY` | — | GitHub 토큰 암호화 키 (GitHub 연동 시) |
+| `SERVE_WEB` | `false` | `true`로 설정 시 정적 웹 UI 서빙 활성화 |
+
 ### Electron 앱 (클라이언트 설정)
 
 | 변수 | 기본값 | 설명 |
@@ -63,23 +74,9 @@ PORT=4000 CLAUDE_MODE=api pnpm dev
 
 ## 시나리오별 .env 예시
 
-### 시나리오 1: 로컬 개발 (Claude CLI 구독)
+### 시나리오 1: 로컬 개발 (API 키)
 
-가장 일반적인 개발 환경입니다. Claude CLI가 로컬에 설치되어 있어야 합니다.
-
-```env
-MODE=local
-PORT=3000
-AUTH=none
-
-CLAUDE_MODE=cli
-
-REDIS_URL=redis://localhost:6379
-```
-
-### 시나리오 2: 로컬 개발 (API 키)
-
-Claude CLI 없이 Anthropic API 키만으로 실행합니다.
+가장 일반적인 개발 환경입니다. Anthropic API 키만 있으면 즉시 시작할 수 있습니다.
 
 ```env
 MODE=local
@@ -89,6 +86,20 @@ AUTH=none
 CLAUDE_MODE=api
 ANTHROPIC_API_KEY=sk-ant-api03-...
 CLAUDE_MODEL=claude-sonnet-4-6
+
+REDIS_URL=redis://localhost:6379
+```
+
+### 시나리오 2: 로컬 개발 (Claude CLI 구독)
+
+Claude CLI 구독을 사용하는 경우입니다. Claude CLI가 로컬에 설치되어 있어야 합니다.
+
+```env
+MODE=local
+PORT=3000
+AUTH=none
+
+CLAUDE_MODE=cli
 
 REDIS_URL=redis://localhost:6379
 ```

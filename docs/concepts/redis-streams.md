@@ -49,6 +49,12 @@ interface OrchestratorToManagerMessage {
     intent: string        // 정제된 사용자 의도
     context: Record<string, unknown>  // 수집된 요구사항
     priority: 'normal' | 'high'
+    userContext?: {       // 프로젝트 연동 시 포함
+      userId: string
+      projectId: string
+      workspaceRoot: string
+      githubRepo?: { owner: string; repo: string; branch: string }
+    }
   }
 }
 ```

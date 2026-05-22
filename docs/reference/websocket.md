@@ -104,14 +104,88 @@ Claude 응답 스트리밍이 완료되었습니다.
 
 ---
 
-### ui_spec
+### status
 
-지휘자가 동적 UI 패널을 렌더링하도록 요청합니다. 사용자의 추가 입력이 필요할 때 전송됩니다.
+xzawedManager에 태스크를 전달하는 중 임시 상태를 알립니다.
 
 ```json
 {
-  "type": "ui_spec",
-  "messageId": "660f9500-...",
+  "type": "status",
+  "content": "전달 중..."
+}
+```
+
+---
+
+### agent_status
+
+xzawedManager가 하위 에이전트 진행 상황(`status_update`)을 전달할 때 전송됩니다.
+
+```json
+{
+  "type": "agent_status",
+  "agentId": "xzawedDeveloper",
+  "content": "사용자 인증 모듈 코드 생성 중..."
+}
+```
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `type` | `"agent_status"` | 이벤트 타입 |
+| `agentId` | string | 업데이트를 보낸 에이전트 ID |
+| `content` | string | 상태 설명 텍스트 |
+
+---
+
+### agent_done
+
+xzawedManager의 작업이 완료(`task_complete`)되었을 때 전송됩니다.
+
+```json
+{
+  "type": "agent_done",
+  "agentId": "xzawedDeveloper",
+  "content": "쇼핑몰 백엔드 API 구현 완료."
+}
+```
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `type` | `"agent_done"` | 이벤트 타입 |
+| `agentId` | string | 완료 에이전트 ID |
+| `content` | string | 완료 결과 텍스트 |
+
+---
+
+### agent_error
+
+xzawedManager가 오류(`error`)를 보고할 때 전송됩니다.
+
+```json
+{
+  "type": "agent_error",
+  "agentId": "xzawedDeveloper",
+  "content": "빌드 실패: TypeScript 컴파일 오류"
+}
+```
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `type` | `"agent_error"` | 이벤트 타입 |
+| `agentId` | string | 오류 에이전트 ID |
+| `content` | string | 오류 설명 텍스트 |
+
+---
+
+### agent_info_request
+
+에이전트가 추가 정보(`info_request`)를 요청할 때 전송됩니다. 선택적으로 `uiSpec`을 포함하여 동적 UI 패널 렌더링을 요청합니다.
+
+```json
+{
+  "type": "agent_info_request",
+  "agentId": "xzawedPlanner",
+  "content": "서비스 구성 요구사항을 입력해 주세요.",
   "uiSpec": {
     "type": "form",
     "title": "서비스 구성 요구사항",
@@ -132,31 +206,16 @@ Claude 응답 스트리밍이 완료되었습니다.
 }
 ```
 
-UISpec 포맷 상세는 [동적 UI 패널](../concepts/dynamic-ui.md) 문서를 참고하세요.
-
----
-
-### task_update
-
-xzawedManager로부터 작업 진행 상황 업데이트를 수신했을 때 전송됩니다.
-
-```json
-{
-  "type": "task_update",
-  "agentId": "xzawedDeveloper",
-  "status": "in_progress",
-  "content": "사용자 인증 모듈 코드 생성 완료. 파일 저장 중 (45%).",
-  "progress": 45
-}
-```
-
 | 필드 | 타입 | 설명 |
 |------|------|------|
-| `type` | `"task_update"` | 이벤트 타입 |
-| `agentId` | string | 업데이트를 보낸 에이전트 ID |
-| `status` | `"in_progress"` \| `"completed"` \| `"error"` | 태스크 상태 |
-| `content` | string | 상태 설명 텍스트 |
-| `progress` | number (0-100) | 진행률 (optional) |
+| `type` | `"agent_info_request"` | 이벤트 타입 |
+| `agentId` | string | 요청 에이전트 ID |
+| `content` | string | 안내 텍스트 |
+| `uiSpec` | UISpec (optional) | 동적 폼 명세. 없으면 텍스트 안내만 표시 |
+
+`uiSpec`을 수신하면 클라이언트는 폼을 렌더링하고 사용자 입력을 `POST /sessions/:id/ui-actions`로 전송합니다.
+
+UISpec 포맷 상세는 [동적 UI 패널](../concepts/dynamic-ui.md) 문서를 참고하세요.
 
 ---
 
@@ -200,32 +259,32 @@ xzawedManager로부터 작업 진행 상황 업데이트를 수신했을 때 전
 ## 이벤트 흐름 예시
 
 ```
-클라이언트                          서버
-    │                               │
-    │── WebSocket 연결 ─────────────►│
-    │                               │
-    │◄── {"type":"connected"} ──────│
-    │                               │
-    │── REST POST /messages ────────►│ (별도 HTTP 요청)
-    │                               │
-    │◄── {"type":"chunk",...} ──────│
-    │◄── {"type":"chunk",...} ──────│
-    │◄── {"type":"chunk",...} ──────│
-    │◄── {"type":"done",...} ───────│
-    │                               │
-    │  (xzawedManager 작업 진행 중) │
-    │                               │
-    │◄── {"type":"task_update",...} │
-    │◄── {"type":"task_update",...} │
-    │                               │
-    │  (추가 정보 필요)              │
-    │                               │
-    │◄── {"type":"ui_spec",...} ────│
-    │                               │
-    │── REST POST /ui-actions ──────►│ (폼 제출)
-    │                               │
-    │◄── {"type":"chunk",...} ──────│
-    │◄── {"type":"done",...} ───────│
+클라이언트                               서버
+    │                                    │
+    │── WebSocket 연결 ──────────────────►│
+    │                                    │
+    │◄── {"type":"connected"} ───────────│
+    │                                    │
+    │── REST POST /messages ─────────────►│ (별도 HTTP 요청)
+    │                                    │
+    │◄── {"type":"chunk",...} ───────────│
+    │◄── {"type":"chunk",...} ───────────│
+    │◄── {"type":"chunk",...} ───────────│
+    │◄── {"type":"status","content":"전달 중..."} ─│
+    │◄── {"type":"done",...} ────────────│
+    │                                    │
+    │  (xzawedManager 작업 진행 중)      │
+    │                                    │
+    │◄── {"type":"agent_status",...} ────│
+    │◄── {"type":"agent_status",...} ────│
+    │                                    │
+    │  (추가 정보 필요)                   │
+    │                                    │
+    │◄── {"type":"agent_info_request",...} ──│
+    │                                    │
+    │── REST POST /ui-actions ───────────►│ (폼 제출)
+    │                                    │
+    │◄── {"type":"agent_done",...} ──────│
 ```
 
 ---

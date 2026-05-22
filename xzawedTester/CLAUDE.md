@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedTester는 xzawed 멀티 에이전트 시스템의 **테스트 실행 에이전트**다.
 xzawedManager로부터 프로젝트 경로를 받아 테스트를 실행하고 결과를 분석해 반환한다.
 
-현재 상태: **구현 완료 (31/31 테스트 통과)**
+현재 상태: **구현 완료 (32/32 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -87,7 +87,7 @@ REDIS_URL=redis://localhost:6379
 PORT=3005
 MODE=local
 WORKSPACE_ROOT=/path/to/workspace  # 절대경로 필수
-TEST_TIMEOUT_MS=120000
+TEST_TIMEOUT_MS=60000
 ```
 
 ## 구현 참고사항

@@ -104,10 +104,11 @@ xzawedOrchestrator/
 
 ```
 ClaudeRunner (interface)
-  ├── CLIRunner       — child_process.spawn('claude', ...)
-  ├── APIRunner       — @anthropic-ai/sdk 스트리밍
-  └── RemoteCLIRunner — SSH 터널 or HTTP 래퍼
-       └── runnerFactory() — CLAUDE_MODE 환경변수로 인스턴스 선택
+  ├── CLIRunner         — child_process.spawn('claude', ...)
+  ├── APIRunner         — @anthropic-ai/sdk 스트리밍
+  ├── HTTPRemoteRunner  — REMOTE_CLI_URL HTTP 래퍼 (NDJSON 스트리밍)
+  └── SSHRemoteRunner   — SSH + exec 원격 실행
+       └── createRunner() — CLAUDE_MODE 환경변수로 인스턴스 선택
 ```
 
 **streams/** — Redis Streams 비동기 통신
@@ -253,7 +254,7 @@ Redis 미설치 시: `ioredis-mock` 인메모리 폴백 적용
 | MCP | @modelcontextprotocol/sdk | 1.x |
 | Claude SDK | @anthropic-ai/sdk | 최신 버전 사용 |
 | Redis 클라이언트 | ioredis | 5.x |
-| 테스트 | Vitest + Playwright | 2.x |
+| 테스트 | Vitest + Playwright | 3.x |
 | 패키징 | electron-builder | — |
 
 ---

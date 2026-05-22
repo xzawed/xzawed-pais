@@ -156,6 +156,36 @@ packages/
 메시지 전송 시 `structureIntent()` 로 Claude API 기반 의도 정제 후 `TaskStore`에 `pending` 상태로 등록.  
 Redis 이벤트 수신에 따라 상태 전이: `pending` → `status_update` → `running` → `task_complete` → `completed` / `error` → `failed`.
 
+## 환경 변수
+
+```env
+# 공통
+ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_MODEL=claude-sonnet-4-6
+REDIS_URL=redis://localhost:6379
+PORT=3000
+MODE=local
+AUTH=none                         # none | jwt
+SERVICE_JWT_SECRET=               # AUTH=jwt 시 필수 (32자 이상)
+USER_JWT_SECRET=                  # 사용자 JWT access token 서명 키
+CLAUDE_MODE=api                   # api | cli | remote
+
+# 서버 간 연결
+MANAGER_URL=http://localhost:3001 # Manager 서비스 URL
+
+# 데이터베이스
+DATABASE_URL=                     # SQLite 파일 경로 또는 연결 문자열
+
+# GitHub PAT 암호화 (AES-256-GCM)
+GITHUB_TOKEN_ENCRYPTION_KEY=      # 32바이트 hex 문자열 (64자)
+
+# 원격 모드 (CLAUDE_MODE=remote 시)
+REMOTE_CLI_URL=                   # HTTP 원격 서버 URL (설정 시 SSH 무시)
+REMOTE_HOST=                      # SSH 호스트
+REMOTE_USER=                      # SSH 사용자
+REMOTE_KEY_PATH=~/.ssh/id_rsa     # SSH 개인키 경로
+```
+
 ## Claude 실행 모드
 
 `CLAUDE_MODE` 환경변수로 전환:
