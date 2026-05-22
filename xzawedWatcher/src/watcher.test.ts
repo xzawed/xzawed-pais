@@ -169,6 +169,29 @@ describe('Watcher.handle — watch_request', () => {
       expect.objectContaining({ type: 'error' }),
     )
   })
+
+  it('pre-checks capacity before creating chokidar (MAX_WATCHERS race fix)', async () => {
+    // Config limits to 1 watcher; store already has 1 entry
+    const limitedConfig = { ...config, maxWatchers: 1 }
+    const limitedStore = new WatcherStore(1)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = new Watcher({ publish: mockPublish } as any, limitedStore, limitedConfig)
+
+    // First request fills the slot
+    await w.handle(makeRequest({ projectPath: '/workspace/first' }))
+    expect(limitedStore.size).toBe(1)
+
+    const callsBefore = mockWatchFn.mock.calls.length
+
+    // Second request should be rejected BEFORE chokidar.watch is called
+    await w.handle({ ...makeRequest({ projectPath: '/workspace/second' }), sessionId: 'sess-2' })
+
+    expect(mockWatchFn.mock.calls.length).toBe(callsBefore) // chokidar NOT called again
+    expect(mockPublish).toHaveBeenCalledWith(
+      'sess-2',
+      expect.objectContaining({ type: 'error' }),
+    )
+  })
 })
 
 describe('Watcher.handle — stop_watch', () => {
