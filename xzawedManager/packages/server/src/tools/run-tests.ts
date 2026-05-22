@@ -30,7 +30,7 @@ const inputSchema = {
   properties: {
     projectPath: { type: 'string', description: 'Absolute path to the project root' },
     testFiles: { type: 'array', items: { type: 'string' }, description: 'Specific test files to run (optional)' },
-    testCommand: { type: 'string', description: 'Override test command (optional, auto-detected if omitted)' },
+    testCommand: { type: 'string', description: 'Override test command (optional, auto-detected if omitted). Must NOT contain shell metacharacters (;&|`$><). Use simple commands only, e.g. "pnpm test" or "npm test".' },
     context: { type: 'object', description: 'Additional context for test execution' },
   },
   required: ['projectPath', 'context'],
