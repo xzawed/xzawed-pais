@@ -1,11 +1,11 @@
 const TOKEN_KEY = 'access_token'
 const REFRESH_TOKEN_KEY = 'refresh_token'
 
+// tokenGet and refreshTokenGet are intentionally omitted: raw tokens must not be read
+// back to the renderer in Electron. Use auth:restore IPC for session restoration.
 type TokenAPI = {
-  tokenGet?: () => Promise<string | null>
   tokenSet?: (token: string) => Promise<void>
   tokenClear?: () => Promise<void>
-  refreshTokenGet?: () => Promise<string | null>
   refreshTokenSet?: (token: string) => Promise<void>
 }
 
@@ -15,8 +15,8 @@ function getElectronTokenAPI(): TokenAPI | undefined {
 
 export const tokenStorage = {
   async getAccessToken(): Promise<string | null> {
-    const api = getElectronTokenAPI()
-    if (api?.tokenGet) return api.tokenGet()
+    // In Electron, tokens are not readable back from safeStorage via IPC.
+    // Session restoration uses auth:restore which proxies through main.
     return sessionStorage.getItem(TOKEN_KEY)
   },
 
@@ -27,8 +27,7 @@ export const tokenStorage = {
   },
 
   async getRefreshToken(): Promise<string | null> {
-    const api = getElectronTokenAPI()
-    if (api?.refreshTokenGet) return api.refreshTokenGet()
+    // In Electron, refresh tokens are not readable back from safeStorage via IPC.
     return sessionStorage.getItem(REFRESH_TOKEN_KEY)
   },
 

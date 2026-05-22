@@ -105,14 +105,32 @@ export async function authRoutes(
       const user = await users.findById(record.userId)
       if (!user) return reply.status(401).send({ error: 'User not found' })
 
-      // Refresh token rotation: revoke old, issue new
-      await refreshes.revoke(record.id)
+      const { token: newRefreshToken, hash, expiresAt } = issueRefreshToken()
       const accessToken = issueAccessToken(
         { sub: user.id, email: user.email, displayName: user.displayName },
         userJwtSecret
       )
-      const { token: newRefreshToken, hash, expiresAt } = issueRefreshToken()
-      await refreshes.create(user.id, hash, expiresAt, req.headers['user-agent'])
+
+      // Refresh token rotation: revoke old and insert new atomically
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        await client.query(
+          'UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1',
+          [record.id]
+        )
+        await client.query(
+          `INSERT INTO refresh_tokens (user_id, token_hash, expires_at, user_agent)
+           VALUES ($1, $2, $3, $4)`,
+          [user.id, hash, expiresAt, req.headers['user-agent'] ?? null]
+        )
+        await client.query('COMMIT')
+      } catch (txErr) {
+        await client.query('ROLLBACK')
+        throw txErr
+      } finally {
+        client.release()
+      }
 
       return reply.send({ accessToken, refreshToken: newRefreshToken })
     }

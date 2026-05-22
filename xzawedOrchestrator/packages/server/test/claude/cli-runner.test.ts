@@ -13,9 +13,10 @@ vi.mock('node:child_process', () => ({
 function makeMockProcess() {
   const stdout = Object.assign(new EventEmitter(), { resume: () => {} })
 
+  const stderr = Object.assign(new EventEmitter(), { resume: vi.fn() })
   const proc = Object.assign(new EventEmitter(), {
     stdout,
-    stderr: new EventEmitter(),
+    stderr,
     pid: 1234,
     kill: vi.fn(),
   })

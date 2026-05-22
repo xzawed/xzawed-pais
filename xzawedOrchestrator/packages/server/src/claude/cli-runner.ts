@@ -30,6 +30,9 @@ export class CLIRunner implements ClaudeRunner {
     const proc = spawn('claude', args, { env: process.env, shell: false })
     const queue = new ChunkQueue()
 
+    // Drain stderr to prevent pipe buffer deadlock (4 KB limit)
+    proc.stderr?.resume()
+
     let buffer = ''
     proc.stdout.on('data', (data: Buffer) => {
       buffer = drainBuffer(buffer, data, c => queue.push(c))
