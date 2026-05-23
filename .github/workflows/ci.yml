@@ -84,12 +84,12 @@ jobs:
         working-directory: ${{ matrix.dir }}/packages/server
         env:
           TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
-        run: pnpm test -- --coverage
+        run: pnpm test:coverage
 
       - name: Generate ui coverage
         if: matrix.service == 'xzawedOrchestrator'
         working-directory: ${{ matrix.dir }}/packages/ui
-        run: pnpm test -- --coverage
+        run: pnpm test:coverage
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -145,7 +145,7 @@ jobs:
 
       - name: Test
         working-directory: ${{ matrix.service }}
-        run: pnpm test -- --coverage
+        run: pnpm test:coverage
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -224,7 +224,7 @@ jobs:
 
       - name: Test
         working-directory: xzawedShared
-        run: pnpm test -- --coverage
+        run: pnpm test:coverage
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
