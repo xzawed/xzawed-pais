@@ -80,6 +80,24 @@ jobs:
           TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
         run: pnpm test
 
+      - name: Generate server coverage
+        working-directory: ${{ matrix.dir }}/packages/server
+        env:
+          TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
+        run: pnpm test -- --coverage
+
+      - name: Generate ui coverage
+        if: matrix.service == 'xzawedOrchestrator'
+        working-directory: ${{ matrix.dir }}/packages/ui
+        run: pnpm test -- --coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.service }}
+          path: ${{ matrix.dir }}/packages/*/coverage/lcov.info
+          if-no-files-found: warn
+
       - name: Audit
         working-directory: ${{ matrix.dir }}
         run: pnpm audit --audit-level=moderate
@@ -127,7 +145,14 @@ jobs:
 
       - name: Test
         working-directory: ${{ matrix.service }}
-        run: pnpm test
+        run: pnpm test -- --coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.service }}
+          path: ${{ matrix.service }}/coverage/lcov.info
+          if-no-files-found: warn
 
       - name: Audit
         working-directory: ${{ matrix.service }}
@@ -170,6 +195,46 @@ jobs:
 
       - name: Audit
         working-directory: xzawedLauncher
+        run: pnpm audit --audit-level=moderate
+
+  # ── xzawedShared ──────────────────────────────────────────────────────────
+  shared-lib:
+    name: xzawedShared
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: pnpm/action-setup@d15e628ca66d93ee5f352c71671a7bc6a97af5c9 # v6.0.8
+        with:
+          version: 10
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: xzawedShared/pnpm-lock.yaml
+
+      - name: Install
+        working-directory: xzawedShared
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        working-directory: xzawedShared
+        run: pnpm build
+
+      - name: Test
+        working-directory: xzawedShared
+        run: pnpm test -- --coverage
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xzawedShared
+          path: xzawedShared/coverage/lcov.info
+          if-no-files-found: warn
+
+      - name: Audit
+        working-directory: xzawedShared
         run: pnpm audit --audit-level=moderate
 
   # ── Redis Streams Integration Tests ───────────────────────────────────────
@@ -495,16 +560,39 @@ jobs:
               })
             }
 
+  # ── SonarCloud Analysis ───────────────────────────────────────────────────
+  sonar:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    needs: [turborepo, independent, shared-lib]
+    if: always()
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Download coverage reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
   # ── Summary gate (required for branch protection) ─────────────────────────
   all-checks-pass:
     name: All checks pass
     runs-on: ubuntu-latest
-    needs: [turborepo, independent, redis-integration, playwright-e2e, launcher]
+    needs: [turborepo, independent, redis-integration, playwright-e2e, launcher, shared-lib]
     if: always()
     steps:
       - name: Check results
         run: |
-          if [[ "${{ needs.turborepo.result }}" != "success" || "${{ needs.independent.result }}" != "success" || "${{ needs.redis-integration.result }}" != "success" || "${{ needs.playwright-e2e.result }}" != "success" || "${{ needs.launcher.result }}" != "success" ]]; then
+          if [[ "${{ needs.turborepo.result }}" != "success" || "${{ needs.independent.result }}" != "success" || "${{ needs.redis-integration.result }}" != "success" || "${{ needs.playwright-e2e.result }}" != "success" || "${{ needs.launcher.result }}" != "success" || "${{ needs.shared-lib.result }}" != "success" ]]; then
             echo "One or more jobs failed"
             exit 1
           fi

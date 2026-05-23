@@ -5,5 +5,9 @@ export default defineConfig({
     environment: 'node',
     isolate: true,
     pool: 'forks',
+    coverage: {
+      provider: 'v8',
+      reporter: ['lcov'],
+    },
   },
 })
