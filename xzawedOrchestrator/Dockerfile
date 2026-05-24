@@ -3,13 +3,13 @@ RUN corepack enable && corepack prepare pnpm@10 --activate
 WORKDIR /app
 
 FROM base AS deps
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/server/package.json ./packages/server/
+COPY xzawedOrchestrator/pnpm-workspace.yaml xzawedOrchestrator/pnpm-lock.yaml xzawedOrchestrator/package.json ./
+COPY xzawedOrchestrator/packages/shared/package.json ./packages/shared/
+COPY xzawedOrchestrator/packages/server/package.json ./packages/server/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM deps AS build
-COPY . .
+COPY xzawedOrchestrator/ .
 RUN pnpm --filter @xzawed/shared build && pnpm --filter @xzawed/server build
 
 FROM node:22-alpine AS runner

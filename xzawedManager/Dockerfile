@@ -3,12 +3,12 @@ RUN corepack enable && corepack prepare pnpm@10 --activate
 WORKDIR /app
 
 FROM base AS deps
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
-COPY packages/server/package.json ./packages/server/
+COPY xzawedManager/pnpm-workspace.yaml xzawedManager/pnpm-lock.yaml xzawedManager/package.json ./
+COPY xzawedManager/packages/server/package.json ./packages/server/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM deps AS build
-COPY . .
+COPY xzawedManager/ .
 RUN pnpm --filter @xzawed/manager-server build
 
 FROM node:22-alpine AS runner
