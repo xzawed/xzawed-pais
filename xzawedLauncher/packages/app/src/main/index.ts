@@ -64,7 +64,12 @@ function registerIpc(w: BrowserWindow): void {
   ipcMain.handle('setup:get-config', () => getSetupConfig())
   ipcMain.handle('setup:save-config', (_e, config: unknown) => {
     if (!isValidSetupConfig(config)) return { success: false, error: 'Invalid config' }
-    return saveSetupConfig(config)
+    try {
+      saveSetupConfig(config)
+      return { success: true }
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : 'Save failed' }
+    }
   })
 
   // Docker

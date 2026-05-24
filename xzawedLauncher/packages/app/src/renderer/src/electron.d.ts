@@ -7,6 +7,7 @@ interface LauncherAPI {
   checkDocker(): Promise<DockerInstallStatus>
   installDocker(): Promise<void>
   startDockerDesktop(): Promise<void>
+  getClaudeEmail(): Promise<string | null>
   checkClaude(): Promise<ClaudeDetectStatus>
   installClaude(): Promise<void>
   openClaudeLogin(): Promise<void>

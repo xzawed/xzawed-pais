@@ -43,7 +43,7 @@ export async function startDockerDesktop(): Promise<void> {
     linux: ['systemctl', ['--user', 'start', 'docker-desktop']],
   }
   const [bin, args] = cmds[process.platform] ?? cmds.linux
-  await spawnAsync(bin, args).catch(() => {})
+  await spawnAsync(bin, args).catch((e: unknown) => { console.warn('[docker] startDockerDesktop failed:', e) })
 }
 
 export async function installDocker(): Promise<void> {
@@ -108,7 +108,9 @@ export async function getServiceStatuses(): Promise<ServiceState[]> {
   }
   try {
     const out = await spawnAsync('docker', ['compose', '-f', COMPOSE_FILE, 'ps', '--format', 'json'])
-    const rows = out.trim().split('\n').filter(Boolean).map((l) => JSON.parse(l))
+    const rows = out.trim().split('\n').filter(Boolean).flatMap((l) => {
+      try { return [JSON.parse(l) as Record<string, unknown>] } catch { return [] }
+    })
     return rows.map((r: { Name: string; State: string; Health?: string }) => {
       const name = r.Name.replace(/^xzawed[_-]/, '').replace(/[_-]\d+$/, '') as ServiceName
       let status: ServiceStatus = 'stopped'

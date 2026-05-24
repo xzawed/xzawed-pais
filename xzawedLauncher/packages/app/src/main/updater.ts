@@ -24,8 +24,12 @@ export function initUpdater(win: BrowserWindow): void {
 
   ipcMain.handle('updater:check', () => autoUpdater.checkForUpdates())
   ipcMain.handle('updater:install', async () => {
-    await autoUpdater.downloadUpdate()
-    autoUpdater.quitAndInstall()
+    try {
+      await autoUpdater.downloadUpdate()
+      autoUpdater.quitAndInstall()
+    } catch (err) {
+      throw new Error(`업데이트 다운로드 실패: ${err instanceof Error ? err.message : String(err)}`)
+    }
   })
 }
 

@@ -13,22 +13,8 @@ async function detectAt(dir: string): Promise<string | null> {
   if (await fs.access(path.join(dir, 'Makefile')).then(() => true).catch(() => false)) {
     return 'make build'
   }
-  const pkgPath = path.join(dir, 'package.json')
-  if (await fs.access(pkgPath).then(() => true).catch(() => false)) {
-    try {
-      const content = await fs.readFile(pkgPath, 'utf-8')
-      const pkg = JSON.parse(content) as {
-        devDependencies?: Record<string, string>
-        dependencies?: Record<string, string>
-      }
-      const allDeps = { ...pkg.dependencies, ...pkg.devDependencies }
-      if ('vite' in allDeps) return 'pnpm run build'
-      if ('webpack' in allDeps) return 'pnpm run build'
-      if ('tsc' in allDeps || 'typescript' in allDeps) return 'pnpm run build'
-      return 'pnpm run build'
-    } catch {
-      return 'pnpm run build'
-    }
+  if (await fs.access(path.join(dir, 'package.json')).then(() => true).catch(() => false)) {
+    return 'pnpm run build'
   }
   if (await fs.access(path.join(dir, 'go.mod')).then(() => true).catch(() => false)) {
     return 'go build ./...'

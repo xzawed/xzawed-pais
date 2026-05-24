@@ -11,7 +11,11 @@ export default function SettingsModal({ onClose }: Readonly<Props>) {
   }, [])
 
   async function handleSave(): Promise<void> {
-    if (apiKey) await globalThis.launcherAPI!.tokenSet(apiKey)
+    if (apiKey) {
+      await globalThis.launcherAPI!.tokenSet(apiKey)
+    } else {
+      await globalThis.launcherAPI!.tokenClear?.()
+    }
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
