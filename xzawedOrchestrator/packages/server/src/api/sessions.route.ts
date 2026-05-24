@@ -12,7 +12,15 @@ import { structureIntent } from '../claude/intent-structurer.js'
 import { TaskStore } from '../tasks/task.store.js'
 import { MessageRepo } from '../sessions/message.repo.js'
 import { assertProjectOwner } from '../auth/ownership.js'
-import { ProjectRepo } from '../projects/project.repo.js'
+import { ProjectRepo, type Project } from '../projects/project.repo.js'
+
+export function resolveSessionWorkspaceRoot(
+  project: Project | null | undefined,
+  envFallback: string,
+): string {
+  if (project?.workspace_path) return project.workspace_path
+  return envFallback
+}
 
 const messageStore = new Map<string, Message[]>()
 const claudeSessionIds = new Map<string, string>()
@@ -94,12 +102,12 @@ async function publishTaskToManager(
 ): Promise<void> {
   let userContext: { userId: string; projectId: string; workspaceRoot: string } | undefined
   if (session.projectId) {
-    let workspaceRoot = process.env.WORKSPACE_ROOT ?? '/workspace'
+    const envFallback = process.env.WORKSPACE_ROOT ?? '/workspace'
+    let workspaceRoot = envFallback
     if (pool) {
       const repo = new ProjectRepo(pool)
       const project = await repo.findByIdAndUser(session.projectId, session.userId)
-      const wp = (project as unknown as { workspace_path?: string | null })?.workspace_path
-      if (wp) workspaceRoot = wp
+      workspaceRoot = resolveSessionWorkspaceRoot(project, envFallback)
     }
     userContext = { userId: session.userId, projectId: session.projectId, workspaceRoot }
   }

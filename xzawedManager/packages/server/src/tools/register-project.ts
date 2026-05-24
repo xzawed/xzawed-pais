@@ -35,7 +35,7 @@ export function createRegisterProjectHandler(
       required: ['name', 'workspaceType'],
     },
     async execute(input, sessionId): Promise<RegisterOutput> {
-      const url = new URL(`/api/internal/sessions/${sessionId}/register-project`, orchestratorUrl)
+      const url = new URL(`/internal/sessions/${sessionId}/register-project`, orchestratorUrl)
       if (url.protocol !== 'http:' && url.protocol !== 'https:') {
         throw new Error('Invalid orchestrator URL protocol')
       }

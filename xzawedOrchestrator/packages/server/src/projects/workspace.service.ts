@@ -20,7 +20,7 @@ export class WorkspaceService {
 
   async cloneRepo(repoUrl: string, destPath: string, branch: string): Promise<void> {
     await this.runGit(
-      ['clone', '--branch', branch, '--depth', '1', repoUrl, destPath],
+      ['clone', '--branch', branch, '--depth', '1', '--', repoUrl, destPath],
       undefined,
     )
   }

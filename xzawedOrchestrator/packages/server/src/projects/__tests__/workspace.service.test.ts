@@ -48,7 +48,7 @@ describe('WorkspaceService', () => {
 
     expect(mockSpawn).toHaveBeenCalledWith(
       'git',
-      ['clone', '--branch', 'main', '--depth', '1', 'https://github.com/user/repo', '/tmp/dest'],
+      ['clone', '--branch', 'main', '--depth', '1', '--', 'https://github.com/user/repo', '/tmp/dest'],
       expect.objectContaining({ shell: false }),
     )
   })

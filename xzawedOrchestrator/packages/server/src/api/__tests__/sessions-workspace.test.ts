@@ -1,23 +1,44 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
+import { resolveSessionWorkspaceRoot } from '../sessions.route.js'
+import type { Project } from '../../projects/project.repo.js'
 
-const mockFindByIdAndUser = vi.fn()
-vi.mock('../../projects/project.repo.js', () => ({
-  ProjectRepo: vi.fn(() => ({ findByIdAndUser: mockFindByIdAndUser })),
-}))
+function makeProject(overrides: Partial<Project> = {}): Project {
+  return {
+    id: 'proj-1',
+    userId: 'user-1',
+    name: 'test',
+    slug: 'test',
+    description: null,
+    githubOwner: null,
+    githubRepo: null,
+    githubBranch: 'main',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  }
+}
 
-describe('publishTaskToManager — workspaceRoot resolution', () => {
-  it('uses project.workspace_path when available', async () => {
-    mockFindByIdAndUser.mockResolvedValue({
-      id: 'proj-1',
-      workspace_path: '/home/user/my-app',
-    })
-    // This test verifies the mock is set up correctly
-    // The actual integration is verified by the build passing
-    expect(mockFindByIdAndUser).toBeDefined()
+describe('resolveSessionWorkspaceRoot', () => {
+  it('returns project.workspace_path when set', () => {
+    const project = makeProject({ workspace_path: '/home/user/my-app' })
+    expect(resolveSessionWorkspaceRoot(project, '/fallback')).toBe('/home/user/my-app')
   })
 
-  it('falls back to env var when workspace_path is null', async () => {
-    mockFindByIdAndUser.mockResolvedValue({ id: 'proj-1', workspace_path: null })
-    expect(process.env.WORKSPACE_ROOT ?? '/workspace').toBeTruthy()
+  it('falls back to envFallback when workspace_path is null', () => {
+    const project = makeProject({ workspace_path: null })
+    expect(resolveSessionWorkspaceRoot(project, '/fallback')).toBe('/fallback')
+  })
+
+  it('falls back to envFallback when workspace_path is undefined', () => {
+    const project = makeProject({ workspace_path: undefined })
+    expect(resolveSessionWorkspaceRoot(project, '/fallback')).toBe('/fallback')
+  })
+
+  it('falls back to envFallback when project is null (no project attached to session)', () => {
+    expect(resolveSessionWorkspaceRoot(null, '/fallback')).toBe('/fallback')
+  })
+
+  it('falls back to envFallback when project is undefined', () => {
+    expect(resolveSessionWorkspaceRoot(undefined, '/fallback')).toBe('/fallback')
   })
 })

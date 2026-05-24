@@ -26,7 +26,7 @@ export function createSwitchProjectHandler(
       },
     },
     async execute(input, sessionId): Promise<SwitchOutput> {
-      const url = new URL(`/api/internal/sessions/${sessionId}/switch-project`, orchestratorUrl)
+      const url = new URL(`/internal/sessions/${sessionId}/switch-project`, orchestratorUrl)
       if (url.protocol !== 'http:' && url.protocol !== 'https:') {
         throw new Error('Invalid orchestrator URL protocol')
       }

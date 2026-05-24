@@ -22,7 +22,7 @@ describe('register_project tool', () => {
     expect(result.projectId).toBe('proj-1')
     expect(result.workspacePath).toBe('/home/user/app')
     const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('http://localhost:3000/api/internal/sessions/session-1/register-project')
+    expect(url).toBe('http://localhost:3000/internal/sessions/session-1/register-project')
     expect(opts.method).toBe('POST')
     const headers = opts.headers as Record<string, string>
     expect(headers['Authorization']).toBe('Bearer test-token')
