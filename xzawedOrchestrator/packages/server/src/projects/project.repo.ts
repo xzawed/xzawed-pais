@@ -1,5 +1,14 @@
 import type { Pool } from 'pg'
 
+export interface ProjectWorkspace {
+  workspaceType: 'none' | 'local' | 'github'
+  localPath?: string
+  repoUrl?: string
+  branch?: string
+  workspacePath?: string
+  pushStrategy?: 'push' | 'pr'
+}
+
 export interface Project {
   id: string
   userId: string
@@ -11,6 +20,12 @@ export interface Project {
   githubBranch: string
   createdAt: Date
   updatedAt: Date
+  workspace_type?: string
+  local_path?: string | null
+  repo_url?: string | null
+  branch?: string
+  workspace_path?: string | null
+  push_strategy?: string
 }
 
 export interface ProjectUpdate {
@@ -32,6 +47,12 @@ interface ProjectRow {
   github_branch: string
   created_at: Date
   updated_at: Date
+  workspace_type?: string
+  local_path?: string | null
+  repo_url?: string | null
+  branch?: string
+  workspace_path?: string | null
+  push_strategy?: string
 }
 
 function rowToProject(row: ProjectRow): Project {
@@ -46,6 +67,12 @@ function rowToProject(row: ProjectRow): Project {
     githubBranch: row.github_branch,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    workspace_type: row.workspace_type,
+    local_path: row.local_path,
+    repo_url: row.repo_url,
+    branch: row.branch,
+    workspace_path: row.workspace_path,
+    push_strategy: row.push_strategy,
   }
 }
 
@@ -149,5 +176,33 @@ export class ProjectRepo {
 
   async delete(id: string): Promise<void> {
     await this.pool.query('DELETE FROM projects WHERE id = $1', [id])
+  }
+
+  async updateWorkspace(
+    projectId: string,
+    workspace: ProjectWorkspace,
+  ): Promise<Project | null> {
+    const { rows } = await this.pool.query<ProjectRow>(
+      `UPDATE projects
+       SET workspace_type = $1,
+           local_path     = $2,
+           repo_url       = $3,
+           branch         = $4,
+           workspace_path = $5,
+           push_strategy  = $6,
+           updated_at     = NOW()
+       WHERE id = $7
+       RETURNING *`,
+      [
+        workspace.workspaceType,
+        workspace.localPath ?? null,
+        workspace.repoUrl ?? null,
+        workspace.branch ?? 'main',
+        workspace.workspacePath ?? null,
+        workspace.pushStrategy ?? 'push',
+        projectId,
+      ],
+    )
+    return rows[0] ? rowToProject(rows[0]) : null
   }
 }
