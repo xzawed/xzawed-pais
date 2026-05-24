@@ -91,6 +91,13 @@ jobs:
         working-directory: ${{ matrix.dir }}/packages/ui
         run: pnpm test:coverage
 
+      - name: Generate app coverage
+        if: matrix.service == 'xzawedOrchestrator'
+        working-directory: ${{ matrix.dir }}/packages/app
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: pnpm test:coverage
+
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
