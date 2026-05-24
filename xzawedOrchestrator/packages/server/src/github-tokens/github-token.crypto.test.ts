@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { encryptToken, decryptToken } from './github-token.crypto.js'
 
 function makeKey(): string {
-  return randomBytes(32).toString('base64')
+  return randomBytes(32).toString('hex')
 }
 
 describe('github-token crypto', () => {
@@ -24,7 +24,7 @@ describe('github-token crypto', () => {
   })
 
   it('throws on wrong key length', () => {
-    const badKey = Buffer.from('short').toString('base64')
+    const badKey = Buffer.from('short').toString('hex')
     expect(() => encryptToken('token', badKey)).toThrow('32 bytes')
   })
 

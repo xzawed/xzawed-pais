@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import type { Pool } from 'pg'
+import { createHash } from 'node:crypto'
 import rateLimit from '@fastify/rate-limit'
 import { UserRepo, toPublic } from '../auth/user.repo.js'
 import { RefreshRepo } from '../auth/refresh.repo.js'
@@ -41,9 +42,13 @@ export async function authRoutes(
     '/auth/register',
     { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } },
     async (req, reply) => {
+      const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
       const { email, password, displayName } = req.body
       if (!email || !password) {
         return reply.status(400).send({ error: 'email and password are required' })
+      }
+      if (!EMAIL_RE.test(email)) {
+        return reply.status(400).send({ error: 'Invalid email format' })
       }
       if (password.length < 8) {
         return reply.status(400).send({ error: 'password must be at least 8 characters' })
@@ -99,22 +104,38 @@ export async function authRoutes(
       const { refreshToken } = req.body
       if (!refreshToken) return reply.status(400).send({ error: 'refreshToken is required' })
 
-      const record = await refreshes.findValid(refreshToken)
-      if (!record) return reply.status(401).send({ error: 'Invalid or expired refresh token' })
+      const tokenHash = createHash('sha256').update(refreshToken).digest('hex')
 
-      const user = await users.findById(record.userId)
-      if (!user) return reply.status(401).send({ error: 'User not found' })
-
-      const { token: newRefreshToken, hash, expiresAt } = issueRefreshToken()
-      const accessToken = issueAccessToken(
-        { sub: user.id, email: user.email, displayName: user.displayName },
-        userJwtSecret
-      )
-
-      // Refresh token rotation: revoke old and insert new atomically
+      // Refresh token rotation: findValid + revoke + insert in a single transaction
+      // SELECT FOR UPDATE prevents concurrent refresh with the same token (TOCTOU)
       const client = await pool.connect()
       try {
         await client.query('BEGIN')
+
+        const { rows } = await client.query<{ id: string; user_id: string }>(
+          `SELECT id, user_id FROM refresh_tokens
+           WHERE token_hash = $1 AND expires_at > NOW() AND revoked_at IS NULL
+           FOR UPDATE`,
+          [tokenHash]
+        )
+        const record = rows[0]
+        if (!record) {
+          await client.query('ROLLBACK')
+          return reply.status(401).send({ error: 'Invalid or expired refresh token' })
+        }
+
+        const user = await users.findById(record.user_id)
+        if (!user) {
+          await client.query('ROLLBACK')
+          return reply.status(401).send({ error: 'User not found' })
+        }
+
+        const { token: newRefreshToken, hash, expiresAt } = issueRefreshToken()
+        const accessToken = issueAccessToken(
+          { sub: user.id, email: user.email, displayName: user.displayName },
+          userJwtSecret
+        )
+
         await client.query(
           'UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = $1',
           [record.id]
@@ -125,14 +146,14 @@ export async function authRoutes(
           [user.id, hash, expiresAt, req.headers['user-agent'] ?? null]
         )
         await client.query('COMMIT')
+
+        return reply.send({ accessToken, refreshToken: newRefreshToken })
       } catch (txErr) {
         await client.query('ROLLBACK')
         throw txErr
       } finally {
         client.release()
       }
-
-      return reply.send({ accessToken, refreshToken: newRefreshToken })
     }
   )
 

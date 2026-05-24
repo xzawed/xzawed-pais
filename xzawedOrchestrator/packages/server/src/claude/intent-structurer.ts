@@ -12,7 +12,7 @@ export async function structureIntent(
       messages: [
         {
           role: 'user',
-          content: `다음 텍스트에서 수행해야 할 핵심 개발 작업을 1-2문장으로 요약하세요. 설명 없이 작업 내용만 작성하세요:\n\n${rawResponse}`,
+          content: `Summarize the core development task in 1-2 sentences from the following text. Write only the task description without any explanation:\n\n${rawResponse}`,
         },
       ],
     })
