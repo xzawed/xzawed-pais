@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { Message } from '@xzawed/shared'
 import { useProjectsStore } from '@xzawed/ui'
@@ -52,10 +52,11 @@ export function ChatView(): React.JSX.Element {
     if (!sessionId) return
     const store = useChatStore.getState()
     store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'user', content, timestamp: Date.now() })
+    store.setPending(true)
     try {
       await postMessage(settings.serverUrl, sessionId, content)
-      store.setPending(true)
     } catch (err) {
+      store.setPending(false)
       store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `[Error] ${err instanceof Error ? err.message : String(err)}`, timestamp: Date.now() })
     }
   }
@@ -75,10 +76,13 @@ export function ChatView(): React.JSX.Element {
     ? parseAgentSteps(streamingContent, true)
     : parseAgentSteps(lastMsgContent, false)
 
-  const streamingMessage: Message | null =
-    isStreaming && streamingMsgId
-      ? { id: streamingMsgId, sessionId, role: 'assistant', content: streamingContent, timestamp: Date.now() }
-      : null
+  const streamingMessage = useMemo<Message | null>(
+    () =>
+      isStreaming && streamingMsgId
+        ? { id: streamingMsgId, sessionId: sessionId ?? '', role: 'assistant' as const, content: streamingContent, timestamp: 0 }
+        : null,
+    [isStreaming, streamingMsgId, streamingContent, sessionId]
+  )
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-bg">

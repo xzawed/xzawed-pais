@@ -40,9 +40,9 @@ export async function sessionsRoute(
         return reply.status(409).send({ error: 'Session already active' })
       }
 
+      sessionStore.create(sessionId)
       const consumer = new StreamConsumer(redisUrl)
       activeConsumers.set(sessionId, consumer)
-      sessionStore.create(sessionId)
 
       void consumer.start(sessionId, async (msg: OrchestratorToManagerMessage) => {
         if (msg.type === 'task_request') {
@@ -95,9 +95,12 @@ export async function sessionsRoute(
           sessionStore.abort(sessionId)
           consumer.stop()
           activeConsumers.delete(sessionId)
+          sessionStore.delete(sessionId)
         }
       }).catch((err: unknown) => {
         app.log.error({ err, sessionId }, 'StreamConsumer error')
+        sessionStore.delete(sessionId)
+        activeConsumers.delete(sessionId)
       })
 
       return reply.status(202).send({ sessionId, status: 'started' })

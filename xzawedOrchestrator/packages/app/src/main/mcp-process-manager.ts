@@ -136,7 +136,15 @@ export class McpProcessManager {
   async stopServer(id: string): Promise<void> {
     const proc = this.processes.get(id)
     if (!proc) return
-    proc.kill()
+    await new Promise<void>((resolve) => {
+      proc.once('exit', () => resolve())
+      proc.kill('SIGTERM')
+      // 3초 후 강제 종료 폴백
+      setTimeout(() => {
+        if (this.processes.has(id)) proc.kill('SIGKILL')
+        resolve()
+      }, 3000)
+    })
     this.processes.delete(id)
     this.statuses.set(id, 'stopped')
   }

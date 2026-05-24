@@ -1,3 +1,6 @@
+import type { UserContext } from './user-context.js'
+
+export type { UserContext }
 export type OrchestratorMessageType = 'task_request' | 'info_response' | 'abort'
 export type ManagerMessageType = 'status_update' | 'info_request' | 'task_complete' | 'error'
 
@@ -5,13 +8,6 @@ interface BaseMessage {
   sessionId: string
   messageId: string
   timestamp: number
-}
-
-export interface UserContext {
-  userId: string
-  projectId: string
-  workspaceRoot: string
-  githubRepo?: { owner: string; repo: string; branch: string } | undefined
 }
 
 export interface TaskRequestMessage extends BaseMessage {

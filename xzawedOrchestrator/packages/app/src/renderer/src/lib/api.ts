@@ -87,6 +87,7 @@ export class SessionWsClient {
     this.ws.onerror = (e) => {
       console.error('[WS] Error:', e)
       onMessage({ type: 'error', content: 'WebSocket connection error' })
+      onClose?.()
     }
 
     this.ws.onclose = () => {

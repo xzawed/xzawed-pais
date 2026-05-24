@@ -4,6 +4,7 @@ vi.mock('node:child_process', () => ({
   spawn: vi.fn(() => ({
     pid: 1234,
     on: vi.fn(),
+    once: vi.fn((_event: string, cb: () => void) => { cb() }),
     kill: vi.fn(),
     stdout: { on: vi.fn() },
     stderr: { on: vi.fn() },

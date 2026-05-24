@@ -46,9 +46,13 @@ function readPluginsFromDir(dir: string, type: 'claude-code' | 'xzawed', disable
   if (!existsSync(dir)) return []
   try {
     return readdirSync(dir).flatMap((vendor) => {
+      if (vendor === '..' || vendor === '.') return []
       const vendorPath = join(dir, vendor)
       try {
-        return readdirSync(vendorPath).map((name) => {
+        return readdirSync(vendorPath).flatMap((name) => {
+          if (name === '..' || name === '.') return []
+          return [name]
+        }).map((name) => {
           const pkgPath = join(vendorPath, name, 'package.json')
           let version = '0.0.0', description = ''
           if (existsSync(pkgPath)) {

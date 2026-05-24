@@ -28,7 +28,7 @@ export function StatusBar(): React.JSX.Element {
       {mcp.servers.length > 0 && (
         <span>MCP {mcp.servers.length}개</span>
       )}
-      <div className="ml-auto">xzawedPAIS v1.0</div>
+      <div className="ml-auto">xzawedPAIS</div>
     </div>
   )
 }

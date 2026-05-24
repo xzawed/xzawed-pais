@@ -5,6 +5,9 @@ import type { SessionStore } from '../sessions/session.store.js'
 import type { UserContext } from '../types/user-context.js'
 import type { ManagerToOrchestratorMessage } from '../types/streams.js'
 
+const MAX_ITERATIONS = Number(process.env['MANAGER_MAX_ITERATIONS'] ?? '50')
+const MAX_TOKENS = Number(process.env['MANAGER_MAX_TOKENS'] ?? '16384')
+
 const REQUEST_INFO_TOOL: Anthropic.Tool = {
   name: 'request_info',
   description: 'Ask the user for additional information needed to complete the task',
@@ -119,7 +122,6 @@ export class ClaudeRunner {
       REQUEST_INFO_TOOL,
     ]
 
-    const MAX_ITERATIONS = 50
     let iterations = 0
     // 수동 tool-calling 루프: 각 도구 호출 전후에 status_update를 발행하기 위해 수동 루프 사용
     while (iterations++ < MAX_ITERATIONS) {
@@ -127,8 +129,8 @@ export class ClaudeRunner {
 
       const response = await this.client.messages.create({
         model: this.model,
-        max_tokens: 16384,
-        system: 'You are xzawedManager, a project orchestration agent. Use the available tools to fulfill the task request. Keep your responses concise — always prefer calling a tool over writing lengthy analysis. IMPORTANT: Always use /workspace as the projectPath for ALL tool calls (develop_code, build_project, run_tests, etc.) — never use subdirectories like /workspace/todo-api. Keep projectPath consistent across all tool calls in a single task.',
+        max_tokens: MAX_TOKENS,
+        system: `You are xzawedManager, a project orchestration agent. Use the available tools to fulfill the task request. Keep your responses concise — always prefer calling a tool over writing lengthy analysis. IMPORTANT: Always use ${userContext?.workspaceRoot ?? '/workspace'} as the projectPath for ALL tool calls (develop_code, build_project, run_tests, etc.) — never use subdirectories. Keep projectPath consistent across all tool calls in a single task.`,
         messages,
         tools,
       })
@@ -139,7 +141,7 @@ export class ClaudeRunner {
         const text = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text ?? ''
         await producer.publish({
           sessionId,
-          messageId: `${sessionId}-final-${Date.now()}`,
+          messageId: crypto.randomUUID(),
           timestamp: Date.now(),
           type: 'status_update',
           payload: { agentId: 'manager', content: text },
@@ -159,6 +161,6 @@ export class ClaudeRunner {
         throw new Error(`Unexpected stop_reason: ${response.stop_reason as string}`)
       }
     }
-    throw new Error(`Claude runner exceeded ${MAX_ITERATIONS} iterations without completing`)
+    throw new Error(`Claude runner exceeded ${String(MAX_ITERATIONS)} iterations without completing`)
   }
 }

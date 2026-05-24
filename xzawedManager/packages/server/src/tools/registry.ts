@@ -22,4 +22,14 @@ export class ToolRegistry {
       input_schema: h.inputSchema,
     }))
   }
+
+  async closeAll(): Promise<void> {
+    await Promise.all(
+      Array.from(this.handlers.values()).map((h) =>
+        typeof (h as { close?: () => Promise<void> }).close === 'function'
+          ? (h as { close: () => Promise<void> }).close()
+          : Promise.resolve(),
+      ),
+    )
+  }
 }

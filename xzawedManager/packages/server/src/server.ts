@@ -75,6 +75,7 @@ export async function buildServer(
 
   const closeAll = async () => {
     for (const c of activeConsumers.values()) c.stop()
+    await registry.closeAll()
     await closePool()
   }
 

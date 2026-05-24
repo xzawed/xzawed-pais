@@ -17,6 +17,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   settings: {
+    // NOTE: main/index.ts DEFAULT_SETTINGS와 동기화 필요 (기본값 변경 시 두 곳 모두 수정)
     serverUrl: 'http://localhost:3000',
     mode: 'local',
     userId: 'user',
