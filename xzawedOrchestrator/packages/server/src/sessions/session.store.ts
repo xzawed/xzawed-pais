@@ -6,6 +6,7 @@ export interface SessionStore {
   findById(id: string): Promise<Session | undefined>
   updateState(id: string, state: SessionState): Promise<void>
   updateClaudeSessionId(id: string, claudeSessionId: string): Promise<void>
+  updateProject(id: string, projectId: string): Promise<void>
   delete(id: string): Promise<void>
 }
 
@@ -37,6 +38,14 @@ export class InMemorySessionStore implements SessionStore {
 
   async updateClaudeSessionId(id: string, claudeSessionId: string): Promise<void> {
     this.claudeSessionIds.set(id, claudeSessionId)
+  }
+
+  async updateProject(id: string, projectId: string): Promise<void> {
+    const session = this.sessions.get(id)
+    if (session) {
+      session.projectId = projectId
+      session.updatedAt = Date.now()
+    }
   }
 
   getClaudeSessionId(id: string): string {

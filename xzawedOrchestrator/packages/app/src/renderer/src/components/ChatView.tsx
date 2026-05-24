@@ -1,11 +1,14 @@
 import React, { useEffect, useRef } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import type { Message } from '@xzawed/shared'
+import { useProjectsStore } from '@xzawed/ui'
 import { useChatStore } from '../store/chat.store.js'
 import { useAppStore } from '../store/app.store.js'
 import { UserBubble } from './chat/UserBubble.js'
 import { AgentTimelineCard } from './chat/AgentTimelineCard.js'
 import { PipelineStrip } from './chat/PipelineStrip.js'
 import { MessageInput } from './MessageInput.js'
+import { ProjectContextBar } from './ProjectContextBar.js'
 import { ScrollArea } from './ui/scroll-area.js'
 import { parseAgentSteps } from '../lib/parseAgentSteps.js'
 import { postMessage, SessionWsClient } from '../lib/api.js'
@@ -16,6 +19,10 @@ export function ChatView(): React.JSX.Element {
   } = useChatStore()
   const { settings } = useAppStore()
   const bottomRef = useRef<HTMLDivElement>(null)
+  const { projectId } = useParams<{ projectId?: string }>()
+  const navigate = useNavigate()
+  const projects = useProjectsStore((s) => s.projects)
+  const activeProject = projects.find((p) => p.id === projectId)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -117,7 +124,15 @@ export function ChatView(): React.JSX.Element {
       </ScrollArea>
 
       {/* Input */}
-      <MessageInput onSend={handleSend} disabled={isStreaming || isPending} />
+      <div className="flex flex-col">
+        <ProjectContextBar
+          projectName={activeProject?.name ?? null}
+          workspacePath={activeProject?.workspace_path ?? null}
+          workspaceType={activeProject?.workspace_type ?? null}
+          onSwitch={() => { navigate('/projects') }}
+        />
+        <MessageInput onSend={handleSend} disabled={isStreaming || isPending} />
+      </div>
     </div>
   )
 }

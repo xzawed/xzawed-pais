@@ -19,6 +19,8 @@ import { createBuildProjectHandler } from './tools/build-project.js'
 import { createWatchChangesHandler } from './tools/watch-changes.js'
 import { createSecurityAuditHandler } from './tools/security-audit.js'
 import { createGithubOpsHandler } from './tools/github-ops.js'
+import { createRegisterProjectHandler } from './tools/register-project.js'
+import { createSwitchProjectHandler } from './tools/switch-project.js'
 
 export async function buildServer(
   config: Config,
@@ -48,6 +50,10 @@ export async function buildServer(
   registry.register(createSecurityAuditHandler(config.REDIS_URL))
   if (config.GITHUB_TOKEN) {
     registry.register(createGithubOpsHandler(config.GITHUB_TOKEN))
+  }
+  if (config.ORCHESTRATOR_URL && config.ORCHESTRATOR_SERVICE_TOKEN) {
+    registry.register(createRegisterProjectHandler(config.ORCHESTRATOR_URL, config.ORCHESTRATOR_SERVICE_TOKEN))
+    registry.register(createSwitchProjectHandler(config.ORCHESTRATOR_URL, config.ORCHESTRATOR_SERVICE_TOKEN))
   }
 
   const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry)

@@ -9,6 +9,12 @@ export interface Project {
   githubRepo?: string | undefined
   githubBranch?: string | undefined
   createdAt: string
+  workspace_type?: 'none' | 'local' | 'github'
+  local_path?: string | null
+  repo_url?: string | null
+  branch?: string
+  workspace_path?: string | null
+  push_strategy?: 'push' | 'pr'
 }
 
 interface ProjectsState {
@@ -22,6 +28,19 @@ interface ProjectsState {
     data: { name: string; slug: string; description?: string }
   ) => Promise<Project>
   setCurrentProject: (id: string | null) => void
+  updateWorkspace: (
+    serverUrl: string,
+    token: string,
+    projectId: string,
+    workspace: {
+      workspaceType: 'none' | 'local' | 'github'
+      localPath?: string
+      repoUrl?: string
+      branch?: string
+      pushStrategy?: 'push' | 'pr'
+    },
+  ) => Promise<void>
+  syncWorkspace: (serverUrl: string, token: string, projectId: string) => Promise<void>
 }
 
 export const useProjectsStore = create<ProjectsState>()((set, get) => ({
@@ -60,4 +79,28 @@ export const useProjectsStore = create<ProjectsState>()((set, get) => ({
   },
 
   setCurrentProject: (id) => set({ currentProjectId: id }),
+
+  updateWorkspace: async (serverUrl, token, projectId, workspace) => {
+    const res = await fetch(`${serverUrl}/projects/${projectId}/workspace`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(workspace),
+    })
+    if (!res.ok) throw new Error(`workspace 업데이트 실패: ${res.status}`)
+    const updated = await res.json() as Project
+    set((s) => ({
+      projects: s.projects.map((p) => p.id === projectId ? { ...p, ...updated } : p),
+    }))
+  },
+
+  syncWorkspace: async (serverUrl, token, projectId) => {
+    const res = await fetch(`${serverUrl}/projects/${projectId}/sync`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) throw new Error(`동기화 실패: ${res.status}`)
+  },
 }))

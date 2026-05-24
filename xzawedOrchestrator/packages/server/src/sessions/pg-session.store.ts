@@ -64,6 +64,13 @@ export class PgSessionStore implements SessionStore {
     )
   }
 
+  async updateProject(id: string, projectId: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE sessions SET project_id = $2, updated_at = NOW() WHERE id = $1',
+      [id, projectId]
+    )
+  }
+
   async delete(id: string): Promise<void> {
     await this.pool.query('DELETE FROM sessions WHERE id = $1', [id])
   }

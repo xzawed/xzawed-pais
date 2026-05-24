@@ -21,6 +21,7 @@ import { sessionsRoutes } from './api/sessions.route.js'
 import { sessionWsRoutes } from './ws/session.ws.js'
 import { authRoutes } from './api/auth.route.js'
 import { projectsRoutes } from './api/projects.route.js'
+import { internalRoutes } from './api/internal.route.js'
 import { createPool, runMigrations, closePool } from './db/pool.js'
 
 const JWT_ERRORS: Record<string, string> = {
@@ -111,6 +112,14 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     userAuthHook,
   })
   await app.register(sessionWsRoutes, { store, wsSessions, sessionConsumers, sessionCleanup, authHook, userAuthHook })
+
+  if (dbPool) {
+    if (authHook) {
+      await app.register(internalRoutes, { pool: dbPool, authHook, store })
+    } else {
+      app.log.warn('Internal routes disabled: AUTH=jwt is required to expose internal endpoints')
+    }
+  }
 
   if (config.serveWeb) {
     const webDist = join(fileURLToPath(import.meta.url), '../../../../web/dist')

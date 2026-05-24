@@ -102,4 +102,80 @@ describe('useProjectsStore', () => {
       expect(useProjectsStore.getState().currentProjectId).toBeNull()
     })
   })
+
+  describe('updateWorkspace', () => {
+    it('PATCH /projects/:id/workspace 를 호출하고 스토어를 업데이트한다', async () => {
+      const { useProjectsStore } = await import('../stores/projects.store.js')
+      useProjectsStore.setState({
+        projects: [{ id: 'p1', name: 'my-app', slug: 'my-app', createdAt: '2026-01-01T00:00:00Z' }],
+      })
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          id: 'p1', name: 'my-app', slug: 'my-app', createdAt: '2026-01-01T00:00:00Z',
+          workspace_type: 'local', workspace_path: '/home/user/app',
+        }),
+      }))
+
+      await useProjectsStore.getState().updateWorkspace('http://localhost:3000', 'token', 'p1', {
+        workspaceType: 'local',
+        localPath: '/home/user/app',
+      })
+
+      const fetchMock = vi.mocked(fetch)
+      const [url, opts] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(url).toBe('http://localhost:3000/projects/p1/workspace')
+      expect(opts.method).toBe('PATCH')
+
+      const updated = useProjectsStore.getState().projects.find((p) => p.id === 'p1')
+      expect(updated?.workspace_type).toBe('local')
+      expect(updated?.workspace_path).toBe('/home/user/app')
+
+      vi.unstubAllGlobals()
+    })
+
+    it('응답이 실패하면 오류를 던진다', async () => {
+      const { useProjectsStore } = await import('../stores/projects.store.js')
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400 }))
+
+      await expect(
+        useProjectsStore.getState().updateWorkspace('http://localhost:3000', 'token', 'p1', {
+          workspaceType: 'none',
+        }),
+      ).rejects.toThrow('workspace 업데이트 실패: 400')
+
+      vi.unstubAllGlobals()
+    })
+  })
+
+  describe('syncWorkspace', () => {
+    it('POST /projects/:id/sync 를 호출한다', async () => {
+      const { useProjectsStore } = await import('../stores/projects.store.js')
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+
+      await useProjectsStore.getState().syncWorkspace('http://localhost:3000', 'token', 'p1')
+
+      const fetchMock = vi.mocked(fetch)
+      const [url, opts] = fetchMock.mock.calls[0] as [string, RequestInit]
+      expect(url).toBe('http://localhost:3000/projects/p1/sync')
+      expect(opts.method).toBe('POST')
+
+      vi.unstubAllGlobals()
+    })
+
+    it('응답이 실패하면 오류를 던진다', async () => {
+      const { useProjectsStore } = await import('../stores/projects.store.js')
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }))
+
+      await expect(
+        useProjectsStore.getState().syncWorkspace('http://localhost:3000', 'token', 'p1'),
+      ).rejects.toThrow('동기화 실패: 503')
+
+      vi.unstubAllGlobals()
+    })
+  })
 })

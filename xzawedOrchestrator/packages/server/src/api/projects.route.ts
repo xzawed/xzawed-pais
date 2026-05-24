@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import type { Pool } from 'pg'
 import { ProjectRepo, type ProjectUpdate } from '../projects/project.repo.js'
+import { WorkspaceService } from '../projects/workspace.service.js'
 import { makeUserAuthHook } from '../auth/user-auth.hook.js'
 import { assertProjectOwner } from '../auth/ownership.js'
 import { upsertGithubToken, deleteGithubToken } from '../github-tokens/github-token.repo.js'
@@ -128,6 +129,77 @@ export async function projectsRoutes(
         [req.params.id]
       )
       return reply.send({ exists: res.rows.length > 0 })
+    }
+  )
+
+  // ── Workspace management ───────────────────────────────────────────────────
+
+  const workspaceSvc = new WorkspaceService()
+
+  app.patch<{
+    Params: { id: string }
+    Body: {
+      workspaceType: 'none' | 'local' | 'github'
+      localPath?: string
+      repoUrl?: string
+      branch?: string
+      pushStrategy?: 'push' | 'pr'
+    }
+  }>(
+    '/projects/:id/workspace',
+    { preHandler: authHook },
+    async (req, reply) => {
+      if (!req.authUser) return reply.status(401).send({ error: 'Unauthorized' })
+      const { id } = req.params
+      const { workspaceType, localPath, repoUrl, branch = 'main', pushStrategy = 'push' } = req.body
+
+      const existing = await repo.findByIdAndUser(id, req.authUser.sub)
+      if (!existing) return reply.status(404).send({ error: 'Project not found' })
+
+      let workspacePath: string | undefined
+
+      if (workspaceType === 'local') {
+        if (!localPath) return reply.status(400).send({ error: 'localPath required' })
+        await workspaceSvc.validateLocalPath(localPath)
+        workspacePath = localPath
+      } else if (workspaceType === 'github') {
+        if (!repoUrl) return reply.status(400).send({ error: 'repoUrl required' })
+        const parsedUrl = new URL(repoUrl)
+        if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+          return reply.status(400).send({ error: 'repoUrl must use https or http protocol' })
+        }
+        workspacePath = workspaceSvc.clonePath(id)
+        await workspaceSvc.cloneRepo(repoUrl, workspacePath, branch)
+      }
+
+      const updated = await repo.updateWorkspace(id, {
+        workspaceType,
+        localPath,
+        repoUrl,
+        branch,
+        workspacePath,
+        pushStrategy,
+      })
+      return reply.send(updated)
+    }
+  )
+
+  app.post<{ Params: { id: string } }>(
+    '/projects/:id/sync',
+    { preHandler: authHook },
+    async (req, reply) => {
+      if (!req.authUser) return reply.status(401).send({ error: 'Unauthorized' })
+      const { id } = req.params
+      const project = await repo.findByIdAndUser(id, req.authUser.sub)
+      if (!project) return reply.status(404).send({ error: 'Project not found' })
+      if (project.workspace_type !== 'github') {
+        return reply.status(400).send({ error: 'GitHub 타입 프로젝트만 동기화 가능합니다' })
+      }
+      if (!project.workspace_path) {
+        return reply.status(400).send({ error: 'workspace_path가 없습니다' })
+      }
+      await workspaceSvc.pullRepo(project.workspace_path, project.branch ?? 'main')
+      return reply.send({ ok: true })
     }
   )
 }

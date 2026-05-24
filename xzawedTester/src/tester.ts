@@ -6,6 +6,13 @@ import { validatePath, exec } from './executor.js'
 import { detectTestCommand, buildCommandWithFiles, parseTestCounts } from './detector.js'
 import type { Config } from './config.js'
 
+export function resolveWorkspaceRoot(
+  userContext: { workspaceRoot: string; [key: string]: unknown } | undefined,
+  fallback: string | undefined,
+): string {
+  return (userContext?.workspaceRoot || fallback) ?? process.env.WORKSPACE_ROOT!
+}
+
 const ALLOWED_PREFIXES = [
   'pnpm', 'npm', 'npx', 'yarn', 'vitest', 'jest', 'mocha',
   'pytest', 'cargo test', 'go test', 'make test',
@@ -40,14 +47,16 @@ export class Tester {
       timestamp: Date.now(),
     }
 
+    const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)
+
     try {
-      const validatedPath = await validatePath(payload.projectPath, this.config.workspaceRoot)
+      const validatedPath = await validatePath(payload.projectPath, workspaceRoot)
 
       const validatedFiles: string[] = []
       if (payload.testFiles && payload.testFiles.length > 0) {
         for (const f of payload.testFiles) {
           const absFile = path.isAbsolute(f) ? f : path.resolve(validatedPath, f)
-          const validFile = await validatePath(absFile, this.config.workspaceRoot)
+          const validFile = await validatePath(absFile, workspaceRoot)
           validatedFiles.push(validFile)
         }
       }

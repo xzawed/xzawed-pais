@@ -1,6 +1,7 @@
 import React from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { useChatStore } from '../store/chat.store.js'
 import { ChatView } from '../components/ChatView.js'
 
@@ -27,13 +28,13 @@ describe('ChatView', () => {
   })
 
   test('renders empty state when no session', () => {
-    render(<ChatView />)
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
     expect(screen.getByText('새 세션을 시작해주세요')).toBeInTheDocument()
   })
 
   test('renders chat-message-list when session is active', () => {
     useChatStore.setState({ sessionId: 'test-session' })
-    render(<ChatView />)
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
     expect(screen.getByTestId('chat-message-list')).toBeInTheDocument()
   })
 })
