@@ -99,7 +99,7 @@ jobs:
         run: pnpm test:coverage
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-${{ matrix.service }}
           path: ${{ matrix.dir }}/packages/*/coverage/lcov.info
@@ -155,7 +155,7 @@ jobs:
         run: pnpm test:coverage
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-${{ matrix.service }}
           path: ${{ matrix.service }}/coverage/lcov.info
@@ -234,7 +234,7 @@ jobs:
         run: pnpm test:coverage
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage-xzawedShared
           path: xzawedShared/coverage/lcov.info
@@ -581,70 +581,70 @@ jobs:
       # upload-artifact@v4 strips common path prefix from single-file artifacts,
       # so each artifact must be downloaded to its correct target directory.
       - name: Download coverage - xzawedOrchestrator
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         continue-on-error: true
         with:
           name: coverage-xzawedOrchestrator
           path: xzawedOrchestrator/packages
 
       - name: Download coverage - xzawedManager
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         continue-on-error: true
         with:
           name: coverage-xzawedManager
           path: xzawedManager/packages
 
       - name: Download coverage - xzawedPlanner
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         continue-on-error: true
         with:
           name: coverage-xzawedPlanner
           path: xzawedPlanner/coverage
 
       - name: Download coverage - xzawedDeveloper
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         continue-on-error: true
         with:
           name: coverage-xzawedDeveloper
           path: xzawedDeveloper/coverage
 
       - name: Download coverage - xzawedDesigner
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         continue-on-error: true
         with:
           name: coverage-xzawedDesigner
           path: xzawedDesigner/coverage
 
       - name: Download coverage - xzawedTester
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         continue-on-error: true
         with:
           name: coverage-xzawedTester
           path: xzawedTester/coverage
 
       - name: Download coverage - xzawedBuilder
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         continue-on-error: true
         with:
           name: coverage-xzawedBuilder
           path: xzawedBuilder/coverage
 
       - name: Download coverage - xzawedWatcher
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         continue-on-error: true
         with:
           name: coverage-xzawedWatcher
           path: xzawedWatcher/coverage
 
       - name: Download coverage - xzawedSecurity
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         continue-on-error: true
         with:
           name: coverage-xzawedSecurity
           path: xzawedSecurity/coverage
 
       - name: Download coverage - xzawedShared
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         continue-on-error: true
         with:
           name: coverage-xzawedShared
