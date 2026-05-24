@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useAuthStore } from '../stores/auth.store.js'
 import { useProjectsStore } from '../stores/projects.store.js'
+import { AddWorkspaceDialog } from './AddWorkspaceDialog.js'
 
 interface Props {
   serverUrl: string
@@ -10,8 +11,9 @@ interface Props {
 
 export function ProjectsPage({ serverUrl, onSelectProject, onLogout }: Readonly<Props>): React.JSX.Element {
   const { user, accessToken, logout } = useAuthStore()
-  const { projects, isLoading, fetchProjects, createProject } = useProjectsStore()
+  const { projects, isLoading, fetchProjects, createProject, updateWorkspace } = useProjectsStore()
   const [showCreate, setShowCreate] = useState(false)
+  const [workspaceTarget, setWorkspaceTarget] = useState<string | null>(null)
   const [newName, setNewName] = useState('')
   const [newSlug, setNewSlug] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
@@ -63,17 +65,37 @@ export function ProjectsPage({ serverUrl, onSelectProject, onLogout }: Readonly<
         ) : (
           <div className="space-y-3">
             {projects.map((project) => (
-              <button
+              <div
                 key={project.id}
-                type="button"
-                onClick={() => onSelectProject(project.id)}
-                className="w-full rounded-xl border border-border bg-surface p-4 text-left hover:border-accent"
+                className="rounded-xl border border-border bg-surface p-4 hover:border-accent"
               >
-                <p className="font-medium text-fg">{project.name}</p>
-                {project.description !== undefined && project.description !== '' && (
-                  <p className="mt-0.5 text-sm text-fg-muted">{project.description}</p>
-                )}
-              </button>
+                <div className="flex items-start justify-between">
+                  <button
+                    type="button"
+                    onClick={() => onSelectProject(project.id)}
+                    className="flex-1 text-left"
+                  >
+                    <p className="font-medium text-fg">{project.name}</p>
+                    {project.description !== undefined && project.description !== '' && (
+                      <p className="mt-0.5 text-sm text-fg-muted">{project.description}</p>
+                    )}
+                    {project.workspace_path !== undefined && project.workspace_path !== null && project.workspace_path !== '' ? (
+                      <p className="mt-0.5 text-xs text-gray-500">
+                        {project.workspace_type === 'github' ? '🐙' : '📁'} {project.workspace_path}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-gray-400">워크스페이스 미설정</p>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setWorkspaceTarget(project.id) }}
+                    className="ml-2 rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-900"
+                  >
+                    {project.workspace_path !== undefined && project.workspace_path !== null && project.workspace_path !== '' ? '변경' : '+ 워크스페이스'}
+                  </button>
+                </div>
+              </div>
             ))}
 
             <button
@@ -141,6 +163,17 @@ export function ProjectsPage({ serverUrl, onSelectProject, onLogout }: Readonly<
           </form>
         )}
       </div>
+
+      {workspaceTarget !== null && (
+        <AddWorkspaceDialog
+          open={true}
+          onClose={() => setWorkspaceTarget(null)}
+          onSave={async (data) => {
+            await updateWorkspace(serverUrl, accessToken!, workspaceTarget, data)
+            setWorkspaceTarget(null)
+          }}
+        />
+      )}
     </div>
   )
 }
