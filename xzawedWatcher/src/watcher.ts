@@ -6,6 +6,13 @@ import type { WatcherStore } from './watcher-store.js'
 import { validatePath } from './executor.js'
 import type { Config } from './config.js'
 
+export function resolveWorkspaceRoot(
+  userContext: { workspaceRoot: string; [key: string]: unknown } | undefined,
+  fallback: string | undefined,
+): string {
+  return (userContext?.workspaceRoot || fallback) ?? process.env.WORKSPACE_ROOT!
+}
+
 export class Watcher {
   constructor(
     private readonly producer: Producer,
@@ -33,13 +40,15 @@ export class Watcher {
       return
     }
 
+    const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)
+
     try {
       // Check capacity BEFORE creating the chokidar instance (prevents MAX_WATCHERS race)
       if (this.store.size >= this.config.maxWatchers) {
         throw new Error(`최대 감시자 수(${this.config.maxWatchers}개) 초과`)
       }
 
-      const validPath = await validatePath(payload.projectPath, this.config.workspaceRoot)
+      const validPath = await validatePath(payload.projectPath, workspaceRoot)
       const debounceMs = payload.debounceMs ?? this.config.debounceMs
       const watcherId = crypto.randomUUID()
       const timers = new Map<string, ReturnType<typeof setTimeout>>()

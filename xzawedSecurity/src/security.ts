@@ -5,6 +5,13 @@ import { analyzeFiles } from './analyzers/static.js'
 import { auditDeps } from './analyzers/deps.js'
 import type { Config } from './config.js'
 
+export function resolveWorkspaceRoot(
+  userContext: { workspaceRoot: string; [key: string]: unknown } | undefined,
+  fallback: string | undefined,
+): string {
+  return (userContext?.workspaceRoot || fallback) ?? process.env.WORKSPACE_ROOT!
+}
+
 const SEVERITY_ORDER = ['low', 'medium', 'high', 'critical'] as const
 
 export function calculateScore(issues: SecurityIssue[]): number {
@@ -45,16 +52,18 @@ export class Security {
       timestamp: Date.now(),
     }
 
+    const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)
+
     try {
       const [staticIssues, depsIssues, claudeIssues] = await Promise.all([
-        this.staticAnalyzeFn(payload.artifacts, this.config.workspaceRoot).catch(
+        this.staticAnalyzeFn(payload.artifacts, workspaceRoot).catch(
           () => [] as SecurityIssue[],
         ),
-        this.depsAuditFn(payload.projectPath, this.config.workspaceRoot).catch(
+        this.depsAuditFn(payload.projectPath, workspaceRoot).catch(
           () => [] as SecurityIssue[],
         ),
         this.runner
-          .analyzeArtifacts(payload.artifacts, this.config.workspaceRoot)
+          .analyzeArtifacts(payload.artifacts, workspaceRoot)
           .catch(() => [] as SecurityIssue[]),
       ])
 
