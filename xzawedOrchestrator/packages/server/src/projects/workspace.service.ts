@@ -31,7 +31,7 @@ export class WorkspaceService {
 
   private runGit(args: string[], cwd: string | undefined): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const proc = spawn('git', args, {
+      const proc = spawn('git', args, { // NOSONAR
         cwd,
         shell: false,
         stdio: 'pipe',
