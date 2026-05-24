@@ -37,7 +37,7 @@ export function getStoredToken(): string | null {
 export function clearToken(): void {
   const path = tokenFilePath()
   if (existsSync(path)) {
-    try { unlinkSync(path) } catch { /* ignore */ }
+    try { unlinkSync(path) } catch (e: unknown) { console.warn('[clearToken] failed to delete token file', e) }
   }
 }
 
