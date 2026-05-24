@@ -25,11 +25,10 @@ export class ToolRegistry {
 
   async closeAll(): Promise<void> {
     await Promise.all(
-      Array.from(this.handlers.values()).map((h) =>
-        typeof (h as { close?: () => Promise<void> }).close === 'function'
-          ? (h as { close: () => Promise<void> }).close()
-          : Promise.resolve(),
-      ),
+      Array.from(this.handlers.values()).map((h) => {
+        const closeable = h as unknown as { close?: () => Promise<void> }
+        return typeof closeable.close === 'function' ? closeable.close() : Promise.resolve()
+      }),
     )
   }
 }
