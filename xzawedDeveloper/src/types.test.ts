@@ -3,7 +3,7 @@ import { ManagerToDeveloperMessageSchema } from './types.js'
 
 describe('ManagerToDeveloperMessageSchema', () => {
   const base = {
-    sessionId: 'sess-1',
+    sessionId: '00000000-0000-0000-0000-000000000001',
     messageId: 'msg-1',
     timestamp: 1000,
     type: 'develop_request' as const,

@@ -2,8 +2,10 @@ import { vi, describe, it, expect } from 'vitest'
 import { Consumer } from './consumer.js'
 import type { ManagerToTesterMessage } from '../types.js'
 
+const SESSION_ID = '00000000-0000-0000-0000-000000000001'
+
 const testRequest: ManagerToTesterMessage = {
-  sessionId: 'sess-1',
+  sessionId: SESSION_ID,
   messageId: 'msg-1',
   timestamp: 1000,
   type: 'test_request',
@@ -26,9 +28,9 @@ describe('Consumer', () => {
       return null
     })
 
-    await consumer.start('sess-1')
+    await consumer.start(SESSION_ID)
     expect(redis.xgroup).toHaveBeenCalledWith(
-      'CREATE', 'manager:to-tester:sess-1', 'tester-consumers', '$', 'MKSTREAM',
+      'CREATE', `manager:to-tester:${SESSION_ID}`, 'tester-consumers', '$', 'MKSTREAM',
     )
   })
 
@@ -44,15 +46,15 @@ describe('Consumer', () => {
     let calls = 0
     redis.xreadgroup.mockImplementation(async () => {
       if (calls++ === 0) {
-        return [['manager:to-tester:sess-1', [['1-0', ['data', JSON.stringify(testRequest)]]]]]
+        return [[`manager:to-tester:${SESSION_ID}`, [['1-0', ['data', JSON.stringify(testRequest)]]]]]
       }
       consumer.stop()
       return null
     })
 
-    await consumer.start('sess-1')
+    await consumer.start(SESSION_ID)
     expect(handler).toHaveBeenCalledWith(testRequest)
-    expect(redis.xack).toHaveBeenCalledWith('manager:to-tester:sess-1', 'tester-consumers', '1-0')
+    expect(redis.xack).toHaveBeenCalledWith(`manager:to-tester:${SESSION_ID}`, 'tester-consumers', '1-0')
   })
 
   it('유효하지 않은 메시지는 xack하고 핸들러를 호출하지 않는다', async () => {
@@ -67,13 +69,13 @@ describe('Consumer', () => {
     let calls = 0
     redis.xreadgroup.mockImplementation(async () => {
       if (calls++ === 0) {
-        return [['manager:to-tester:sess-1', [['1-0', ['data', JSON.stringify({ bad: true })]]]]]
+        return [[`manager:to-tester:${SESSION_ID}`, [['1-0', ['data', JSON.stringify({ bad: true })]]]]]
       }
       consumer.stop()
       return null
     })
 
-    await consumer.start('sess-1')
+    await consumer.start(SESSION_ID)
     expect(handler).not.toHaveBeenCalled()
     expect(redis.xack).toHaveBeenCalled()
   })
