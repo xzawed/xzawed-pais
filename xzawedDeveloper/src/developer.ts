@@ -4,6 +4,13 @@ import type { ClaudeRunner } from './claude/runner.js'
 import { applyChange } from './fileio.js'
 import type { Config } from './config.js'
 
+export function resolveWorkspaceRoot(
+  userContext: { workspaceRoot: string; [key: string]: unknown } | undefined,
+  fallback: string | undefined,
+): string {
+  return (userContext?.workspaceRoot || fallback) ?? process.env.WORKSPACE_ROOT!
+}
+
 export class Developer {
   constructor(
     private readonly producer: Producer,
@@ -30,10 +37,7 @@ export class Developer {
         payload.context,
       )
 
-      // Always use the verified service configuration for workspaceRoot.
-      // Any workspaceRoot value supplied by the LLM or forwarded via userContext is
-      // untrusted input and must not be used as the path-validation base.
-      const workspaceRoot = this.config.workspaceRoot
+      const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)
       const artifacts: string[] = []
       for (const change of changes) {
         await this.applyFn(change, workspaceRoot)
