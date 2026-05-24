@@ -571,19 +571,77 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download coverage reports
+      # upload-artifact@v4 strips common path prefix from single-file artifacts,
+      # so each artifact must be downloaded to its correct target directory.
+      - name: Download coverage - xzawedOrchestrator
         uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
-          pattern: coverage-*
-          merge-multiple: true
-          path: .
+          name: coverage-xzawedOrchestrator
+          path: xzawedOrchestrator/packages
 
-      - name: Debug coverage files
-        run: |
-          echo "=== lcov.info locations ==="
-          find . -name "lcov.info" 2>/dev/null | sort || echo "No lcov.info found"
-          echo "=== workspace root ==="
-          ls -1
+      - name: Download coverage - xzawedManager
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: coverage-xzawedManager
+          path: xzawedManager/packages/server/coverage
+
+      - name: Download coverage - xzawedPlanner
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: coverage-xzawedPlanner
+          path: xzawedPlanner/coverage
+
+      - name: Download coverage - xzawedDeveloper
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: coverage-xzawedDeveloper
+          path: xzawedDeveloper/coverage
+
+      - name: Download coverage - xzawedDesigner
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: coverage-xzawedDesigner
+          path: xzawedDesigner/coverage
+
+      - name: Download coverage - xzawedTester
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: coverage-xzawedTester
+          path: xzawedTester/coverage
+
+      - name: Download coverage - xzawedBuilder
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: coverage-xzawedBuilder
+          path: xzawedBuilder/coverage
+
+      - name: Download coverage - xzawedWatcher
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: coverage-xzawedWatcher
+          path: xzawedWatcher/coverage
+
+      - name: Download coverage - xzawedSecurity
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: coverage-xzawedSecurity
+          path: xzawedSecurity/coverage
+
+      - name: Download coverage - xzawedShared
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: coverage-xzawedShared
+          path: xzawedShared/coverage
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v3
