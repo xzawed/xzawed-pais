@@ -6,6 +6,7 @@
     "dev": "tsx --env-file=.env watch src/index.ts",
     "build": "tsc",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest"
   },
   "dependencies": {
