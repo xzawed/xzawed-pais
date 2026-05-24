@@ -576,6 +576,14 @@ jobs:
         with:
           pattern: coverage-*
           merge-multiple: true
+          path: .
+
+      - name: Debug coverage files
+        run: |
+          echo "=== lcov.info locations ==="
+          find . -name "lcov.info" 2>/dev/null | sort || echo "No lcov.info found"
+          echo "=== workspace root ==="
+          ls -1
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v3
