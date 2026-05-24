@@ -114,7 +114,11 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   await app.register(sessionWsRoutes, { store, wsSessions, sessionConsumers, sessionCleanup, authHook, userAuthHook })
 
   if (dbPool) {
-    await app.register(internalRoutes, { pool: dbPool, authHook, store })
+    if (authHook) {
+      await app.register(internalRoutes, { pool: dbPool, authHook, store })
+    } else {
+      app.log.warn('Internal routes disabled: AUTH=jwt is required to expose internal endpoints')
+    }
   }
 
   if (config.serveWeb) {

@@ -20,6 +20,7 @@ describe('switch_project tool', () => {
     const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('http://localhost:3000/api/internal/sessions/session-1/switch-project')
     expect(opts.method).toBe('POST')
+    expect(JSON.parse(opts.body as string)).toEqual({ projectId: 'proj-2' })
   })
 
   it('Orchestrator 응답 오류 시 Error throw', async () => {

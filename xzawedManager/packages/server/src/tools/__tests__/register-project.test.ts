@@ -26,6 +26,7 @@ describe('register_project tool', () => {
     expect(opts.method).toBe('POST')
     const headers = opts.headers as Record<string, string>
     expect(headers['Authorization']).toBe('Bearer test-token')
+    expect(JSON.parse(opts.body as string)).toEqual({ name: 'my-app', workspaceType: 'local', localPath: '/home/user/app' })
   })
 
   it('Orchestrator 응답 오류 시 Error throw', async () => {

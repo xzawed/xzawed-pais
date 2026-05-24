@@ -47,8 +47,14 @@ export async function internalRoutes(
         workspacePath = localPath
       } else if (workspaceType === 'github') {
         if (!repoUrl) return reply.status(400).send({ error: 'repoUrl required' })
+        const parsedUrl = new URL(repoUrl)
+        if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+          return reply.status(400).send({ error: 'repoUrl must use https or http protocol' })
+        }
         workspacePath = workspaceSvc.clonePath(project.id)
-        void workspaceSvc.cloneRepo(repoUrl, workspacePath, branch).catch(() => undefined)
+        void workspaceSvc.cloneRepo(repoUrl, workspacePath, branch).catch((err: unknown) => {
+          app.log.error({ err }, 'background git clone failed')
+        })
         status = 'cloning'
       }
 
@@ -60,6 +66,8 @@ export async function internalRoutes(
         workspacePath,
         pushStrategy: 'push',
       })
+
+      await store.updateProject(req.params.id, project.id)
 
       return reply.send({ projectId: project.id, workspacePath: workspacePath ?? null, status })
     },
@@ -86,6 +94,8 @@ export async function internalRoutes(
       }
 
       if (!project) return reply.status(404).send({ error: 'Project not found' })
+
+      await store.updateProject(req.params.id, project.id)
 
       return reply.send({
         projectId: project.id,
