@@ -145,7 +145,7 @@ interface SessionsRoutesConfig {
   userAuthHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
 }
 
-function handleConsumerMessage(
+export function handleConsumerMessage(
   msg: ManagerToOrchestratorMessage,
   sessionId: string,
   socket: WebSocket,

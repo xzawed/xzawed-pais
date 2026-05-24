@@ -13,6 +13,11 @@ const mockFindByEmail = vi.fn()
 const mockFindById = vi.fn()
 const mockCreate = vi.fn()
 
+const { mockVerifyPassword, mockHashPassword } = vi.hoisted(() => ({
+  mockVerifyPassword: vi.fn().mockResolvedValue(true),
+  mockHashPassword: vi.fn().mockResolvedValue('$argon2id$hashed'),
+}))
+
 vi.mock('../auth/user.repo.js', () => ({
   UserRepo: vi.fn().mockImplementation(() => ({
     findByEmail: mockFindByEmail,
@@ -32,8 +37,8 @@ vi.mock('../auth/refresh.repo.js', () => ({
 }))
 
 vi.mock('../auth/password.js', () => ({
-  hashPassword: vi.fn().mockResolvedValue('$argon2id$hashed'),
-  verifyPassword: vi.fn().mockResolvedValue(true),
+  hashPassword: mockHashPassword,
+  verifyPassword: mockVerifyPassword,
 }))
 
 const mockClientQuery = vi.fn()
@@ -54,6 +59,7 @@ vi.mock('../db/pool.js', () => ({
 }))
 
 import { buildServer } from '../server.js'
+import { issueAccessToken } from '../auth/tokens.js'
 
 const BASE_CONFIG = {
   port: 0,
@@ -179,5 +185,162 @@ describe('POST /auth/refresh — TOCTOU 트랜잭션', () => {
     })
     expect(res.statusCode).toBe(500)
     expect(mockClientRelease).toHaveBeenCalled()
+  })
+})
+
+describe('POST /auth/register — 필드 누락·비밀번호 검증', () => {
+  let app: FastifyInstance
+
+  afterEach(async () => { await app?.close() })
+
+  it('이메일 없음 — 400 반환', async () => {
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { password: 'password123' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect((res.json() as { error: string }).error).toContain('email')
+  })
+
+  it('비밀번호 없음 — 400 반환', async () => {
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { email: 'user@example.com' },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('비밀번호 8자 미만 — 400 반환', async () => {
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { email: 'user@example.com', password: 'short' },
+    })
+    expect(res.statusCode).toBe(400)
+    expect((res.json() as { error: string }).error).toContain('8')
+  })
+})
+
+describe('POST /auth/login', () => {
+  let app: FastifyInstance
+
+  afterEach(async () => {
+    await app?.close()
+    mockFindByEmail.mockReset()
+    mockVerifyPassword.mockReset()
+    mockVerifyPassword.mockResolvedValue(true)
+    vi.clearAllMocks()
+  })
+
+  it('이메일 없음 — 400 반환', async () => {
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { password: 'password123' },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('비밀번호 없음 — 400 반환', async () => {
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: 'user@example.com' },
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('잘못된 비밀번호 — 401 반환', async () => {
+    mockFindByEmail.mockResolvedValueOnce(mockUser)
+    mockVerifyPassword.mockResolvedValueOnce(false)
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: 'test@example.com', password: 'wrongpass' },
+    })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('로그인 성공 — 200 반환', async () => {
+    mockFindByEmail.mockResolvedValueOnce(mockUser)
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: 'test@example.com', password: 'password123' },
+    })
+    expect(res.statusCode).toBe(200)
+    const body = res.json() as { accessToken: string; refreshToken: string }
+    expect(body.accessToken).toBeTruthy()
+    expect(body.refreshToken).toBeTruthy()
+  })
+})
+
+describe('POST /auth/logout + GET /auth/me', () => {
+  let app: FastifyInstance
+  const SECRET = BASE_CONFIG.userJwtSecret!
+  const getToken = () => issueAccessToken(
+    { sub: 'user-1', email: 'test@example.com', displayName: 'Test' },
+    SECRET,
+  )
+
+  afterEach(async () => {
+    await app?.close()
+    mockFindById.mockReset()
+    vi.clearAllMocks()
+  })
+
+  it('logout — 인증 토큰 있음 — 200 반환', async () => {
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/logout',
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+    expect(res.statusCode).toBe(200)
+    expect((res.json() as { ok: boolean }).ok).toBe(true)
+  })
+
+  it('logout — 토큰 없음 — 401 반환', async () => {
+    app = await startServer()
+    const res = await app.inject({ method: 'POST', url: '/auth/logout' })
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('/me — 사용자 조회 성공 — 200 반환', async () => {
+    mockFindById.mockResolvedValue(mockUser)
+    app = await startServer()
+    const res = await app.inject({
+      method: 'GET',
+      url: '/auth/me',
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+    expect(res.statusCode).toBe(200)
+    expect((res.json() as { user: { id: string } }).user.id).toBe('user-1')
+  })
+
+  it('/me — 사용자 없음 — 404 반환', async () => {
+    mockFindById.mockResolvedValue(null)
+    app = await startServer()
+    const res = await app.inject({
+      method: 'GET',
+      url: '/auth/me',
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('/me — 토큰 없음 — 401 반환', async () => {
+    app = await startServer()
+    const res = await app.inject({ method: 'GET', url: '/auth/me' })
+    expect(res.statusCode).toBe(401)
   })
 })

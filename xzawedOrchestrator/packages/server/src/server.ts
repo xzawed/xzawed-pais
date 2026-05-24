@@ -66,7 +66,7 @@ async function registerAuthRoutes(
 }
 
 export async function buildServer(config: Config, runnerOverride?: ClaudeRunner): Promise<FastifyInstance> {
-  const app = Fastify({ logger: { level: 'info' } }) // NOSONAR
+  const app = Fastify({ logger: config.mode !== 'local' })
   const dbPool = await setupDatabase(app, config)
 
   const store = dbPool ? new PgSessionStore(dbPool) : new InMemorySessionStore()
