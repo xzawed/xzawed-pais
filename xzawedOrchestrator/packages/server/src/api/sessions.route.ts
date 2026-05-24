@@ -12,6 +12,7 @@ import { structureIntent } from '../claude/intent-structurer.js'
 import { TaskStore } from '../tasks/task.store.js'
 import { MessageRepo } from '../sessions/message.repo.js'
 import { assertProjectOwner } from '../auth/ownership.js'
+import { ProjectRepo } from '../projects/project.repo.js'
 
 const messageStore = new Map<string, Message[]>()
 const claudeSessionIds = new Map<string, string>()
@@ -89,10 +90,19 @@ async function publishTaskToManager(
   session: { userId: string; projectId?: string | null },
   socket: WebSocket | undefined,
   log: FastifyInstance['log'],
+  pool?: Pool,
 ): Promise<void> {
-  const userContext = session.projectId
-    ? { userId: session.userId, projectId: session.projectId, workspaceRoot: `/workspace/${session.userId}/${session.projectId}` }
-    : undefined
+  let userContext: { userId: string; projectId: string; workspaceRoot: string } | undefined
+  if (session.projectId) {
+    let workspaceRoot = process.env.WORKSPACE_ROOT ?? '/workspace'
+    if (pool) {
+      const repo = new ProjectRepo(pool)
+      const project = await repo.findByIdAndUser(session.projectId, session.userId)
+      const wp = (project as unknown as { workspace_path?: string | null })?.workspace_path
+      if (wp) workspaceRoot = wp
+    }
+    userContext = { userId: session.userId, projectId: session.projectId, workspaceRoot }
+  }
   try {
     await producer.publish({
       sessionId,
@@ -296,7 +306,7 @@ export async function sessionsRoutes(
 
           taskStore.create(req.params.id, intent)
 
-          await publishTaskToManager(producer, req.params.id, intent, snapshot, session, socket, app.log)
+          await publishTaskToManager(producer, req.params.id, intent, snapshot, session, socket, app.log, pool)
 
           socket?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
         } catch (err) {
