@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+@theme {
+  /* Background layers */
+  --color-bg:            #1e1e1e;
+  --color-surface:       #252526;
+  --color-surface-raised:#2d2d2d;
+  --color-code:          #1a1a1a;
+
+  /* Borders */
+  --color-border:        #3c3c3c;
+  --color-border-dim:    #2a2a2a;
+
+  /* Text */
+  --color-fg:            #d4d4d4;
+  --color-fg-muted:      #bbb;
+  --color-fg-dim:        #888;
+  --color-fg-ghost:      #555;
+
+  /* Accent (blue) */
+  --color-accent:        #0078d4;
+  --color-accent-hover:  #006cbe;
+  --color-accent-bg:     #094771;
+
+  /* Semantic */
+  --color-ok:            #3fb950;
+  --color-ok-bg:         #0e4429;
+  --color-warn:          #f0ad4e;
+  --color-danger:        #f85149;
+  --color-statusbar:     #007acc;
+
+  /* Agent colors */
+  --color-agent-mgr:     #0078d4;
+  --color-agent-planner: #3fb950;
+  --color-agent-dev:     #9cdcfe;
+  --color-agent-tester:  #f0ad4e;
+  --color-agent-builder: #c586c0;
+  --color-agent-watcher: #4ec9b0;
+  --color-agent-security:#f85149;
+  --color-agent-designer:#dcdcaa;
+}
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+  }
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, pre, kbd {
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, 'Courier New', monospace;
+    font-size: 11px;
+  }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-fg-ghost); }
+}
+
+@layer utilities {
+  .animate-pulse-glow-green {
+    animation: pulse-glow-green 2s ease-in-out infinite;
+  }
+  .animate-pulse-glow-blue {
+    animation: pulse-glow-blue 1.5s ease-in-out infinite;
+  }
+  .animate-blink {
+    animation: blink 1s step-end infinite;
+  }
+  .animate-log-slide {
+    animation: log-slide 0.3s ease forwards;
+  }
+  @keyframes pulse-glow-green {
+    0%, 100% { box-shadow: 0 0 4px 0 rgba(63, 185, 80, 0.4); }
+    50%       { box-shadow: 0 0 10px 2px rgba(63, 185, 80, 0.6); }
+  }
+  @keyframes pulse-glow-blue {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(0, 120, 212, 0.3); }
+    50%       { box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.15); }
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+  }
+  @keyframes log-slide {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+}

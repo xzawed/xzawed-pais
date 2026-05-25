@@ -1,0 +1,148 @@
+import { vi, describe, it, expect, beforeEach } from 'vitest'
+
+const mockCreate = vi.fn()
+
+vi.mock('@anthropic-ai/sdk', () => ({
+  default: vi.fn().mockImplementation(() => ({
+    messages: { create: mockCreate },
+  })),
+}))
+
+vi.mock('node:fs/promises', () => ({
+  default: { readFile: vi.fn() },
+}))
+
+vi.mock('../executor.js', () => ({
+  validatePath: vi.fn().mockImplementation((p: string) => Promise.resolve(p)),
+}))
+
+import fs from 'node:fs/promises'
+import { validatePath } from '../executor.js'
+import { ClaudeRunner } from './runner.js'
+
+const mockReadFile = vi.mocked(fs.readFile)
+const mockValidatePath = vi.mocked(validatePath)
+
+let runner: ClaudeRunner
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  mockValidatePath.mockImplementation((p: string) => Promise.resolve(p))
+  mockReadFile.mockResolvedValue('const x = 1' as never)
+  runner = new ClaudeRunner('sk-test', 'claude-test')
+})
+
+describe('ClaudeRunner.parseIssues', () => {
+  it('parses valid JSON array of issues', () => {
+    const input = JSON.stringify([
+      {
+        id: 'CL-001',
+        severity: 'high',
+        category: 'injection',
+        file: 'app.ts',
+        description: 'SQL injection',
+        suggestion: 'Use parameterized queries',
+        cwe: 'CWE-89',
+      },
+    ])
+    const result = runner.parseIssues(input)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.id).toBe('CL-001')
+    expect(result[0]?.severity).toBe('high')
+  })
+
+  it('strips code fences', () => {
+    const issue = {
+      id: 'CL-001',
+      severity: 'medium',
+      category: 'xss',
+      file: 'f.ts',
+      description: 'XSS',
+      suggestion: 'sanitize',
+    }
+    const input = `\`\`\`json\n${JSON.stringify([issue])}\n\`\`\``
+    expect(runner.parseIssues(input)).toHaveLength(1)
+  })
+
+  it('filters items missing required fields', () => {
+    const valid = {
+      id: 'CL-001',
+      severity: 'low',
+      category: 'config',
+      file: 'f.ts',
+      description: 'd',
+      suggestion: 's',
+    }
+    const invalid = { id: 'CL-002', severity: 'high' }
+    expect(runner.parseIssues(JSON.stringify([valid, invalid]))).toHaveLength(1)
+  })
+
+  it('filters items with invalid severity', () => {
+    const issue = {
+      id: 'CL-001',
+      severity: 'extreme',
+      category: 'injection',
+      file: 'f.ts',
+      description: 'd',
+      suggestion: 's',
+    }
+    expect(runner.parseIssues(JSON.stringify([issue]))).toHaveLength(0)
+  })
+
+  it('returns [] for invalid JSON', () => {
+    expect(runner.parseIssues('not json')).toEqual([])
+  })
+
+  it('returns [] for empty string', () => {
+    expect(runner.parseIssues('')).toEqual([])
+  })
+
+  it('returns [] for empty array', () => {
+    expect(runner.parseIssues('[]')).toEqual([])
+  })
+})
+
+describe('ClaudeRunner.analyzeArtifacts', () => {
+  it('returns [] for empty file list', async () => {
+    const result = await runner.analyzeArtifacts([], '/workspace')
+    expect(result).toEqual([])
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('returns parsed issues from Claude', async () => {
+    const issue = {
+      id: 'CL-001',
+      severity: 'high',
+      category: 'injection',
+      file: 'app.ts',
+      description: 'SQL injection',
+      suggestion: 'Use parameterized queries',
+    }
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify([issue]) }],
+    })
+    const result = await runner.analyzeArtifacts(['/workspace/app.ts'], '/workspace')
+    expect(result).toHaveLength(1)
+    expect(result[0]?.id).toBe('CL-001')
+  })
+
+  it('returns [] when SDK throws', async () => {
+    mockCreate.mockRejectedValueOnce(new Error('timeout'))
+    const result = await runner.analyzeArtifacts(['/workspace/app.ts'], '/workspace')
+    expect(result).toEqual([])
+  })
+
+  it('skips files where validatePath throws', async () => {
+    mockValidatePath.mockRejectedValueOnce(new Error('경로 거부'))
+    const result = await runner.analyzeArtifacts(['/etc/passwd'], '/workspace')
+    expect(result).toEqual([])
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('skips files where readFile throws', async () => {
+    mockReadFile.mockRejectedValueOnce(new Error('ENOENT') as never)
+    const result = await runner.analyzeArtifacts(['/workspace/missing.ts'], '/workspace')
+    expect(result).toEqual([])
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+})
