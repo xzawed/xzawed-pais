@@ -96,7 +96,6 @@ export class ClaudeRunner {
       return this.parseResponse(text, intent)
     } finally {
       clearTimeout(timerId)
-      void timeoutReject
     }
   }
 
