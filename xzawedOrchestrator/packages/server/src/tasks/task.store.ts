@@ -23,6 +23,8 @@ export class TaskStore {
   update(taskId: string, status: TaskStatus, result?: string): void {
     const task = this.tasks.get(taskId)
     if (!task) return
+    const terminalStates: TaskStatus[] = ['completed', 'failed']
+    if (terminalStates.includes(task.status)) return
     task.status = status
     task.updatedAt = Date.now()
     if (result !== undefined) task.result = result
