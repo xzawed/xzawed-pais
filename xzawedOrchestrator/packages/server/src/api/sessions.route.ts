@@ -89,7 +89,7 @@ async function saveAssistantMessage(
   messageStore.set(sessionId, history)
 }
 
-async function publishTaskToManager(
+export async function publishTaskToManager(
   producer: StreamProducer,
   sessionId: string,
   intent: string,
