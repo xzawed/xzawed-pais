@@ -47,5 +47,6 @@ build-output/
 .superpowers/
 report/
 
-# Superpowers 계획·스펙 아티팩트 (자동 생성, 커밋 불필요)
-docs/superpowers/
+# Superpowers 계획 아티팩트 (자동 생성, 커밋 불필요)
+# specs/는 설계 문서이므로 추적 대상 — plans/만 제외
+docs/superpowers/plans/
