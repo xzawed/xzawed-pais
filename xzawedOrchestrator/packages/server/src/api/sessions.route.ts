@@ -8,11 +8,20 @@ import type { StreamProducer } from '../streams/producer.js'
 import type { Message, ManagerToOrchestratorMessage, Chunk } from '@xzawed/shared'
 import { StreamConsumer } from '../streams/consumer.js'
 import Anthropic from '@anthropic-ai/sdk'
+import { resolve, parse } from 'node:path'
 import { structureIntent } from '../claude/intent-structurer.js'
 import { TaskStore } from '../tasks/task.store.js'
 import { MessageRepo } from '../sessions/message.repo.js'
 import { assertProjectOwner } from '../auth/ownership.js'
 import { ProjectRepo, type Project } from '../projects/project.repo.js'
+
+function assertNotFilesystemRoot(p: string): void {
+  const resolved = resolve(p)
+  const { root } = parse(resolved)
+  if (resolved === root || resolved === root.replace(/[\\/]$/, '')) {
+    throw new Error('WORKSPACE_ROOT must not be filesystem root')
+  }
+}
 
 export function resolveSessionWorkspaceRoot(
   project: Project | null | undefined,
@@ -108,6 +117,7 @@ export async function publishTaskToManager(
       const project = await repo.findByIdAndUser(session.projectId, session.userId)
       workspaceRoot = resolveSessionWorkspaceRoot(project, envFallback)
     }
+    assertNotFilesystemRoot(workspaceRoot)
     userContext = { userId: session.userId, projectId: session.projectId, workspaceRoot }
   }
   try {

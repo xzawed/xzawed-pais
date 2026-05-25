@@ -70,7 +70,12 @@ export class SessionWsClient {
     onClose?: () => void
   ): () => void {
     validateBaseUrl(baseUrl)
-    const wsUrl = baseUrl.replace(/^http/, 'ws') + `/ws/sessions/${sessionId}`
+    const base = new URL(baseUrl)
+    base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:'
+    base.pathname = `/ws/sessions/${sessionId}`
+    base.search = ''
+    base.hash = ''
+    const wsUrl = base.toString()
     this.ws = new WebSocket(wsUrl)
 
     this.ws.onopen = () => {}

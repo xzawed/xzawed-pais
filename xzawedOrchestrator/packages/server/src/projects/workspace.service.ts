@@ -1,7 +1,16 @@
 import { spawn } from 'node:child_process'
 import { access, constants } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve, parse } from 'node:path'
 import { homedir } from 'node:os'
+
+function assertNotFilesystemRoot(p: string): void {
+  const resolved = resolve(p)
+  const { root } = parse(resolved)
+  // Reject the path if it IS the filesystem root (e.g. / or C:\)
+  if (resolved === root || resolved === root.replace(/[\\/]$/, '')) {
+    throw new Error('파일시스템 루트는 워크스페이스로 사용할 수 없습니다')
+  }
+}
 
 export class WorkspaceService {
   readonly workspacesDir = process.env.WORKSPACES_DIR ?? join(homedir(), '.xzawed', 'workspaces')
@@ -11,6 +20,8 @@ export class WorkspaceService {
   }
 
   async validateLocalPath(localPath: string): Promise<void> {
+    // Reject filesystem root paths before any I/O
+    assertNotFilesystemRoot(localPath)
     try {
       await access(localPath, constants.R_OK)
     } catch {

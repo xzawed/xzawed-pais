@@ -30,6 +30,26 @@ describe('WorkspaceService', () => {
     await expect(svc.validateLocalPath('/nonexistent')).rejects.toThrow('로컬 경로에 접근할 수 없습니다')
   })
 
+  it('validateLocalPath throws when path is filesystem root (/)', async () => {
+    await expect(svc.validateLocalPath('/')).rejects.toThrow('파일시스템 루트는 워크스페이스로 사용할 수 없습니다')
+    expect(mockAccess).not.toHaveBeenCalled()
+  })
+
+  it('validateLocalPath throws when path resolves to a Windows-style drive root', async () => {
+    // path.resolve('C:\\') on Windows resolves to 'C:\', which equals its own root.
+    // We simulate this by testing a path whose resolve === parse(resolve).root.
+    // On POSIX, we instead rely on the '/' case above; on Windows, 'C:\' is the root.
+    // Use os.platform check to keep test portable.
+    const { platform } = await import('node:os')
+    if (platform() === 'win32') {
+      await expect(svc.validateLocalPath('C:\\')).rejects.toThrow('파일시스템 루트는 워크스페이스로 사용할 수 없습니다')
+      expect(mockAccess).not.toHaveBeenCalled()
+    } else {
+      // On POSIX, '/' is the only root; already tested above.
+      expect(true).toBe(true)
+    }
+  })
+
   it('clonePath returns correct path under homedir', () => {
     const path = svc.clonePath('proj-123')
     expect(path).toContain('proj-123')
