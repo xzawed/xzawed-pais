@@ -47,17 +47,19 @@ export async function exec(
       env: { ...process.env, COREPACK_ENABLE_STRICT: '0', COREPACK_ENABLE_AUTO_PIN: '0' },
     })
     let settled = false
+    let killTimer: ReturnType<typeof setTimeout> | null = null
 
     const settle = (fn: () => void) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      if (killTimer !== null) clearTimeout(killTimer)
       fn()
     }
 
     const timer = setTimeout(() => {
       proc.kill('SIGTERM')
-      setTimeout(() => {
+      killTimer = setTimeout(() => {
         if (!proc.killed) proc.kill('SIGKILL')
       }, 5000)
       settle(() => reject(new Error(`테스트 타임아웃: ${timeoutMs}ms 초과`)))
