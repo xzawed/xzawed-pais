@@ -1,0 +1,30 @@
+# 의존성
+node_modules/
+
+# 빌드 출력
+dist/
+build/
+*.js.map
+*.tsbuildinfo
+
+# 환경변수
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 로그
+*.log
+logs/
+
+# 테스트 커버리지
+coverage/
+.worktrees/

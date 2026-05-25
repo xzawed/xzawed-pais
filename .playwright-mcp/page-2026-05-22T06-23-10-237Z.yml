@@ -1,0 +1,22 @@
+- generic [ref=e2]:
+  - generic [ref=e5]:
+    - navigation "Main navigation" [ref=e6]:
+      - generic [ref=e7]:
+        - link "Continuous Code Quality" [ref=e9] [cursor=pointer]:
+          - /url: /
+          - img "SonarQube Cloud" [ref=e12]
+        - navigation "Main":
+          - generic:
+            - list
+      - generic [ref=e30]:
+        - button "Search" [ref=e31] [cursor=pointer]:
+          - generic [ref=e32]: 
+        - button "Help" [ref=e33] [cursor=pointer]:
+          - generic [ref=e34]: 
+        - button "Start Free" [ref=e35] [cursor=pointer]:
+          - generic [ref=e37]: Start Free
+        - button "Log in" [ref=e38] [cursor=pointer]:
+          - generic [ref=e40]: Log in
+    - status [ref=e43]:
+      - generic [ref=e45]: Loading...
+  - region "Focus toasts messages with alt+T"

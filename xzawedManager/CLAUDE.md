@@ -96,6 +96,8 @@ DATABASE_URL=            # 선택: DB 연결 문자열
 
 ## 보안 구현 패턴
 
+공통 보안 패턴: [docs/development/security-patterns.md](../../docs/development/security-patterns.md)
+
 - **Redis 메시지 검증**: `consumer.ts`는 `OrchestratorToManagerMessageSchema.safeParse()` 로 모든 수신 메시지 검증. 실패 시 xack 후 skip
 - **sessionId 검증**: `sessions.route.ts`에서 `z.string().uuid()` 검증 — UUID 형식 외 요청은 400 반환
 - **JWT 인증**: `SERVICE_JWT_SECRET` 설정 시 JWT 인증 활성화 — 32자 미만이면 `superRefine`으로 시작 거부 (`config.ts`). `verifyServiceToken`은 `@fastify/jwt` 에러 코드별로 응답 메시지 분기: `FST_JWT_NO_AUTHORIZATION_IN_HEADER` → 401 `Missing token`, `FST_JWT_AUTHORIZATION_TOKEN_EXPIRED` → 401 `Token expired`, 그 외 → 401 `Invalid token`

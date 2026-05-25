@@ -1,0 +1,10 @@
+{
+  "name": "xzawed-launcher-root",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter @xzawed/launcher-app dev",
+    "build": "pnpm --filter @xzawed/launcher-shared build && pnpm --filter @xzawed/launcher-app build",
+    "test": "pnpm --filter @xzawed/launcher-app test",
+    "package": "pnpm --filter @xzawed/launcher-app package"
+  }
+}
