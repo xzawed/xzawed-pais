@@ -6,7 +6,7 @@ import type { StreamProducer } from '../../streams/producer.js'
 import type { Project } from '../../projects/project.repo.js'
 
 const { mockFindByIdAndUser } = vi.hoisted(() => {
-  const mockFindByIdAndUser = vi.fn<[string, string], Promise<Project | undefined>>()
+  const mockFindByIdAndUser = vi.fn()
   return { mockFindByIdAndUser }
 })
 
