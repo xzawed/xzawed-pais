@@ -29,9 +29,7 @@ export async function detectTestCommand(projectPath: string): Promise<string> {
   try {
     const raw = await fs.readFile(path.join(projectPath, 'package.json'), 'utf-8')
     const pkgResult = PkgSchema.safeParse(JSON.parse(raw))
-    if (!pkgResult.success) {
-      // 파싱 실패 시 비-JS 프로젝트 폴백으로 계속
-    } else {
+    if (pkgResult.success) {
       // Detect framework from dependencies and return a HARDCODED safe command.
       // Never trust scripts.test — it may contain arbitrary shell commands.
       const allDeps = { ...pkgResult.data.dependencies, ...pkgResult.data.devDependencies }

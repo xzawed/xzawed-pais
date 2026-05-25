@@ -61,6 +61,14 @@ export function ChatView(): React.JSX.Element {
     }
   }
 
+  const streamingMessage = useMemo<Message | null>(
+    () =>
+      isStreaming && streamingMsgId
+        ? { id: streamingMsgId, sessionId: sessionId ?? '', role: 'assistant' as const, content: streamingContent, timestamp: 0 }
+        : null,
+    [isStreaming, streamingMsgId, streamingContent, sessionId]
+  )
+
   if (!sessionId) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center bg-bg text-fg-ghost">
@@ -75,14 +83,6 @@ export function ChatView(): React.JSX.Element {
   const streamingSteps = isStreaming && streamingContent
     ? parseAgentSteps(streamingContent, true)
     : parseAgentSteps(lastMsgContent, false)
-
-  const streamingMessage = useMemo<Message | null>(
-    () =>
-      isStreaming && streamingMsgId
-        ? { id: streamingMsgId, sessionId: sessionId ?? '', role: 'assistant' as const, content: streamingContent, timestamp: 0 }
-        : null,
-    [isStreaming, streamingMsgId, streamingContent, sessionId]
-  )
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-bg">

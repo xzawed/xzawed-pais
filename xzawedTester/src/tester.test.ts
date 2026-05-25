@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
+import path from 'node:path'
 
 vi.mock('./executor.js', () => ({
   validatePath: vi.fn().mockImplementation((p: string) => Promise.resolve(p)),
@@ -105,5 +106,28 @@ describe('Tester.handle', () => {
       type: 'error',
       payload: expect.objectContaining({ content: '경로 거부: /etc' }),
     }))
+  })
+
+  it('publishes error when testCommand has disallowed prefix', async () => {
+    await tester.handle(makeRequest({ testCommand: 'rm -rf /' }))
+    expect(mockPublish).toHaveBeenCalledWith('sess-1', expect.objectContaining({
+      type: 'error',
+      payload: expect.objectContaining({ content: expect.stringContaining('testCommand not allowed') }),
+    }))
+  })
+
+  it('publishes error when testCommand contains shell metacharacters', async () => {
+    await tester.handle(makeRequest({ testCommand: 'pnpm test; rm -rf /' }))
+    expect(mockPublish).toHaveBeenCalledWith('sess-1', expect.objectContaining({
+      type: 'error',
+      payload: expect.objectContaining({ content: expect.stringContaining('Shell metacharacters') }),
+    }))
+  })
+
+  it('validates each testFile and passes resolved paths to buildCommandWithFiles', async () => {
+    const files = ['src/foo.test.ts', 'src/bar.test.ts']
+    await tester.handle(makeRequest({ testFiles: files }))
+    const expectedPaths = files.map((f) => path.resolve(config.workspaceRoot, f))
+    expect(mockBuildCmd).toHaveBeenCalledWith('vitest run', expectedPaths)
   })
 })

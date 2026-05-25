@@ -81,7 +81,7 @@ export function McpPanel(): React.JSX.Element {
       try {
         const statuses = await globalThis.electronAPI?.mcpStatuses?.() ?? {}
         Object.entries(statuses).forEach(([sid, st]) =>
-          useIntegrationsStore.getState().setMcpStatus(sid, st as 'running' | 'stopped')
+          useIntegrationsStore.getState().setMcpStatus(sid, st)
         )
       } catch (e) { console.warn('[McpPanel] status re-sync failed', e) }
     } finally {

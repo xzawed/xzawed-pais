@@ -50,6 +50,20 @@ describe('detectTestCommand', () => {
     const cmd = await detectTestCommand('/project')
     expect(cmd).toBe('pnpm test')
   })
+
+  it('detects mocha from devDependencies', async () => {
+    mockFs.readFile.mockResolvedValueOnce(
+      JSON.stringify({ devDependencies: { mocha: '^10.0.0' } }) as unknown as Buffer
+    )
+    const cmd = await detectTestCommand('/project')
+    expect(cmd).toBe('pnpm mocha')
+  })
+
+  it('throws when no package.json and no Cargo.toml', async () => {
+    mockFs.readFile.mockRejectedValueOnce(new Error('ENOENT'))
+    mockFs.access.mockRejectedValueOnce(new Error('ENOENT'))
+    await expect(detectTestCommand('/project')).rejects.toThrow('테스트 명령을 감지할 수 없습니다')
+  })
 })
 
 describe('buildCommandWithFiles', () => {
@@ -85,6 +99,10 @@ describe('buildCommandWithFiles', () => {
       expect(() => buildCommandWithFiles('vitest run', [filePath])).toThrow('Shell metacharacters')
     }
   })
+
+  it('rejects filesystem root path in testFiles', () => {
+    expect(() => buildCommandWithFiles('vitest run', ['/'])).toThrow('Filesystem root path is not permitted in testFiles')
+  })
 })
 
 describe('parseTestCounts', () => {
@@ -113,5 +131,11 @@ describe('parseTestCounts', () => {
     const { passed, failed } = parseTestCounts('no test info here')
     expect(passed).toBe(0)
     expect(failed).toBe(0)
+  })
+
+  it('parses cargo test output', () => {
+    const { passed, failed } = parseTestCounts('42 passed; 3 failed')
+    expect(passed).toBe(42)
+    expect(failed).toBe(3)
   })
 })

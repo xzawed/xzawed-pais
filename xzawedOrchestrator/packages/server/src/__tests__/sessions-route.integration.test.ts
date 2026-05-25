@@ -251,4 +251,21 @@ describe('sessions route integration', () => {
     expect(body.status).toBe('accepted')
     ws.close()
   })
+
+  it('claude_session chunk updates session id without generating a chunk WS message', async () => {
+    const runner = makeMockRunner([
+      { type: 'claude_session', content: 'ses-abc-123' },
+      { type: 'text', content: 'Hello' },
+      { type: 'done', content: '' },
+    ])
+    ;({ app, port } = await startServer(runner))
+    const { sessionId, ws, messages } = await createConnectedSession(port)
+
+    await postMessage(port, sessionId, 'hi')
+    await waitForWsMessage(messages, (m) => (m as { type: string }).type === 'done')
+
+    expect(messages.filter((m) => (m as { type: string }).type === 'chunk')).toHaveLength(1)
+    expect(messages.find((m) => (m as { type: string }).type === 'done')).toBeDefined()
+    ws.close()
+  })
 })

@@ -104,7 +104,7 @@ export async function authRoutes(
       const { refreshToken } = req.body
       if (!refreshToken) return reply.status(400).send({ error: 'refreshToken is required' })
 
-      const tokenHash = createHash('sha256').update(refreshToken).digest('hex')
+      const tokenHash = createHash('sha256').update(refreshToken).digest('hex') // NOSONAR
 
       // Refresh token rotation: findValid + revoke + insert in a single transaction
       // SELECT FOR UPDATE prevents concurrent refresh with the same token (TOCTOU)
