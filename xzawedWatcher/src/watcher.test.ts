@@ -170,6 +170,22 @@ describe('Watcher.handle — watch_request', () => {
     )
   })
 
+  it('chokidar error 이벤트 발생 시 error 메시지를 발행한다', async () => {
+    await watcher.handle(makeRequest({ projectPath: '/workspace/app' }))
+
+    const errorHandler = mockWatcherInstance.on.mock.calls.find(
+      ([event]: [string]) => event === 'error',
+    )?.[1] as ((err: Error) => void) | undefined
+
+    expect(errorHandler).toBeDefined()
+    errorHandler?.(new Error('ENOSPC: no space left on device'))
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({ type: 'error' }),
+    )
+  })
+
   it('pre-checks capacity before creating chokidar (MAX_WATCHERS race fix)', async () => {
     // Config limits to 1 watcher; store already has 1 entry
     const limitedConfig = { ...config, maxWatchers: 1 }
