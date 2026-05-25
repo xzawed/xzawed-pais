@@ -60,10 +60,8 @@ export class ClaudeRunner {
     designSystem: string,
   ): Promise<{ components: ComponentSpec[]; uiSpec: UISpec }> {
     let timerId: ReturnType<typeof setTimeout> | undefined
-    let timeoutReject: ((err: Error) => void) | undefined
 
     const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutReject = reject
       timerId = setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
     })
     // prevent unhandled rejection when the API call wins the race
