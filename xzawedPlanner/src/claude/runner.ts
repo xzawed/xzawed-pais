@@ -69,72 +69,77 @@ export class ClaudeRunner {
     context: Record<string, unknown>,
     priority: 'normal' | 'high'
   ): Promise<{ steps: Step[]; estimatedTime: string } | ClarificationNeeded> {
-    const response = await Promise.race([
-      this.client.messages.create({
-        model: this.model,
-        max_tokens: 2048,
-        system: SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: `Intent: ${intent}\nPriority: ${priority}\nContext: ${JSON.stringify(context, null, 2)}`,
-        }],
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
-      ),
-    ])
-
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
-
-    const start = text.indexOf('{')
-    const end = text.lastIndexOf('}')
-    if (start === -1 || end === -1) return this.fallback(intent)
-
-    let parsed: Record<string, unknown>
+    let timerId: ReturnType<typeof setTimeout> | undefined
     try {
-      const raw: unknown = JSON.parse(text.slice(start, end + 1))
-      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return this.fallback(intent)
-      parsed = raw as Record<string, unknown>
-    } catch {
-      return this.fallback(intent)
-    }
+      const response = await Promise.race([
+        this.client.messages.create({
+          model: this.model,
+          max_tokens: 2048,
+          system: SYSTEM_PROMPT,
+          messages: [{
+            role: 'user',
+            content: `Intent: ${intent}\nPriority: ${priority}\nContext: ${JSON.stringify(context, null, 2)}`,
+          }],
+        }),
+        new Promise<never>((_, reject) => {
+          timerId = setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
+        }),
+      ])
 
-    if (parsed.clarification_needed === true) {
-      const ClarificationFieldSchema = z.object({
-        id: z.string(),
-        label: z.string(),
-        type: z.enum(['text', 'select', 'multiline']),
-        options: z.array(z.string()).optional(),
-        required: z.boolean().optional(),
-      })
-      const fieldsResult = z.array(ClarificationFieldSchema).safeParse(parsed.fields)
-      const validatedFields: UISpec['fields'] = fieldsResult.success
-        ? fieldsResult.data.map(f => {
-            const field: UISpec['fields'][number] = { id: f.id, label: f.label, type: f.type }
-            if (f.options !== undefined) field.options = f.options
-            if (f.required !== undefined) field.required = f.required
-            return field
-          })
-        : []
-      return new ClarificationNeeded(
-        String(parsed.question ?? 'Could you provide more details?'),
-        validatedFields
-      )
-    }
+      const text = response.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('')
 
-    const planResult = PlanResponseSchema.safeParse(parsed)
-    if (!planResult.success) {
-      console.warn('Plan response validation failed:', planResult.error.issues)
-      return this.fallback(intent)
-    }
-    const { steps } = planResult.data
+      const start = text.indexOf('{')
+      const end = text.lastIndexOf('}')
+      if (start === -1 || end === -1) return this.fallback(intent)
 
-    return {
-      steps,
-      estimatedTime: String(planResult.data.estimatedTime ?? '1 hour'),
+      let parsed: Record<string, unknown>
+      try {
+        const raw: unknown = JSON.parse(text.slice(start, end + 1))
+        if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return this.fallback(intent)
+        parsed = raw as Record<string, unknown>
+      } catch {
+        return this.fallback(intent)
+      }
+
+      if (parsed.clarification_needed === true) {
+        const ClarificationFieldSchema = z.object({
+          id: z.string(),
+          label: z.string(),
+          type: z.enum(['text', 'select', 'multiline']),
+          options: z.array(z.string()).optional(),
+          required: z.boolean().optional(),
+        })
+        const fieldsResult = z.array(ClarificationFieldSchema).safeParse(parsed.fields)
+        const validatedFields: UISpec['fields'] = fieldsResult.success
+          ? fieldsResult.data.map(f => {
+              const field: UISpec['fields'][number] = { id: f.id, label: f.label, type: f.type }
+              if (f.options !== undefined) field.options = f.options
+              if (f.required !== undefined) field.required = f.required
+              return field
+            })
+          : []
+        return new ClarificationNeeded(
+          String(parsed.question ?? 'Could you provide more details?'),
+          validatedFields
+        )
+      }
+
+      const planResult = PlanResponseSchema.safeParse(parsed)
+      if (!planResult.success) {
+        console.warn('Plan response validation failed:', planResult.error.issues)
+        return this.fallback(intent)
+      }
+      const { steps } = planResult.data
+
+      return {
+        steps,
+        estimatedTime: String(planResult.data.estimatedTime ?? '1 hour'),
+      }
+    } finally {
+      clearTimeout(timerId)
     }
   }
 
