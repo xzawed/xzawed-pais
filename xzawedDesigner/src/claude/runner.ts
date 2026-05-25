@@ -59,6 +59,14 @@ export class ClaudeRunner {
     targetFramework: string,
     designSystem: string,
   ): Promise<{ components: ComponentSpec[]; uiSpec: UISpec }> {
+    let timerId: ReturnType<typeof setTimeout> | undefined
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timerId = setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
+    })
+    // prevent unhandled rejection when the API call wins the race
+    timeoutPromise.catch(() => {})
+
     try {
       const response = await Promise.race([
         this.client.messages.create({
@@ -75,9 +83,7 @@ export class ClaudeRunner {
             ].join('\n'),
           }],
         }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
-        ),
+        timeoutPromise,
       ])
 
       const text = response.content
@@ -86,8 +92,8 @@ export class ClaudeRunner {
         .join('')
 
       return this.parseResponse(text, intent)
-    } catch {
-      return this.fallback(intent)
+    } finally {
+      clearTimeout(timerId)
     }
   }
 

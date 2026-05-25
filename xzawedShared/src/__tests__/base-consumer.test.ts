@@ -28,6 +28,24 @@ describe('BaseConsumer', () => {
   })
 
   describe('start / stop', () => {
+    it('이미 running 중에 start()를 다시 호출하면 에러를 던진다', async () => {
+      const redis = makeRedis({
+        xreadgroup: vi.fn().mockReturnValue(new Promise(() => {})),
+      })
+      const consumer = new BaseConsumer(redis as any, async () => {}, 'test-group', 'test-consumer', 'test:stream', MessageSchema)
+
+      // 첫 번째 start (백그라운드 실행 — never-resolve이므로 루프에 머묾)
+      consumer.start('sess-1').catch(() => {})
+
+      // 첫 번째 start가 running 상태를 설정할 시간을 주기 위해 잠시 대기
+      await new Promise((r) => setTimeout(r, 0))
+
+      // 두 번째 start — 에러를 던져야 함
+      await expect(consumer.start('sess-2')).rejects.toThrow('already running')
+
+      consumer.stop()
+    })
+
     it('start 호출 시 consumer group을 생성한다', async () => {
       const redis = makeRedis()
       const consumer = new BaseConsumer(redis as any, vi.fn(), 'grp', 'c1', 'prefix', MessageSchema, noopSleep)

@@ -59,17 +59,19 @@ export class Security {
     const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)
 
     try {
-      const [staticIssues, depsIssues, claudeIssues] = await Promise.all([
-        this.staticAnalyzeFn(payload.artifacts, workspaceRoot).catch(
-          () => [] as SecurityIssue[],
-        ),
-        this.depsAuditFn(payload.projectPath, workspaceRoot).catch(
-          () => [] as SecurityIssue[],
-        ),
-        this.runner
-          .analyzeArtifacts(payload.artifacts, workspaceRoot)
-          .catch(() => [] as SecurityIssue[]),
+      const results = await Promise.allSettled([
+        this.staticAnalyzeFn(payload.artifacts, workspaceRoot),
+        this.depsAuditFn(payload.projectPath, workspaceRoot),
+        this.runner.analyzeArtifacts(payload.artifacts, workspaceRoot),
       ])
+
+      if (results.every((r) => r.status === 'rejected')) {
+        throw new Error('모든 보안 분석기가 실패했습니다')
+      }
+
+      const staticIssues = results[0].status === 'fulfilled' ? results[0].value : ([] as SecurityIssue[])
+      const depsIssues   = results[1].status === 'fulfilled' ? results[1].value : ([] as SecurityIssue[])
+      const claudeIssues = results[2].status === 'fulfilled' ? results[2].value : ([] as SecurityIssue[])
 
       const allIssues = [...staticIssues, ...depsIssues, ...claudeIssues]
       const score = calculateScore(allIssues)

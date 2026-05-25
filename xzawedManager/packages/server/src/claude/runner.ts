@@ -7,6 +7,7 @@ import type { ManagerToOrchestratorMessage } from '../types/streams.js'
 
 const MAX_ITERATIONS = Number(process.env['MANAGER_MAX_ITERATIONS'] ?? '50')
 const MAX_TOKENS = Number(process.env['MANAGER_MAX_TOKENS'] ?? '16384')
+const CLAUDE_CALL_TIMEOUT_MS = Number(process.env['MANAGER_CLAUDE_TIMEOUT_MS'] ?? '120000')
 
 const REQUEST_INFO_TOOL: Anthropic.Tool = {
   name: 'request_info',
@@ -77,14 +78,24 @@ export class ClaudeRunner {
     if (!handler) throw new Error(`Unknown tool: ${block.name}`)
 
     await this.publishStatus(producer, sessionId, `Starting ${block.name}...`)
-    const result = await handler.execute(block.input, sessionId, userContext)
-    await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
+    try {
+      const result = await handler.execute(block.input, sessionId, userContext)
+      await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
 
-    const resultStr = JSON.stringify(result)
-    return {
-      type: 'tool_result',
-      tool_use_id: block.id,
-      content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
+      const resultStr = JSON.stringify(result)
+      return {
+        type: 'tool_result',
+        tool_use_id: block.id,
+        content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      return {
+        type: 'tool_result',
+        tool_use_id: block.id,
+        content: `Tool execution failed: ${message}`,
+        is_error: true,
+      }
     }
   }
 
@@ -127,15 +138,29 @@ export class ClaudeRunner {
     while (iterations++ < MAX_ITERATIONS) {
       if (signal?.aborted) throw new Error('Session aborted')
 
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: MAX_TOKENS,
-        system: `You are xzawedManager, a project orchestration agent. Use the available tools to fulfill the task request. Keep your responses concise — always prefer calling a tool over writing lengthy analysis. IMPORTANT: Always use ${userContext?.workspaceRoot ?? '/workspace'} as the projectPath for ALL tool calls (develop_code, build_project, run_tests, etc.) — never use subdirectories. Keep projectPath consistent across all tool calls in a single task.`,
-        messages,
-        tools,
-      })
-
-      messages.push({ role: 'assistant', content: response.content })
+      let timerId: ReturnType<typeof setTimeout> | undefined
+      let response: Anthropic.Message
+      try {
+        const timeoutSignal = new Promise<never>((_, reject) => {
+          timerId = setTimeout(
+            () => reject(new Error(`Claude API timed out after ${CLAUDE_CALL_TIMEOUT_MS}ms`)),
+            CLAUDE_CALL_TIMEOUT_MS,
+          )
+        })
+        response = await Promise.race([
+          this.client.messages.create({
+            model: this.model,
+            max_tokens: MAX_TOKENS,
+            system: `You are xzawedManager, a project orchestration agent. Use the available tools to fulfill the task request. Keep your responses concise — always prefer calling a tool over writing lengthy analysis. IMPORTANT: Always use ${userContext?.workspaceRoot ?? '/workspace'} as the projectPath for ALL tool calls (develop_code, build_project, run_tests, etc.) — never use subdirectories. Keep projectPath consistent across all tool calls in a single task.`,
+            messages,
+            tools,
+            ...(signal !== undefined ? { signal } : {}),
+          }),
+          timeoutSignal,
+        ])
+      } finally {
+        clearTimeout(timerId)
+      }
 
       if (response.stop_reason === 'end_turn') {
         const text = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text ?? ''
@@ -148,6 +173,8 @@ export class ClaudeRunner {
         })
         return text
       }
+
+      messages.push({ role: 'assistant', content: response.content })
 
       if (response.stop_reason === 'tool_use') {
         const toolResults = await this.processToolUseBlocks(

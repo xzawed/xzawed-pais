@@ -191,9 +191,50 @@ describe('Security.handle', () => {
     mockStaticAnalyze.mockRejectedValueOnce(new Error('boom'))
     mockDepsAudit.mockRejectedValueOnce(new Error('boom'))
     mockAnalyzeArtifacts.mockRejectedValueOnce(new Error('boom'))
-    mockPublish
-      .mockResolvedValueOnce(undefined) // first publish (audit_complete with empty) succeeds
+    mockPublish.mockResolvedValueOnce(undefined) // error publish succeeds
     await security.handle(makeRequest())
     expect(mockPublish).toHaveBeenCalled()
+  })
+
+  it('3개 분석기 모두 실패하면 error 메시지를 발행한다', async () => {
+    mockStaticAnalyze.mockRejectedValueOnce(new Error('static failed'))
+    mockDepsAudit.mockRejectedValueOnce(new Error('deps failed'))
+    mockAnalyzeArtifacts.mockRejectedValueOnce(new Error('claude failed'))
+
+    await security.handle(makeRequest())
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({ type: 'error' }),
+    )
+    // audit_complete가 발행되지 않아야 한다
+    const calls = mockPublish.mock.calls.map(([, msg]: [unknown, { type: string }]) => msg.type)
+    expect(calls).not.toContain('audit_complete')
+  })
+
+  it('deps 분석기가 실패하면 빈 배열로 대체한다', async () => {
+    const staticIssue: SecurityIssue = { id: 'S-1', severity: 'high', category: 'xss', file: 'f', description: 'd', suggestion: 's' }
+    mockStaticAnalyze.mockResolvedValueOnce([staticIssue])
+    mockDepsAudit.mockRejectedValueOnce(new Error('deps error'))
+
+    await security.handle(makeRequest({ severity: 'low' }))
+
+    const msg = mockPublish.mock.calls[0]?.[1] as any
+    expect(msg.type).toBe('audit_complete')
+    expect(msg.payload.issues).toHaveLength(1)
+    expect(msg.payload.issues[0].id).toBe('S-1')
+  })
+
+  it('claude 분석기가 실패하면 빈 배열로 대체한다', async () => {
+    const staticIssue: SecurityIssue = { id: 'S-2', severity: 'medium', category: 'config', file: 'f', description: 'd', suggestion: 's' }
+    mockStaticAnalyze.mockResolvedValueOnce([staticIssue])
+    mockAnalyzeArtifacts.mockRejectedValueOnce(new Error('claude error'))
+
+    await security.handle(makeRequest({ severity: 'low' }))
+
+    const msg = mockPublish.mock.calls[0]?.[1] as any
+    expect(msg.type).toBe('audit_complete')
+    expect(msg.payload.issues).toHaveLength(1)
+    expect(msg.payload.issues[0].id).toBe('S-2')
   })
 })

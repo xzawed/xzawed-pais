@@ -20,6 +20,7 @@ export class BaseConsumer<TMessage> {
   ) {}
 
   async start(sessionId: string): Promise<void> {
+    if (this.running) throw new Error('BaseConsumer is already running')
     const stream = `${this.streamPrefix}:${sessionId}`
     await this.ensureGroup(stream)
 

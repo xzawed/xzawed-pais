@@ -63,7 +63,7 @@ export class Watcher {
 
         const timer = setTimeout(() => {
           timers.delete(filePath)
-          void this.producer.publish(sessionId, {
+          this.producer.publish(sessionId, {
             sessionId,
             messageId: crypto.randomUUID(),
             timestamp: Date.now(),
@@ -73,6 +73,8 @@ export class Watcher {
               changes: [{ path: filePath, event: eventType, timestamp: Date.now() }],
               content: `파일 변경: ${filePath}`,
             },
+          }).catch((err: unknown) => {
+            console.error('[Watcher] Failed to publish file_changed event:', err)
           })
         }, debounceMs)
 
@@ -92,6 +94,18 @@ export class Watcher {
       fsWatcher.on('add', (p) => queueEvent('add', p))
       fsWatcher.on('change', (p) => queueEvent('change', p))
       fsWatcher.on('unlink', (p) => queueEvent('unlink', p))
+      fsWatcher.on('error', (err: unknown) => {
+        const content = err instanceof Error ? err.message : String(err)
+        this.producer.publish(sessionId, {
+          sessionId,
+          messageId: crypto.randomUUID(),
+          timestamp: Date.now(),
+          type: 'error',
+          payload: { content: `감시자 오류: ${content}` },
+        }).catch((publishErr: unknown) => {
+          console.error('[Watcher] Failed to publish error event:', publishErr)
+        })
+      })
 
       try {
         this.store.add(sessionId, { watcherId, watcher: fsWatcher, timers })

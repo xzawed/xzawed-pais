@@ -170,6 +170,84 @@ describe('Watcher.handle — watch_request', () => {
     )
   })
 
+  it('chokidar error 이벤트 발생 시 error 메시지를 발행한다', async () => {
+    await watcher.handle(makeRequest({ projectPath: '/workspace/app' }))
+
+    const errorHandler = mockWatcherInstance.on.mock.calls.find(
+      ([event]: [string]) => event === 'error',
+    )?.[1] as ((err: Error) => void) | undefined
+
+    expect(errorHandler).toBeDefined()
+    errorHandler?.(new Error('ENOSPC: no space left on device'))
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({ type: 'error' }),
+    )
+  })
+
+  it('queueEvent publish 실패 시 console.error를 기록한다', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await watcher.handle(makeRequest())
+    // watch_started consumed; next publish call (file_changed) will reject
+    mockPublish.mockRejectedValueOnce(new Error('Redis down'))
+
+    const changeHandler = getRegisteredHandler('change')!
+    changeHandler('/workspace/app/file.ts')
+
+    await vi.advanceTimersByTimeAsync(300)
+    // flush the .catch() microtask
+    await Promise.resolve()
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '[Watcher] Failed to publish file_changed event:',
+      expect.any(Error),
+    )
+    consoleSpy.mockRestore()
+  })
+
+  it('chokidar error 핸들러 publish 실패 시 console.error를 기록한다', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await watcher.handle(makeRequest())
+    // Next publish call (the error event) will reject
+    mockPublish.mockRejectedValueOnce(new Error('Redis connection failed'))
+
+    const errorHandler = mockWatcherInstance.on.mock.calls.find(
+      ([event]: [string]) => event === 'error',
+    )?.[1] as ((err: Error) => void) | undefined
+    errorHandler?.(new Error('ENOSPC: no space left on device'))
+
+    // flush the .catch() microtask
+    await Promise.resolve()
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '[Watcher] Failed to publish error event:',
+      expect.any(Error),
+    )
+    consoleSpy.mockRestore()
+  })
+
+  it('chokidar error 이벤트에 Error 객체 외의 값이 오면 String()으로 변환한다', async () => {
+    await watcher.handle(makeRequest({ projectPath: '/workspace/app' }))
+
+    const errorHandler = mockWatcherInstance.on.mock.calls.find(
+      ([event]: [string]) => event === 'error',
+    )?.[1] as ((err: unknown) => void) | undefined
+
+    expect(errorHandler).toBeDefined()
+    errorHandler?.('ENOSPC string error')
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({
+        type: 'error',
+        payload: expect.objectContaining({ content: '감시자 오류: ENOSPC string error' }),
+      }),
+    )
+  })
+
   it('pre-checks capacity before creating chokidar (MAX_WATCHERS race fix)', async () => {
     // Config limits to 1 watcher; store already has 1 entry
     const limitedConfig = { ...config, maxWatchers: 1 }

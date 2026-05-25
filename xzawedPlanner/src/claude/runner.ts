@@ -69,6 +69,7 @@ export class ClaudeRunner {
     context: Record<string, unknown>,
     priority: 'normal' | 'high'
   ): Promise<{ steps: Step[]; estimatedTime: string } | ClarificationNeeded> {
+    let timerId: ReturnType<typeof setTimeout> | undefined
     try {
       const response = await Promise.race([
         this.client.messages.create({
@@ -80,9 +81,9 @@ export class ClaudeRunner {
             content: `Intent: ${intent}\nPriority: ${priority}\nContext: ${JSON.stringify(context, null, 2)}`,
           }],
         }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
-        ),
+        new Promise<never>((_, reject) => {
+          timerId = setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
+        }),
       ])
 
       const text = response.content
@@ -137,8 +138,8 @@ export class ClaudeRunner {
         steps,
         estimatedTime: String(planResult.data.estimatedTime ?? '1 hour'),
       }
-    } catch {
-      return this.fallback(intent)
+    } finally {
+      clearTimeout(timerId)
     }
   }
 
