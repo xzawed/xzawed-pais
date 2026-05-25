@@ -77,10 +77,23 @@ describe('ClaudeRunner.generateDesign', () => {
     expect(result.uiSpec.title).toBe('Card UI')
   })
 
-  it('returns fallback when SDK throws', async () => {
-    mockCreate.mockRejectedValueOnce(new Error('API error'))
-    const result = await runner.generateDesign('something', {}, 'react', 'tailwind')
+  it('API 오류 시 에러를 던진다', async () => {
+    mockCreate.mockRejectedValueOnce(new Error('Network error'))
+    await expect(runner.generateDesign('버튼 컴포넌트', {}, 'react', 'tailwind')).rejects.toThrow('Network error')
+  })
+
+  it('유효한 응답을 반환한다', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          components: [{ name: 'Button', description: 'A button', props: { onClick: '() => void' } }],
+          uiSpec: { type: 'mockup_viewer', title: 'Button', content: 'button' },
+        }),
+      }],
+    })
+    const result = await runner.generateDesign('버튼 컴포넌트', {}, 'react', 'tailwind')
     expect(result.components).toHaveLength(1)
-    expect(result.components[0]?.name).toBe('Component')
+    expect(result.components[0]?.name).toBe('Button')
   })
 })
