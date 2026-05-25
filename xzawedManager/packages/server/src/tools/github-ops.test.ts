@@ -73,4 +73,24 @@ describe('github-ops handler', () => {
     ) as { url: string }
     expect(result.url).toContain('issues/2')
   })
+
+  it('commitAndPush — 절대 경로 파일 경로 시 Error throw', async () => {
+    await expect(
+      handler.execute(
+        { action: 'commitAndPush', owner: 'xzawed', repo: 'my-repo', branch: 'main', message: 'test',
+          files: [{ path: '/etc/passwd', content: 'x' }] },
+        'session-1'
+      )
+    ).rejects.toThrow('Absolute paths not allowed')
+  })
+
+  it('commitAndPush — files 빈 배열 시 Error throw', async () => {
+    await expect(
+      handler.execute(
+        { action: 'commitAndPush', owner: 'xzawed', repo: 'my-repo', branch: 'main', message: 'test',
+          files: [] },
+        'session-1'
+      )
+    ).rejects.toThrow('files array must not be empty')
+  })
 })
