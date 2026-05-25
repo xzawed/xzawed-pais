@@ -13,7 +13,7 @@ export class RefreshRepo {
   }
 
   async findValid(token: string, txClient?: PoolClient): Promise<{ id: string; userId: string } | undefined> {
-    const hash = createHash('sha256').update(token).digest('hex') // NOSONAR
+    const hash = createHash('sha256').update(token).digest('hex')
     const db: Pool | PoolClient = txClient ?? this.pool
     const sql = txClient
       ? `SELECT id, user_id FROM refresh_tokens WHERE token_hash = $1 AND expires_at > NOW() AND revoked_at IS NULL FOR UPDATE`
