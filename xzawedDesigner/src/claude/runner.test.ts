@@ -52,6 +52,13 @@ describe('ClaudeRunner.parseResponse', () => {
     expect(result.components[0]?.name).toBe('Component')
   })
 
+  it('JSON.parse 실패 시 fallback을 반환한다', () => {
+    // Has { and } but invalid JSON — triggers catch block (lines 125-126)
+    const result = runner.parseResponse('{invalid json here}', 'test intent')
+    expect(result.components[0]?.name).toBe('Component')
+    expect(result.uiSpec.type).toBe('mockup_viewer')
+  })
+
   it('uses fallback uiSpec when absent in response', () => {
     const result = runner.parseResponse(
       '{"components":[{"name":"A","description":"b","props":{}}]}',

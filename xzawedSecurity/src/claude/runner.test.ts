@@ -93,6 +93,11 @@ describe('ClaudeRunner.parseIssues', () => {
     expect(runner.parseIssues('not json')).toEqual([])
   })
 
+  it('returns [] when JSON.parse throws (has braces but invalid syntax)', () => {
+    // '[{invalid}]' has { and } so the early return is skipped, then JSON.parse throws (lines 91-92)
+    expect(runner.parseIssues('[{invalid}]')).toEqual([])
+  })
+
   it('returns [] for empty string', () => {
     expect(runner.parseIssues('')).toEqual([])
   })

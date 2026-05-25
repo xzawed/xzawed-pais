@@ -282,6 +282,28 @@ describe('ClaudeRunner', () => {
     })
   })
 
+  describe('request_info 툴 처리', () => {
+    it('request_info 툴 호출 시 info_request를 발행하고 사용자 답변을 반환한다', async () => {
+      mockSessionStore.waitForInfo.mockResolvedValueOnce('React')
+
+      createFn
+        .mockResolvedValueOnce(
+          makeMessage('tool_use', [
+            makeToolUseBlock('tu-ri', 'request_info', { question: '어떤 프레임워크를 사용할까요?' }),
+          ]),
+        )
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('React를 사용하겠습니다')]))
+
+      const result = await runner.run(baseRunOptions())
+      expect(result).toBe('React를 사용하겠습니다')
+
+      expect(mockProducer.publish).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'info_request' }),
+      )
+      expect(mockSessionStore.waitForInfo).toHaveBeenCalledWith('sess-1')
+    })
+  })
+
   describe('publish 호출', () => {
     it('end_turn 시 producer.publish가 status_update 타입으로 호출된다', async () => {
       createFn.mockResolvedValueOnce(

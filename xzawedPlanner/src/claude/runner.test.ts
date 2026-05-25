@@ -114,6 +114,40 @@ describe('ClaudeRunner', () => {
     }
   })
 
+  it('JSON.parse 실패 시 fallback Step을 반환한다', async () => {
+    // Has { and } but invalid JSON — triggers the catch block (lines 104-105)
+    const mockClient = makeClient('{invalid json here}')
+    AnthropicMock.mockImplementation(() => mockClient as any)
+
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
+    const result = await runner.generatePlan('테스트', {}, 'normal')
+
+    expect(result).not.toBeInstanceOf(ClarificationNeeded)
+    if (!(result instanceof ClarificationNeeded)) {
+      expect(result.steps).toHaveLength(1)
+      expect(result.estimatedTime).toBe('1 hour')
+    }
+  })
+
+  it('clarification_needed fields가 유효하지 않으면 빈 배열로 처리한다', async () => {
+    // fields is not an array — fieldsResult.success = false → validatedFields = [] (line 123)
+    const mockClient = makeClient(JSON.stringify({
+      clarification_needed: true,
+      question: '어떤 것이 필요하신가요?',
+      fields: 'not-an-array',
+    }))
+    AnthropicMock.mockImplementation(() => mockClient as any)
+
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
+    const result = await runner.generatePlan('앱 만들기', {}, 'normal')
+
+    expect(result).toBeInstanceOf(ClarificationNeeded)
+    if (result instanceof ClarificationNeeded) {
+      expect(result.question).toBe('어떤 것이 필요하신가요?')
+      expect(result.fields).toEqual([])
+    }
+  })
+
   it('JSON이 없는 응답에서 fallback 제목은 60자를 초과하지 않는다', async () => {
     const longIntent = 'A'.repeat(80)
     const mockClient = makeClient('계획을 세울 수 없습니다.')
