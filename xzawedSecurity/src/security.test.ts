@@ -191,9 +191,24 @@ describe('Security.handle', () => {
     mockStaticAnalyze.mockRejectedValueOnce(new Error('boom'))
     mockDepsAudit.mockRejectedValueOnce(new Error('boom'))
     mockAnalyzeArtifacts.mockRejectedValueOnce(new Error('boom'))
-    mockPublish
-      .mockResolvedValueOnce(undefined) // first publish (audit_complete with empty) succeeds
+    mockPublish.mockResolvedValueOnce(undefined) // error publish succeeds
     await security.handle(makeRequest())
     expect(mockPublish).toHaveBeenCalled()
+  })
+
+  it('3개 분석기 모두 실패하면 error 메시지를 발행한다', async () => {
+    mockStaticAnalyze.mockRejectedValueOnce(new Error('static failed'))
+    mockDepsAudit.mockRejectedValueOnce(new Error('deps failed'))
+    mockAnalyzeArtifacts.mockRejectedValueOnce(new Error('claude failed'))
+
+    await security.handle(makeRequest())
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({ type: 'error' }),
+    )
+    // audit_complete가 발행되지 않아야 한다
+    const calls = mockPublish.mock.calls.map(([, msg]: [unknown, { type: string }]) => msg.type)
+    expect(calls).not.toContain('audit_complete')
   })
 })

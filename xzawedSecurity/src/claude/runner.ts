@@ -4,6 +4,8 @@ import path from 'node:path'
 import type { SecurityIssue } from '../types.js'
 import { validatePath } from '../executor.js'
 
+const API_TIMEOUT_MS = 30_000
+
 const SYSTEM_PROMPT = `You are a security code auditor specializing in OWASP Top 10 vulnerabilities.
 Analyze the provided code files and return a JSON array of security issues found.
 
@@ -39,13 +41,19 @@ export class ClaudeRunner {
 
     if (fileContents.length === 0) return []
 
+    let timerId: ReturnType<typeof setTimeout> | undefined
     try {
-      const response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: fileContents.join('\n\n').slice(0, 16000) }],
-      })
+      const response = await Promise.race([
+        this.client.messages.create({
+          model: this.model,
+          max_tokens: 4096,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: fileContents.join('\n\n').slice(0, 16000) }],
+        }),
+        new Promise<never>((_, reject) => {
+          timerId = setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
+        }),
+      ])
 
       const text = response.content
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -55,6 +63,8 @@ export class ClaudeRunner {
       return this.parseIssues(text)
     } catch {
       return []
+    } finally {
+      clearTimeout(timerId)
     }
   }
 
