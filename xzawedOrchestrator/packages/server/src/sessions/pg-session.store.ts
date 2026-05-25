@@ -29,7 +29,6 @@ export class PgSessionStore implements SessionStore {
   constructor(private readonly pool: Pool) {}
 
   async create(userId: string, projectId: string | null, claudeMode: ClaudeMode): Promise<Session> {
-    if (!projectId) throw new Error('projectId is required')
     const { rows } = await this.pool.query<SessionRow>(
       `INSERT INTO sessions (user_id, project_id, claude_mode)
        VALUES ($1, $2, $3)

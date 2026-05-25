@@ -2,7 +2,7 @@ import { vi, test, expect } from 'vitest'
 
 vi.mock('node:fs/promises')
 
-import { validatePath } from './executor.js'
+import { validatePath, exec } from './executor.js'
 import * as fsp from 'node:fs/promises'
 
 const mockRealpath = vi.mocked(fsp.realpath)
@@ -43,4 +43,8 @@ test('validatePath: 존재하지 않는 경로는 거부한다 (TOCTOU 방지)',
   // Second call (workspaceRoot) would succeed, but we never reach it
   mockRealpath.mockImplementation(async (p) => String(p))
   await expect(validatePath('/test-workspace/ghost.ts', '/test-workspace')).rejects.toThrow('경로 거부')
+})
+
+test('exec: 빈 명령어는 즉시 Error throw', async () => {
+  await expect(exec('', '/tmp', () => {}, 1000)).rejects.toThrow('Invalid command')
 })

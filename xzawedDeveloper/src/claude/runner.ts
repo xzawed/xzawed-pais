@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { FileChange } from '../types.js'
 
+const API_TIMEOUT_MS = 30_000
+
 const SYSTEM_PROMPT = `You are an expert software developer. Given a development plan and project context, implement the required code changes.
 
 Return ONLY a JSON array of file changes with this exact structure:
@@ -29,15 +31,20 @@ export class ClaudeRunner {
     projectPath: string,
     context: Record<string, unknown>,
   ): Promise<{ changes: FileChange[]; summary: string }> {
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: 8192,
-      system: SYSTEM_PROMPT,
-      messages: [{
-        role: 'user',
-        content: `Project path: ${projectPath}\nContext: ${JSON.stringify(context, null, 2)}\n\nPlan:\n${plan}`,
-      }],
-    })
+    const response = await Promise.race([
+      this.client.messages.create({
+        model: this.model,
+        max_tokens: 8192,
+        system: SYSTEM_PROMPT,
+        messages: [{
+          role: 'user',
+          content: `Project path: ${projectPath}\nContext: ${JSON.stringify(context, null, 2)}\n\nPlan:\n${plan}`,
+        }],
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
+      ),
+    ])
 
     const text = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')
@@ -50,18 +57,7 @@ export class ClaudeRunner {
   }
 
   parseChanges(text: string): FileChange[] {
-    let cleaned = text.trim()
-
-    // Strip opening code fence (```json or ```)
-    if (cleaned.startsWith('```')) {
-      const firstNewline = cleaned.indexOf('\n')
-      cleaned = firstNewline !== -1 ? cleaned.slice(firstNewline + 1) : cleaned.slice(3)
-    }
-
-    // Strip closing code fence
-    if (cleaned.endsWith('```')) {
-      cleaned = cleaned.slice(0, cleaned.lastIndexOf('```')).trim()
-    }
+    let cleaned = extractJSON(text)
 
     const start = cleaned.indexOf('[')
     const end = cleaned.lastIndexOf(']')
@@ -80,8 +76,24 @@ export class ClaudeRunner {
 function isFileChange(item: unknown): item is FileChange {
   if (typeof item !== 'object' || item === null) return false
   const obj = item as Record<string, unknown>
-  return (
-    typeof obj['path'] === 'string' &&
-    (obj['operation'] === 'create' || obj['operation'] === 'modify' || obj['operation'] === 'delete')
-  )
+  const validOp =
+    obj['operation'] === 'create' || obj['operation'] === 'modify' || obj['operation'] === 'delete'
+  if (!validOp || typeof obj['path'] !== 'string') return false
+  if ((obj['operation'] === 'create' || obj['operation'] === 'modify') &&
+      typeof obj['content'] !== 'string') {
+    return false
+  }
+  return true
+}
+
+function extractJSON(text: string): string {
+  let cleaned = text.trim()
+  if (cleaned.startsWith('```')) {
+    const firstNewline = cleaned.indexOf('\n')
+    cleaned = firstNewline !== -1 ? cleaned.slice(firstNewline + 1) : cleaned.slice(3)
+  }
+  if (cleaned.endsWith('```')) {
+    cleaned = cleaned.slice(0, cleaned.lastIndexOf('```')).trim()
+  }
+  return cleaned
 }

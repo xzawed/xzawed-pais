@@ -30,4 +30,18 @@ describe('switch_project tool', () => {
       handler.execute({ name: 'unknown-app' }, 'session-1'),
     ).rejects.toThrow('switch_project failed (404)')
   })
+
+  it('projectId와 name 모두 없으면 Error throw', async () => {
+    const handler = createSwitchProjectHandler('http://localhost:3000', 'test-token')
+    await expect(
+      handler.execute({}, 'session-1'),
+    ).rejects.toThrow('projectId 또는 name 중 하나는 필수입니다')
+  })
+
+  it('잘못된 URL 프로토콜 시 Error throw', async () => {
+    const handler = createSwitchProjectHandler('ftp://bad-url', 'test-token')
+    await expect(
+      handler.execute({ projectId: 'p1' }, 'session-1'),
+    ).rejects.toThrow('Invalid orchestrator URL protocol')
+  })
 })

@@ -6,7 +6,7 @@ import { issueAccessToken } from '../auth/tokens.js'
 import { randomBytes } from 'node:crypto'
 
 const SECRET = 'test-secret-key-that-is-long-enough-32ch'
-const ENC_KEY = randomBytes(32).toString('base64')
+const ENC_KEY = randomBytes(32).toString('hex')
 
 function makeToken(sub = 'user-1'): string {
   return issueAccessToken({ sub, email: 'a@b.com', displayName: null }, SECRET)

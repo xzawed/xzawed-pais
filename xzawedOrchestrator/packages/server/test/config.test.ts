@@ -40,4 +40,29 @@ describe('config', () => {
     const config = loadConfig()
     expect(config.managerUrl).toBe('http://localhost:3001')
   })
+
+  it('CLAUDE_MODE=remote + REMOTE_HOST 있지만 REMOTE_USER 없으면 throw', async () => {
+    process.env.CLAUDE_MODE = 'remote'
+    process.env.REMOTE_HOST = 'my-server.example.com'
+    delete process.env.REMOTE_CLI_URL
+    delete process.env.REMOTE_USER
+    delete process.env.REMOTE_KEY_PATH
+    const { loadConfig } = await import('../src/config.js')
+    expect(() => loadConfig()).toThrow('SSH mode requires')
+    delete process.env.REMOTE_HOST
+  })
+
+  it('CLAUDE_MODE=remote + SSH 변수 모두 설정 — throw 없음', async () => {
+    process.env.CLAUDE_MODE = 'remote'
+    process.env.REMOTE_HOST = 'my-server.example.com'
+    process.env.REMOTE_USER = 'ubuntu'
+    process.env.REMOTE_KEY_PATH = '/home/user/.ssh/id_rsa'
+    delete process.env.REMOTE_CLI_URL
+    const { loadConfig } = await import('../src/config.js')
+    const config = loadConfig()
+    expect(config.claudeMode).toBe('remote')
+    delete process.env.REMOTE_HOST
+    delete process.env.REMOTE_USER
+    delete process.env.REMOTE_KEY_PATH
+  })
 })

@@ -182,5 +182,18 @@ describe('Builder', () => {
       expect(execCalls).toHaveLength(1)
       expect(execCalls[0][0]).toBe('pnpm build')
     })
+
+    it('npm install 실패 시 error 메시지를 발행한다', async () => {
+      fsMock.access.mockImplementation(async (p) => {
+        const filePath = String(p)
+        if (filePath.endsWith('package.json')) return undefined as unknown as void
+        throw new Error('ENOENT') // node_modules, pnpm-lock.yaml 없음
+      })
+      executorMock.exec.mockResolvedValueOnce({ success: false, output: 'npm error', exitCode: 1, duration: 100 })
+
+      await builder.handle(buildRequest())
+
+      expectError('의존성 설치 실패')
+    })
   })
 })

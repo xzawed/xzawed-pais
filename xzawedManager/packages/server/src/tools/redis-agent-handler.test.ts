@@ -134,4 +134,21 @@ describe('RedisAgentHandler', () => {
     mockRedis.xread.mockResolvedValue(null)
     await expect(shortHandler.execute({}, 'sess-1')).rejects.toThrow('timed out')
   })
+
+  describe('close', () => {
+    it('execute 없이 close() — 예외 없음 (redis 미초기화)', async () => {
+      await expect(handler.close()).resolves.toBeUndefined()
+    })
+
+    it('execute 후 close() — redis.quit() 호출', async () => {
+      const quitFn = vi.fn().mockResolvedValue(undefined)
+      ;(mockRedis as Record<string, unknown>).quit = quitFn
+      mockRedis.xread.mockResolvedValueOnce(
+        makeMsg('build_complete', { success: true, output: '', artifacts: [] })
+      )
+      await handler.execute({}, 'sess-1')
+      await handler.close()
+      expect(quitFn).toHaveBeenCalledOnce()
+    })
+  })
 })

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useWizardStore } from '../../stores/wizard.store.js'
 import { useServicesStore } from '../../stores/services.store.js'
 import { SERVICE_NAMES } from '@xzawed/launcher-shared'
@@ -8,8 +8,9 @@ export default function StepServices(): JSX.Element {
   const { services, logs, setServices, appendLog } = useServicesStore()
   const [starting, setStarting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const retrySignalRef = useRef<{ cancelled: boolean } | null>(null)
 
-  async function startServices(signal: { cancelled: boolean }): Promise<void> {
+  const runServices = useCallback(async (signal: { cancelled: boolean }): Promise<void> => {
     setStarting(true)
     setError(null)
     try {
@@ -24,13 +25,14 @@ export default function StepServices(): JSX.Element {
     } finally {
       if (!signal.cancelled) setStarting(false)
     }
-  }
+  }, [setServices, setStep])
 
   useEffect(() => {
     const signal = { cancelled: false }
-    void startServices(signal)
+    retrySignalRef.current = signal
+    void runServices(signal)
     return () => { signal.cancelled = true }
-  }, [setServices, setStep])
+  }, [runServices])
 
   useEffect(() => {
     const unsub = globalThis.launcherAPI?.onLogLine(appendLog)
@@ -49,6 +51,13 @@ export default function StepServices(): JSX.Element {
     return { running: 'text-green-400', starting: 'text-yellow-400', restarting: 'text-yellow-400', error: 'text-red-400', stopped: 'text-[var(--fg-muted)]' }[s.status] ?? 'text-[var(--fg-muted)]'
   }
 
+  function handleRetry(): void {
+    if (retrySignalRef.current) retrySignalRef.current.cancelled = true
+    const sig = { cancelled: false }
+    retrySignalRef.current = sig
+    void runServices(sig)
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-xl font-bold text-center">서비스 기동</h2>
@@ -65,7 +74,7 @@ export default function StepServices(): JSX.Element {
         {logs.slice(-5).map((l, i) => <div key={`${i}:${l}`}>{l}</div>)}
       </div>
       {!starting && error && (
-        <button onClick={() => { const sig = { cancelled: false }; void startServices(sig) }}
+        <button onClick={handleRetry}
           className="rounded-lg border border-[var(--border)] py-2 text-sm text-[var(--fg-muted)]">
           재시도
         </button>

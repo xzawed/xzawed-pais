@@ -1,11 +1,20 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { z } from 'zod'
 
 const SHELL_METACHAR_RE = /[;&|`$><\n\r]/
+
+const PkgSchema = z.object({
+  dependencies: z.record(z.string()).optional(),
+  devDependencies: z.record(z.string()).optional(),
+})
 
 export function buildCommandWithFiles(baseCmd: string, testFiles: string[]): string {
   if (testFiles.length === 0) return baseCmd
   for (const filePath of testFiles) {
+    if (/[ \t]/.test(filePath)) {
+      throw new Error(`Whitespace in testFiles path is not permitted: ${filePath}`)
+    }
     if (SHELL_METACHAR_RE.test(filePath)) {
       throw new Error(`Shell metacharacters are not permitted in testFiles path: ${filePath}`)
     }
@@ -19,19 +28,16 @@ export function buildCommandWithFiles(baseCmd: string, testFiles: string[]): str
 export async function detectTestCommand(projectPath: string): Promise<string> {
   try {
     const raw = await fs.readFile(path.join(projectPath, 'package.json'), 'utf-8')
-    const pkg = JSON.parse(raw) as {
-      devDependencies?: Record<string, string>
-      dependencies?: Record<string, string>
+    const pkgResult = PkgSchema.safeParse(JSON.parse(raw))
+    if (pkgResult.success) {
+      // Detect framework from dependencies and return a HARDCODED safe command.
+      // Never trust scripts.test — it may contain arbitrary shell commands.
+      const allDeps = { ...pkgResult.data.dependencies, ...pkgResult.data.devDependencies }
+      if ('vitest' in allDeps) return 'pnpm vitest run'
+      if ('jest' in allDeps) return 'pnpm jest'
+      if ('mocha' in allDeps) return 'pnpm mocha'
+      return 'pnpm test'
     }
-
-    // Detect framework from dependencies and return a HARDCODED safe command.
-    // Never trust scripts.test — it may contain arbitrary shell commands.
-    const allDeps = { ...pkg.dependencies, ...pkg.devDependencies }
-    if ('vitest' in allDeps) return 'pnpm vitest run'
-    if ('jest' in allDeps) return 'pnpm jest'
-    if ('mocha' in allDeps) return 'pnpm mocha'
-
-    return 'pnpm test'
   } catch {
     // Fallback for non-JS projects
   }

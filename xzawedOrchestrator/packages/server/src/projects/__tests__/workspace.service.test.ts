@@ -53,7 +53,7 @@ describe('WorkspaceService', () => {
     )
   })
 
-  it('pullRepo spawns git pull with shell:false', async () => {
+  it('pullRepo spawns git fetch + reset with shell:false', async () => {
     const mockProc = {
       stderr: { on: vi.fn() },
       on: vi.fn((event, cb) => { if (event === 'close') cb(0) }),
@@ -62,9 +62,16 @@ describe('WorkspaceService', () => {
 
     await svc.pullRepo('/home/user/project', 'main')
 
-    expect(mockSpawn).toHaveBeenCalledWith(
+    expect(mockSpawn).toHaveBeenNthCalledWith(
+      1,
       'git',
-      ['pull', 'origin', 'main'],
+      ['fetch', 'origin', 'main'],
+      expect.objectContaining({ shell: false, cwd: '/home/user/project' }),
+    )
+    expect(mockSpawn).toHaveBeenNthCalledWith(
+      2,
+      'git',
+      ['reset', '--hard', 'origin/main'],
       expect.objectContaining({ shell: false, cwd: '/home/user/project' }),
     )
   })

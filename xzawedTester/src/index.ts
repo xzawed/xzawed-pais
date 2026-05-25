@@ -14,14 +14,18 @@ async function main() {
   const runner = new ClaudeRunner(config.anthropicApiKey, config.claudeModel)
   const tester = new Tester(producer, runner, config)
 
-  const sessionId = process.env.TESTER_SESSION_ID ?? 'default'
+  const sessionId = process.env.TESTER_SESSION_ID
+  if (!sessionId) {
+    console.warn('[xzawedTester] TESTER_SESSION_ID not set — consuming from "default" stream only')
+  }
+  const effectiveSessionId = sessionId ?? 'default'
   const consumer = new Consumer(redis, (msg) => tester.handle(msg))
 
   const server = createServer()
   await server.listen({ port: config.port, host: '0.0.0.0' })
-  console.log(`xzawedTester listening on :${config.port} (session: ${sessionId})`)
+  console.log(`xzawedTester listening on :${config.port} (session: ${effectiveSessionId})`)
 
-  consumer.start(sessionId).catch(console.error)
+  consumer.start(effectiveSessionId).catch(console.error)
 
   process.on('SIGTERM', async () => {
     consumer.stop()

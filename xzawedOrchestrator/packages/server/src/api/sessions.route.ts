@@ -22,10 +22,6 @@ export function resolveSessionWorkspaceRoot(
   return envFallback
 }
 
-const messageStore = new Map<string, Message[]>()
-const claudeSessionIds = new Map<string, string>()
-const taskStore = new TaskStore()
-
 interface ChunkProcessResult {
   fullContent: string
   aborted: boolean
@@ -38,6 +34,7 @@ async function processChunk(
   socket: WebSocket | undefined,
   store: SessionStore,
   accumulator: { fullContent: string },
+  claudeSessionIds: Map<string, string>,
 ): Promise<'continue' | 'error' | 'done'> {
   if (chunk.type === 'text') {
     accumulator.fullContent += chunk.content
@@ -65,10 +62,11 @@ async function processRunnerChunks(
   assistantMsgId: string,
   socket: WebSocket | undefined,
   store: SessionStore,
+  claudeSessionIds: Map<string, string>,
 ): Promise<ChunkProcessResult> {
   const acc = { fullContent: '' }
   for await (const chunk of runner.send(snapshot, runOptions)) {
-    const result = await processChunk(chunk, sessionId, assistantMsgId, socket, store, acc)
+    const result = await processChunk(chunk, sessionId, assistantMsgId, socket, store, acc, claudeSessionIds)
     if (result === 'error') return { fullContent: acc.fullContent, aborted: true }
     if (result === 'done') break
   }
@@ -80,6 +78,7 @@ async function saveAssistantMessage(
   assistantMsgId: string,
   fullContent: string,
   msgRepo: MessageRepo | undefined,
+  messageStore: Map<string, Message[]>,
 ): Promise<void> {
   if (msgRepo) {
     await msgRepo.create(sessionId, 'assistant', fullContent)
@@ -90,7 +89,7 @@ async function saveAssistantMessage(
   messageStore.set(sessionId, history)
 }
 
-async function publishTaskToManager(
+export async function publishTaskToManager(
   producer: StreamProducer,
   sessionId: string,
   intent: string,
@@ -102,7 +101,7 @@ async function publishTaskToManager(
 ): Promise<void> {
   let userContext: { userId: string; projectId: string; workspaceRoot: string } | undefined
   if (session.projectId) {
-    const envFallback = process.env.WORKSPACE_ROOT ?? '/workspace'
+    const envFallback = process.env.WORKSPACE_ROOT ?? process.cwd()
     let workspaceRoot = envFallback
     if (pool) {
       const repo = new ProjectRepo(pool)
@@ -146,11 +145,12 @@ interface SessionsRoutesConfig {
   userAuthHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
 }
 
-function handleConsumerMessage(
+export function handleConsumerMessage(
   msg: ManagerToOrchestratorMessage,
   sessionId: string,
   socket: WebSocket,
-  consumers: Map<string, StreamConsumer>
+  consumers: Map<string, StreamConsumer>,
+  taskStore: TaskStore,
 ): void {
   const activeTask = taskStore
     .findBySessionId(sessionId)
@@ -206,6 +206,10 @@ export async function sessionsRoutes(
     authHook, pool, userAuthHook,
   } = config
 
+  const messageStore = new Map<string, Message[]>()
+  const claudeSessionIds = new Map<string, string>()
+  const taskStore = new TaskStore()
+
   const msgRepo = pool ? new MessageRepo(pool) : undefined
   const effectiveAuthHook = userAuthHook ?? authHook
   const routeOpts = effectiveAuthHook ? { preHandler: effectiveAuthHook } : {}
@@ -246,7 +250,7 @@ export async function sessionsRoutes(
     void consumer.start(session.id, async (msg) => {
       const socket = wsSessions.get(session.id)
       if (!socket) return
-      handleConsumerMessage(msg, session.id, socket, sessionConsumers)
+      handleConsumerMessage(msg, session.id, socket, sessionConsumers, taskStore)
     }).catch((err: unknown) => {
       req.log.warn({ err, sessionId: session.id }, 'StreamConsumer error')
     })
@@ -293,28 +297,33 @@ export async function sessionsRoutes(
         snapshot = [...history]
       }
 
+      const sessionId = req.params.id
+      const capturedProjectId = session.projectId
+      const capturedUserId = session.userId
+
       ;(async () => {
-        const socket = wsSessions.get(req.params.id)
+        const socket = wsSessions.get(sessionId)
         const assistantMsgId = crypto.randomUUID()
 
         try {
-          const storedClaudeSessionId = claudeSessionIds.get(req.params.id)
+          const storedClaudeSessionId = claudeSessionIds.get(sessionId)
           const runOptions: RunOptions = storedClaudeSessionId ? { claudeSessionId: storedClaudeSessionId } : {}
 
           const { fullContent, aborted } = await processRunnerChunks(
-            runner, snapshot, runOptions, req.params.id, assistantMsgId, socket, store,
+            runner, snapshot, runOptions, sessionId, assistantMsgId, socket, store, claudeSessionIds,
           )
           if (aborted) return
 
-          await saveAssistantMessage(req.params.id, assistantMsgId, fullContent, msgRepo)
+          await saveAssistantMessage(sessionId, assistantMsgId, fullContent, msgRepo, messageStore)
 
           const intent = (anthropicClient && claudeModel)
             ? await structureIntent(fullContent, anthropicClient, claudeModel)
             : fullContent
 
-          taskStore.create(req.params.id, intent)
+          taskStore.create(sessionId, intent)
 
-          await publishTaskToManager(producer, req.params.id, intent, snapshot, session, socket, app.log, pool)
+          const capturedSession = { userId: capturedUserId, projectId: capturedProjectId }
+          await publishTaskToManager(producer, sessionId, intent, snapshot, capturedSession, socket, app.log, pool)
 
           socket?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
         } catch (err) {
@@ -322,7 +331,7 @@ export async function sessionsRoutes(
           socket?.send(JSON.stringify({ type: 'error', content }))
         }
       })().catch((err: unknown) => {
-        app.log.error({ err, sessionId: req.params.id }, 'Unhandled error in message processing')
+        app.log.error({ err, sessionId }, 'Unhandled error in message processing')
       })
 
       return reply.status(202).send({ messageId: userMsgId, status: 'accepted' })

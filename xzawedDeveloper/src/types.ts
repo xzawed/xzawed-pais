@@ -26,7 +26,7 @@ const UserContextSchema = z.object({
 })
 
 export const ManagerToDeveloperMessageSchema = z.object({
-  sessionId: z.string(),
+  sessionId: z.string().uuid(),
   messageId: z.string(),
   timestamp: z.number(),
   type: z.enum(['develop_request', 'abort']),

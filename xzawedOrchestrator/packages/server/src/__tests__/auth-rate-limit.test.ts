@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 
-const mockPool = { query: vi.fn().mockResolvedValue({ rows: [] }) }
+const mockClient = {
+  query: vi.fn().mockResolvedValue({ rows: [] }),
+  release: vi.fn(),
+}
+const mockPool = {
+  query: vi.fn().mockResolvedValue({ rows: [] }),
+  connect: vi.fn().mockResolvedValue(mockClient),
+}
 
 vi.mock('../db/pool.js', () => ({
   createPool: vi.fn(() => mockPool),

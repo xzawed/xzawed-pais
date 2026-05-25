@@ -137,4 +137,11 @@ export class RedisAgentHandler<TInput, TOutput>
 
     throw new Error(`${this.agentName} timed out after ${this.timeoutMs}ms`)
   }
+
+  async close(): Promise<void> {
+    if (this._redis) {
+      await this._redis.quit()
+      this._redis = null
+    }
+  }
 }

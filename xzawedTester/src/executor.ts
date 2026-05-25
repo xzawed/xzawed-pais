@@ -38,7 +38,8 @@ export async function exec(
 
   return new Promise((resolve, reject) => {
     const parts = command.trim().split(/\s+/)
-    const bin = parts[0] ?? command.trim()
+    const bin = parts[0]
+    if (!bin) throw new Error(`Invalid command: ${command}`)
     const cmdArgs = parts.slice(1)
     const proc = spawn(bin, cmdArgs, {
       cwd,

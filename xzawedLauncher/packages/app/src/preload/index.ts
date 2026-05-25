@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('launcherAPI', {
     ipcRenderer.invoke('docker:start-desktop'),
 
   // Claude
+  getClaudeEmail: (): Promise<string | null> =>
+    ipcRenderer.invoke('claude:get-email'),
   checkClaude: (): Promise<ClaudeDetectStatus> =>
     ipcRenderer.invoke('claude:check'),
   installClaude: (): Promise<void> =>

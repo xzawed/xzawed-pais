@@ -6,11 +6,16 @@ import { validatePath, exec } from './executor.js'
 import { detectTestCommand, buildCommandWithFiles, parseTestCounts } from './detector.js'
 import type { Config } from './config.js'
 
+// TODO: @xzawed/agent-streams로 추출 예정
 export function resolveWorkspaceRoot(
   userContext: { workspaceRoot: string; [key: string]: unknown } | undefined,
   fallback: string | undefined,
 ): string {
-  return (userContext?.workspaceRoot || fallback) ?? process.env.WORKSPACE_ROOT!
+  const resolved = userContext?.workspaceRoot || fallback || process.env.WORKSPACE_ROOT
+  if (!resolved) {
+    throw new Error('workspaceRoot를 결정할 수 없습니다: userContext, fallback, WORKSPACE_ROOT 모두 미설정')
+  }
+  return resolved
 }
 
 const ALLOWED_PREFIXES = [
@@ -55,7 +60,7 @@ export class Tester {
       const validatedFiles: string[] = []
       if (payload.testFiles && payload.testFiles.length > 0) {
         for (const f of payload.testFiles) {
-          const absFile = path.isAbsolute(f) ? f : path.resolve(validatedPath, f)
+          const absFile = path.resolve(workspaceRoot, f)  // 절대/상대 구분 없이 workspaceRoot 기준
           const validFile = await validatePath(absFile, workspaceRoot)
           validatedFiles.push(validFile)
         }

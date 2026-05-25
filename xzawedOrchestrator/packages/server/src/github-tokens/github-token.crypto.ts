@@ -10,9 +10,9 @@ export interface EncryptedToken {
   tag: Buffer
 }
 
-export function encryptToken(plaintext: string, keyBase64: string): EncryptedToken {
-  const key = Buffer.from(keyBase64, 'base64')
-  if (key.length !== 32) throw new Error('GITHUB_TOKEN_ENCRYPTION_KEY must be 32 bytes (base64 encoded)')
+export function encryptToken(plaintext: string, keyHex: string): EncryptedToken {
+  const key = Buffer.from(keyHex, 'hex')
+  if (key.length !== 32) throw new Error('GITHUB_TOKEN_ENCRYPTION_KEY must be 32 bytes (64 hex chars)')
   const iv = randomBytes(IV_LENGTH)
   const cipher = createCipheriv(ALGORITHM, key, iv)
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
@@ -20,9 +20,9 @@ export function encryptToken(plaintext: string, keyBase64: string): EncryptedTok
   return { cipher: encrypted, iv, tag }
 }
 
-export function decryptToken(encrypted: EncryptedToken, keyBase64: string): string {
-  const key = Buffer.from(keyBase64, 'base64')
-  if (key.length !== 32) throw new Error('GITHUB_TOKEN_ENCRYPTION_KEY must be 32 bytes (base64 encoded)')
+export function decryptToken(encrypted: EncryptedToken, keyHex: string): string {
+  const key = Buffer.from(keyHex, 'hex')
+  if (key.length !== 32) throw new Error('GITHUB_TOKEN_ENCRYPTION_KEY must be 32 bytes (64 hex chars)')
   const decipher = createDecipheriv(ALGORITHM, key, encrypted.iv)
   decipher.setAuthTag(encrypted.tag)
   return decipher.update(encrypted.cipher) + decipher.final('utf8')

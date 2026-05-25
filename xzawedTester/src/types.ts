@@ -30,7 +30,7 @@ const UserContextSchema = z.object({
 })
 
 export const ManagerToTesterMessageSchema = z.object({
-  sessionId: z.string(),
+  sessionId: z.string().uuid(),
   messageId: z.string(),
   timestamp: z.number(),
   type: z.enum(['test_request', 'abort']),

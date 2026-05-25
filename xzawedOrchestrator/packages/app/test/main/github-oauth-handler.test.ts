@@ -10,8 +10,9 @@ vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp/test-userData') }, // NOSONAR
 }))
 vi.mock('node:fs', () => ({
-  existsSync: vi.fn(() => false),
+  existsSync: vi.fn(() => true),
   writeFileSync: vi.fn(),
+  unlinkSync: vi.fn(),
   readFileSync: vi.fn(() => Buffer.from('token-enc').toString('base64')),
   mkdirSync: vi.fn(),
 }))
@@ -33,8 +34,8 @@ describe('github-oauth-handler', () => {
   })
 
   it('토큰을 삭제한다', async () => {
-    const { writeFileSync } = await import('node:fs')
+    const { unlinkSync } = await import('node:fs')
     clearToken()
-    expect(writeFileSync).toHaveBeenCalled()
+    expect(unlinkSync).toHaveBeenCalled()
   })
 })

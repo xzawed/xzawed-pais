@@ -69,6 +69,17 @@ describe('ClaudeRunner.parseChanges', () => {
     const result = runner.parseChanges(input)
     expect(result).toHaveLength(1)
   })
+
+  it('create/modify without content is filtered out', () => {
+    const input = JSON.stringify([
+      { path: '/a.ts', operation: 'create' },
+      { path: '/b.ts', operation: 'modify' },
+      { path: '/c.ts', operation: 'delete' },
+    ])
+    const result = runner.parseChanges(input)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.operation).toBe('delete')
+  })
 })
 
 describe('ClaudeRunner.generateChanges', () => {

@@ -80,7 +80,7 @@ export class StreamConsumer {
     await this.ensureGroup(sessionId)
     this.running = true
     const redis = getRedisClient(this.redisUrl)
-    const consumerId = `consumer-${process.pid}`
+    const consumerId = `consumer-${process.pid}-${sessionId}`
     const ack = (id: string) => redis.xack(streamKey(sessionId), GROUP, id)
 
     while (this.running) {

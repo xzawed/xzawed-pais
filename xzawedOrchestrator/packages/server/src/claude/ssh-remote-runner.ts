@@ -9,6 +9,8 @@ import { ChunkQueue } from './chunk-queue.js'
 const shescape = new Shescape({ shell: false })
 
 export class SSHRemoteRunner implements ClaudeRunner {
+  private privateKey: Buffer | undefined
+
   constructor(
     private readonly remoteHost: string,
     private readonly remoteUser: string,
@@ -16,16 +18,18 @@ export class SSHRemoteRunner implements ClaudeRunner {
   ) {}
 
   async *send(messages: Message[], options: RunOptions = {}): AsyncIterable<Chunk> {
-    let privateKey: Buffer
-    try {
-      privateKey = readFileSync(this.remoteKeyPath)
-    } catch (err) {
-      yield {
-        type: 'error',
-        content: `Failed to read SSH key: ${err instanceof Error ? err.message : String(err)}`,
+    if (!this.privateKey) {
+      try {
+        this.privateKey = readFileSync(this.remoteKeyPath)
+      } catch (err) {
+        yield {
+          type: 'error',
+          content: `Failed to read SSH key: ${err instanceof Error ? err.message : String(err)}`,
+        }
+        return
       }
-      return
     }
+    const privateKey = this.privateKey
 
     const lastUserMessage = messages.findLast(m => m.role === 'user')?.content ?? ''
     const parts: string[] = ['claude']

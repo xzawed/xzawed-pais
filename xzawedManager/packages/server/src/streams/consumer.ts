@@ -1,20 +1,12 @@
 import { z } from 'zod'
 import type { OrchestratorToManagerMessage } from '../types/streams.js'
+import { UserContextSchema } from '../types/user-context.js'
 import { getRedisClient } from './redis.client.js'
 
 const streamKey = (sessionId: string) => `orchestrator:to-manager:${sessionId}`
 const GROUP = 'manager-consumers'
 
 export type MessageHandler = (msg: OrchestratorToManagerMessage) => Promise<void>
-
-// Runtime validation schema for messages received from Redis Streams.
-// Prevents unvalidated data from reaching the handler (Vuln 7).
-const UserContextSchema = z.object({
-  userId: z.string(),
-  projectId: z.string(),
-  workspaceRoot: z.string(),
-  githubRepo: z.object({ owner: z.string(), repo: z.string(), branch: z.string() }).optional(),
-})
 
 const TaskRequestSchema = z.object({
   sessionId: z.string(),

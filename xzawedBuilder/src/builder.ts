@@ -12,7 +12,11 @@ export function resolveWorkspaceRoot(
   userContext: { workspaceRoot: string; [key: string]: unknown } | undefined,
   fallback: string | undefined,
 ): string {
-  return (userContext?.workspaceRoot || fallback) ?? process.env.WORKSPACE_ROOT!
+  const resolved = userContext?.workspaceRoot || fallback || process.env.WORKSPACE_ROOT
+  if (!resolved) {
+    throw new Error('workspaceRoot를 결정할 수 없습니다')
+  }
+  return resolved
 }
 
 const ALLOWED_PREFIXES = [
@@ -135,7 +139,7 @@ export class Builder {
     const hasPnpmLock = await fs.access(path.join(buildRoot, 'pnpm-lock.yaml')).then(() => true).catch(() => false)
     const installCmd = hasPnpmLock ? 'pnpm install' : 'npm install'
 
-    await exec(
+    const installResult = await exec(
       installCmd,
       buildRoot,
       async (chunk) => {
@@ -143,6 +147,9 @@ export class Builder {
       },
       this.config.buildTimeoutMs,
     )
+    if (!installResult.success) {
+      throw new Error(`의존성 설치 실패 (exit ${installResult.exitCode})`)
+    }
   }
 
   private makeProgress(sessionId: string, content: string): BuilderToManagerMessage {

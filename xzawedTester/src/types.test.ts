@@ -3,7 +3,7 @@ import { ManagerToTesterMessageSchema } from './types.js'
 
 describe('ManagerToTesterMessageSchema', () => {
   const base = {
-    sessionId: 'sess-1',
+    sessionId: '00000000-0000-0000-0000-000000000001',
     messageId: 'msg-1',
     timestamp: 1000,
     type: 'test_request' as const,

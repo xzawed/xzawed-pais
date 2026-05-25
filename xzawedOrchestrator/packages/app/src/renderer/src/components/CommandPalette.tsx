@@ -23,16 +23,16 @@ export function CommandPalette(): React.JSX.Element {
         setOpen((v) => !v)
       }
       if (e.key === 'Escape') {
-        if (search) {
-          setSearch('')
-        } else {
+        setSearch((prev) => {
+          if (prev) return ''
           setOpen(false)
-        }
+          return prev
+        })
       }
     }
     globalThis.addEventListener('keydown', handler)
     return () => globalThis.removeEventListener('keydown', handler)
-  }, [search])
+  }, [])
 
   async function newSession(): Promise<void> {
     setOpen(false)

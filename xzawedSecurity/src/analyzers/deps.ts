@@ -29,7 +29,13 @@ function resolveNpmPath(): string | null {
   }
 }
 
-const NPM_PATH = resolveNpmPath()
+let _npmPath: string | null | undefined = undefined
+
+function getNpmPath(): string | null {
+  if (_npmPath !== undefined) return _npmPath
+  _npmPath = resolveNpmPath()
+  return _npmPath
+}
 
 function mapSeverity(s: string): SecurityIssue['severity'] {
   if (s === 'critical') return 'critical'
@@ -50,7 +56,8 @@ export async function auditDeps(
     return []
   }
 
-  if (NPM_PATH === null) {
+  const npmPath = getNpmPath()
+  if (npmPath === null) {
     console.warn('[deps] npm not found — dependency audit skipped')
     return []
   }
@@ -58,7 +65,7 @@ export async function auditDeps(
   let stdout = ''
   try {
     const result = await execFileAsync(
-      NPM_PATH,
+      npmPath,
       ['audit', '--json', '--audit-level=none'],
       { cwd: validPath, timeout: AUDIT_TIMEOUT_MS }
     )

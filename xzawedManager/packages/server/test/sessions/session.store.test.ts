@@ -33,13 +33,12 @@ describe('SessionStore', () => {
     expect(store.get('sess-1')?.state).toBe('waiting_info')
   })
 
-  it('abort resolves pending waitForInfo with empty string', async () => {
+  it('abort rejects pending waitForInfo with Session aborted error', async () => {
     const store = new SessionStore()
     store.create('sess-1')
     const promise = store.waitForInfo('sess-1')
     store.abort('sess-1')
-    const answer = await promise
-    expect(answer).toBe('')
+    await expect(promise).rejects.toThrow('Session aborted')
   })
 
   it('abort signals the AbortController', () => {

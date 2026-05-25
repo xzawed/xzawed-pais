@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { homedir } from 'node:os'
 
 export class WorkspaceService {
-  readonly workspacesDir = join(homedir(), '.xzawed', 'workspaces')
+  readonly workspacesDir = process.env.WORKSPACES_DIR ?? join(homedir(), '.xzawed', 'workspaces')
 
   clonePath(projectId: string): string {
     return join(this.workspacesDir, projectId)
@@ -26,7 +26,8 @@ export class WorkspaceService {
   }
 
   async pullRepo(workspacePath: string, branch: string): Promise<void> {
-    await this.runGit(['pull', 'origin', branch], workspacePath)
+    await this.runGit(['fetch', 'origin', branch], workspacePath)
+    await this.runGit(['reset', '--hard', `origin/${branch}`], workspacePath)
   }
 
   private runGit(args: string[], cwd: string | undefined): Promise<void> {

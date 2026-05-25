@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { useIntegrationsStore, type McpServerConfig } from '../store/integrations.store.js'
 import { Button } from './ui/button.js'
 
@@ -28,7 +29,7 @@ function getFieldLabel(field: 'name' | 'command' | 'args' | 'env'): string {
 function getFieldPlaceholder(field: 'name' | 'command' | 'args' | 'env'): string {
   if (field === 'name') return '예: my-custom-mcp'
   if (field === 'command') return '예: npx'
-  if (field === 'args') return '예: @org/mcp-server --port 8080'
+  if (field === 'args') return '공백으로 구분 (따옴표 포함 인수 미지원)'
   return '예: {"API_KEY": "sk-..."}'
 }
 
@@ -74,6 +75,15 @@ export function McpPanel(): React.JSX.Element {
         await globalThis.electronAPI?.mcpStart(id)
         setStatus(id, 'running')
       }
+    } catch (err) {
+      console.error('[McpPanel] toggle error:', err)
+      // 상태 재동기화 — 실제 프로세스 상태를 다시 조회
+      try {
+        const statuses = await globalThis.electronAPI?.mcpStatuses?.() ?? {}
+        Object.entries(statuses).forEach(([sid, st]) =>
+          useIntegrationsStore.getState().setMcpStatus(sid, st)
+        )
+      } catch (e) { console.warn('[McpPanel] status re-sync failed', e) }
     } finally {
       setLoading(null)
     }
@@ -95,7 +105,15 @@ export function McpPanel(): React.JSX.Element {
     const id = form.name.toLowerCase().replace(/\s+/g, '-')
     const args = form.args.split(' ').filter(Boolean)
     let env: Record<string, string> = {}
-    try { env = JSON.parse(form.env || '{}') } catch { env = {} }
+    let envParseError = false
+    try { env = JSON.parse(form.env || '{}') } catch {
+      env = {}
+      envParseError = true
+    }
+    if (envParseError) {
+      console.warn('[McpPanel] env JSON parse failed, using {}')
+      toast.error('환경변수 JSON 형식이 올바르지 않습니다. 빈 값으로 대체합니다.')
+    }
     const config: McpServerConfig = { id, name: form.name, command: form.command, args, env, autoStart: true }
     setLoading(id)
     try {

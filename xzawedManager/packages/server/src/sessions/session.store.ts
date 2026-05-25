@@ -55,8 +55,8 @@ export class SessionStore {
     entry.abortController.abort()
     // Replace controller so the session can be reused after abort
     entry.abortController = new AbortController()
-    if (entry.infoResolve) {
-      entry.infoResolve('')
+    if (entry.infoReject) {
+      entry.infoReject(new Error('Session aborted'))
       entry.infoResolve = null
       entry.infoReject = null
     }

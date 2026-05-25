@@ -3,6 +3,7 @@ import type { ToolHandler } from './handler.interface.js'
 
 function validateCommitPath(p: string): void {
   if (typeof p !== 'string' || p.length === 0) throw new Error('Invalid file path')
+  if (p.startsWith('/') || /^[A-Za-z]:/.test(p)) throw new Error(`Absolute paths not allowed: ${p}`)
   if (p.includes('..')) throw new Error(`Path traversal rejected: ${p}`)
   if (/[\x00-\x1f]/.test(p)) throw new Error(`Invalid characters in path: ${p}`)
   if (p.toLowerCase().startsWith('.github/workflows/')) {
@@ -118,6 +119,7 @@ export function createGithubOpsHandler(token: string): ToolHandler<GithubInput, 
           const repo = need(input.repo, 'repo')
           const branch = need(input.branch, 'branch')
           if (!Array.isArray(files)) throw new Error('github_ops [commitAndPush] files must be an array')
+          if (files.length === 0) throw new Error('github_ops [commitAndPush] files array must not be empty')
           files.forEach((f) => validateCommitPath(f.path))
           const blobs = await Promise.all(
             files.map((f) =>

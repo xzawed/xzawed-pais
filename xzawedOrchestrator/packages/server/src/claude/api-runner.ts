@@ -2,6 +2,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { Chunk, Message } from '@xzawed/shared'
 import type { ClaudeRunner, RunOptions } from './runner.interface.js'
 
+const MAX_TOKENS = Number(process.env.CLAUDE_MAX_TOKENS ?? '8096')
+
 interface APIRunnerOptions {
   apiKey: string
   model: string
@@ -20,7 +22,7 @@ export class APIRunner implements ClaudeRunner {
     try {
       const stream = this.client.messages.stream({
         model: options.model ?? this.model,
-        max_tokens: 8096,
+        max_tokens: MAX_TOKENS,
         system: options.systemPrompt,
         messages: messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
       }, { signal: options.signal })

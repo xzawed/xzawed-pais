@@ -10,7 +10,11 @@ export function resolveWorkspaceRoot(
   userContext: { workspaceRoot: string; [key: string]: unknown } | undefined,
   fallback: string | undefined,
 ): string {
-  return (userContext?.workspaceRoot || fallback) ?? process.env.WORKSPACE_ROOT!
+  const resolved = userContext?.workspaceRoot || fallback || process.env.WORKSPACE_ROOT
+  if (!resolved) {
+    throw new Error('workspaceRoot를 결정할 수 없습니다')
+  }
+  return resolved
 }
 
 export class Watcher {

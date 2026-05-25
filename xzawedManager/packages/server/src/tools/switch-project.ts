@@ -26,6 +26,9 @@ export function createSwitchProjectHandler(
       },
     },
     async execute(input, sessionId): Promise<SwitchOutput> {
+      if (!input.projectId && !input.name) {
+        throw new Error('switch_project: projectId 또는 name 중 하나는 필수입니다')
+      }
       const url = new URL(`/internal/sessions/${sessionId}/switch-project`, orchestratorUrl)
       if (url.protocol !== 'http:' && url.protocol !== 'https:') {
         throw new Error('Invalid orchestrator URL protocol')

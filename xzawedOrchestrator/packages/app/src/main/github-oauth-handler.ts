@@ -1,5 +1,5 @@
 import http from 'node:http'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { shell, safeStorage, app } from 'electron'
@@ -35,7 +35,10 @@ export function getStoredToken(): string | null {
 }
 
 export function clearToken(): void {
-  writeFileSync(tokenFilePath(), '', 'utf-8')
+  const path = tokenFilePath()
+  if (existsSync(path)) {
+    try { unlinkSync(path) } catch (e: unknown) { console.warn('[clearToken] failed to delete token file', e) }
+  }
 }
 
 async function exchangeCode(code: string): Promise<string> {
@@ -68,6 +71,10 @@ export async function fetchUserRepos(token: string): Promise<Array<{ id: number;
 }
 
 export function startOAuthFlow(mainWindow: BrowserWindow): Promise<string> {
+  const clientId = process.env['GITHUB_CLIENT_ID'] ?? ''
+  if (!clientId) {
+    return Promise.reject(new Error('GITHUB_CLIENT_ID 환경변수가 설정되지 않았습니다'))
+  }
   return new Promise((resolve, reject) => {
     const oauthState = randomBytes(32).toString('hex')
     let settled = false

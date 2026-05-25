@@ -22,4 +22,13 @@ export class ToolRegistry {
       input_schema: h.inputSchema,
     }))
   }
+
+  async closeAll(): Promise<void> {
+    await Promise.all(
+      Array.from(this.handlers.values()).map((h) => {
+        const closeable = h as unknown as { close?: () => Promise<void> }
+        return typeof closeable.close === 'function' ? closeable.close() : Promise.resolve()
+      }),
+    )
+  }
 }

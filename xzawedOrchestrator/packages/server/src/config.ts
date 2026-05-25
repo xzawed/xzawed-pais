@@ -33,6 +33,13 @@ export function loadConfig(): Config {
     throw new Error('REMOTE_CLI_URL or REMOTE_HOST is required when CLAUDE_MODE=remote')
   }
 
+  if (claudeMode === 'remote' && !process.env.REMOTE_CLI_URL) {
+    const missing = ['REMOTE_HOST', 'REMOTE_USER', 'REMOTE_KEY_PATH'].filter(k => !process.env[k])
+    if (missing.length > 0) {
+      throw new Error(`SSH mode requires: ${missing.join(', ')}`)
+    }
+  }
+
   if (auth === 'jwt' && (!serviceJwtSecret || serviceJwtSecret.length < 32)) {
     throw new Error('SERVICE_JWT_SECRET must be at least 32 characters when AUTH=jwt')
   }
