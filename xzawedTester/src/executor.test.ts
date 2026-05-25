@@ -77,6 +77,41 @@ function getMockProc() {
   }
 }
 
+test('exec: 5초 후에도 프로세스가 살아있으면 SIGKILL로 강제 종료한다', async () => {
+  vi.useFakeTimers()
+
+  const mockProc = getMockProc()
+  mockProc.kill.mockClear()
+  mockProc.killed = false
+
+  const eventHandlers: Record<string, ((...args: unknown[]) => void)[]> = {}
+  mockProc.stdout.on.mockImplementation((event: string, cb: (...args: unknown[]) => void) => {
+    eventHandlers[`stdout:${event}`] = [...(eventHandlers[`stdout:${event}`] ?? []), cb]
+  })
+  mockProc.stderr.on.mockImplementation((event: string, cb: (...args: unknown[]) => void) => {
+    eventHandlers[`stderr:${event}`] = [...(eventHandlers[`stderr:${event}`] ?? []), cb]
+  })
+  mockProc.on.mockImplementation((event: string, cb: (...args: unknown[]) => void) => {
+    eventHandlers[event] = [...(eventHandlers[event] ?? []), cb]
+  })
+
+  const execPromise = exec('node test.js', '/workspace', () => {}, 100)
+  // Suppress unhandled rejection
+  execPromise.catch(() => {})
+
+  // Trigger SIGTERM timeout
+  await vi.advanceTimersByTimeAsync(100)
+  expect(mockProc.kill).toHaveBeenCalledWith('SIGTERM')
+
+  // Process has NOT exited (killed = false) — advance past 5s SIGKILL window
+  await vi.advanceTimersByTimeAsync(5000)
+
+  // SIGKILL must have been called since proc.killed is still false
+  expect(mockProc.kill).toHaveBeenCalledWith('SIGKILL')
+
+  vi.useRealTimers()
+})
+
 test('exec: SIGTERM으로 프로세스 종료 시 SIGKILL 타이머가 정리된다', async () => {
   vi.useFakeTimers()
 

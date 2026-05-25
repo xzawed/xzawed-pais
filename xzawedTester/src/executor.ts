@@ -53,7 +53,6 @@ export async function exec(
       if (settled) return
       settled = true
       clearTimeout(timer)
-      if (killTimer !== null) clearTimeout(killTimer)
       fn()
     }
 
@@ -83,6 +82,10 @@ export async function exec(
     proc.stderr.on('data', handleChunk)
 
     proc.on('close', (code: number | null) => {
+      if (killTimer !== null) {
+        clearTimeout(killTimer)
+        killTimer = null
+      }
       const exitCode = code ?? 1
       settle(() =>
         resolve({
