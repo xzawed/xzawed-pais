@@ -44,4 +44,24 @@ describe('ToolRegistry', () => {
       },
     })
   })
+
+  it('closeAll — close() 메서드가 있는 핸들러 호출', async () => {
+    const registry = new ToolRegistry()
+    const close = vi.fn().mockResolvedValue(undefined)
+    const handler = { ...makeHandler('plan_task'), close }
+    registry.register(handler)
+    await registry.closeAll()
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it('closeAll — close() 없는 핸들러도 오류 없이 완료', async () => {
+    const registry = new ToolRegistry()
+    registry.register(makeHandler('plan_task'))
+    await expect(registry.closeAll()).resolves.toBeUndefined()
+  })
+
+  it('closeAll — 빈 레지스트리도 오류 없이 완료', async () => {
+    const registry = new ToolRegistry()
+    await expect(registry.closeAll()).resolves.toBeUndefined()
+  })
 })

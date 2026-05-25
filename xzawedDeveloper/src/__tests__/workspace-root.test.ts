@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { resolveWorkspaceRoot } from '../developer.js'
+
+afterEach(() => vi.unstubAllEnvs())
 
 describe('resolveWorkspaceRoot', () => {
   it('userContext.workspaceRoot를 우선 사용한다', () => {
@@ -21,5 +23,10 @@ describe('resolveWorkspaceRoot', () => {
       '/workspace',
     )
     expect(result).toBe('/workspace')
+  })
+
+  it('모든 소스 없으면 Error throw', () => {
+    vi.stubEnv('WORKSPACE_ROOT', '')
+    expect(() => resolveWorkspaceRoot(undefined, undefined)).toThrow('workspaceRoot를 결정할 수 없습니다')
   })
 })

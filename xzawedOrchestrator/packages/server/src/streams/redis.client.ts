@@ -13,7 +13,7 @@ export function getRedisClient(url: string): Redis {
 
 export async function closeRedisClients(): Promise<void> {
   for (const c of clients.values()) {
-    try { await c.quit() } catch { /* ignore */ }
+    try { await c.quit() } catch (e) { console.warn('[redis] client quit failed:', e) }
   }
   clients.clear()
 }

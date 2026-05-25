@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { spawnSync } from 'node:child_process'
+import { readdirSync } from 'node:fs'
 
 vi.mock('node:child_process', () => ({
   spawnSync: vi.fn(() => ({ status: 0 })),
@@ -8,8 +10,8 @@ let disabledStore: string[] = []
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(() => true),
   readdirSync: vi.fn((dir: string) => {
-    if (dir.includes('claude-plugins-official')) return ['superpowers']
-    if (dir.includes('cache')) return ['claude-plugins-official']
+    if (String(dir).includes('claude-plugins-official')) return ['superpowers']
+    if (String(dir).includes('cache')) return ['claude-plugins-official']
     return []
   }),
   readFileSync: vi.fn((filePath: string) => {
@@ -47,5 +49,40 @@ describe('PluginManager', () => {
     await manager.toggle('superpowers')
     const after = await manager.list()
     expect(after.find((p) => p.id === 'superpowers')?.enabled).toBe(false)
+  })
+
+  it('readdirSync가 . 와 .. 를 반환해도 필터링한다', async () => {
+    vi.mocked(readdirSync).mockImplementationOnce(() => ['.', '..', 'claude-plugins-official'] as unknown as ReturnType<typeof readdirSync>)
+    vi.mocked(readdirSync).mockImplementationOnce(() => ['.', '..', 'superpowers'] as unknown as ReturnType<typeof readdirSync>)
+    const plugins = await manager.list()
+    const ids = plugins.map((p) => p.id)
+    expect(ids).not.toContain('.')
+    expect(ids).not.toContain('..')
+    expect(ids).toContain('superpowers')
+  })
+
+  it('install claude-code 타입 — npx skills add 실행', async () => {
+    await manager.install('my-plugin', 'claude-code')
+    expect(vi.mocked(spawnSync)).toHaveBeenCalledWith('npx', ['skills', 'add', 'my-plugin'], expect.objectContaining({ shell: false }))
+  })
+
+  it('install xzawed 타입 — npm install 실행', async () => {
+    await manager.install('@my-scope/plugin', 'xzawed')
+    expect(vi.mocked(spawnSync)).toHaveBeenCalledWith('npm', expect.arrayContaining(['install', '@my-scope/plugin']), expect.objectContaining({ shell: false }))
+  })
+
+  it('유효하지 않은 패키지명으로 install하면 throw', async () => {
+    await expect(manager.install('../evil/path', 'claude-code')).rejects.toThrow('Invalid package name')
+  })
+
+  it('uninstall — npm uninstall 실행 후 disabled 목록에서 제거', async () => {
+    disabledStore = ['my-plugin']
+    await manager.uninstall('my-plugin')
+    expect(vi.mocked(spawnSync)).toHaveBeenCalledWith('npm', expect.arrayContaining(['uninstall', 'my-plugin']), expect.objectContaining({ shell: false }))
+    expect(disabledStore).not.toContain('my-plugin')
+  })
+
+  it('유효하지 않은 패키지명으로 uninstall하면 throw', async () => {
+    await expect(manager.uninstall('../evil')).rejects.toThrow('Invalid package name')
   })
 })

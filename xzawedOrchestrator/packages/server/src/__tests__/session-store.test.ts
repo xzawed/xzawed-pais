@@ -83,6 +83,18 @@ describe('InMemorySessionStore', () => {
     await expect(store.delete('ghost')).resolves.toBeUndefined()
   })
 
+  it('updateProject: updates projectId and bumps updatedAt', async () => {
+    const s = await store.create('alice', null, 'cli')
+    const before = s.updatedAt
+    await store.updateProject(s.id, 'proj-1')
+    expect(s.projectId).toBe('proj-1')
+    expect(s.updatedAt).toBeGreaterThanOrEqual(before)
+  })
+
+  it('updateProject: no-op for unknown id', async () => {
+    await expect(store.updateProject('ghost', 'proj-1')).resolves.toBeUndefined()
+  })
+
   it('multiple creates produce unique ids', async () => {
     const ids = await Promise.all(
       Array.from({ length: 5 }, () => store.create('user', null, 'cli').then(s => s.id))

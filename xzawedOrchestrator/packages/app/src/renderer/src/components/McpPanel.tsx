@@ -83,7 +83,7 @@ export function McpPanel(): React.JSX.Element {
         Object.entries(statuses).forEach(([sid, st]) =>
           useIntegrationsStore.getState().setMcpStatus(sid, st as 'running' | 'stopped')
         )
-      } catch { /* ignore */ }
+      } catch (e) { console.warn('[McpPanel] status re-sync failed', e) }
     } finally {
       setLoading(null)
     }
