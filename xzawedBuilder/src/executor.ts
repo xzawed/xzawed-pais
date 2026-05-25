@@ -50,7 +50,7 @@ class OutputCollector {
 /** Attaches a SIGKILL fallback timer that fires SIGKILL_GRACE_MS after SIGTERM. */
 function armKillFallback(proc: ReturnType<typeof spawn>): void {
   const killTimer = setTimeout(() => {
-    proc.kill('SIGKILL')
+    try { proc.kill('SIGKILL') } catch { /* ESRCH — process already exited */ }
   }, SIGKILL_GRACE_MS)
   proc.once('close', () => clearTimeout(killTimer))
 }

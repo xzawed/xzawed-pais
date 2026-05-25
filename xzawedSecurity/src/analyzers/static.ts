@@ -54,7 +54,7 @@ const RULES: StaticRule[] = [
   },
   {
     id: 'S005',
-    pattern: /\.query\s*\(\s*[`'"].*?\+/g,
+    pattern: /\.query\s*\(\s*(`[^`]*\$\{|['"][^'"]*'\s*\+|["'][^"']*"\s*\+)/g,
     severity: 'high',
     category: 'injection',
     description: '문자열 연결 SQL 쿼리 — SQL 인젝션 위험',
