@@ -211,4 +211,30 @@ describe('Security.handle', () => {
     const calls = mockPublish.mock.calls.map(([, msg]: [unknown, { type: string }]) => msg.type)
     expect(calls).not.toContain('audit_complete')
   })
+
+  it('deps 분석기가 실패하면 빈 배열로 대체한다', async () => {
+    const staticIssue: SecurityIssue = { id: 'S-1', severity: 'high', category: 'xss', file: 'f', description: 'd', suggestion: 's' }
+    mockStaticAnalyze.mockResolvedValueOnce([staticIssue])
+    mockDepsAudit.mockRejectedValueOnce(new Error('deps error'))
+
+    await security.handle(makeRequest({ severity: 'low' }))
+
+    const msg = mockPublish.mock.calls[0]?.[1] as any
+    expect(msg.type).toBe('audit_complete')
+    expect(msg.payload.issues).toHaveLength(1)
+    expect(msg.payload.issues[0].id).toBe('S-1')
+  })
+
+  it('claude 분석기가 실패하면 빈 배열로 대체한다', async () => {
+    const staticIssue: SecurityIssue = { id: 'S-2', severity: 'medium', category: 'config', file: 'f', description: 'd', suggestion: 's' }
+    mockStaticAnalyze.mockResolvedValueOnce([staticIssue])
+    mockAnalyzeArtifacts.mockRejectedValueOnce(new Error('claude error'))
+
+    await security.handle(makeRequest({ severity: 'low' }))
+
+    const msg = mockPublish.mock.calls[0]?.[1] as any
+    expect(msg.type).toBe('audit_complete')
+    expect(msg.payload.issues).toHaveLength(1)
+    expect(msg.payload.issues[0].id).toBe('S-2')
+  })
 })

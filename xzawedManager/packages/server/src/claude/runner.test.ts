@@ -343,4 +343,61 @@ describe('ClaudeRunner', () => {
       expect(contents.some((c) => c.includes('Completed design_ui'))).toBe(true)
     })
   })
+
+  describe('도구 결과 처리', () => {
+    it('4000자를 초과하는 도구 결과를 잘라서 반환한다', async () => {
+      registry.register({
+        name: 'develop_code',
+        description: 'Develop code',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: vi.fn().mockResolvedValue({ data: 'x'.repeat(5000) }),
+      })
+
+      createFn
+        .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('tu-big', 'develop_code', {})]))
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('완료')]))
+
+      await runner.run(baseRunOptions())
+
+      const secondCallMessages = createFn.mock.calls[1][0].messages as Anthropic.MessageParam[]
+      const toolResultMsg = secondCallMessages[2]
+      const content = toolResultMsg.content as Anthropic.ToolResultBlockParam[]
+      expect(content[0].content as string).toContain('...[truncated]')
+    })
+
+    it('도구가 Error 외의 값으로 실패하면 String()으로 변환한다', async () => {
+      registry.register({
+        name: 'develop_code',
+        description: 'Develop code',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: vi.fn().mockRejectedValue('string error'),
+      })
+
+      createFn
+        .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('tu-str', 'develop_code', {})]))
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('완료')]))
+
+      await runner.run(baseRunOptions())
+
+      const secondCallMessages = createFn.mock.calls[1][0].messages as Anthropic.MessageParam[]
+      const toolResultMsg = secondCallMessages[2]
+      const content = toolResultMsg.content as Anthropic.ToolResultBlockParam[]
+      expect(content[0].content).toBe('Tool execution failed: string error')
+      expect((content[0] as Anthropic.ToolResultBlockParam & { is_error?: boolean }).is_error).toBe(true)
+    })
+  })
+
+  describe('userContext', () => {
+    it('userContext.workspaceRoot가 있으면 시스템 프롬프트에 포함된다', async () => {
+      createFn.mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('완료')]))
+
+      await runner.run({
+        ...baseRunOptions(),
+        userContext: { userId: 'u1', projectId: 'p1', workspaceRoot: '/my-workspace' },
+      } as Parameters<typeof runner.run>[0])
+
+      const systemPrompt = createFn.mock.calls[0][0].system as string
+      expect(systemPrompt).toContain('/my-workspace')
+    })
+  })
 })

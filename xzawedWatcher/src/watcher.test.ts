@@ -229,6 +229,25 @@ describe('Watcher.handle — watch_request', () => {
     consoleSpy.mockRestore()
   })
 
+  it('chokidar error 이벤트에 Error 객체 외의 값이 오면 String()으로 변환한다', async () => {
+    await watcher.handle(makeRequest({ projectPath: '/workspace/app' }))
+
+    const errorHandler = mockWatcherInstance.on.mock.calls.find(
+      ([event]: [string]) => event === 'error',
+    )?.[1] as ((err: unknown) => void) | undefined
+
+    expect(errorHandler).toBeDefined()
+    errorHandler?.('ENOSPC string error')
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      'sess-1',
+      expect.objectContaining({
+        type: 'error',
+        payload: expect.objectContaining({ content: '감시자 오류: ENOSPC string error' }),
+      }),
+    )
+  })
+
   it('pre-checks capacity before creating chokidar (MAX_WATCHERS race fix)', async () => {
     // Config limits to 1 watcher; store already has 1 entry
     const limitedConfig = { ...config, maxWatchers: 1 }
