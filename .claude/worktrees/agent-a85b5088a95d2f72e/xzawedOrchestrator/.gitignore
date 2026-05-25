@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.turbo/
+.superpowers/
+
+# Electron build output
+packages/app/out/

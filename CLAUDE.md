@@ -199,77 +199,12 @@ PR #9(2026-05-17) 전체 보안 감사를 통해 수립된 공통 보안 패턴.
 
 ## SonarCloud 트러블슈팅
 
-SonarCloud는 **GitHub App Automatic Analysis** 방식으로 동작한다. CI 워크플로우에 Sonar 스텝이 없다.
+상세 가이드: [docs/development/sonarcloud.md](docs/development/sonarcloud.md)
 
-### 자동화된 CPD 진단 도구 (PR 생성 시 자동 실행)
-
-PR을 열면 CI에서 두 개의 진단 댓글이 자동으로 올라온다. 스크린샷 없이 정확한 원인을 파악할 수 있다.
-
-| 댓글 | 정보 | 소요 시간 |
-|---|---|---|
-| **jscpd** (`<!-- jscpd-report -->`) | 중복 파일 경로 + 줄 번호 (로컬과 동일한 알고리즘) | ~30초 |
-| **SonarCloud API** (`<!-- sonar-cpd-report -->`) | SonarCloud 품질 게이트 상태 + 파일별 중복 밀도 | ~3-5분 (분석 대기) |
-
-로컬에서 미리 확인할 때:
-```bash
-# 리포 루트에서
-npx jscpd@3.5.10 --config .jscpd.json
-```
-
-### CPD 실패 시 대응 순서
-
-1. PR 댓글에서 jscpd 리포트 확인 → 중복 파일·줄 번호 특정
-2. `git diff master...HEAD -- <파일>` 로 PR 신규 코드 확인 → 반복 패턴을 헬퍼 함수로 추출
-3. **exclusions 설정은 신뢰하지 말 것** — 실제 중복 제거가 유일한 확실한 해결책 (아래 Gotcha 참고)
-4. SonarCloud API 댓글에서 품질 게이트 통과 여부 최종 확인
-
-### sonar-project.properties 설정 원칙
-
-```properties
-# sonar.cpd.exclusions: Automatic Analysis에서 완전 무효
-# sonar.exclusions 와일드카드(**/*.test.ts 등): PR 신규 코드 분석에서도 동작하지 않음
-# → 특정 경로 exclusion(소스 파일 한정)만 일부 동작. 테스트 파일 CPD는 코드 리팩토링으로 해결할 것
-# pnpm-lock.yaml: 신규 lock 파일 추가 시 반복 URL/해시 패턴으로 new_duplicated_lines_density 급등 → 반드시 exclusions에 포함
-sonar.exclusions=**/*.test.ts,**/*.spec.ts,**/__tests__/**,**/dist/**,**/*.d.ts,**/pnpm-lock.yaml,**/package-lock.json
-sonar.cpd.exclusions=**/*.test.ts,**/*.spec.ts,**/__tests__/**  # 스캐너 모드 대비
-```
-
-### Gotcha: SonarCloud PR 신규 코드 CPD 동작
-
-- **새 코드 기준**: PR diff에서 추가·변경된 줄만 "신규 코드"로 계산
-- **exclusions 무효**: sonar.exclusions 와일드카드(`**/*.test.ts`)는 PR 신규 코드 CPD 분석에서 동작하지 않음 (PR #19에서 runner.test.ts가 `**/*.test.ts` 패턴 적용 대상임에도 그대로 탐지됨)
-- **CPD 토큰 임계값**: sonar.cpd.minimumTokens=100 설정에도 SonarCloud 내부 임계값은 ~30-37 토큰 (jscpd 100 토큰 기준과 다름)
-- **유일한 해결책**: 중복 블록을 `loadModules()`, `makeFakeHandler()`, `makeRunner()` 등 헬퍼로 추출하여 실제 중복 제거
-
-### Security Hotspot 원인 오진 주의
-
-SonarCloud가 "N Security Hotspots" 실패를 보고할 때 **실제 위반 규칙을 확인하지 않고 추측으로 수정하면 문제가 반복된다.**
-
-진단 순서:
-1. PR 댓글의 SonarCloud Quality Gate 링크 → Security Hotspots 탭에서 **규칙 ID 직접 확인**
-2. `curl "https://sonarcloud.io/api/hotspots/search?projectKey=xzawed_xzawed-pais&pullRequest=<PR번호>&ps=50"` — 0 반환 시 재분석 아직 미완료
-3. SonarCloud Automatic Analysis는 push 후 **3~5분** 소요. check-run 완료가 23초 이내면 이전 분석 결과 재사용 중임 — 기다리거나 새 커밋으로 재트리거
-
-#### Dockerfile 핫스팟 패턴 (PR #70 교훈)
-- **7개 Security Hotspots = 7개 완전 재작성 Dockerfile × `docker:S6501`** (USER 없음)
-- `docker:S6505`(--ignore-scripts 누락)를 먼저 수정했으나 핫스팟 수 불변 → 규칙 ID를 먼저 확인했어야 함
-
-### 핫스팟 해소 절차
-
-S4721 등 보안 핫스팟은 코드 수정만으로 자동 해소되지 않는다.
-대시보드에서 "Safe" 직접 표시 → 새 커밋 push → 재분석 트리거.
-
-### Former-Hotspot → Vulnerability 처리
-
-SonarCloud가 기존 "Reviewed" 핫스팟을 오픈 Vulnerability로 재분류하는 경우 ("former-hotspot" 태그):
-
-- **S5443 — Publicly writable directory**: 테스트 파일의 `/tmp` 목(mock) 경로는 실제 파일시스템 접근이 없으므로 `// NOSONAR` 억제가 적절
-  ```typescript
-  vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/test') } })) // NOSONAR
-  vi.stubEnv('HOME', '/tmp/test-home') // NOSONAR
-  ```
-- 프로덕션 코드의 `/tmp` 사용은 `os.tmpdir()` + 고유 서브디렉토리로 교체 (`fs.mkdtemp()` 권장)
-- `// NOSONAR` 는 해당 줄만 억제 — 블록 전체에 사용하지 말 것
+**빠른 참조**:
+- CPD 실패 → `npx jscpd@3.5.10 --config .jscpd.json` 로컬 확인 먼저
+- 핫스팟 규칙 ID 확인 → SonarCloud PR 댓글 링크 → Security Hotspots 탭
+- Dockerfile → `USER node`(S6501), `--ignore-scripts`(S6505) 필수
 
 ## 인프라
 

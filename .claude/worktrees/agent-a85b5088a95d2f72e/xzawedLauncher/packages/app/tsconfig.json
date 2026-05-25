@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "composite": true,
+    "outDir": "out"
+  },
+  "include": ["src/renderer/src"],
+  "references": [{"path": "./tsconfig.node.json"}]
+}
