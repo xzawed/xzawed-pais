@@ -27,12 +27,15 @@ vi.mock('../auth/user.repo.js', () => ({
   toPublic: vi.fn((u) => ({ id: u.id, email: u.email, displayName: u.displayName })),
 }))
 
+const mockRefreshFindValid = vi.fn<(token: string, client?: unknown) => Promise<{ id: string; userId: string } | undefined>>()
+const mockRefreshCreate = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
+const mockRefreshRevokeAllForUser = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
+
 vi.mock('../auth/refresh.repo.js', () => ({
   RefreshRepo: vi.fn().mockImplementation(() => ({
-    create: vi.fn().mockResolvedValue(undefined),
-    findValid: vi.fn().mockResolvedValue(null),
-    revoke: vi.fn().mockResolvedValue(undefined),
-    revokeAllForUser: vi.fn().mockResolvedValue(undefined),
+    create: mockRefreshCreate,
+    findValid: mockRefreshFindValid,
+    revokeAllForUser: mockRefreshRevokeAllForUser,
   })),
 }))
 
@@ -116,17 +119,18 @@ describe('POST /auth/refresh — TOCTOU 트랜잭션', () => {
     mockClientQuery.mockReset()
     mockClientRelease.mockReset()
     mockFindById.mockReset()
+    mockRefreshFindValid.mockReset()
     vi.clearAllMocks()
   })
 
   it('유효한 토큰 — 새 accessToken + refreshToken 반환', async () => {
-    // BEGIN → rows ok → user found → UPDATE → INSERT → COMMIT
+    // findValid(token, client) returns record → UPDATE → INSERT → COMMIT
+    mockRefreshFindValid.mockResolvedValueOnce({ id: 'rt-1', userId: 'user-1' })
     mockClientQuery
-      .mockResolvedValueOnce(undefined)                           // BEGIN
-      .mockResolvedValueOnce({ rows: [{ id: 'rt-1', user_id: 'user-1' }] })  // SELECT FOR UPDATE
-      .mockResolvedValueOnce(undefined)                           // UPDATE revoke
-      .mockResolvedValueOnce(undefined)                           // INSERT new token
-      .mockResolvedValueOnce(undefined)                           // COMMIT
+      .mockResolvedValueOnce(undefined)  // BEGIN
+      .mockResolvedValueOnce(undefined)  // UPDATE revoke
+      .mockResolvedValueOnce(undefined)  // INSERT new token
+      .mockResolvedValueOnce(undefined)  // COMMIT
     mockFindById.mockResolvedValue(mockUser)
 
     app = await startServer()
@@ -142,11 +146,29 @@ describe('POST /auth/refresh — TOCTOU 트랜잭션', () => {
     expect(mockClientRelease).toHaveBeenCalled()
   })
 
-  it('유효한 토큰이지만 사용자를 찾을 수 없음 — 401 + ROLLBACK', async () => {
+  it('유효하지 않은 토큰 — 401 + ROLLBACK', async () => {
+    // findValid returns undefined → ROLLBACK → 401
+    mockRefreshFindValid.mockResolvedValueOnce(undefined)
     mockClientQuery
-      .mockResolvedValueOnce(undefined)                           // BEGIN
-      .mockResolvedValueOnce({ rows: [{ id: 'rt-1', user_id: 'user-1' }] })  // SELECT FOR UPDATE
-      .mockResolvedValueOnce(undefined)                           // ROLLBACK
+      .mockResolvedValueOnce(undefined)  // BEGIN
+      .mockResolvedValueOnce(undefined)  // ROLLBACK
+
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      payload: { refreshToken: 'invalid-token' },
+    })
+    expect(res.statusCode).toBe(401)
+    expect((res.json() as { error: string }).error).toContain('Invalid or expired')
+    expect(mockClientRelease).toHaveBeenCalled()
+  })
+
+  it('유효한 토큰이지만 사용자를 찾을 수 없음 — 401 + ROLLBACK', async () => {
+    mockRefreshFindValid.mockResolvedValueOnce({ id: 'rt-1', userId: 'user-1' })
+    mockClientQuery
+      .mockResolvedValueOnce(undefined)  // BEGIN
+      .mockResolvedValueOnce(undefined)  // ROLLBACK
     mockFindById.mockResolvedValue(null)
 
     app = await startServer()
@@ -171,11 +193,11 @@ describe('POST /auth/refresh — TOCTOU 트랜잭션', () => {
   })
 
   it('트랜잭션 예외 시 ROLLBACK + release 보장', async () => {
+    mockRefreshFindValid.mockResolvedValueOnce({ id: 'rt-1', userId: 'user-1' })
     mockClientQuery
-      .mockResolvedValueOnce(undefined)                           // BEGIN
-      .mockResolvedValueOnce({ rows: [{ id: 'rt-1', user_id: 'user-1' }] })  // SELECT FOR UPDATE
+      .mockResolvedValueOnce(undefined)   // BEGIN
+      .mockResolvedValueOnce(undefined)   // ROLLBACK
     mockFindById.mockRejectedValue(new Error('DB connection lost'))
-    mockClientQuery.mockResolvedValueOnce(undefined)              // ROLLBACK
 
     app = await startServer()
     const res = await app.inject({
@@ -191,7 +213,11 @@ describe('POST /auth/refresh — TOCTOU 트랜잭션', () => {
 describe('POST /auth/register — 필드 누락·비밀번호 검증', () => {
   let app: FastifyInstance
 
-  afterEach(async () => { await app?.close() })
+  afterEach(async () => {
+    await app?.close()
+    mockFindByEmail.mockReset()
+    mockCreate.mockReset()
+  })
 
   it('이메일 없음 — 400 반환', async () => {
     app = await startServer()
@@ -223,6 +249,34 @@ describe('POST /auth/register — 필드 누락·비밀번호 검증', () => {
     })
     expect(res.statusCode).toBe(400)
     expect((res.json() as { error: string }).error).toContain('8')
+  })
+
+  it('이메일 중복 — 409 반환', async () => {
+    mockFindByEmail.mockResolvedValueOnce(mockUser)
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { email: 'test@example.com', password: 'password123' },
+    })
+    expect(res.statusCode).toBe(409)
+    expect((res.json() as { error: string }).error).toContain('already')
+  })
+
+  it('등록 성공 — 201 + 토큰 반환', async () => {
+    mockFindByEmail.mockResolvedValueOnce(undefined)
+    mockCreate.mockResolvedValueOnce(mockUser)
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: { email: 'new@example.com', password: 'password123' },
+    })
+    expect(res.statusCode).toBe(201)
+    const body = res.json() as { user: { id: string }; accessToken: string; refreshToken: string }
+    expect(body.user.id).toBe('user-1')
+    expect(body.accessToken).toBeTruthy()
+    expect(body.refreshToken).toBeTruthy()
   })
 })
 
@@ -281,6 +335,17 @@ describe('POST /auth/login', () => {
     const body = res.json() as { accessToken: string; refreshToken: string }
     expect(body.accessToken).toBeTruthy()
     expect(body.refreshToken).toBeTruthy()
+  })
+
+  it('사용자 없음 — 401 반환', async () => {
+    // mockFindByEmail returns undefined after mockReset in afterEach
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: 'notfound@example.com', password: 'password123' },
+    })
+    expect(res.statusCode).toBe(401)
   })
 })
 

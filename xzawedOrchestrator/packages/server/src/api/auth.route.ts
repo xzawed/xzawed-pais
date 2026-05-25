@@ -1,6 +1,5 @@
 import type { FastifyInstance } from 'fastify'
 import type { Pool } from 'pg'
-import { createHash } from 'node:crypto'
 import rateLimit from '@fastify/rate-limit'
 import { UserRepo, toPublic } from '../auth/user.repo.js'
 import { RefreshRepo } from '../auth/refresh.repo.js'
@@ -104,27 +103,18 @@ export async function authRoutes(
       const { refreshToken } = req.body
       if (!refreshToken) return reply.status(400).send({ error: 'refreshToken is required' })
 
-      const tokenHash = createHash('sha256').update(refreshToken).digest('hex') // NOSONAR
-
-      // Refresh token rotation: findValid + revoke + insert in a single transaction
-      // SELECT FOR UPDATE prevents concurrent refresh with the same token (TOCTOU)
+      // Refresh token rotation: findValid(with txClient) does SELECT FOR UPDATE to prevent TOCTOU
       const client = await pool.connect()
       try {
         await client.query('BEGIN')
 
-        const { rows } = await client.query<{ id: string; user_id: string }>(
-          `SELECT id, user_id FROM refresh_tokens
-           WHERE token_hash = $1 AND expires_at > NOW() AND revoked_at IS NULL
-           FOR UPDATE`,
-          [tokenHash]
-        )
-        const record = rows[0]
+        const record = await refreshes.findValid(refreshToken, client)
         if (!record) {
           await client.query('ROLLBACK')
           return reply.status(401).send({ error: 'Invalid or expired refresh token' })
         }
 
-        const user = await users.findById(record.user_id)
+        const user = await users.findById(record.userId)
         if (!user) {
           await client.query('ROLLBACK')
           return reply.status(401).send({ error: 'User not found' })
