@@ -53,6 +53,19 @@ describe('publishTaskToManager — projectId null', () => {
   })
 })
 
+describe('publishTaskToManager — 파일시스템 루트 차단', () => {
+  it('workspaceRoot가 파일시스템 루트이면 throw', async () => {
+    const { parse } = await import('node:path')
+    const fsRoot = parse(process.cwd()).root
+    process.env.WORKSPACE_ROOT = fsRoot
+    const producer = makeProducer()
+    await expect(
+      publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: 'proj-1' }, undefined, makeLog())
+    ).rejects.toThrow('WORKSPACE_ROOT must not be filesystem root')
+    expect(producer.publish).not.toHaveBeenCalled()
+  })
+})
+
 describe('publishTaskToManager — projectId 있음, pool 없음', () => {
   it('WORKSPACE_ROOT 환경변수를 workspaceRoot로 사용', async () => {
     process.env.WORKSPACE_ROOT = '/env-root'

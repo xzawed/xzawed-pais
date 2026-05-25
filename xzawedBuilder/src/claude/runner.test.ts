@@ -56,4 +56,16 @@ describe('ClaudeRunner', () => {
     expect(errors).toHaveLength(1)
     expect(errors[0].suggestion).toContain('Claude 분석 실패')
   })
+
+  it('JSON은 있지만 Zod 스키마 검증 실패 시 fallback을 반환한다', async () => {
+    // suggestion 필드 누락 → BuildErrorSchema 검증 실패 → fallback
+    const mockClient = makeClient('[{"file":"src/a.ts","message":"오류","notSuggestion":"잘못된 필드"}]')
+    AnthropicMock.mockImplementation(() => mockClient as any)
+
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
+    const errors = await runner.analyzeBuildFailure('build failed')
+
+    expect(errors).toHaveLength(1)
+    expect(errors[0].suggestion).toContain('Claude 분석 실패')
+  })
 })
