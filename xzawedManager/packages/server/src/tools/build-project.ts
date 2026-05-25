@@ -12,7 +12,7 @@ interface BuildProjectOutput { success: boolean; output: string; artifacts: stri
 const inputSchema = {
   type: 'object' as const,
   properties: {
-    projectPath: { type: 'string', description: 'Absolute path to the project root' },
+    projectPath: { type: 'string', description: 'Path to the project root (use the workspaceRoot provided in the system prompt)' },
     target: { type: 'string', enum: ['development', 'production'], description: 'Build target' },
     context: { type: 'object', description: 'Additional context for the build' },
   },

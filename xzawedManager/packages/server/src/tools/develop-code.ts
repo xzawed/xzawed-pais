@@ -18,7 +18,7 @@ const inputSchema = {
   type: 'object' as const,
   properties: {
     plan: { type: 'string', description: 'The implementation plan to execute' },
-    projectPath: { type: 'string', description: 'Absolute path to the project root' },
+    projectPath: { type: 'string', description: 'Path to the project root (use the workspaceRoot provided in the system prompt)' },
     context: { type: 'object', description: 'Additional context for development' },
   },
   required: ['plan', 'projectPath', 'context'],

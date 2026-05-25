@@ -71,6 +71,9 @@ export async function sessionsRoute(
                 payload: { agentId: 'manager', content: result },
               })
             } catch (err) {
+              const message = err instanceof Error ? err.message : String(err)
+              // Do NOT publish an error for intentional aborts
+              if (message === 'Session aborted') return
               await producer.publish({
                 sessionId,
                 messageId: crypto.randomUUID(),
@@ -78,7 +81,7 @@ export async function sessionsRoute(
                 type: 'error',
                 payload: {
                   agentId: 'manager',
-                  content: err instanceof Error ? err.message : String(err),
+                  content: message,
                 },
               })
             } finally {

@@ -24,7 +24,7 @@ interface WatchChangesOutput {
 const inputSchema = {
   type: 'object' as const,
   properties: {
-    projectPath: { type: 'string', description: 'Absolute path to the project root to watch' },
+    projectPath: { type: 'string', description: 'Path to the project root (use the workspaceRoot provided in the system prompt)' },
     triggers: { type: 'array', items: { type: 'string' }, description: 'Glob patterns that trigger actions (e.g. **/*.ts)' },
     debounceMs: { type: 'number', description: 'Debounce delay in ms (default: 300)' },
     context: { type: 'object', description: 'Additional context for the watcher' },

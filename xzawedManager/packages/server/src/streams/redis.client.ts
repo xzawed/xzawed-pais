@@ -1,16 +1,22 @@
 import { Redis } from 'ioredis'
 
-let client: Redis | null = null
+const clients = new Map<string, Redis>()
 
 export function getRedisClient(url: string): Redis {
+  let client = clients.get(url)
   if (!client) {
     client = new Redis(url, { lazyConnect: true, maxRetriesPerRequest: 3 })
+    clients.set(url, client)
   }
   return client
 }
 
+export async function closeRedisClients(): Promise<void> {
+  await Promise.all([...clients.values()].map((c) => c.quit()))
+  clients.clear()
+}
+
+/** @deprecated use closeRedisClients */
 export async function closeRedisClient(): Promise<void> {
-  if (client) {
-    try { await client.quit() } catch { /* already disconnected */ } finally { client = null }
-  }
+  await closeRedisClients()
 }
