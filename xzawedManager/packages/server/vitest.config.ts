@@ -4,13 +4,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     isolate: true,
-    pool: 'forks',
+    pool: process.env.CI === 'true' ? 'vmForks' : 'forks',
     poolOptions: {
-      forks: {
-        maxForks: process.env.CI === 'true' ? 1 : undefined,
-        forkOptions: process.env.CI === 'true' ? {
-          execArgv: ['--max-old-space-size=512'],
-        } : undefined,
+      vmForks: {
+        maxForks: 1,
+        memoryLimit: '1g',
       },
     },
     coverage: {
