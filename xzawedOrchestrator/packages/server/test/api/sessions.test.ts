@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, beforeAll, afterAll, vi } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 
 const mockStart = vi.fn().mockResolvedValue(undefined)
@@ -27,9 +27,7 @@ vi.mock('../../src/claude/runner.factory.js', () => ({
 describe('Sessions API', () => {
   let app: FastifyInstance
 
-  beforeEach(async () => {
-    vi.clearAllMocks()
-    // Default runner: yields one text chunk then done
+  beforeAll(async () => {
     mockSend.mockImplementation(async function* () {
       yield { type: 'text', content: 'refined intent response' }
       yield { type: 'done' }
@@ -47,7 +45,15 @@ describe('Sessions API', () => {
     await app.ready()
   })
 
-  afterEach(async () => { await app.close() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockSend.mockImplementation(async function* () {
+      yield { type: 'text', content: 'refined intent response' }
+      yield { type: 'done' }
+    })
+  })
+
+  afterAll(async () => { await app.close() })
 
   it('GET /health returns ok', async () => {
     const res = await app.inject({ method: 'GET', url: '/health' })

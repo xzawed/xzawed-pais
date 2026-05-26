@@ -78,20 +78,38 @@ jobs:
         working-directory: ${{ matrix.dir }}
         run: pnpm --filter @xzawed/web build
 
-      - name: Test
-        working-directory: ${{ matrix.dir }}
+      - name: Test + coverage server (shard 1/2)
+        working-directory: ${{ matrix.dir }}/packages/server
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
           TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
-          NODE_OPTIONS: --max-old-space-size=4096
-        run: pnpm test -- --concurrency=1
+          NODE_OPTIONS: --max-old-space-size=2048
+        run: pnpm vitest run --coverage --coverage.reportsDirectory=coverage/shard-1 --shard=1/2
 
-      - name: Generate server coverage
+      - name: Test + coverage server (shard 2/2)
         working-directory: ${{ matrix.dir }}/packages/server
         env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
           TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
-          NODE_OPTIONS: --max-old-space-size=4096
-        run: pnpm test:coverage
+          NODE_OPTIONS: --max-old-space-size=2048
+        run: pnpm vitest run --coverage --coverage.reportsDirectory=coverage/shard-2 --shard=2/2
+
+      - name: Merge server coverage
+        working-directory: ${{ matrix.dir }}/packages/server
+        run: pnpm vitest merge-coverage coverage/shard-1 coverage/shard-2
+
+      - name: Test app
+        if: matrix.service == 'xzawedOrchestrator'
+        working-directory: ${{ matrix.dir }}/packages/app
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+          NODE_OPTIONS: --max-old-space-size=2048
+        run: pnpm vitest run --reporter=dot
+
+      - name: Test ui
+        if: matrix.service == 'xzawedOrchestrator'
+        working-directory: ${{ matrix.dir }}/packages/ui
+        run: pnpm vitest run --reporter=dot
 
       - name: Generate ui coverage
         if: matrix.service == 'xzawedOrchestrator'

@@ -1,4 +1,6 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+
+vi.mock('ioredis', () => ({ default: class Redis { on() { return this } quit() {} }, Redis: class Redis { on() { return this } quit() {} } }))
 import { createPlanTaskHandler } from '../../src/tools/plan-task.js'
 import { createDevelopCodeHandler } from '../../src/tools/develop-code.js'
 import { createDesignUiHandler } from '../../src/tools/design-ui.js'
