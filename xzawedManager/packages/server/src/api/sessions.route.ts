@@ -4,6 +4,7 @@ import { StreamConsumer } from '../streams/consumer.js'
 import type { StreamProducer } from '../streams/producer.js'
 import type { ClaudeRunner, RunnerOptions } from '../claude/runner.js'
 import type { SessionStore } from '../sessions/session.store.js'
+import type { ToolRegistry } from '../tools/registry.js'
 import type { OrchestratorToManagerMessage } from '../types/streams.js'
 import { ensureWorkspace } from '../workspace.js'
 
@@ -14,6 +15,7 @@ interface SessionsRouteOptions {
   runner: ClaudeRunner
   producer: StreamProducer
   sessionStore: SessionStore
+  registry?: ToolRegistry
   activeConsumers?: Map<string, StreamConsumer>
   authHook?: RouteHook
 }
@@ -22,7 +24,7 @@ export async function sessionsRoute(
   app: FastifyInstance,
   opts: SessionsRouteOptions,
 ): Promise<void> {
-  const { redisUrl, runner, producer, sessionStore } = opts
+  const { redisUrl, runner, producer, sessionStore, registry } = opts
   const activeConsumers = opts.activeConsumers ?? new Map<string, StreamConsumer>()
   const preHandler = opts.authHook ? [opts.authHook] : []
 
@@ -88,6 +90,7 @@ export async function sessionsRoute(
               consumer.stop()
               sessionStore.delete(sessionId)
               activeConsumers.delete(sessionId)
+              registry?.releaseAll(sessionId)
             }
           })().catch((err: unknown) => {
             app.log.error({ err, sessionId }, 'Unexpected task runner error')

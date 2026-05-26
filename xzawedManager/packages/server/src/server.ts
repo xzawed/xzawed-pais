@@ -69,6 +69,7 @@ export async function buildServer(
     runner,
     producer,
     sessionStore,
+    registry,
     activeConsumers,
     ...(authHook && { authHook }),
   })

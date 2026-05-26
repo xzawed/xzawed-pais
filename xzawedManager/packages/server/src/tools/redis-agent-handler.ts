@@ -160,6 +160,11 @@ export class RedisAgentHandler<TInput, TOutput>
     throw new Error(`${this.agentName} timed out after ${this.timeoutMs}ms`)
   }
 
+  releaseSession(sessionId: string): void {
+    const notifyKey = `${this.agentName}:${sessionId}`
+    this._notifiedSessions.delete(notifyKey)
+  }
+
   async close(): Promise<void> {
     if (this._redis) {
       await this._redis.quit()

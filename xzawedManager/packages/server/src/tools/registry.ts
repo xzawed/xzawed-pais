@@ -23,6 +23,12 @@ export class ToolRegistry {
     }))
   }
 
+  releaseAll(sessionId: string): void {
+    for (const handler of this.handlers.values()) {
+      handler.releaseSession?.(sessionId)
+    }
+  }
+
   async closeAll(): Promise<void> {
     await Promise.all(
       Array.from(this.handlers.values()).map((h) => {
