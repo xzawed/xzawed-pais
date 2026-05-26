@@ -22,6 +22,9 @@ import { authRoutes } from './api/auth.route.js'
 import { projectsRoutes } from './api/projects.route.js'
 import { internalRoutes } from './api/internal.route.js'
 import { createPool, runMigrations, closePool } from './db/pool.js'
+import { ProjectGatewayConsumer } from './projects/project-gateway.js'
+import { ProjectRepo } from './projects/project.repo.js'
+import { WorkspaceService } from './projects/workspace.service.js'
 
 const JWT_ERRORS: Record<string, string> = {
   FST_JWT_NO_AUTHORIZATION_IN_HEADER: 'Missing token',
@@ -117,6 +120,74 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     } else {
       app.log.warn('Internal routes disabled: AUTH=jwt is required to expose internal endpoints')
     }
+
+    const projectRepo = new ProjectRepo(dbPool)
+    const workspaceSvc = new WorkspaceService()
+    const projectGateway = new ProjectGatewayConsumer(
+      config.redisUrl,
+      async (sessionId, payload) => {
+        const session = await store.findById(sessionId)
+        if (!session) throw new Error('Session not found')
+
+        const project = await projectRepo.create(session.userId, payload.name, { description: payload.description })
+
+        let workspacePath: string | undefined
+        let status: 'registered' | 'cloning' = 'registered'
+
+        if (payload.workspaceType === 'local') {
+          if (!payload.localPath) throw new Error('localPath required')
+          await workspaceSvc.validateLocalPath(payload.localPath)
+          workspacePath = payload.localPath
+        } else if (payload.workspaceType === 'github') {
+          if (!payload.repoUrl) throw new Error('repoUrl required')
+          const parsedUrl = new URL(payload.repoUrl)
+          if (parsedUrl.protocol !== 'https:') {
+            throw new Error('repoUrl must use https protocol')
+          }
+          workspacePath = workspaceSvc.clonePath(project.id)
+          void workspaceSvc.cloneRepo(payload.repoUrl, workspacePath, payload.branch ?? 'main').catch((err: unknown) => {
+            app.log.error({ err }, 'background git clone failed')
+          })
+          status = 'cloning'
+        }
+
+        await projectRepo.updateWorkspace(project.id, {
+          workspaceType: payload.workspaceType,
+          localPath: payload.localPath,
+          repoUrl: payload.repoUrl,
+          branch: payload.branch,
+          workspacePath,
+          pushStrategy: 'push',
+        })
+
+        await store.updateProject(sessionId, project.id)
+
+        return { projectId: project.id, workspacePath: workspacePath ?? null, status }
+      },
+      async (sessionId, payload) => {
+        const session = await store.findById(sessionId)
+        if (!session) throw new Error('Session not found')
+
+        let project: Awaited<ReturnType<typeof projectRepo.findByIdAndUser>> | undefined
+
+        if (payload.projectId) {
+          project = await projectRepo.findByIdAndUser(payload.projectId, session.userId)
+        } else if (payload.name) {
+          const all = await projectRepo.findByUser(session.userId)
+          project = all.find(p => p.name === payload.name || p.slug === payload.name)
+        }
+
+        if (!project) throw new Error('Project not found')
+
+        await store.updateProject(sessionId, project.id)
+
+        return { projectId: project.id, name: project.name, workspacePath: project.workspace_path ?? null }
+      },
+    )
+    void projectGateway.start().catch((err: unknown) => {
+      app.log.error({ err }, '[Orchestrator] ProjectGatewayConsumer crashed')
+    })
+    app.addHook('onClose', async () => { projectGateway.stop() })
   }
 
   if (config.serveWeb) {
