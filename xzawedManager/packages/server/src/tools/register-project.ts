@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { getRedisClient } from '../streams/redis.client.js'
 import type { ToolHandler } from './handler.interface.js'
 
@@ -10,11 +11,19 @@ interface RegisterInput {
   description?: string
 }
 
-interface RegisterOutput {
-  projectId: string
-  workspacePath: string | null
-  status: 'registered' | 'cloning'
-}
+const RegisterOutputSchema = z.object({
+  projectId: z.string(),
+  workspacePath: z.string().nullable(),
+  status: z.enum(['registered', 'cloning']),
+})
+
+type RegisterOutput = z.infer<typeof RegisterOutputSchema>
+
+const ProjectResponseSchema = z.object({
+  type: z.string(),
+  sessionId: z.string(),
+  payload: z.unknown(),
+})
 
 const TIMEOUT_MS = 30_000
 const REQUEST_STREAM = 'manager:to-orchestrator:projects'
@@ -36,6 +45,10 @@ export function createRegisterProjectHandler(redisUrl: string): ToolHandler<Regi
       required: ['name', 'workspaceType'],
     },
     async execute(input, sessionId): Promise<RegisterOutput> {
+      if (input.workspaceType === 'local' && !input.localPath) {
+        throw new Error('register_project: workspaceType=local 시 localPath는 필수입니다')
+      }
+
       const redis = getRedisClient(redisUrl)
       const responseStream = `orchestrator:to-manager:projects:${sessionId}`
 
@@ -70,11 +83,24 @@ export function createRegisterProjectHandler(redisUrl: string): ToolHandler<Regi
             if (dataIdx === -1) continue
             const raw = fields[dataIdx + 1]
             if (!raw) continue
-            const msg = JSON.parse(raw) as { type: string; payload: unknown }
-            if (msg.type === 'register_project_response') return msg.payload as RegisterOutput
-            if (msg.type === 'project_error') {
-              const err = msg.payload as { error: string }
-              throw new Error(`register_project failed: ${err.error}`)
+
+            let parseResult
+            try {
+              parseResult = ProjectResponseSchema.safeParse(JSON.parse(raw))
+            } catch {
+              continue  // malformed JSON, skip
+            }
+            if (!parseResult.success) continue
+
+            const msg = parseResult.data
+            if (msg.type === 'register_project_response') {
+              const outputParse = RegisterOutputSchema.safeParse(msg.payload)
+              if (!outputParse.success) throw new Error(`register_project: invalid response payload`)
+              return outputParse.data
+            }
+            if (msg.type === 'project_error' && msg.sessionId === sessionId) {
+              const err = (msg.payload as { error?: string }).error ?? 'unknown error'
+              throw new Error(`register_project failed: ${err}`)
             }
           }
         }

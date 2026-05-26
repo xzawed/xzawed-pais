@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { getRedisClient } from '../streams/redis.client.js'
 import type { ToolHandler } from './handler.interface.js'
 
@@ -6,11 +7,19 @@ interface SwitchInput {
   name?: string
 }
 
-interface SwitchOutput {
-  projectId: string
-  name: string
-  workspacePath: string | null
-}
+const SwitchOutputSchema = z.object({
+  projectId: z.string(),
+  name: z.string(),
+  workspacePath: z.string().nullable(),
+})
+
+type SwitchOutput = z.infer<typeof SwitchOutputSchema>
+
+const ProjectResponseSchema = z.object({
+  type: z.string(),
+  sessionId: z.string(),
+  payload: z.unknown(),
+})
 
 const TIMEOUT_MS = 30_000
 const REQUEST_STREAM = 'manager:to-orchestrator:projects'
@@ -64,11 +73,24 @@ export function createSwitchProjectHandler(redisUrl: string): ToolHandler<Switch
             if (dataIdx === -1) continue
             const raw = fields[dataIdx + 1]
             if (!raw) continue
-            const msg = JSON.parse(raw) as { type: string; payload: unknown }
-            if (msg.type === 'switch_project_response') return msg.payload as SwitchOutput
-            if (msg.type === 'project_error') {
-              const err = msg.payload as { error: string }
-              throw new Error(`switch_project failed: ${err.error}`)
+
+            let parseResult
+            try {
+              parseResult = ProjectResponseSchema.safeParse(JSON.parse(raw))
+            } catch {
+              continue  // malformed JSON, skip
+            }
+            if (!parseResult.success) continue
+
+            const msg = parseResult.data
+            if (msg.type === 'switch_project_response') {
+              const outputParse = SwitchOutputSchema.safeParse(msg.payload)
+              if (!outputParse.success) throw new Error(`switch_project: invalid response payload`)
+              return outputParse.data
+            }
+            if (msg.type === 'project_error' && msg.sessionId === sessionId) {
+              const err = (msg.payload as { error?: string }).error ?? 'unknown error'
+              throw new Error(`switch_project failed: ${err}`)
             }
           }
         }

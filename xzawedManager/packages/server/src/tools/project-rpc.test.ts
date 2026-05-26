@@ -51,7 +51,7 @@ describe('register_project Redis RPC', () => {
     vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
 
     const handler = createRegisterProjectHandler('redis://localhost:6379')
-    await expect(handler.execute({ name: 'bad', workspaceType: 'local' }, SESSION_ID))
+    await expect(handler.execute({ name: 'bad', workspaceType: 'local', localPath: '/tmp/bad' }, SESSION_ID))
       .rejects.toThrow('DB error')
   })
 })
