@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { Config } from './config.js'
 import { registerJwt, verifyServiceToken } from './auth/jwt.plugin.js'
 import { healthRoute } from './api/health.route.js'
-import { sessionsRoute } from './api/sessions.route.js'
+import { sessionsRoute, makeSessionStarter } from './api/sessions.route.js'
 import { StreamProducer } from './streams/producer.js'
 import { StreamConsumer } from './streams/consumer.js'
 import { SessionStore } from './sessions/session.store.js'
@@ -21,6 +21,7 @@ import { createSecurityAuditHandler } from './tools/security-audit.js'
 import { createGithubOpsHandler } from './tools/github-ops.js'
 import { createRegisterProjectHandler } from './tools/register-project.js'
 import { createSwitchProjectHandler } from './tools/switch-project.js'
+import { SessionGatewayConsumer } from './streams/session-gateway.js'
 
 export async function buildServer(
   config: Config,
@@ -73,7 +74,18 @@ export async function buildServer(
     ...(authHook && { authHook }),
   })
 
+  const startManagedSession = makeSessionStarter({
+    redisUrl: config.REDIS_URL, runner, producer, sessionStore, activeConsumers,
+    log: { error: (obj, msg) => app.log.error(obj, msg) },
+  })
+
+  const sessionGateway = new SessionGatewayConsumer(config.REDIS_URL, startManagedSession)
+  void sessionGateway.start().catch((err: unknown) => {
+    app.log.error({ err }, 'SessionGatewayConsumer crashed')
+  })
+
   const closeAll = async () => {
+    sessionGateway.stop()
     for (const c of activeConsumers.values()) c.stop()
     await registry.closeAll()
     await closePool()
