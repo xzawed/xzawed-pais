@@ -8,6 +8,9 @@ export default defineConfig({
     poolOptions: {
       forks: {
         maxForks: process.env.CI === 'true' ? 1 : undefined,
+        forkOptions: process.env.CI === 'true' ? {
+          execArgv: ['--max-old-space-size=512'],
+        } : undefined,
       },
     },
     coverage: {
