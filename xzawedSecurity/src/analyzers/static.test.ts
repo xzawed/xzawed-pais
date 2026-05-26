@@ -51,6 +51,14 @@ describe('analyzeFiles', () => {
     expect(issues[0]?.cwe).toBe('CWE-79')
   })
 
+  it('S005: detects SQL injection via template literal', async () => {
+    mockReadFile.mockResolvedValueOnce('db.query(`SELECT * FROM users WHERE id=${userId}`)' as never)
+    const issues = await analyzeFiles(['/workspace/db.ts'], '/workspace')
+    expect(issues.some((i) => i.id.startsWith('S005'))).toBe(true)
+    expect(issues.find((i) => i.id.startsWith('S005'))?.severity).toBe('high')
+    expect(issues.find((i) => i.id.startsWith('S005'))?.cwe).toBe('CWE-89')
+  })
+
   it('skips file when validatePath throws', async () => {
     mockValidatePath.mockRejectedValueOnce(new Error('경로 거부'))
     const issues = await analyzeFiles(['/etc/passwd'], '/workspace')

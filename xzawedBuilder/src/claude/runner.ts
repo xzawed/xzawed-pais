@@ -1,5 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { z } from 'zod'
 import type { BuildError } from '../types.js'
+
+const BuildErrorSchema = z.object({
+  file: z.string().optional(),
+  line: z.number().optional(),
+  message: z.string(),
+  suggestion: z.string(),
+})
 
 const SYSTEM_PROMPT = `You are a build error analyzer. Given a build log, extract errors as a JSON array.
 Return ONLY valid JSON array: [{"file":"path","line":42,"message":"error text","suggestion":"fix suggestion"}]
@@ -29,7 +37,8 @@ export class ClaudeRunner {
       const jsonMatch = text.match(/\[[\s\S]*\]/)
       if (!jsonMatch) return this.fallback(output)
 
-      return JSON.parse(jsonMatch[0]) as BuildError[]
+      const parseResult = z.array(BuildErrorSchema).safeParse(JSON.parse(jsonMatch[0]))
+      return parseResult.success ? (parseResult.data as BuildError[]) : this.fallback(output)
     } catch {
       return this.fallback(output)
     }

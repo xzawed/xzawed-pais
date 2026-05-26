@@ -22,7 +22,7 @@ Rules:
 export class ClaudeRunner {
   private readonly client: Anthropic
 
-  constructor(private readonly apiKey: string, private readonly model: string) {
+  constructor(apiKey: string, private readonly model: string) {
     this.client = new Anthropic({ apiKey })
   }
 
@@ -31,20 +31,26 @@ export class ClaudeRunner {
     projectPath: string,
     context: Record<string, unknown>,
   ): Promise<{ changes: FileChange[]; summary: string }> {
-    const response = await Promise.race([
-      this.client.messages.create({
-        model: this.model,
-        max_tokens: 8192,
-        system: SYSTEM_PROMPT,
-        messages: [{
-          role: 'user',
-          content: `Project path: ${projectPath}\nContext: ${JSON.stringify(context, null, 2)}\n\nPlan:\n${plan}`,
-        }],
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
-      ),
-    ])
+    let timerId: ReturnType<typeof setTimeout> | undefined
+    let response: Awaited<ReturnType<typeof this.client.messages.create>>
+    try {
+      response = await Promise.race([
+        this.client.messages.create({
+          model: this.model,
+          max_tokens: 8192,
+          system: SYSTEM_PROMPT,
+          messages: [{
+            role: 'user',
+            content: `Project path: ${projectPath}\nContext: ${JSON.stringify(context, null, 2)}\n\nPlan:\n${plan}`,
+          }],
+        }),
+        new Promise<never>((_, reject) => {
+          timerId = setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
+        }),
+      ])
+    } finally {
+      clearTimeout(timerId)
+    }
 
     const text = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === 'text')

@@ -1,4 +1,5 @@
 import { Redis } from 'ioredis'
+import { validateWorkspaceRoot } from '@xzawed/agent-streams'
 import { loadConfig } from './config.js'
 import { createServer } from './server.js'
 import { Producer } from './streams/producer.js'
@@ -8,6 +9,7 @@ import { Watcher } from './watcher.js'
 
 async function main() {
   const config = loadConfig()
+  validateWorkspaceRoot(config.workspaceRoot) // throws if root is filesystem root
 
   const redis = new Redis(config.redisUrl)
   const producer = new Producer(redis)
@@ -23,13 +25,15 @@ async function main() {
 
   consumer.start(sessionId).catch(console.error)
 
-  process.on('SIGTERM', async () => {
+  const cleanup = async () => {
     consumer.stop()
     await store.stopAll()
     await server.close()
     await redis.quit()
     process.exit(0)
-  })
+  }
+  process.on('SIGTERM', cleanup)
+  process.on('SIGINT', cleanup)
 }
 
 main().catch((err) => {

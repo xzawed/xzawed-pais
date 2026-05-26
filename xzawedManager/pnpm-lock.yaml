@@ -30,6 +30,9 @@ importers:
       '@octokit/rest':
         specifier: ^22.0.1
         version: 22.0.1
+      '@xzawed/agent-streams':
+        specifier: file:../../../xzawedShared
+        version: file:../xzawedShared(ioredis@5.10.1)(zod@3.25.76)
       fastify:
         specifier: ^5.3.0
         version: 5.8.5
@@ -42,9 +45,6 @@ importers:
       zod:
         specifier: ^3.24.0
         version: 3.25.76
-      zod-to-json-schema:
-        specifier: ^3.24.0
-        version: 3.25.2(zod@3.25.76)
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -742,6 +742,12 @@ packages:
 
   '@vitest/utils@3.2.4':
     resolution: {integrity: sha512-fB2V0JFrQSMsCo9HiSq3Ezpdv4iYaXRG1Sx8edX3MwxfyNn83mKiGzOcH+Fkxt4MHxr3y42fQi1oeAInqgX2QA==}
+
+  '@xzawed/agent-streams@file:../xzawedShared':
+    resolution: {directory: ../xzawedShared, type: directory}
+    peerDependencies:
+      ioredis: '>=5'
+      zod: '>=3'
 
   abstract-logging@2.0.1:
     resolution: {integrity: sha512-2BjRTZxTPvheOvGbBslFSYOUkr+SjPtOnrLP33f+VIWLzezQpZcqVg7ja3L4dBXmzzgwT+a029jRx5PCi3JuiA==}
@@ -1468,11 +1474,6 @@ packages:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
     engines: {node: '>=0.4'}
 
-  zod-to-json-schema@3.25.2:
-    resolution: {integrity: sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA==}
-    peerDependencies:
-      zod: ^3.25.28 || ^4
-
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
@@ -1959,6 +1960,11 @@ snapshots:
       '@vitest/pretty-format': 3.2.4
       loupe: 3.2.1
       tinyrainbow: 2.0.0
+
+  '@xzawed/agent-streams@file:../xzawedShared(ioredis@5.10.1)(zod@3.25.76)':
+    dependencies:
+      ioredis: 5.10.1
+      zod: 3.25.76
 
   abstract-logging@2.0.1: {}
 
@@ -2730,9 +2736,5 @@ snapshots:
       strip-ansi: 7.2.0
 
   xtend@4.0.2: {}
-
-  zod-to-json-schema@3.25.2(zod@3.25.76):
-    dependencies:
-      zod: 3.25.76
 
   zod@3.25.76: {}

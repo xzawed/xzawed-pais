@@ -147,11 +147,14 @@ export class ClaudeRunner {
             CLAUDE_CALL_TIMEOUT_MS,
           )
         })
+        const workspaceInstruction = userContext?.workspaceRoot
+          ? `\nAlways use ${userContext.workspaceRoot} as the projectPath for ALL tool calls (develop_code, build_project, run_tests, etc.) — never use subdirectories. Keep projectPath consistent across all tool calls in a single task.`
+          : ''
         response = await Promise.race([
           this.client.messages.create({
             model: this.model,
             max_tokens: MAX_TOKENS,
-            system: `You are xzawedManager, a project orchestration agent. Use the available tools to fulfill the task request. Keep your responses concise — always prefer calling a tool over writing lengthy analysis. IMPORTANT: Always use ${userContext?.workspaceRoot ?? '/workspace'} as the projectPath for ALL tool calls (develop_code, build_project, run_tests, etc.) — never use subdirectories. Keep projectPath consistent across all tool calls in a single task.`,
+            system: `You are xzawedManager, a project orchestration agent. Use the available tools to fulfill the task request. Keep your responses concise — always prefer calling a tool over writing lengthy analysis.${workspaceInstruction}`,
             messages,
             tools,
             ...(signal !== undefined ? { signal } : {}),

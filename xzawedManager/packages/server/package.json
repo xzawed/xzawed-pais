@@ -17,11 +17,11 @@
     "@anthropic-ai/sdk": "^0.52.0",
     "@fastify/jwt": "^10.0.0",
     "@octokit/rest": "^22.0.1",
+    "@xzawed/agent-streams": "file:../../../xzawedShared",
     "fastify": "^5.3.0",
     "ioredis": "^5.6.0",
     "pg": "^8.20.0",
-    "zod": "^3.24.0",
-    "zod-to-json-schema": "^3.24.0"
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -137,7 +137,9 @@ export class Builder {
     if (hasModules) return
 
     const hasPnpmLock = await fs.access(path.join(buildRoot, 'pnpm-lock.yaml')).then(() => true).catch(() => false)
-    const installCmd = hasPnpmLock ? 'pnpm install' : 'npm install'
+    const installCmd = hasPnpmLock
+      ? 'pnpm install --frozen-lockfile --ignore-scripts'
+      : 'npm ci --ignore-scripts'
 
     const installResult = await exec(
       installCmd,

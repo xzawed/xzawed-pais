@@ -32,7 +32,7 @@ const inputSchema = {
   properties: {
     artifacts: { type: 'array', items: { type: 'string' }, description: 'File paths to audit' },
     severity: { type: 'string', enum: ['low', 'medium', 'high'], description: 'Minimum severity to report' },
-    projectPath: { type: 'string', description: 'Absolute path to the project root' },
+    projectPath: { type: 'string', description: 'Path to the project root (use the workspaceRoot provided in the system prompt)' },
     context: { type: 'object', description: 'Additional context for the audit' },
   },
   required: ['artifacts', 'severity', 'projectPath', 'context'],

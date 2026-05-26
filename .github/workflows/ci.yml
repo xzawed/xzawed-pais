@@ -51,6 +51,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: ${{ matrix.dir }}/pnpm-lock.yaml
 
+      - name: Build xzawedShared
+        if: matrix.service == 'xzawedManager'
+        working-directory: xzawedShared
+        run: pnpm install && pnpm build
+
       - name: Install
         working-directory: ${{ matrix.dir }}
         env:
@@ -649,6 +654,37 @@ jobs:
         with:
           name: coverage-xzawedShared
           path: xzawedShared/coverage
+
+      - name: Prefix lcov paths with package directories
+        run: |
+          python3 - << 'PYEOF'
+          import os, re
+
+          prefixes = {
+              'xzawedOrchestrator/packages/server/coverage/lcov.info': 'xzawedOrchestrator/packages/server/',
+              'xzawedOrchestrator/packages/app/coverage/lcov.info': 'xzawedOrchestrator/packages/app/',
+              'xzawedOrchestrator/packages/ui/coverage/lcov.info': 'xzawedOrchestrator/packages/ui/',
+              'xzawedManager/packages/server/coverage/lcov.info': 'xzawedManager/packages/server/',
+              'xzawedPlanner/coverage/lcov.info': 'xzawedPlanner/',
+              'xzawedDeveloper/coverage/lcov.info': 'xzawedDeveloper/',
+              'xzawedDesigner/coverage/lcov.info': 'xzawedDesigner/',
+              'xzawedTester/coverage/lcov.info': 'xzawedTester/',
+              'xzawedBuilder/coverage/lcov.info': 'xzawedBuilder/',
+              'xzawedWatcher/coverage/lcov.info': 'xzawedWatcher/',
+              'xzawedSecurity/coverage/lcov.info': 'xzawedSecurity/',
+              'xzawedShared/coverage/lcov.info': 'xzawedShared/',
+          }
+
+          for lcov_path, prefix in prefixes.items():
+              if not os.path.exists(lcov_path):
+                  continue
+              with open(lcov_path, encoding='utf-8') as f:
+                  content = f.read()
+              content = re.sub(r'^SF:', f'SF:{prefix}', content, flags=re.MULTILINE)
+              with open(lcov_path, 'w', encoding='utf-8') as f:
+                  f.write(content)
+              print(f'Prefixed {lcov_path} with {prefix}')
+          PYEOF
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@v3
