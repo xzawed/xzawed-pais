@@ -1,5 +1,5 @@
 import { Redis } from 'ioredis'
-import { validateWorkspaceRoot } from '@xzawed/agent-streams'
+import { validateWorkspaceRoot, SessionDispatcher } from '@xzawed/agent-streams'
 import { loadConfig } from './config.js'
 import { createServer } from './server.js'
 import { Producer } from './streams/producer.js'
@@ -11,28 +11,31 @@ async function main() {
   const config = loadConfig()
   validateWorkspaceRoot(config.workspaceRoot) // throws if root is filesystem root
 
-  const redis = new Redis(config.redisUrl)
-  const producer = new Producer(redis)
+  const gatewayRedis = new Redis(config.redisUrl)
   const runner = new ClaudeRunner(config.anthropicApiKey, config.claudeModel)
-  const developer = new Developer(producer, runner, config)
 
-  const sessionId = process.env.DEVELOPER_SESSION_ID
-  if (!sessionId) {
-    console.warn('[xzawedDeveloper] DEVELOPER_SESSION_ID not set — consuming from "default" stream only')
-  }
-  const effectiveSessionId = sessionId ?? 'default'
-  const consumer = new Consumer(redis, (msg) => developer.handle(msg))
+  const dispatcher = new SessionDispatcher(
+    gatewayRedis,
+    'manager:to-developer:sessions',
+    'developer-session-dispatcher',
+    (_sessionId: string) => {
+      const sessionRedis = new Redis(config.redisUrl)
+      const producer = new Producer(sessionRedis)
+      const developer = new Developer(producer, runner, config)
+      return new Consumer(sessionRedis, (msg) => developer.handle(msg))
+    },
+  )
 
   const server = createServer()
   await server.listen({ port: config.port, host: '0.0.0.0' })
-  console.log(`xzawedDeveloper listening on :${config.port} (session: ${effectiveSessionId})`)
+  console.log(`xzawedDeveloper listening on :${config.port}`)
 
-  consumer.start(effectiveSessionId).catch(console.error)
+  dispatcher.start().catch(console.error)
 
   const cleanup = async () => {
-    consumer.stop()
+    dispatcher.stop()
     await server.close()
-    await redis.quit()
+    await gatewayRedis.quit()
     process.exit(0)
   }
   process.on('SIGTERM', cleanup)

@@ -1,5 +1,5 @@
 import { Redis } from 'ioredis'
-import { validateWorkspaceRoot } from '@xzawed/agent-streams'
+import { validateWorkspaceRoot, SessionDispatcher } from '@xzawed/agent-streams'
 import { loadConfig } from './config.js'
 import { createServer } from './server.js'
 import { Producer } from './streams/producer.js'
@@ -11,25 +11,32 @@ async function main() {
   const config = loadConfig()
   validateWorkspaceRoot(config.workspaceRoot) // throws if root is filesystem root
 
-  const redis = new Redis(config.redisUrl)
-  const producer = new Producer(redis)
+  const gatewayRedis = new Redis(config.redisUrl)
   const store = new WatcherStore(config.maxWatchers)
-  const watcher = new Watcher(producer, store, config)
 
-  const sessionId = process.env.WATCHER_SESSION_ID ?? 'default'
-  const consumer = new Consumer(redis, (msg) => watcher.handle(msg))
+  const dispatcher = new SessionDispatcher(
+    gatewayRedis,
+    'manager:to-watcher:sessions',
+    'watcher-session-dispatcher',
+    (_sessionId: string) => {
+      const sessionRedis = new Redis(config.redisUrl)
+      const producer = new Producer(sessionRedis)
+      const watcher = new Watcher(producer, store, config)
+      return new Consumer(sessionRedis, (msg) => watcher.handle(msg))
+    },
+  )
 
   const server = createServer()
   await server.listen({ port: config.port, host: '0.0.0.0' })
-  console.log(`xzawedWatcher listening on :${config.port} (session: ${sessionId})`)
+  console.log(`xzawedWatcher listening on :${config.port}`)
 
-  consumer.start(sessionId).catch(console.error)
+  dispatcher.start().catch(console.error)
 
   const cleanup = async () => {
-    consumer.stop()
+    dispatcher.stop()
     await store.stopAll()
     await server.close()
-    await redis.quit()
+    await gatewayRedis.quit()
     process.exit(0)
   }
   process.on('SIGTERM', cleanup)

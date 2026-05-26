@@ -1,4 +1,5 @@
 import { Redis } from 'ioredis'
+import { SessionDispatcher } from '@xzawed/agent-streams'
 import { loadConfig } from './config.js'
 import { createServer } from './server.js'
 import { Producer } from './streams/producer.js'
@@ -9,30 +10,34 @@ import { Designer } from './designer.js'
 async function main() {
   const config = loadConfig()
 
-  const redis = new Redis(config.redisUrl)
-  const producer = new Producer(redis)
+  const gatewayRedis = new Redis(config.redisUrl)
   const runner = new ClaudeRunner(config.anthropicApiKey, config.claudeModel)
-  const designer = new Designer(producer, runner)
 
-  const sessionId = process.env.DESIGNER_SESSION_ID
-  if (!sessionId) {
-    console.warn('[xzawedDesigner] DESIGNER_SESSION_ID not set — consuming from "default" stream only')
-  }
-  const effectiveSessionId = sessionId ?? 'default'
-  const consumer = new Consumer(redis, (msg) => designer.handle(msg))
+  const dispatcher = new SessionDispatcher(
+    gatewayRedis,
+    'manager:to-designer:sessions',
+    'designer-session-dispatcher',
+    (_sessionId: string) => {
+      const sessionRedis = new Redis(config.redisUrl)
+      const producer = new Producer(sessionRedis)
+      const designer = new Designer(producer, runner)
+      return new Consumer(sessionRedis, (msg) => designer.handle(msg))
+    },
+  )
 
   const server = createServer()
   await server.listen({ port: config.port, host: '0.0.0.0' })
-  console.log(`xzawedDesigner listening on :${config.port} (session: ${effectiveSessionId})`)
+  console.log(`xzawedDesigner listening on :${config.port}`)
 
-  consumer.start(effectiveSessionId).catch(console.error)
+  dispatcher.start().catch(console.error)
 
-  process.on('SIGTERM', async () => {
-    consumer.stop()
+  const cleanup = async () => {
+    dispatcher.stop()
     await server.close()
-    await redis.quit()
+    await gatewayRedis.quit()
     process.exit(0)
-  })
+  }
+  process.on('SIGTERM', cleanup)
 }
 
 await main().catch((err: unknown) => {
