@@ -83,14 +83,14 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
           TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
-          NODE_OPTIONS: --max-old-space-size=4096
+          NODE_OPTIONS: --max-old-space-size=1024
         run: pnpm test
 
       - name: Generate server coverage
         working-directory: ${{ matrix.dir }}/packages/server
         env:
           TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
-          NODE_OPTIONS: --max-old-space-size=4096
+          NODE_OPTIONS: --max-old-space-size=1024
         run: pnpm test:coverage
 
       - name: Generate ui coverage
