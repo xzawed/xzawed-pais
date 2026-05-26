@@ -1,3 +1,4 @@
+import { getRedisClient } from '../streams/redis.client.js'
 import type { ToolHandler } from './handler.interface.js'
 
 interface RegisterInput {
@@ -15,10 +16,10 @@ interface RegisterOutput {
   status: 'registered' | 'cloning'
 }
 
-export function createRegisterProjectHandler(
-  orchestratorUrl: string,
-  serviceToken: string,
-): ToolHandler<RegisterInput, RegisterOutput> {
+const TIMEOUT_MS = 30_000
+const REQUEST_STREAM = 'manager:to-orchestrator:projects'
+
+export function createRegisterProjectHandler(redisUrl: string): ToolHandler<RegisterInput, RegisterOutput> {
   return {
     name: 'register_project',
     description: '외부 서비스(로컬 디렉토리 또는 GitHub 리포)를 프로젝트로 등록하고 현재 세션에 연결합니다',
@@ -35,23 +36,51 @@ export function createRegisterProjectHandler(
       required: ['name', 'workspaceType'],
     },
     async execute(input, sessionId): Promise<RegisterOutput> {
-      const url = new URL(`/internal/sessions/${sessionId}/register-project`, orchestratorUrl)
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        throw new Error('Invalid orchestrator URL protocol')
+      const redis = getRedisClient(redisUrl)
+      const responseStream = `orchestrator:to-manager:projects:${sessionId}`
+
+      // Capture stream tip before publishing to avoid missing responses
+      const tip = await redis.xrevrange(responseStream, '+', '-', 'COUNT', '1') as [string, string[]][]
+      let lastId = tip[0]?.[0] ?? '0-0'
+
+      await redis.xadd(REQUEST_STREAM, '*', 'data', JSON.stringify({
+        type: 'register_project_request',
+        sessionId,
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now(),
+        payload: input,
+      }))
+
+      const deadline = Date.now() + TIMEOUT_MS
+      while (Date.now() < deadline) {
+        const blockMs = Math.min(deadline - Date.now(), 5_000)
+        if (blockMs <= 0) break
+
+        const results = await redis.xread(
+          'COUNT', '5', 'BLOCK', String(blockMs),
+          'STREAMS', responseStream, lastId,
+        ) as [string, [string, string[]][]][] | null
+
+        if (!results) continue
+
+        for (const [, messages] of results) {
+          for (const [msgId, fields] of messages) {
+            lastId = msgId
+            const dataIdx = fields.indexOf('data')
+            if (dataIdx === -1) continue
+            const raw = fields[dataIdx + 1]
+            if (!raw) continue
+            const msg = JSON.parse(raw) as { type: string; payload: unknown }
+            if (msg.type === 'register_project_response') return msg.payload as RegisterOutput
+            if (msg.type === 'project_error') {
+              const err = msg.payload as { error: string }
+              throw new Error(`register_project failed: ${err.error}`)
+            }
+          }
+        }
       }
-      const res = await fetch(url.toString(), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${serviceToken}`,
-        },
-        body: JSON.stringify(input),
-      })
-      if (!res.ok) {
-        const body = await res.text()
-        throw new Error(`register_project failed (${res.status}): ${body}`)
-      }
-      return res.json() as Promise<RegisterOutput>
+
+      throw new Error('register_project timed out after 30s')
     },
   }
 }

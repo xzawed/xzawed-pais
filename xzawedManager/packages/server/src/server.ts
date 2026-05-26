@@ -52,10 +52,9 @@ export async function buildServer(
   if (config.GITHUB_TOKEN) {
     registry.register(createGithubOpsHandler(config.GITHUB_TOKEN))
   }
-  if (config.ORCHESTRATOR_URL && config.ORCHESTRATOR_SERVICE_TOKEN) {
-    registry.register(createRegisterProjectHandler(config.ORCHESTRATOR_URL, config.ORCHESTRATOR_SERVICE_TOKEN))
-    registry.register(createSwitchProjectHandler(config.ORCHESTRATOR_URL, config.ORCHESTRATOR_SERVICE_TOKEN))
-  }
+  // ORCHESTRATOR_URL 조건 제거: Redis URL만 필요
+  registry.register(createRegisterProjectHandler(config.REDIS_URL))
+  registry.register(createSwitchProjectHandler(config.REDIS_URL))
 
   const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry)
   const producer = new StreamProducer(config.REDIS_URL)
