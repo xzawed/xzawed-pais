@@ -7,7 +7,7 @@ export default defineConfig({
     pool: 'forks',
     poolOptions: {
       forks: {
-        singleFork: process.env.CI === 'true',
+        maxForks: process.env.CI === 'true' ? 1 : undefined,
       },
     },
     coverage: {
