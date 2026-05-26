@@ -10,10 +10,6 @@ export default defineConfig({
         maxForks: process.env.CI === 'true' ? 1 : undefined,
         forkOptions: process.env.CI === 'true' ? {
           execArgv: ['--max-old-space-size=512'],
-          env: {
-            ...process.env,
-            NODE_OPTIONS: '--max-old-space-size=512',
-          },
         } : undefined,
       },
     },
