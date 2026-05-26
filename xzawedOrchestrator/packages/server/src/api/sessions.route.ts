@@ -3,7 +3,6 @@ import type { Pool } from 'pg'
 import type { WebSocket } from 'ws'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { ClaudeRunner, RunOptions } from '../claude/runner.interface.js'
-import type { ManagerClient } from '../manager/manager.client.js'
 import type { StreamProducer } from '../streams/producer.js'
 import type { Message, ManagerToOrchestratorMessage, Chunk } from '@xzawed/shared'
 import { StreamConsumer } from '../streams/consumer.js'
@@ -143,7 +142,6 @@ interface SessionsRoutesConfig {
   store: SessionStore
   runner: ClaudeRunner
   wsSessions: Map<string, WebSocket>
-  manager: ManagerClient
   redisUrl: string
   producer: StreamProducer
   sessionConsumers: Map<string, StreamConsumer>
@@ -211,7 +209,7 @@ export async function sessionsRoutes(
   config: SessionsRoutesConfig
 ): Promise<void> {
   const {
-    store, runner, wsSessions, manager, redisUrl, producer,
+    store, runner, wsSessions, redisUrl, producer,
     sessionConsumers, sessionCleanup, anthropicClient, claudeModel,
     authHook, pool, userAuthHook,
   } = config
@@ -251,8 +249,8 @@ export async function sessionsRoutes(
       void store.delete(session.id).catch(() => undefined)
     })
 
-    void manager.startSession(session.id).catch((err: unknown) => {
-      req.log.warn({ err, sessionId: session.id }, 'Failed to start Manager session')
+    void producer.publishSessionGateway(session.id).catch((err: unknown) => {
+      req.log.warn({ err, sessionId: session.id }, 'Failed to publish session gateway init')
     })
 
     const consumer = new StreamConsumer(redisUrl)

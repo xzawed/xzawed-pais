@@ -13,7 +13,6 @@ export interface Config {
   remoteUser?: string
   remoteKeyPath?: string
   redisUrl: string
-  managerUrl: string
   databaseUrl?: string
   userJwtSecret?: string
   serveWeb: boolean
@@ -62,7 +61,6 @@ export function loadConfig(): Config {
     remoteUser: process.env.REMOTE_USER,
     remoteKeyPath: process.env.REMOTE_KEY_PATH,
     redisUrl: process.env.REDIS_URL ?? 'redis://localhost:6379',
-    managerUrl: process.env.MANAGER_URL ?? 'http://localhost:3001',
     databaseUrl: process.env.DATABASE_URL,
     userJwtSecret,
     serveWeb: process.env.SERVE_WEB === 'true',

@@ -67,7 +67,6 @@ import { issueAccessToken } from '../auth/tokens.js'
 const BASE_CONFIG = {
   port: 0,
   redisUrl: 'redis://127.0.0.1:6380',
-  managerUrl: 'http://127.0.0.1:9999',
   claudeMode: 'cli' as const,
   mode: 'local' as const,
   auth: 'none' as const,

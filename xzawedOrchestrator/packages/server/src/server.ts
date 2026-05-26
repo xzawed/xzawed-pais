@@ -13,7 +13,6 @@ import { InMemorySessionStore } from './sessions/session.store.js'
 import { PgSessionStore } from './sessions/pg-session.store.js'
 import { makeUserAuthHook } from './auth/user-auth.hook.js'
 import { createRunner } from './claude/runner.factory.js'
-import { ManagerClient } from './manager/manager.client.js'
 import { StreamProducer } from './streams/producer.js'
 import { StreamConsumer } from './streams/consumer.js'
 import { healthRoutes } from './api/health.route.js'
@@ -71,7 +70,6 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
 
   const store = dbPool ? new PgSessionStore(dbPool) : new InMemorySessionStore()
   const runner = runnerOverride ?? createRunner(config)
-  const manager = new ManagerClient(config.managerUrl)
   const producer = new StreamProducer(config.redisUrl)
   const wsSessions = new Map<string, WebSocket>()
   const sessionConsumers = new Map<string, StreamConsumer>()
@@ -103,7 +101,7 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     : undefined
 
   await app.register(sessionsRoutes, {
-    store, runner, wsSessions, manager,
+    store, runner, wsSessions,
     redisUrl: config.redisUrl, producer, sessionConsumers, sessionCleanup,
     anthropicClient,
     claudeModel: config.claudeModel,

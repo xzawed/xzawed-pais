@@ -14,7 +14,6 @@ import { sessionsRoutes, resolveSessionWorkspaceRoot } from '../api/sessions.rou
 import { makeUserAuthHook } from '../auth/user-auth.hook.js'
 import { InMemorySessionStore } from '../sessions/session.store.js'
 import { issueAccessToken } from '../auth/tokens.js'
-import type { ManagerClient } from '../manager/manager.client.js'
 import type { StreamProducer } from '../streams/producer.js'
 import type { Project } from '../projects/project.repo.js'
 
@@ -56,9 +55,8 @@ async function buildAuthedApp(poolRows: Record<string, unknown>[]): Promise<{ ap
     store,
     runner: { async *send() { yield { type: 'done', content: '' } } },
     wsSessions: new Map(),
-    manager: { startSession: vi.fn().mockResolvedValue(undefined) } as unknown as ManagerClient,
     redisUrl: 'redis://127.0.0.1:6380',
-    producer: { publish: vi.fn().mockResolvedValue(undefined) } as unknown as StreamProducer,
+    producer: { publish: vi.fn().mockResolvedValue(undefined), publishSessionGateway: vi.fn().mockResolvedValue(undefined) } as unknown as StreamProducer,
     sessionConsumers: new Map(),
     sessionCleanup: new Map(),
     userAuthHook,

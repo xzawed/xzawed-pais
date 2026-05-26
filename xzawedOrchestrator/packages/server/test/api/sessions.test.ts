@@ -1,12 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 
-vi.mock('../../src/manager/manager.client.js', () => ({
-  ManagerClient: class {
-    startSession = vi.fn().mockResolvedValue(undefined)
-  },
-}))
-
 const mockStart = vi.fn().mockResolvedValue(undefined)
 const mockStop = vi.fn()
 
@@ -19,8 +13,9 @@ vi.mock('../../src/streams/consumer.js', () => ({
 
 // Mock StreamProducer before any import of server.ts
 const mockPublish = vi.fn().mockResolvedValue('mock-stream-id')
+const mockPublishSessionGateway = vi.fn().mockResolvedValue(undefined)
 vi.mock('../../src/streams/producer.js', () => ({
-  StreamProducer: vi.fn().mockImplementation(() => ({ publish: mockPublish })),
+  StreamProducer: vi.fn().mockImplementation(() => ({ publish: mockPublish, publishSessionGateway: mockPublishSessionGateway })),
 }))
 
 // Mock runner factory to return a controllable stub
@@ -48,7 +43,6 @@ describe('Sessions API', () => {
       claudeMode: 'cli',
       claudeModel: 'claude-sonnet-4-6',
       redisUrl: 'redis://localhost:6379',
-      managerUrl: 'http://localhost:3001',
     })
     await app.ready()
   })
@@ -71,6 +65,8 @@ describe('Sessions API', () => {
     const body = res.json()
     expect(body).toHaveProperty('sessionId')
     expect(typeof body.sessionId).toBe('string')
+    expect(mockPublishSessionGateway).toHaveBeenCalledOnce()
+    expect(mockPublishSessionGateway).toHaveBeenCalledWith(body.sessionId)
   })
 
   it('GET /sessions/:id/messages returns empty array for new session', async () => {
