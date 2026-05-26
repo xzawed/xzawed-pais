@@ -12,6 +12,7 @@ export class RedisAgentHandler<TInput, TOutput>
   implements ToolHandler<TInput, TOutput> {
 
   private _redis: Redis | null = null
+  private readonly _notifiedSessions = new Set<string>()
 
   constructor(
     private readonly redisUrl: string,
@@ -28,6 +29,23 @@ export class RedisAgentHandler<TInput, TOutput>
   private get redis(): Redis {
     this._redis ??= new Redis(this.redisUrl)
     return this._redis
+  }
+
+  private async ensureSessionStream(requestStream: string): Promise<void> {
+    const group = `${this.agentName}-consumers`
+    try {
+      await this.redis.xgroup('CREATE', requestStream, group, '$', 'MKSTREAM')
+    } catch (e: unknown) {
+      if (!(e instanceof Error && e.message.includes('BUSYGROUP'))) throw e
+    }
+  }
+
+  private async notifyGateway(sessionId: string): Promise<void> {
+    const gatewayStream = `manager:to-${this.agentName}:sessions`
+    await this.redis.xadd(gatewayStream, '*', 'data', JSON.stringify({
+      sessionId,
+      timestamp: Date.now(),
+    }))
   }
 
   private async getStreamTip(responseStream: string): Promise<string> {
@@ -104,11 +122,15 @@ export class RedisAgentHandler<TInput, TOutput>
   }
 
   async execute(input: TInput, sessionId: string, userContext?: UserContext): Promise<TOutput> {
-    // Agents subscribe to a single shared stream (manager:to-{agent}:default).
-    // Session routing is handled via the sessionId embedded in the message payload;
-    // responses arrive on the session-specific stream {agent}:to-manager:{sessionId}.
-    const requestStream = `manager:to-${this.agentName}:default`
+    const requestStream = `manager:to-${this.agentName}:${sessionId}`
     const responseStream = `${this.agentName}:to-manager:${sessionId}`
+
+    const notifyKey = `${this.agentName}:${sessionId}`
+    if (!this._notifiedSessions.has(notifyKey)) {
+      await this.ensureSessionStream(requestStream)
+      await this.notifyGateway(sessionId)
+      this._notifiedSessions.add(notifyKey)
+    }
 
     // Get tip BEFORE sending to avoid missing responses in the race window
     let lastId = await this.getStreamTip(responseStream)
