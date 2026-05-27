@@ -165,8 +165,8 @@ export async function projectsRoutes(
       } else if (workspaceType === 'github') {
         if (!repoUrl) return reply.status(400).send({ error: 'repoUrl required' })
         const parsedUrl = new URL(repoUrl)
-        if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
-          return reply.status(400).send({ error: 'repoUrl must use https or http protocol' })
+        if (parsedUrl.protocol !== 'https:') {
+          return reply.status(400).send({ error: 'repoUrl must use https protocol' })
         }
         workspacePath = workspaceSvc.clonePath(id)
         await workspaceSvc.cloneRepo(repoUrl, workspacePath, branch)

@@ -217,6 +217,8 @@ export async function sessionsRoutes(
   const messageStore = new Map<string, Message[]>()
   const claudeSessionIds = new Map<string, string>()
   const taskStore = new TaskStore()
+  // Guard against concurrent message processing for the same session
+  const processingSessionIds = new Set<string>()
 
   const msgRepo = pool ? new MessageRepo(pool) : undefined
   const effectiveAuthHook = userAuthHook ?? authHook
@@ -269,6 +271,8 @@ export async function sessionsRoutes(
   app.get<{ Params: { id: string } }>('/sessions/:id/messages', routeOpts, async (req, reply) => {
     const session = await store.findById(req.params.id)
     if (!session) return reply.status(404).send({ error: 'Session not found' })
+    // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
+    if (userAuthHook && !req.authUser) return reply.status(401).send({ error: 'User authentication required' })
     if (req.authUser && session.userId !== req.authUser.sub) {
       return reply.status(404).send({ error: 'Session not found' })
     }
@@ -282,8 +286,16 @@ export async function sessionsRoutes(
     async (req, reply) => {
       const session = await store.findById(req.params.id)
       if (!session) return reply.status(404).send({ error: 'Session not found' })
+      // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
+      if (userAuthHook && !req.authUser) return reply.status(401).send({ error: 'User authentication required' })
       if (req.authUser && session.userId !== req.authUser.sub) {
         return reply.status(404).send({ error: 'Session not found' })
+      }
+
+      const sessionId = req.params.id
+      // Guard against concurrent message processing for the same session
+      if (processingSessionIds.has(sessionId)) {
+        return reply.status(409).send({ error: 'Session is already processing a message' })
       }
 
       const userMsgId = crypto.randomUUID()
@@ -305,10 +317,10 @@ export async function sessionsRoutes(
         snapshot = [...history]
       }
 
-      const sessionId = req.params.id
       const capturedProjectId = session.projectId
       const capturedUserId = session.userId
 
+      processingSessionIds.add(sessionId)
       ;(async () => {
         const socket = wsSessions.get(sessionId)
         const assistantMsgId = crypto.randomUUID()
@@ -335,10 +347,13 @@ export async function sessionsRoutes(
 
           socket?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
         } catch (err) {
-          const content = err instanceof Error ? err.message : String(err)
-          socket?.send(JSON.stringify({ type: 'error', content }))
+          req.log.error({ err, sessionId }, 'Session processing error')
+          socket?.send(JSON.stringify({ type: 'error', content: '처리 중 오류가 발생했습니다. 다시 시도해주세요.' }))
+        } finally {
+          processingSessionIds.delete(sessionId)
         }
       })().catch((err: unknown) => {
+        processingSessionIds.delete(sessionId)
         app.log.error({ err, sessionId }, 'Unhandled error in message processing')
       })
 
@@ -349,6 +364,8 @@ export async function sessionsRoutes(
   app.get<{ Params: { id: string } }>('/sessions/:id/tasks', routeOpts, async (req, reply) => {
     const session = await store.findById(req.params.id)
     if (!session) return reply.status(404).send({ error: 'Session not found' })
+    // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
+    if (userAuthHook && !req.authUser) return reply.status(401).send({ error: 'User authentication required' })
     if (req.authUser && session.userId !== req.authUser.sub) {
       return reply.status(404).send({ error: 'Session not found' })
     }
@@ -364,10 +381,12 @@ export async function sessionsRoutes(
     async (req, reply) => {
       const session = await store.findById(req.params.id)
       if (!session) return reply.status(404).send({ error: 'Session not found' })
+      // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
+      if (userAuthHook && !req.authUser) return reply.status(401).send({ error: 'User authentication required' })
       if (req.authUser && session.userId !== req.authUser.sub) {
         return reply.status(404).send({ error: 'Session not found' })
       }
-      const { action, data } = req.body
+      const { action } = req.body
       if (!action || typeof action !== 'string') {
         return reply.status(400).send({ error: 'action is required' })
       }
@@ -378,11 +397,7 @@ export async function sessionsRoutes(
           messageId: crypto.randomUUID(),
           timestamp: Date.now(),
           type: 'info_response',
-          payload: {
-            intent: action,
-            context: data ?? {},
-            priority: 'normal',
-          },
+          payload: { answer: action },
         })
       } catch (publishErr: unknown) {
         app.log.warn({ err: publishErr }, 'Redis publish failed for ui-action')
