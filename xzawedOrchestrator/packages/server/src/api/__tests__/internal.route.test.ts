@@ -157,7 +157,7 @@ describe('internalRoutes — POST /internal/sessions/:id/register-project', () =
       payload: { name: 'app', workspaceType: 'github', repoUrl: 'ftp://github.com/user/repo' },
     })
     expect(res.statusCode).toBe(400)
-    expect(JSON.parse(res.body)).toEqual({ error: 'repoUrl must use https or http protocol' })
+    expect(JSON.parse(res.body)).toEqual({ error: 'repoUrl must use https protocol' })
   })
 
   it('returns 200 with status=cloning for github workspace type', async () => {

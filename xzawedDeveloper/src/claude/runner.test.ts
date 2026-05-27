@@ -26,8 +26,8 @@ beforeEach(() => {
 describe('ClaudeRunner.parseChanges', () => {
   it('parses valid JSON array', () => {
     const input = JSON.stringify([
-      { path: '/app/src/a.ts', operation: 'create', content: 'hello' },
-      { path: '/app/src/b.ts', operation: 'delete' },
+      { path: 'src/a.ts', operation: 'create', content: 'hello' },
+      { path: 'src/b.ts', operation: 'delete' },
     ])
     const result = runner.parseChanges(input)
     expect(result).toHaveLength(2)
@@ -36,14 +36,14 @@ describe('ClaudeRunner.parseChanges', () => {
   })
 
   it('strips ```json code fences', () => {
-    const input = '```json\n[{"path":"/a.ts","operation":"create","content":"x"}]\n```'
+    const input = '```json\n[{"path":"src/a.ts","operation":"create","content":"x"}]\n```'
     const result = runner.parseChanges(input)
     expect(result).toHaveLength(1)
-    expect(result[0]?.path).toBe('/a.ts')
+    expect(result[0]?.path).toBe('src/a.ts')
   })
 
   it('strips plain ``` code fences', () => {
-    const input = '```\n[{"path":"/b.ts","operation":"modify","content":"y"}]\n```'
+    const input = '```\n[{"path":"src/b.ts","operation":"modify","content":"y"}]\n```'
     const result = runner.parseChanges(input)
     expect(result).toHaveLength(1)
   })
@@ -57,13 +57,13 @@ describe('ClaudeRunner.parseChanges', () => {
   })
 
   it('returns [] when JSON is not an array', () => {
-    expect(runner.parseChanges('{"path":"/a.ts"}')).toEqual([])
+    expect(runner.parseChanges('{"path":"src/a.ts"}')).toEqual([])
   })
 
   it('filters items missing required fields', () => {
     const input = JSON.stringify([
-      { path: '/a.ts', operation: 'create', content: 'x' },
-      { path: '/b.ts' },
+      { path: 'src/a.ts', operation: 'create', content: 'x' },
+      { path: 'src/b.ts' },
       { operation: 'delete' },
     ])
     const result = runner.parseChanges(input)
@@ -72,20 +72,30 @@ describe('ClaudeRunner.parseChanges', () => {
 
   it('create/modify without content is filtered out', () => {
     const input = JSON.stringify([
-      { path: '/a.ts', operation: 'create' },
-      { path: '/b.ts', operation: 'modify' },
-      { path: '/c.ts', operation: 'delete' },
+      { path: 'src/a.ts', operation: 'create' },
+      { path: 'src/b.ts', operation: 'modify' },
+      { path: 'src/c.ts', operation: 'delete' },
     ])
     const result = runner.parseChanges(input)
     expect(result).toHaveLength(1)
     expect(result[0]?.operation).toBe('delete')
+  })
+
+  it('rejects absolute paths at parse time', () => {
+    const input = JSON.stringify([
+      { path: '/etc/passwd', operation: 'create', content: 'evil' },
+      { path: 'src/safe.ts', operation: 'create', content: 'safe' },
+    ])
+    const result = runner.parseChanges(input)
+    expect(result).toHaveLength(1)
+    expect(result[0]?.path).toBe('src/safe.ts')
   })
 })
 
 describe('ClaudeRunner.generateChanges', () => {
   it('returns changes and summary', async () => {
     mockResponse(JSON.stringify([
-      { path: '/app/src/auth.ts', operation: 'create', content: 'export {}' },
+      { path: 'src/auth.ts', operation: 'create', content: 'export {}' },
     ]))
     const { changes, summary } = await runner.generateChanges('add auth', '/app', {})
     expect(changes).toHaveLength(1)

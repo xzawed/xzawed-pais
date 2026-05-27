@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, safeStorage, shell } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import { isSetupComplete, getSetupConfig, saveSetupConfig } from './setup-store.js'
-import { checkDocker, startDockerDesktop, installDocker } from './docker-manager.js'
+import { checkDocker, startDockerDesktop, installDocker, stopAllServices } from './docker-manager.js'
 import { checkClaude, installClaude, openClaudeLogin, waitClaudeLogin, getClaudeEmail } from './claude-detector.js'
 import { startMonitoring, stopMonitoring, registerServiceIpc } from './service-monitor.js'
 import { createTray, updateTrayIcon } from './tray-manager.js'
@@ -87,20 +87,34 @@ function registerIpc(w: BrowserWindow): void {
   ipcMain.handle('claude:wait-login', () => waitClaudeLogin())
 
   // Token (safeStorage)
+  // token:get is intentionally NOT exposed to the renderer via preload.
+  // It is kept here for internal use only (e.g. injecting the key into docker env).
   ipcMain.handle('token:get', () => {
     try {
       const raw = fs.readFileSync(encKeyPath())
       return safeStorage.decryptString(raw)
     } catch { return null }
   })
+  ipcMain.handle('token:has', () => {
+    try {
+      const raw = fs.readFileSync(encKeyPath())
+      safeStorage.decryptString(raw)
+      return true
+    } catch { return false }
+  })
   ipcMain.handle('token:set', (_e, key: unknown) => {
     if (typeof key !== 'string' || key.length === 0 || key.length > 512) {
       return { success: false, error: 'Invalid key' }
     }
-    const enc = safeStorage.encryptString(key)
-    const p = encKeyPath()
-    fs.mkdirSync(path.dirname(p), { recursive: true })
-    fs.writeFileSync(p, enc)
+    try {
+      const enc = safeStorage.encryptString(key)
+      const p = encKeyPath()
+      fs.mkdirSync(path.dirname(p), { recursive: true })
+      fs.writeFileSync(p, enc)
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) }
+    }
   })
   ipcMain.handle('token:clear', () => {
     try { fs.unlinkSync(encKeyPath()) } catch { /* ignore */ }
@@ -140,6 +154,13 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   stopMonitoring()
+  // Stop the Docker Compose stack when the user quits the app.
+  // Note: before-quit is synchronous so we cannot await this; the containers
+  // may not fully stop before the process exits on fast machines, but this is
+  // still better than leaving them running with no cleanup at all.
+  void stopAllServices().catch((err: unknown) => {
+    console.error('[main] Failed to stop services on quit:', err)
+  })
 })
 
 app.on('window-all-closed', () => {

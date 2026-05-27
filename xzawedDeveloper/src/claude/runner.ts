@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import path from 'node:path'
 import type { FileChange } from '../types.js'
 
 const API_TIMEOUT_MS = 30_000
@@ -85,6 +86,8 @@ function isFileChange(item: unknown): item is FileChange {
   const validOp =
     obj['operation'] === 'create' || obj['operation'] === 'modify' || obj['operation'] === 'delete'
   if (!validOp || typeof obj['path'] !== 'string') return false
+  // Reject absolute paths at parse time — defense in depth
+  if (path.isAbsolute(obj['path'] as string)) return false
   if ((obj['operation'] === 'create' || obj['operation'] === 'modify') &&
       typeof obj['content'] !== 'string') {
     return false

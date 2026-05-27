@@ -66,9 +66,10 @@ contextBridge.exposeInMainWorld('launcherAPI', {
   },
 
   // Token (safeStorage)
-  tokenGet: (): Promise<string | null> =>
-    ipcRenderer.invoke('token:get'),
-  tokenSet: (key: string): Promise<void> =>
+  // tokenGet is intentionally NOT exposed: raw API keys must not flow to the renderer.
+  tokenHas: (): Promise<boolean> =>
+    ipcRenderer.invoke('token:has'),
+  tokenSet: (key: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('token:set', key),
   tokenClear: (): Promise<void> =>
     ipcRenderer.invoke('token:clear'),

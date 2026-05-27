@@ -10,18 +10,33 @@ export interface UserContext {
   githubRepo?: { owner: string; repo: string; branch: string }
 }
 
-export interface OrchestratorToManagerMessage {
-  sessionId: string
-  messageId: string
-  timestamp: number
-  type: OrchestratorMessageType
-  payload: {
-    intent: string
-    context: Record<string, unknown>
-    priority: 'normal' | 'high'
-    userContext?: UserContext
-  }
-}
+export type OrchestratorToManagerMessage =
+  | {
+      sessionId: string
+      messageId: string
+      timestamp: number
+      type: 'task_request'
+      payload: {
+        intent: string
+        context: Record<string, unknown>
+        priority: 'normal' | 'high'
+        userContext?: UserContext
+      }
+    }
+  | {
+      sessionId: string
+      messageId: string
+      timestamp: number
+      type: 'info_response'
+      payload: { answer: string }
+    }
+  | {
+      sessionId: string
+      messageId: string
+      timestamp: number
+      type: 'abort'
+      payload: Record<string, never>
+    }
 
 export interface ManagerToOrchestratorMessage {
   sessionId: string
