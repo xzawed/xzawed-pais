@@ -43,6 +43,7 @@ coverage/
 
 # 기타
 .worktrees/
+.claude/worktrees/
 build-output/
 .superpowers/
 report/
