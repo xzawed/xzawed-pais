@@ -1,0 +1,16 @@
+# 로컬 node_modules / dist 제외 (Docker 내부 빌드본 사용)
+**/node_modules
+**/dist
+
+# 환경 파일 제외
+**/.env
+**/.env.local
+
+# 불필요한 대형 디렉토리 제외
+.git
+.github
+.claude
+.worktrees
+xzawedLauncher
+xzawedOrchestrator
+xzawedManager

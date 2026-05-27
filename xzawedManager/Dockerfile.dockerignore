@@ -1,0 +1,28 @@
+# xzawedManager 빌드 전용 .dockerignore
+# context: . (프로젝트 루트) 기준 — xzawedManager만 포함
+
+# 로컬 빌드 아티팩트
+**/node_modules
+**/dist
+
+# 환경 파일
+**/.env
+**/.env.local
+
+# VCS / 도구
+.git
+.github
+.claude
+.worktrees
+
+# 다른 서비스 (xzawedManager 빌드에 불필요)
+xzawedOrchestrator
+xzawedShared
+xzawedPlanner
+xzawedDeveloper
+xzawedDesigner
+xzawedTester
+xzawedBuilder
+xzawedWatcher
+xzawedSecurity
+xzawedLauncher

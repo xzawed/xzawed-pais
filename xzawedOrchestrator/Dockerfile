@@ -6,6 +6,9 @@ FROM base AS deps
 COPY xzawedOrchestrator/pnpm-workspace.yaml xzawedOrchestrator/pnpm-lock.yaml xzawedOrchestrator/package.json ./
 COPY xzawedOrchestrator/packages/shared/package.json ./packages/shared/
 COPY xzawedOrchestrator/packages/server/package.json ./packages/server/
+COPY xzawedOrchestrator/packages/ui/package.json ./packages/ui/
+COPY xzawedOrchestrator/packages/app/package.json ./packages/app/
+COPY xzawedOrchestrator/packages/web/package.json ./packages/web/
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM deps AS build

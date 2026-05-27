@@ -51,3 +51,6 @@ report/
 # Superpowers 계획 아티팩트 (자동 생성, 커밋 불필요)
 # specs/는 설계 문서이므로 추적 대상 — plans/만 제외
 docs/superpowers/plans/
+
+# 로컬 테스트/개발 전용 HTML 파일
+test-dashboard.html
