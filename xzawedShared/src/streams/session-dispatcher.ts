@@ -12,6 +12,7 @@ export interface ConsumerLike {
 export class SessionDispatcher {
   private running = false
   private readonly activeConsumers = new Map<string, ConsumerLike>()
+  private readonly MAX_ACTIVE_CONSUMERS = 1000
 
   constructor(
     private readonly gatewayRedis: Redis,
@@ -86,6 +87,11 @@ export class SessionDispatcher {
     }
 
     if (!sessionId || this.activeConsumers.has(sessionId)) return
+
+    if (this.activeConsumers.size >= this.MAX_ACTIVE_CONSUMERS) {
+      console.warn(`[SessionDispatcher] max consumers (${this.MAX_ACTIVE_CONSUMERS}) reached, ignoring session ${sessionId}`)
+      return
+    }
 
     const consumer = this.consumerFactory(sessionId)
     this.activeConsumers.set(sessionId, consumer)
