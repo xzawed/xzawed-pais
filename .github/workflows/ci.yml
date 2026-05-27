@@ -83,7 +83,7 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
           TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
-          NODE_OPTIONS: --max-old-space-size=2048
+          NODE_OPTIONS: --max-old-space-size=3072
         run: pnpm vitest run --coverage --coverage.reportsDirectory=coverage/shard-1 --shard=1/2
 
       - name: Test + coverage server (shard 2/2)
@@ -91,7 +91,7 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
           TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
-          NODE_OPTIONS: --max-old-space-size=2048
+          NODE_OPTIONS: --max-old-space-size=3072
         run: pnpm vitest run --coverage --coverage.reportsDirectory=coverage/shard-2 --shard=2/2
 
       - name: Merge server coverage
