@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { Message } from '@xzawed/shared'
 import { useProjectsStore } from '@xzawed/ui'
@@ -14,6 +15,7 @@ import { parseAgentSteps } from '../lib/parseAgentSteps.js'
 import { postMessage, SessionWsClient } from '../lib/api.js'
 
 export function ChatView(): React.JSX.Element {
+  const { t } = useTranslation('app')
   const {
     sessionId, messages, streamingContent, streamingMsgId, isStreaming, isPending,
   } = useChatStore()
@@ -71,9 +73,9 @@ export function ChatView(): React.JSX.Element {
 
   if (!sessionId) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center bg-bg text-fg-ghost">
+      <div data-testid="empty-chat-message" className="flex flex-1 flex-col items-center justify-center bg-bg text-fg-ghost">
         <div className="mb-2 text-4xl">💬</div>
-        <p className="text-sm text-fg-muted">새 세션을 시작해주세요</p>
+        <p className="text-sm text-fg-muted">{t('chat.empty_state')}</p>
         <p className="mt-1 text-[10px] text-fg-ghost">사이드바의 <strong className="text-fg-dim">+ 새 세션</strong> 버튼을 클릭하거나 <kbd className="rounded border border-border bg-surface px-1 py-0.5 text-[9px]">⌘K</kbd>를 누르세요</p>
       </div>
     )
@@ -90,7 +92,7 @@ export function ChatView(): React.JSX.Element {
       {/* Title bar */}
       <div className="flex items-center gap-2 border-b border-border bg-surface-raised px-4 py-2">
         <span className="h-2 w-2 rounded-full bg-ok" />
-        <span className="text-[13px] font-semibold text-fg">현재 세션</span>
+        <span className="text-[13px] font-semibold text-fg">{t('sidebar.current_session')}</span>
         <div className="ml-auto">
           <kbd className="rounded border border-border bg-surface px-1.5 py-0.5 text-[9px] text-fg-ghost">⌘K</kbd>
         </div>

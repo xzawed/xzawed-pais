@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useIntegrationsStore, type PluginInfo } from '../store/integrations.store.js'
 import { Button } from './ui/button.js'
 import { Badge } from './ui/badge.js'
 
 export function PluginPanel(): React.JSX.Element {
   const { plugins, setActivePanel } = useIntegrationsStore()
+  const { t } = useTranslation('app')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<'all' | 'claude-code' | 'xzawed'>('all')
   const [loading, setLoading] = useState<string | null>(null)
@@ -73,10 +75,10 @@ export function PluginPanel(): React.JSX.Element {
   }
 
   return (
-    <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5 bg-bg">
+    <div data-testid="plugin-panel" className="flex flex-1 flex-col gap-4 overflow-y-auto p-5 bg-bg">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={() => setActivePanel('chat')}>← 채팅으로</Button>
-        <h2 className="text-[13px] font-semibold text-fg">📦 Plugins</h2>
+        <Button variant="ghost" size="sm" onClick={() => setActivePanel('chat')}>{t('back_to_chat', { ns: 'common' })}</Button>
+        <h2 className="text-[13px] font-semibold text-fg">{t('plugins.title')}</h2>
         <div className="ml-auto">
           <Button
             variant="default"
@@ -129,8 +131,9 @@ export function PluginPanel(): React.JSX.Element {
 
       <div className="flex gap-2">
         <input
+          data-testid="plugin-search"
           className="flex-1 rounded border border-border bg-surface px-3 py-2 text-[13px] text-fg placeholder:text-fg-ghost focus:outline-none focus:border-accent"
-          placeholder="🔍 플러그인 검색..."
+          placeholder={t('plugins.search_placeholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

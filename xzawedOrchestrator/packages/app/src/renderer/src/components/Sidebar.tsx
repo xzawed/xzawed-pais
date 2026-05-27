@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '../store/app.store.js'
 import { useChatStore } from '../store/chat.store.js'
@@ -14,21 +15,22 @@ interface SessionEntry {
   status: 'active' | 'paused' | 'idle'
 }
 
-function useSessions(currentSessionId: string | null): { today: SessionEntry[]; yesterday: SessionEntry[] } {
+function useSessions(currentSessionId: string | null, currentSessionLabel: string): { today: SessionEntry[]; yesterday: SessionEntry[] } {
   const today: SessionEntry[] = currentSessionId
-    ? [{ id: currentSessionId, label: '현재 세션', status: 'active' }]
+    ? [{ id: currentSessionId, label: currentSessionLabel, status: 'active' }]
     : []
   return { today, yesterday: [] }
 }
 
 export function Sidebar(): React.JSX.Element {
   const { settings } = useAppStore()
+  const { t } = useTranslation('app')
   const { sessionId, initSession } = useChatStore()
   const { github, mcp, plugins, setActivePanel } = useIntegrationsStore()
   const [isCreating, setIsCreating] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [todayOpen, setTodayOpen] = useState(true)
-  const { today } = useSessions(sessionId)
+  const { today } = useSessions(sessionId, t('sidebar.current_session'))
 
   async function handleNewSession(): Promise<void> {
     if (isCreating) return
@@ -57,7 +59,7 @@ export function Sidebar(): React.JSX.Element {
           <span className="text-[10px]">🔍</span>
           <input
             type="text"
-            placeholder="세션 검색..."
+            placeholder={t('sidebar.search_placeholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="flex-1 bg-transparent text-fg placeholder:text-fg-ghost outline-none text-[11px]"
@@ -78,7 +80,7 @@ export function Sidebar(): React.JSX.Element {
           transition={{ duration: 0.1 }}
         >
           <span>＋</span>
-          {isCreating ? '생성 중...' : '새 세션'}
+          {isCreating ? t('loading', { ns: 'common' }) : t('sidebar.new_session')}
         </motion.button>
       </div>
 
@@ -93,7 +95,7 @@ export function Sidebar(): React.JSX.Element {
           className="flex w-full items-center justify-between px-3 py-1 cursor-pointer select-none"
           onClick={() => setTodayOpen((v) => !v)}
         >
-          <span className="text-[9px] uppercase tracking-wide text-fg-ghost">오늘</span>
+          <span className="text-[9px] uppercase tracking-wide text-fg-ghost">{t('sidebar.today')}</span>
           <div className="flex items-center gap-1.5">
             <span className="text-[9px] text-accent">{filteredToday.length}</span>
             <span className={cn('text-[9px] text-fg-ghost transition-transform duration-150', todayOpen ? 'rotate-0' : '-rotate-90')}>▾</span>
