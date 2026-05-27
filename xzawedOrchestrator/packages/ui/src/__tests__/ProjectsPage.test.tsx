@@ -34,15 +34,15 @@ const defaultProps = {
 }
 
 describe('ProjectsPage', () => {
-  it('사용자 이메일과 Sign out 버튼 렌더링', () => {
+  it('사용자 이메일과 로그아웃 버튼 렌더링', () => {
     render(<ProjectsPage {...defaultProps} />)
     expect(screen.getByText('test@example.com')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument()
+    expect(screen.getByTestId('logout-button')).toBeInTheDocument()
   })
 
-  it('프로젝트 없을 때 New project 버튼 표시', () => {
+  it('프로젝트 없을 때 New Project 버튼 표시', () => {
     render(<ProjectsPage {...defaultProps} />)
-    expect(screen.getByRole('button', { name: /\+ new project/i })).toBeInTheDocument()
+    expect(screen.getByTestId('new-project-button')).toBeInTheDocument()
   })
 
   it('isLoading=true 이면 Loading 텍스트 표시', async () => {
@@ -76,9 +76,9 @@ describe('ProjectsPage', () => {
     expect(onSelectProject).toHaveBeenCalledWith('p1')
   })
 
-  it('New project 클릭 시 생성 폼 표시', () => {
+  it('New Project 클릭 시 생성 폼 표시', () => {
     render(<ProjectsPage {...defaultProps} />)
-    fireEvent.click(screen.getByRole('button', { name: /\+ new project/i }))
+    fireEvent.click(screen.getByTestId('new-project-button'))
     expect(screen.getByLabelText(/name/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^create$/i })).toBeInTheDocument()
   })
@@ -87,7 +87,7 @@ describe('ProjectsPage', () => {
     const onSelectProject = vi.fn()
     mockCreateProject.mockResolvedValueOnce({ id: 'new-1', name: 'Test', slug: 'test', createdAt: new Date().toISOString() })
     render(<ProjectsPage {...defaultProps} onSelectProject={onSelectProject} />)
-    fireEvent.click(screen.getByRole('button', { name: /\+ new project/i }))
+    fireEvent.click(screen.getByTestId('new-project-button'))
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Test Project' } })
     await act(async () => {
       fireEvent.submit(screen.getByRole('button', { name: /^create$/i }).closest('form')!)
@@ -99,7 +99,7 @@ describe('ProjectsPage', () => {
   it('생성 실패 시 오류 메시지 표시', async () => {
     mockCreateProject.mockRejectedValueOnce(new Error('Name taken'))
     render(<ProjectsPage {...defaultProps} />)
-    fireEvent.click(screen.getByRole('button', { name: /\+ new project/i }))
+    fireEvent.click(screen.getByTestId('new-project-button'))
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Bad Name' } })
     await act(async () => {
       fireEvent.submit(screen.getByRole('button', { name: /^create$/i }).closest('form')!)
@@ -107,11 +107,11 @@ describe('ProjectsPage', () => {
     expect(screen.getByText('Name taken')).toBeInTheDocument()
   })
 
-  it('Sign out 클릭 시 logout 및 onLogout 호출', async () => {
+  it('로그아웃 클릭 시 logout 및 onLogout 호출', async () => {
     const onLogout = vi.fn()
     render(<ProjectsPage {...defaultProps} onLogout={onLogout} />)
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /sign out/i }))
+      fireEvent.click(screen.getByTestId('logout-button'))
     })
     expect(mockLogout).toHaveBeenCalled()
     expect(onLogout).toHaveBeenCalled()

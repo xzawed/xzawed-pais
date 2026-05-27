@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@xzawed/shared": "workspace:*",
+    "i18next": "^26.3.0",
+    "react-i18next": "^17.0.8",
     "zustand": "^5.0.0"
   },
   "peerDependencies": {

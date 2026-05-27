@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../stores/auth.store.js'
 import { AuthCard, FormField, SubmitButton, FormError } from './AuthForm.js'
 
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function RegisterPage({ serverUrl, onSuccess, onLogin }: Readonly<Props>): React.JSX.Element {
+  const { t } = useTranslation('ui')
   const { register, isLoading } = useAuthStore()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -22,23 +24,48 @@ export function RegisterPage({ serverUrl, onSuccess, onLogin }: Readonly<Props>)
       await register(serverUrl, email, password, displayName || undefined)
       onSuccess()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed')
+      setError(err instanceof Error ? err.message : t('register.error_exists'))
     }
   }
 
   return (
-    <AuthCard title="Create account" subtitle="xzawed PAIS">
+    <AuthCard title={t('register.title')} subtitle="xzawed PAIS">
       <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
-        <FormError message={error} />
+        <FormError message={error} data-testid="register-error" />
         <FormField label="Display name" type="text" value={displayName} onChange={setDisplayName} />
-        <FormField label="Email" type="email" value={email} onChange={setEmail} required />
-        <FormField label="Password" type="password" value={password} onChange={setPassword} required minLength={8} />
-        <SubmitButton isLoading={isLoading} label="Create account" loadingLabel="Creating…" />
+        <FormField
+          label={t('register.email')}
+          type="email"
+          value={email}
+          onChange={setEmail}
+          required
+          data-testid="register-email"
+        />
+        <FormField
+          label={t('register.password')}
+          type="password"
+          value={password}
+          onChange={setPassword}
+          required
+          minLength={8}
+          data-testid="register-password"
+        />
+        <SubmitButton
+          isLoading={isLoading}
+          label={t('register.submit')}
+          loadingLabel="..."
+          data-testid="register-submit"
+        />
       </form>
       <p className="text-center text-sm text-fg-muted">
         {'Already have an account? '}
-        <button type="button" onClick={onLogin} className="text-accent hover:underline">
-          Sign in
+        <button
+          type="button"
+          onClick={onLogin}
+          className="text-accent hover:underline"
+          data-testid="register-go-login"
+        >
+          {t('register.go_login')}
         </button>
       </p>
     </AuthCard>
