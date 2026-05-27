@@ -16,6 +16,13 @@ vi.mock('../db/pool.js', () => ({
   closePool: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock('../projects/project-gateway.js', () => ({
+  ProjectGatewayConsumer: vi.fn().mockImplementation(() => ({
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
+  })),
+}))
+
 vi.mock('../auth/user.repo.js', () => ({
   UserRepo: vi.fn().mockImplementation(() => ({
     findByEmail: vi.fn().mockResolvedValue(null),

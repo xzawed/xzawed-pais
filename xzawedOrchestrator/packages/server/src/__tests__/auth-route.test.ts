@@ -61,6 +61,13 @@ vi.mock('../db/pool.js', () => ({
   closePool: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock('../projects/project-gateway.js', () => ({
+  ProjectGatewayConsumer: vi.fn().mockImplementation(() => ({
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
+  })),
+}))
+
 import { buildServer } from '../server.js'
 import { issueAccessToken } from '../auth/tokens.js'
 
