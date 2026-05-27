@@ -38,6 +38,7 @@ async function main() {
     process.exit(0)
   }
   process.on('SIGTERM', cleanup)
+  process.on('SIGINT', cleanup)
 }
 
 await main().catch((err: unknown) => {

@@ -54,6 +54,30 @@ updates:
       interval: weekly
     labels: [dependencies, xzawedSecurity]
 
+  - package-ecosystem: npm
+    directory: /xzawedShared
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedShared]
+
+  - package-ecosystem: npm
+    directory: /xzawedLauncher
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedLauncher]
+
+  - package-ecosystem: npm
+    directory: /xzawedLauncher/packages/app
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedLauncher]
+
+  - package-ecosystem: npm
+    directory: /xzawedLauncher/packages/shared
+    schedule:
+      interval: weekly
+    labels: [dependencies, xzawedLauncher]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

@@ -24,6 +24,9 @@ const SERVICE_MAP = [
   { pattern: /xzawedBuilder[/\\]/,   cmd: 'cd xzawedBuilder && pnpm test' },
   { pattern: /xzawedWatcher[/\\]/,   cmd: 'cd xzawedWatcher && pnpm test' },
   { pattern: /xzawedSecurity[/\\]/,  cmd: 'cd xzawedSecurity && pnpm test' },
+  { pattern: /xzawedLauncher[/\\]packages[/\\]app/,    cmd: 'cd xzawedLauncher/packages/app && pnpm build 2>&1 | tail -5' },
+  { pattern: /xzawedLauncher[/\\]packages[/\\]shared/,  cmd: 'cd xzawedLauncher/packages/shared && pnpm build 2>&1 | tail -5' },
+  { pattern: /xzawedLauncher[/\\]/,   cmd: 'cd xzawedLauncher && pnpm build 2>&1 | tail -5' },
 ]
 
 async function main() {
