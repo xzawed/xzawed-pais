@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../store/app.store.js'
+import type { Locale } from '../lib/detect-locale.js'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from './ui/dialog.js'
 import { Button } from './ui/button.js'
 
 export function SettingsModal(): React.JSX.Element {
-  const { settings, showSettings, toggleSettings, updateSettings } = useAppStore()
+  const { settings, showSettings, toggleSettings, updateSettings, locale, setLocale } = useAppStore()
+  const { t } = useTranslation('app')
   const [localUrl, setLocalUrl] = useState(settings.serverUrl)
   const [localMode, setLocalMode] = useState(settings.mode)
   const [localUserId, setLocalUserId] = useState(settings.userId)
@@ -30,16 +33,17 @@ export function SettingsModal(): React.JSX.Element {
 
   return (
     <Dialog open={showSettings} onOpenChange={toggleSettings}>
-      <DialogContent>
+      <DialogContent data-testid="settings-modal">
         <DialogHeader>
-          <DialogTitle>설정</DialogTitle>
+          <DialogTitle data-testid="settings-title">{t('settings.title')}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
           <div>
-            <label htmlFor="settings-server-url" className={labelClass}>서버 URL</label>
+            <label htmlFor="settings-server-url" className={labelClass}>{t('settings.server_url')}</label>
             <input
               id="settings-server-url"
+              data-testid="settings-server-url"
               type="text"
               value={localUrl}
               onChange={(e) => setLocalUrl(e.target.value)}
@@ -49,22 +53,24 @@ export function SettingsModal(): React.JSX.Element {
           </div>
 
           <div>
-            <label htmlFor="settings-mode" className={labelClass}>모드</label>
+            <label htmlFor="settings-mode" className={labelClass}>{t('settings.mode')}</label>
             <select
               id="settings-mode"
+              data-testid="settings-mode"
               value={localMode}
               onChange={(e) => setLocalMode(e.target.value as 'local' | 'remote')}
               className={inputClass}
             >
-              <option value="local">Local</option>
-              <option value="remote">Remote</option>
+              <option value="local">{t('settings.mode_local')}</option>
+              <option value="remote">{t('settings.mode_remote')}</option>
             </select>
           </div>
 
           <div>
-            <label htmlFor="settings-user-id" className={labelClass}>사용자 ID</label>
+            <label htmlFor="settings-user-id" className={labelClass}>{t('settings.user_id')}</label>
             <input
               id="settings-user-id"
+              data-testid="settings-user-id"
               type="text"
               value={localUserId}
               onChange={(e) => setLocalUserId(e.target.value)}
@@ -72,13 +78,28 @@ export function SettingsModal(): React.JSX.Element {
               placeholder="user-id"
             />
           </div>
+
+          <div>
+            <label htmlFor="settings-language" className={labelClass}>{t('settings.language')}</label>
+            <select
+              id="settings-language"
+              data-testid="settings-language"
+              value={locale}
+              onChange={(e) => setLocale(e.target.value as Locale)}
+              className={inputClass}
+            >
+              <option value="ko">{t('settings.lang_ko')}</option>
+              <option value="en">{t('settings.lang_en')}</option>
+              <option value="ja">{t('settings.lang_ja')}</option>
+            </select>
+          </div>
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
           <DialogClose asChild>
-            <Button variant="ghost" size="md">취소</Button>
+            <Button variant="ghost" size="md" data-testid="settings-cancel">{t('cancel', { ns: 'common' })}</Button>
           </DialogClose>
-          <Button variant="default" size="md" onClick={handleSave}>저장</Button>
+          <Button variant="default" size="md" data-testid="settings-save" onClick={handleSave}>{t('save', { ns: 'common' })}</Button>
         </div>
       </DialogContent>
     </Dialog>
