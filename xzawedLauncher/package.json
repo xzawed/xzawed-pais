@@ -6,5 +6,10 @@
     "build": "pnpm --filter @xzawed/launcher-shared build && pnpm --filter @xzawed/launcher-app build",
     "test": "pnpm --filter @xzawed/launcher-app test",
     "package": "pnpm --filter @xzawed/launcher-app package"
+  },
+  "pnpm": {
+    "overrides": {
+      "tmp": ">=0.2.6"
+    }
   }
 }
