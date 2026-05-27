@@ -1,27 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { detectLocale, LOCALES } from '../src/renderer/src/lib/detect-locale.js'
-
-// Mock localStorage for Node.js environment
-const mockLocalStorage = (() => {
-  let store: Record<string, string> = {}
-  return {
-    getItem: (key: string) => store[key] || null,
-    setItem: (key: string, value: string) => {
-      store[key] = String(value)
-    },
-    removeItem: (key: string) => {
-      delete store[key]
-    },
-    clear: () => {
-      store = {}
-    },
-  }
-})()
+import { detectLocale, LOCALES } from '../lib/detect-locale.js'
 
 describe('detectLocale', () => {
   beforeEach(() => {
-    mockLocalStorage.clear()
-    vi.stubGlobal('localStorage', mockLocalStorage)
+    localStorage.clear()
     vi.stubGlobal('navigator', { language: 'ko-KR' })
   })
 
