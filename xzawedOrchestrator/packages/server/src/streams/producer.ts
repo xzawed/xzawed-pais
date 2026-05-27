@@ -25,4 +25,18 @@ export class StreamProducer {
     if (id === null) throw new Error('Redis xadd returned null — stream may be at MAXLEN')
     return id
   }
+
+  async publishSessionGateway(sessionId: string): Promise<void> {
+    if (!UUID_V4_RE.test(sessionId)) {
+      throw new Error(`Invalid sessionId format: ${sessionId}`)
+    }
+    const redis = getRedisClient(this.redisUrl)
+    const id = await redis.xadd(
+      'orchestrator:to-manager:sessions',
+      '*',
+      'data',
+      JSON.stringify({ sessionId, timestamp: Date.now() }),
+    )
+    if (id === null) throw new Error('Redis xadd returned null — stream may be at MAXLEN')
+  }
 }

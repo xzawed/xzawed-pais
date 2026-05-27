@@ -1,46 +1,61 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { vi, describe, it, expect, afterEach } from 'vitest'
+
+vi.mock('../../streams/redis.client.js', () => ({ getRedisClient: vi.fn() }))
+
+import { getRedisClient } from '../../streams/redis.client.js'
 import { createRegisterProjectHandler } from '../register-project.js'
 
-const mockFetch = vi.fn()
-vi.stubGlobal('fetch', mockFetch)
+const SESSION_ID = 'session-1'
+
+function makeRedis(responsePayload: unknown, responseType: string) {
+  return {
+    xrevrange: vi.fn().mockResolvedValue([]),
+    xadd: vi.fn().mockResolvedValue('1-0'),
+    xread: vi.fn().mockResolvedValueOnce([
+      [`orchestrator:to-manager:projects:${SESSION_ID}`, [
+        ['2-0', ['data', JSON.stringify({
+          type: responseType,
+          sessionId: SESSION_ID,
+          messageId: 'resp-1',
+          timestamp: Date.now(),
+          payload: responsePayload,
+        })]]
+      ]]
+    ]).mockResolvedValue(null),
+  }
+}
+
+afterEach(() => vi.clearAllMocks())
 
 describe('register_project tool', () => {
-  beforeEach(() => { mockFetch.mockReset() })
+  it('로컬 프로젝트 등록 시 Redis RPC 요청 발행 및 응답 반환', async () => {
+    const expected = { projectId: 'proj-1', workspacePath: '/home/user/app', status: 'registered' }
+    const mockRedis = makeRedis(expected, 'register_project_response')
+    vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
 
-  it('로컬 프로젝트 등록 시 Orchestrator POST 호출', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ projectId: 'proj-1', workspacePath: '/home/user/app', status: 'registered' }),
-    })
-
-    const handler = createRegisterProjectHandler('http://localhost:3000', 'test-token')
+    const handler = createRegisterProjectHandler('redis://localhost:6379')
     const result = await handler.execute(
       { name: 'my-app', workspaceType: 'local', localPath: '/home/user/app' },
-      'session-1',
+      SESSION_ID,
     )
 
     expect(result.projectId).toBe('proj-1')
     expect(result.workspacePath).toBe('/home/user/app')
-    const [url, opts] = mockFetch.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('http://localhost:3000/internal/sessions/session-1/register-project')
-    expect(opts.method).toBe('POST')
-    const headers = opts.headers as Record<string, string>
-    expect(headers['Authorization']).toBe('Bearer test-token')
-    expect(JSON.parse(opts.body as string)).toEqual({ name: 'my-app', workspaceType: 'local', localPath: '/home/user/app' })
+    expect(mockRedis.xadd).toHaveBeenCalledWith(
+      'manager:to-orchestrator:projects',
+      '*',
+      'data',
+      expect.stringContaining('"type":"register_project_request"'),
+    )
   })
 
-  it('Orchestrator 응답 오류 시 Error throw', async () => {
-    mockFetch.mockResolvedValue({ ok: false, status: 400, text: async () => 'Bad Request' })
-    const handler = createRegisterProjectHandler('http://localhost:3000', 'test-token')
-    await expect(
-      handler.execute({ name: 'app', workspaceType: 'local', localPath: '/x' }, 'session-1'),
-    ).rejects.toThrow('register_project failed (400)')
-  })
+  it('project_error 응답 시 Error throw', async () => {
+    const mockRedis = makeRedis({ error: 'register_project failed: DB error' }, 'project_error')
+    vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
 
-  it('잘못된 URL 프로토콜 시 Error throw', async () => {
-    const handler = createRegisterProjectHandler('ftp://bad-url', 'test-token')
+    const handler = createRegisterProjectHandler('redis://localhost:6379')
     await expect(
-      handler.execute({ name: 'app', workspaceType: 'local', localPath: '/x' }, 'session-1'),
-    ).rejects.toThrow('Invalid orchestrator URL protocol')
+      handler.execute({ name: 'app', workspaceType: 'local', localPath: '/x' }, SESSION_ID),
+    ).rejects.toThrow('register_project failed')
   })
 })

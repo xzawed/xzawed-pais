@@ -18,7 +18,6 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     claudeMode: 'api',
     claudeModel: 'claude-sonnet-4-6',
     anthropicApiKey: 'test-key',
-    managerUrl: 'http://localhost:3001',
     mode: 'local',
     auth: 'none',
     ...overrides,

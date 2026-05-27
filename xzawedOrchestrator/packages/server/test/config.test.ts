@@ -34,13 +34,6 @@ describe('config', () => {
     expect(() => loadConfig()).toThrow('ANTHROPIC_API_KEY')
   })
 
-  it('defaults MANAGER_URL to http://localhost:3001', async () => {
-    delete process.env.MANAGER_URL
-    const { loadConfig } = await import('../src/config.js')
-    const config = loadConfig()
-    expect(config.managerUrl).toBe('http://localhost:3001')
-  })
-
   it('CLAUDE_MODE=remote + REMOTE_HOST 있지만 REMOTE_USER 없으면 throw', async () => {
     process.env.CLAUDE_MODE = 'remote'
     process.env.REMOTE_HOST = 'my-server.example.com'
