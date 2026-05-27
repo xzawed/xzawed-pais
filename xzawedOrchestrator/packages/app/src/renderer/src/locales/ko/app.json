@@ -1,0 +1,55 @@
+{
+  "settings": {
+    "title": "설정",
+    "server_url": "서버 URL",
+    "mode": "모드",
+    "mode_local": "Local",
+    "mode_remote": "Remote",
+    "user_id": "사용자 ID",
+    "language": "언어",
+    "lang_ko": "한국어",
+    "lang_en": "English",
+    "lang_ja": "日本語"
+  },
+  "sidebar": {
+    "new_session": "새 세션",
+    "search_placeholder": "세션 검색...",
+    "current_session": "현재 세션",
+    "today": "오늘"
+  },
+  "chat": {
+    "empty_state": "새 세션을 시작해주세요",
+    "input_placeholder": "메시지를 입력하세요...",
+    "send_hint": "Enter 전송 · Shift+Enter 줄바꿈"
+  },
+  "mcp": {
+    "title": "🔌 MCP 서버",
+    "tab_installed": "설치됨 ({{count}})",
+    "tab_recommended": "추천 서버",
+    "tab_custom": "직접 추가",
+    "no_servers": "설치된 MCP 서버가 없습니다. \"추천 서버\" 탭에서 설치하세요.",
+    "field_name": "이름",
+    "field_command": "실행 명령어",
+    "field_args": "인수 (공백 구분)",
+    "field_env": "환경변수 (JSON)",
+    "placeholder_name": "예: my-custom-mcp",
+    "placeholder_command": "예: npx",
+    "placeholder_args": "공백으로 구분 (따옴표 포함 인수 미지원)",
+    "placeholder_env": "예: {\"API_KEY\": \"sk-...\"}",
+    "btn_add_start": "+ 추가 및 시작",
+    "toggle_loading": "..."
+  },
+  "github": {
+    "title": "GitHub",
+    "connect_hint": "GitHub 계정을 연결하면 레포지토리를 관리할 수 있습니다."
+  },
+  "plugins": {
+    "title": "플러그인",
+    "search_placeholder": "플러그인 검색..."
+  },
+  "command_palette": {
+    "placeholder": "명령어 검색...",
+    "new_session": "새 세션",
+    "settings": "설정"
+  }
+}

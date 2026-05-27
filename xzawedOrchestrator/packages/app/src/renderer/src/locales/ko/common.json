@@ -1,0 +1,17 @@
+{
+  "save": "저장",
+  "cancel": "취소",
+  "close": "닫기",
+  "delete": "삭제",
+  "add": "추가",
+  "search": "검색",
+  "loading": "로딩 중...",
+  "error": "오류",
+  "back_to_chat": "← 채팅으로",
+  "start": "시작",
+  "stop": "중지",
+  "remove": "제거",
+  "install": "+ 설치",
+  "installing": "설치 중...",
+  "installed": "✓ 설치됨"
+}
