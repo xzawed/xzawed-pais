@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, afterEach } from 'vitest'
 
-vi.mock('../streams/redis.client.js', () => ({
+vi.mock('./redis.client.js', () => ({
   getRedisClient: vi.fn(),
 }))
 
@@ -11,9 +11,12 @@ function makeRedis(xreadgroupResults: unknown[][] = []) {
   let callCount = 0
   return {
     xgroup: vi.fn().mockResolvedValue('OK'),
-    xreadgroup: vi.fn().mockImplementation(async () => {
-      if (callCount >= xreadgroupResults.length) return null
-      return xreadgroupResults[callCount++]
+    xreadgroup: vi.fn().mockImplementation(() => {
+      if (callCount >= xreadgroupResults.length) {
+        // Simulate BLOCK timeout — yield to macrotask queue so stop()/setTimeout can fire
+        return new Promise<null>(r => setImmediate(() => r(null)))
+      }
+      return Promise.resolve(xreadgroupResults[callCount++])
     }),
     xack: vi.fn().mockResolvedValue(1),
   }

@@ -11,9 +11,12 @@ function makeRedis(responses: unknown[][] = []) {
   let call = 0
   return {
     xgroup: vi.fn().mockResolvedValue('OK'),
-    xreadgroup: vi.fn().mockImplementation(async () => {
-      if (call >= responses.length) return null
-      return responses[call++]
+    xreadgroup: vi.fn().mockImplementation(() => {
+      if (call >= responses.length) {
+        // Simulate BLOCK timeout — yield to macrotask queue so stop()/setTimeout can fire
+        return new Promise<null>(r => setImmediate(() => r(null)))
+      }
+      return Promise.resolve(responses[call++])
     }),
     xack: vi.fn().mockResolvedValue(1),
     xadd: vi.fn().mockResolvedValue('1-0'),

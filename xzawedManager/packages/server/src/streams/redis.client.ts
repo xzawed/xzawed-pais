@@ -5,7 +5,7 @@ const clients = new Map<string, Redis>()
 export function getRedisClient(url: string): Redis {
   let client = clients.get(url)
   if (!client) {
-    client = new Redis(url, { lazyConnect: true, maxRetriesPerRequest: 3, connectTimeout: 2000 })
+    client = new Redis(url, { lazyConnect: true, maxRetriesPerRequest: 3, connectTimeout: 2000, retryStrategy: process.env['VITEST'] === 'true' ? () => null : undefined })
     clients.set(url, client)
   }
   return client
