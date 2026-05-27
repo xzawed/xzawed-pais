@@ -8,4 +8,5 @@ export interface ToolHandler<TInput = Record<string, unknown>, TOutput = unknown
   description: string
   inputSchema: AnthropicInputSchema
   execute(input: TInput, sessionId: string, userContext?: UserContext): Promise<TOutput>
+  releaseSession?(sessionId: string): void
 }

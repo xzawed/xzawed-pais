@@ -1,5 +1,5 @@
 import { Redis } from 'ioredis'
-import { validateWorkspaceRoot } from '@xzawed/agent-streams'
+import { validateWorkspaceRoot, SessionDispatcher } from '@xzawed/agent-streams'
 import { loadConfig } from './config.js'
 import { createServer } from './server.js'
 import { Producer } from './streams/producer.js'
@@ -11,24 +11,31 @@ async function main() {
   const config = loadConfig()
   validateWorkspaceRoot(config.workspaceRoot) // throws if root is filesystem root
 
-  const redis = new Redis(config.redisUrl)
-  const producer = new Producer(redis)
+  const gatewayRedis = new Redis(config.redisUrl)
   const runner = new ClaudeRunner(config.anthropicApiKey, config.claudeModel)
-  const builder = new Builder(producer, runner, config)
 
-  const sessionId = process.env.BUILDER_SESSION_ID ?? 'default'
-  const consumer = new Consumer(redis, (msg) => builder.handle(msg))
+  const dispatcher = new SessionDispatcher(
+    gatewayRedis,
+    'manager:to-builder:sessions',
+    'builder-session-dispatcher',
+    (_sessionId: string) => {
+      const sessionRedis = new Redis(config.redisUrl)
+      const producer = new Producer(sessionRedis)
+      const builder = new Builder(producer, runner, config)
+      return new Consumer(sessionRedis, (msg) => builder.handle(msg))
+    },
+  )
 
   const server = createServer()
   await server.listen({ port: config.port, host: '0.0.0.0' })
-  console.log(`xzawedBuilder listening on :${config.port} (session: ${sessionId})`)
+  console.log(`xzawedBuilder listening on :${config.port}`)
 
-  consumer.start(sessionId).catch(console.error)
+  dispatcher.start().catch(console.error)
 
   const cleanup = async () => {
-    consumer.stop()
+    dispatcher.stop()
     await server.close()
-    await redis.quit()
+    await gatewayRedis.quit()
     process.exit(0)
   }
   process.on('SIGTERM', cleanup)
