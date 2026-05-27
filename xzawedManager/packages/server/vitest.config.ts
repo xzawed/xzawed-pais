@@ -5,9 +5,15 @@ export default defineConfig({
     environment: 'node',
     isolate: true,
     pool: 'forks',
+    poolOptions: {
+      forks: {
+        maxForks: process.env.CI === 'true' ? 1 : undefined,
+      },
+    },
     coverage: {
-      provider: 'v8',
-      reporter: ['lcov'],
+      provider: 'istanbul',
+      reporter: ['lcov', 'json'],
+      include: ['src/**/*.ts'],
     },
   },
 })

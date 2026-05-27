@@ -218,7 +218,11 @@ describe('ClaudeRunner', () => {
       // We rely on the runner eventually exhausting whatever MAX_ITERATIONS is set to.
       await expect(runner.run(baseRunOptions())).rejects.toThrow(/exceeded.*iterations/i)
 
-      process.env['MANAGER_MAX_ITERATIONS'] = origEnv ?? undefined as unknown as string
+      if (origEnv !== undefined) {
+        process.env['MANAGER_MAX_ITERATIONS'] = origEnv
+      } else {
+        delete process.env['MANAGER_MAX_ITERATIONS']
+      }
     }, 30_000)
   })
 

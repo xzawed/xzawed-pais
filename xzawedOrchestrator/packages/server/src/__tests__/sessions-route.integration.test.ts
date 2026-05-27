@@ -13,12 +13,7 @@ vi.mock('../streams/consumer.js', () => ({
 vi.mock('../streams/producer.js', () => ({
   StreamProducer: vi.fn().mockImplementation(() => ({
     publish: vi.fn().mockRejectedValue(new Error('no redis in test')),
-  })),
-}))
-
-vi.mock('../manager/manager.client.js', () => ({
-  ManagerClient: vi.fn().mockImplementation(() => ({
-    startSession: vi.fn().mockRejectedValue(new Error('no manager in test')),
+    publishSessionGateway: vi.fn().mockRejectedValue(new Error('no redis in test')),
   })),
 }))
 
@@ -35,7 +30,7 @@ function makeMockRunner(chunks: Chunk[]): ClaudeRunner {
 
 async function startServer(runner: ClaudeRunner): Promise<{ app: FastifyInstance; port: number }> {
   const app = await buildServer(
-    { port: 0, redisUrl: 'redis://127.0.0.1:6380', managerUrl: 'http://127.0.0.1:9999', claudeMode: 'cli', mode: 'local', auth: 'none', claudeModel: 'test', serveWeb: false },
+    { port: 0, redisUrl: 'redis://127.0.0.1:6380', claudeMode: 'cli', mode: 'local', auth: 'none', claudeModel: 'test', serveWeb: false },
     runner
   )
   await app.listen({ port: 0, host: '127.0.0.1' })

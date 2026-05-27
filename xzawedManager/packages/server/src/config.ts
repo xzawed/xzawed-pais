@@ -10,8 +10,6 @@ const configSchema = z
     SERVICE_JWT_SECRET: z.string().optional(),
     DATABASE_URL: z.string().optional(),
     GITHUB_TOKEN: z.string().optional(),
-    ORCHESTRATOR_URL: z.string().url().optional(),
-    ORCHESTRATOR_SERVICE_TOKEN: z.string().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

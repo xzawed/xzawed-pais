@@ -16,6 +16,13 @@ vi.mock('../db/pool.js', () => ({
   closePool: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock('../projects/project-gateway.js', () => ({
+  ProjectGatewayConsumer: vi.fn().mockImplementation(() => ({
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
+  })),
+}))
+
 vi.mock('../auth/user.repo.js', () => ({
   UserRepo: vi.fn().mockImplementation(() => ({
     findByEmail: vi.fn().mockResolvedValue(null),
@@ -44,7 +51,6 @@ import { buildServer } from '../server.js'
 const BASE_CONFIG = {
   port: 0,
   redisUrl: 'redis://127.0.0.1:6380',
-  managerUrl: 'http://127.0.0.1:9999',
   claudeMode: 'cli' as const,
   mode: 'local' as const,
   auth: 'none' as const,
