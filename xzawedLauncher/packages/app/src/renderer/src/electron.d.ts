@@ -23,8 +23,8 @@ interface LauncherAPI {
   checkUpdate(): Promise<void>
   installUpdate(): Promise<void>
   onUpdateAvailable(cb: (info: { version: string; releaseNotes: string }) => void): () => void
-  tokenGet(): Promise<string | null>
-  tokenSet(key: string): Promise<void>
+  tokenHas(): Promise<boolean>
+  tokenSet(key: string): Promise<{ success: boolean; error?: string }>
   tokenClear(): Promise<void>
   minimizeToTray(): Promise<void>
   openOrchestrator(): Promise<void>
