@@ -1,4 +1,4 @@
-[홈](../index.md) > [개념](.) > Claude 실행 모드
+[홈](../README.md) > [개념](.) > Claude 실행 모드
 
 # Claude 실행 모드
 

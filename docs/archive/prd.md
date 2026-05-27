@@ -1,3 +1,5 @@
+> **참고:** 이 문서는 초기 기획 단계의 PRD로, 현재 구현 상태와 다를 수 있습니다. 현행 시스템 구조는 [아키텍처 문서](../concepts/architecture.md)를 참고하세요.
+
 [홈](../index.md) > [내부 문서](.) > PRD
 
 # xzawedOrchestrator — Product Requirements Document

@@ -101,7 +101,7 @@ interface ToolHandler<TInput = Record<string, unknown>, TOutput = unknown> {
 }
 ```
 
-### 8개 ToolHandler
+### 10개 ToolHandler
 
 | 도구 이름 | 위임 대상 | 발행 스트림 |
 |-----------|-----------|-------------|
@@ -113,6 +113,8 @@ interface ToolHandler<TInput = Record<string, unknown>, TOutput = unknown> {
 | `watch_changes` | xzawedWatcher | `manager:to-watcher:{sessionId}` |
 | `security_audit` | xzawedSecurity | `manager:to-security:{sessionId}` |
 | `github_ops` | GitHub API (Octokit 직접 호출) | — |
+| `register_project` | 프로젝트 레지스트리 등록 (PR #114) | — |
+| `switch_project` | 활성 프로젝트 전환 (PR #114) | — |
 
 `github_ops`는 `GITHUB_TOKEN` 환경변수가 설정된 경우에만 ToolRegistry에 등록된다. 지원 action: `createRepo`, `createBranch`, `commitAndPush`, `createPR`, `createIssue`, `mergeBranch`, `listRepos`, `listBranches`.
 
@@ -194,7 +196,7 @@ pnpm install
 # 서버 개발 모드
 cd packages/server && pnpm dev
 
-# 전체 테스트 (71건)
+# 전체 테스트 (139건)
 pnpm test
 
 # 단일 테스트 파일
@@ -214,4 +216,4 @@ pnpm build
 - [xzawedDesigner](designer.md)
 - [Redis Streams](../concepts/redis-streams.md)
 - [환경변수 레퍼런스](../reference/environment-variables.md)
-- [설계 스펙](../specs/2026-05-15-manager-design.md)
+- [설계 스펙](../archive/specs/2026-05-15-manager-design.md)

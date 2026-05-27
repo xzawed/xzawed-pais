@@ -6,7 +6,7 @@
 
 ---
 
-## Overview
+## 개요
 
 xzawedOrchestrator는 AI 멀티 에이전트 시스템의 첫 번째 계층이다. 사용자 메시지를 수신하면 `structureIntent()`로 의도를 1-2문장으로 정제한 뒤 `orchestrator:to-manager:{sessionId}` 스트림에 발행한다. Manager의 처리 결과는 `manager:to-orchestrator:{sessionId}` 스트림을 구독하여 수신하고, WebSocket 연결된 클라이언트에 실시간으로 전달한다.
 
@@ -141,7 +141,7 @@ interface UIField {
 
 ---
 
-## Architecture
+## 아키텍처
 
 ```
 packages/
@@ -175,6 +175,8 @@ packages/
 │   ├── streams/
 │   │   ├── consumer.ts            # manager:to-orchestrator 스트림 구독
 │   │   ├── producer.ts            # orchestrator:to-manager 스트림 발행
+│   │   ├── session-gateway.ts     # SessionGateway consumer (Phase 1)
+│   │   ├── project-gateway.ts     # ProjectGateway consumer (Phase 1)
 │   │   └── redis.client.ts        # ioredis 클라이언트 싱글턴
 │   ├── sessions/
 │   │   ├── session.ts             # Session 타입 정의
@@ -189,8 +191,6 @@ packages/
 │   ├── github-tokens/
 │   │   ├── github-token.crypto.ts # AES-256-GCM PAT 암호화 / 복호화
 │   │   └── github-token.repo.ts   # DB 기반 PAT 저장소
-│   ├── manager/
-│   │   └── manager.client.ts      # Manager HTTP 클라이언트 (startSession)
 │   ├── ws/
 │   │   └── session.ws.ts          # WebSocket 핸들러
 │   └── mcp/
@@ -211,7 +211,7 @@ packages/
 
 ---
 
-## Configuration
+## 환경 변수
 
 | 환경변수 | 필수 | 기본값 | 설명 |
 |---------|------|--------|------|
@@ -235,7 +235,7 @@ packages/
 
 ---
 
-## Development
+## 개발
 
 사전 조건: xzawedShared 빌드 불필요 (Turborepo 기반).
 
@@ -260,7 +260,7 @@ pnpm build
 
 ---
 
-## Related
+## 관련 프로젝트
 
 - [아키텍처 개요](../concepts/architecture.md)
 - [Claude 실행기](../concepts/claude-runners.md)
