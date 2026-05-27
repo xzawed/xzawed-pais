@@ -115,4 +115,9 @@ export class BaseConsumer<TMessage> {
   stop(): void {
     this.running = false
   }
+
+  async close(): Promise<void> {
+    this.running = false
+    await this.redis.quit()
+  }
 }

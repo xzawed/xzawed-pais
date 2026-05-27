@@ -28,7 +28,9 @@ const ALLOWED_PREFIXES = [
 
 function validateBuildCommand(cmd: string): void {
   const normalized = cmd.trim()
-  const isAllowed = ALLOWED_PREFIXES.some(prefix => normalized.startsWith(prefix))
+  const isAllowed = ALLOWED_PREFIXES.some(
+    prefix => normalized === prefix || normalized.startsWith(prefix + ' ')
+  )
   if (!isAllowed) {
     throw new Error(`Build command not allowed: ${normalized}`)
   }

@@ -6,6 +6,7 @@ const MAX_RETRY_DELAY_MS = 30_000
 export interface ConsumerLike {
   start(sessionId: string): Promise<void>
   stop(): void
+  close?(): Promise<void>
 }
 
 export class SessionDispatcher {
@@ -98,7 +99,21 @@ export class SessionDispatcher {
     this.running = false
     for (const consumer of this.activeConsumers.values()) {
       consumer.stop()
+      void consumer.close?.()
     }
     this.activeConsumers.clear()
+  }
+
+  async close(): Promise<void> {
+    this.running = false
+    const closePromises: Promise<void>[] = []
+    for (const consumer of this.activeConsumers.values()) {
+      consumer.stop()
+      if (consumer.close) {
+        closePromises.push(consumer.close())
+      }
+    }
+    this.activeConsumers.clear()
+    await Promise.all(closePromises)
   }
 }

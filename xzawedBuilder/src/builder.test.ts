@@ -116,6 +116,11 @@ describe('Builder', () => {
     expectError('Shell metacharacters')
   })
 
+  it('prefix 단어 경계 없이 이어지는 command는 거부한다 (e.g. pnpmbuild-arbitrary)', async () => {
+    await builder.handle(buildRequest({ command: 'pnpmbuild-arbitrary' }))
+    expectError('Build command not allowed')
+  })
+
   it('detectBuildInfo가 반환한 buildRoot에서 exec를 실행한다', async () => {
     detectorMock.detectBuildInfo.mockResolvedValue({ command: 'pnpm run build', buildRoot: '/workspace' })
     // validatePath is called for both projectPath and detected buildRoot — return validated path each time
