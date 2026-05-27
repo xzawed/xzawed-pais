@@ -1,3 +1,4 @@
+import { hostname } from 'node:os'
 import type { Redis } from 'ioredis'
 import { BaseConsumer } from '@xzawed/agent-streams'
 import { ManagerToPlannerMessageSchema, type ManagerToPlannerMessage } from '../types.js'
@@ -8,6 +9,6 @@ export class Consumer extends BaseConsumer<ManagerToPlannerMessage> {
     onMessage: (msg: ManagerToPlannerMessage) => Promise<void>,
     sleep?: (ms: number) => Promise<void>,
   ) {
-    super(redis, onMessage, 'planner-consumers', 'planner-1', 'manager:to-planner', ManagerToPlannerMessageSchema, sleep)
+    super(redis, onMessage, 'planner-consumers', `planner-${hostname()}-${process.pid}`, 'manager:to-planner', ManagerToPlannerMessageSchema, sleep)
   }
 }
