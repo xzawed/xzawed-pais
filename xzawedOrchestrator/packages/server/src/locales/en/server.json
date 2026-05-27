@@ -1,0 +1,13 @@
+{
+  "error.unauthorized": "Authentication required.",
+  "error.forbidden": "Access denied.",
+  "error.not_found": "Resource not found.",
+  "error.session_not_found": "Session not found.",
+  "error.project_not_found": "Project not found.",
+  "error.invalid_input": "Invalid input.",
+  "error.server_error": "An internal server error occurred.",
+  "error.rate_limit": "Too many requests. Please try again later.",
+  "error.token_expired": "Token expired. Please log in again.",
+  "status.session_created": "Session created.",
+  "status.complete": "Complete."
+}

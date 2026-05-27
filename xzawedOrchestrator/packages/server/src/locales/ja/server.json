@@ -1,0 +1,13 @@
+{
+  "error.unauthorized": "認証が必要です。",
+  "error.forbidden": "アクセス権限がありません。",
+  "error.not_found": "リソースが見つかりません。",
+  "error.session_not_found": "セッションが見つかりません。",
+  "error.project_not_found": "プロジェクトが見つかりません。",
+  "error.invalid_input": "入力値が正しくありません。",
+  "error.server_error": "サーバーエラーが発生しました。",
+  "error.rate_limit": "リクエストが多すぎます。しばらくしてから再試行してください。",
+  "error.token_expired": "トークンが期限切れです。再ログインしてください。",
+  "status.session_created": "セッションが作成されました。",
+  "status.complete": "完了しました。"
+}

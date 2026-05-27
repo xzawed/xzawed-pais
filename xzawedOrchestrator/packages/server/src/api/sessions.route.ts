@@ -13,6 +13,7 @@ import { TaskStore } from '../tasks/task.store.js'
 import { MessageRepo } from '../sessions/message.repo.js'
 import { assertProjectOwner } from '../auth/ownership.js'
 import { ProjectRepo, type Project } from '../projects/project.repo.js'
+import { t, type ServerLocale } from '../i18n/server-i18n.js'
 
 function assertNotFilesystemRoot(p: string): void {
   const resolved = resolve(p)
@@ -224,6 +225,10 @@ export async function sessionsRoutes(
   const effectiveAuthHook = userAuthHook ?? authHook
   const routeOpts = effectiveAuthHook ? { preHandler: effectiveAuthHook } : {}
 
+  function locale(req: FastifyRequest): ServerLocale {
+    return (req as typeof req & { locale?: ServerLocale }).locale ?? 'ko'
+  }
+
   app.post<{ Body: { userId?: string; projectId?: string } }>('/sessions', routeOpts, async (req, reply) => {
     let userId: string
     let projectId: string | null = null
@@ -269,12 +274,13 @@ export async function sessionsRoutes(
   })
 
   app.get<{ Params: { id: string } }>('/sessions/:id/messages', routeOpts, async (req, reply) => {
+    const loc = locale(req)
     const session = await store.findById(req.params.id)
-    if (!session) return reply.status(404).send({ error: 'Session not found' })
+    if (!session) return reply.status(404).send({ error: t('error.session_not_found', loc) })
     // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
-    if (userAuthHook && !req.authUser) return reply.status(401).send({ error: 'User authentication required' })
+    if (userAuthHook && !req.authUser) return reply.status(401).send({ error: t('error.unauthorized', loc) })
     if (req.authUser && session.userId !== req.authUser.sub) {
-      return reply.status(404).send({ error: 'Session not found' })
+      return reply.status(404).send({ error: t('error.session_not_found', loc) })
     }
     if (msgRepo) return reply.send(await msgRepo.findBySession(req.params.id))
     return messageStore.get(req.params.id) ?? []
@@ -284,12 +290,13 @@ export async function sessionsRoutes(
     '/sessions/:id/messages',
     routeOpts,
     async (req, reply) => {
+      const loc = locale(req)
       const session = await store.findById(req.params.id)
-      if (!session) return reply.status(404).send({ error: 'Session not found' })
+      if (!session) return reply.status(404).send({ error: t('error.session_not_found', loc) })
       // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
-      if (userAuthHook && !req.authUser) return reply.status(401).send({ error: 'User authentication required' })
+      if (userAuthHook && !req.authUser) return reply.status(401).send({ error: t('error.unauthorized', loc) })
       if (req.authUser && session.userId !== req.authUser.sub) {
-        return reply.status(404).send({ error: 'Session not found' })
+        return reply.status(404).send({ error: t('error.session_not_found', loc) })
       }
 
       const sessionId = req.params.id
@@ -362,12 +369,13 @@ export async function sessionsRoutes(
   )
 
   app.get<{ Params: { id: string } }>('/sessions/:id/tasks', routeOpts, async (req, reply) => {
+    const loc = locale(req)
     const session = await store.findById(req.params.id)
-    if (!session) return reply.status(404).send({ error: 'Session not found' })
+    if (!session) return reply.status(404).send({ error: t('error.session_not_found', loc) })
     // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
-    if (userAuthHook && !req.authUser) return reply.status(401).send({ error: 'User authentication required' })
+    if (userAuthHook && !req.authUser) return reply.status(401).send({ error: t('error.unauthorized', loc) })
     if (req.authUser && session.userId !== req.authUser.sub) {
-      return reply.status(404).send({ error: 'Session not found' })
+      return reply.status(404).send({ error: t('error.session_not_found', loc) })
     }
     return { tasks: taskStore.findBySessionId(req.params.id) }
   })
@@ -379,16 +387,17 @@ export async function sessionsRoutes(
     '/sessions/:id/ui-actions',
     routeOpts,
     async (req, reply) => {
+      const loc = locale(req)
       const session = await store.findById(req.params.id)
-      if (!session) return reply.status(404).send({ error: 'Session not found' })
+      if (!session) return reply.status(404).send({ error: t('error.session_not_found', loc) })
       // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
-      if (userAuthHook && !req.authUser) return reply.status(401).send({ error: 'User authentication required' })
+      if (userAuthHook && !req.authUser) return reply.status(401).send({ error: t('error.unauthorized', loc) })
       if (req.authUser && session.userId !== req.authUser.sub) {
-        return reply.status(404).send({ error: 'Session not found' })
+        return reply.status(404).send({ error: t('error.session_not_found', loc) })
       }
       const { action } = req.body
       if (!action || typeof action !== 'string') {
-        return reply.status(400).send({ error: 'action is required' })
+        return reply.status(400).send({ error: t('error.invalid_input', loc) })
       }
 
       try {

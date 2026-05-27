@@ -214,7 +214,7 @@ describe('sessions route integration', () => {
     })
     expect(res.status).toBe(404)
     const body = (await res.json()) as { error: string }
-    expect(body.error).toBe('Session not found')
+    expect(body.error).toBe('세션을 찾을 수 없습니다.')
   })
 
   it('POST /sessions/:id/ui-actions returns 400 when action is missing', async () => {
@@ -228,7 +228,7 @@ describe('sessions route integration', () => {
     })
     expect(res.status).toBe(400)
     const body = (await res.json()) as { error: string }
-    expect(body.error).toBe('action is required')
+    expect(body.error).toBe('입력값이 올바르지 않습니다.')
     ws.close()
   })
 
