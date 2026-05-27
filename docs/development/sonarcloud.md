@@ -50,6 +50,27 @@ sonar.exclusions=**/*.test.ts,**/*.spec.ts,**/__tests__/**,**/dist/**,**/*.d.ts,
 
 ---
 
+## lcov 커버리지 업로드 (Turborepo 서비스)
+
+xzawedOrchestrator·xzawedManager는 CI에서 shard 분할 실행 후 lcov를 병합하여 SonarCloud에 업로드한다.
+
+```yaml
+# shard 실행
+pnpm vitest run --coverage --coverage.reportsDirectory=coverage/shard-1 --shard=1/2
+pnpm vitest run --coverage --coverage.reportsDirectory=coverage/shard-2 --shard=2/2
+
+# lcov 병합 — cat 사용 (vitest merge-coverage / --mergeReports는 사용 불가)
+mkdir -p coverage && cat coverage/shard-*/lcov.info > coverage/lcov.info
+```
+
+> **주의**: `vitest merge-coverage`는 vitest 3.x에 존재하지 않는 서브커맨드이다.  
+> `vitest --mergeReports`는 blob reporter 전용이며 lcov를 지원하지 않는다.  
+> lcov 포맷은 복수 SF 레코드를 SonarCloud가 올바르게 합산하므로 `cat` 병합이 정확하다.
+
+**상세**: [ADR-002](adr/002-ci-stability-patterns.md)
+
+---
+
 ## Security Hotspot 오진 주의
 
 "N Security Hotspots" 실패 보고 시 **추측으로 수정하지 말 것**. 규칙 ID 확인 후 처리.

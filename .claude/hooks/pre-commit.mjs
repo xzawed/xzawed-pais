@@ -67,14 +67,14 @@ async function main() {
   if (hasRootPackage) {
     console.log(`🔒 3/${stepCount} 취약점 확인 (pnpm audit)...`)
     try {
-      execSync('pnpm audit --audit-level=high', {
+      execSync('pnpm audit --audit-level=moderate', {
         cwd: repoRoot, encoding: 'utf8', stdio: 'pipe', timeout: 60_000,
       })
       console.log('  ✅ 보안 감사 통과\n')
     } catch (err) {
       const output = String(err.stdout ?? '') + String(err.stderr ?? '')
       console.log(output.split('\n').slice(-15).join('\n'))
-      console.log('\n❌ 고위험 취약점 발견 — 커밋 차단')
+      console.log('\n❌ moderate 이상 취약점 발견 — 커밋 차단')
       process.exit(2)
     }
   }
