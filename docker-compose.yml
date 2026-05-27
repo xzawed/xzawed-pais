@@ -35,8 +35,8 @@ services:
   # ── Orchestrator (port 3000) ────────────────────────────────────────────────
   orchestrator:
     build:
-      context: ./xzawedOrchestrator
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: xzawedOrchestrator/Dockerfile
     ports:
       - "3000:3000"
     env_file: ./xzawedOrchestrator/.env
@@ -44,6 +44,7 @@ services:
       REDIS_URL: redis://redis:6379
       PORT: "3000"
       CLAUDE_MODE: ${CLAUDE_MODE:-api}
+      MANAGER_URL: http://manager:3001
     depends_on:
       redis:
         condition: service_healthy
@@ -60,8 +61,8 @@ services:
   # ── Manager (port 3001) ─────────────────────────────────────────────────────
   manager:
     build:
-      context: ./xzawedManager
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: xzawedManager/Dockerfile
     ports:
       - "3001:3001"
     env_file: ./xzawedManager/.env
@@ -113,6 +114,7 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       PORT: "3003"
+      WORKSPACE_ROOT: /workspace
     volumes:
       - workspace:/workspace
     depends_on:
@@ -159,6 +161,7 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       PORT: "3005"
+      WORKSPACE_ROOT: /workspace
     volumes:
       - workspace:/workspace
     depends_on:
@@ -183,6 +186,7 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       PORT: "3006"
+      WORKSPACE_ROOT: /workspace
     volumes:
       - workspace:/workspace
     depends_on:
@@ -207,6 +211,7 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       PORT: "3007"
+      WORKSPACE_ROOT: /workspace
     volumes:
       - workspace:/workspace
     depends_on:
@@ -231,6 +236,7 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       PORT: "3008"
+      WORKSPACE_ROOT: /workspace
     volumes:
       - workspace:/workspace:ro
     depends_on:
