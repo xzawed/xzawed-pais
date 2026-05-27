@@ -1,4 +1,4 @@
-[홈](../README.md) > [가이드](./README.md) > 번역 기여 가이드
+[홈](../README.md) > 번역 기여 가이드
 
 # 번역 기여 가이드
 
@@ -31,7 +31,7 @@ xzawedOrchestrator/
 │       ├── common.json
 │       └── app.json
 ├── packages/ui/src/locales/
-│   ├── ko/ui.json        # 공유 UI 컴포넌트 (16 키)
+│   ├── ko/ui.json        # 공유 UI 컴포넌트 (16 키) — 미래 확장용, 현재 i18n.ts에 미등록
 │   ├── en/ui.json
 │   └── ja/ui.json
 └── packages/server/src/locales/
@@ -46,7 +46,7 @@ xzawedOrchestrator/
 |---|---|---|
 | `app` | `packages/app/src/renderer/src/locales/{lang}/app.json` | Electron 앱 |
 | `common` | `packages/app/src/renderer/src/locales/{lang}/common.json` | 공통 버튼·레이블 |
-| `ui` | `packages/ui/src/locales/{lang}/ui.json` | 공유 컴포넌트 |
+| `ui` | `packages/ui/src/locales/{lang}/ui.json` | 공유 컴포넌트 — 미등록 (미래 확장 예정) |
 | `server` | `packages/server/src/locales/{lang}/server.json` | 서버 메시지 |
 
 ---
