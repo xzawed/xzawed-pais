@@ -5,12 +5,10 @@ import { detectLocale } from './detect-locale.js'
 
 import koCommon from '../locales/ko/common.json'
 import koApp from '../locales/ko/app.json'
-// en (Task 12에서 실제 번역 추가, 현재는 ko와 동일)
-import enCommon from '../locales/ko/common.json'
-import enApp from '../locales/ko/app.json'
-// ja (Task 12에서 실제 번역 추가)
-import jaCommon from '../locales/ko/common.json'
-import jaApp from '../locales/ko/app.json'
+import enCommon from '../locales/en/common.json'
+import enApp from '../locales/en/app.json'
+import jaCommon from '../locales/ja/common.json'
+import jaApp from '../locales/ja/app.json'
 
 void i18n.use(initReactI18next).init({
   resources: {

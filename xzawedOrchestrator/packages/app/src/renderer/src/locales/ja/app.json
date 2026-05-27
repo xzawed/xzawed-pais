@@ -1,0 +1,55 @@
+{
+  "settings": {
+    "title": "設定",
+    "server_url": "サーバーURL",
+    "mode": "モード",
+    "mode_local": "ローカル",
+    "mode_remote": "リモート",
+    "user_id": "ユーザーID",
+    "language": "言語",
+    "lang_ko": "한국어",
+    "lang_en": "English",
+    "lang_ja": "日本語"
+  },
+  "sidebar": {
+    "new_session": "新しいセッション",
+    "search_placeholder": "セッションを検索...",
+    "current_session": "現在のセッション",
+    "today": "今日"
+  },
+  "chat": {
+    "empty_state": "新しいセッションを開始してください",
+    "input_placeholder": "メッセージを入力...",
+    "send_hint": "Enter で送信 · Shift+Enter で改行"
+  },
+  "mcp": {
+    "title": "🔌 MCPサーバー",
+    "tab_installed": "インストール済み ({{count}})",
+    "tab_recommended": "おすすめ",
+    "tab_custom": "カスタム追加",
+    "no_servers": "MCPサーバーがありません。「おすすめ」タブからインストールしてください。",
+    "field_name": "名前",
+    "field_command": "コマンド",
+    "field_args": "引数（スペース区切り）",
+    "field_env": "環境変数（JSON）",
+    "placeholder_name": "例: my-custom-mcp",
+    "placeholder_command": "例: npx",
+    "placeholder_args": "スペース区切り",
+    "placeholder_env": "例: {\"API_KEY\": \"sk-...\"}",
+    "btn_add_start": "+ 追加して起動",
+    "toggle_loading": "..."
+  },
+  "github": {
+    "title": "GitHub",
+    "connect_hint": "GitHubアカウントを接続してリポジトリを管理できます。"
+  },
+  "plugins": {
+    "title": "プラグイン",
+    "search_placeholder": "プラグインを検索..."
+  },
+  "command_palette": {
+    "placeholder": "コマンドを検索...",
+    "new_session": "新しいセッション",
+    "settings": "設定"
+  }
+}
