@@ -320,6 +320,37 @@ mkdir -p coverage && cat coverage/shard-*/lcov.info > coverage/lcov.info
 
 ---
 
+### test-oom-debug
+테스트 OOM 진단 및 수정
+
+**증상**: CI에서 `Reached heap limit` 또는 테스트가 타임아웃 없이 무한 실행
+
+**진단**:
+```bash
+# 1. CI 환경 로컬 재현
+CI=true NODE_OPTIONS=--max-old-space-size=3072 pnpm test
+
+# 2. 단일 의심 파일 격리
+pnpm test src/<파일>.test.ts --reporter=verbose
+
+# 3. Consumer mock에서 즉시 resolve 탐색
+grep -rn "mockResolvedValue(null)" src/ --include="*.test.ts"
+grep -rn "mockResolvedValue(\[\])" src/ --include="*.test.ts"
+```
+
+**수정 패턴**:
+```typescript
+// xreadgroup이 null 반환할 때 setImmediate로 양보
+xreadgroup: vi.fn().mockImplementation(() =>
+  responses.length ? Promise.resolve(responses.shift()) :
+  new Promise(r => setImmediate(() => r(null)))
+)
+```
+
+**참고**: [docs/development/testing-patterns.md](testing-patterns.md) · [ADR-002](adr/002-ci-stability-patterns.md)
+
+---
+
 ### fix-audit-vuln
 전이 의존성 취약점 수정
 

@@ -18,3 +18,4 @@
 | ADR | 제목 | 상태 |
 |-----|------|------|
 | [001](001-redis-streams-only.md) | 서비스 간 통신은 Redis Streams만 사용 | 채택 |
+| [002](002-ci-stability-patterns.md) | CI/CD 안정성 패턴 (OOM 해소·Shard·lcov 병합) | 채택 |
