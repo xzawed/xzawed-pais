@@ -270,6 +270,6 @@ PR #9(2026-05-17) 전체 보안 감사를 통해 수립된 공통 보안 패턴.
 
 ## 인프라
 
-- **Docker**: `docker-compose.yml` — Redis + 9개 서비스 전체 실행. 각 서비스 디렉토리에 `Dockerfile` 포함.
+- **Docker**: `docker-compose.yml` — Redis + 9개 서비스 전체 실행. 모든 서비스 `context: .` (프로젝트 루트) + `dockerfile: <서비스>/Dockerfile` 패턴. xzawedOrchestrator·xzawedManager는 각각 `Dockerfile.dockerignore`로 빌드 격리. developer·tester·builder·watcher·security에 `WORKSPACE_ROOT: /workspace` 주입, orchestrator에 `MANAGER_URL: http://manager:3001` 주입.
 - **CI/CD**: `.github/workflows/ci.yml` — PR마다 9개 서비스 병렬 빌드·테스트·감사 자동 실행. `redis-integration` 잡(Redis 서비스 컨테이너), `playwright-e2e` 잡(Electron E2E, xvfb-run), `all-checks-pass` 게이트 포함. PR 전용으로 jscpd(중복 파일·줄 번호) + SonarCloud API 폴링(품질 게이트·파일별 밀도) 댓글 자동 게시.
 - **Dependabot**: `.github/dependabot.yml` — 9개 서비스 + GitHub Actions 주간 의존성 업데이트.
