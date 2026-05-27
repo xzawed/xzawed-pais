@@ -40,6 +40,47 @@ xzawedOrchestrator 추가: **@modelcontextprotocol/sdk** (MCP 서버), **React 1
 
 xzawedOrchestrator Electron 앱 추가: GitHub OAuth 통합, McpProcessManager (child_process.spawn), PluginManager (Claude Code / xzawed 확장 관리), Zustand integrations.store, **Tailwind CSS v4** (디자인 토큰), **shadcn/ui** (Button·Badge·Dialog·Command 등), **Framer Motion** (UI 애니메이션), **Shiki** (코드 하이라이팅), **cmdk** (⌘K Command Palette), **sonner** (토스트).
 
+## 테스트 패턴
+
+### 블로킹 I/O Mock
+
+Redis `XREADGROUP BLOCK` 등 블로킹 I/O를 mock할 때 즉시 resolve하면 macrotask 큐가 차단되어 OOM이 발생한다.
+반드시 `setImmediate`로 macrotask 양보를 재현한다.
+
+```typescript
+// ❌ 마이크로태스크 루프 유발 — setTimeout이 실행되지 않아 stop()이 호출 불가
+xreadgroup: vi.fn().mockResolvedValue(null)
+
+// ✅ 올바른 패턴 — macrotask로 이벤트 루프 양보
+xreadgroup: vi.fn().mockImplementation(
+  () => new Promise<null>(r => setImmediate(() => r(null)))
+)
+```
+
+### ioredis 테스트 환경 설정
+
+Redis가 없는 테스트 환경에서 ioredis의 기본 무한 재연결이 이벤트 루프를 활성 상태로 유지한다.
+모든 redis.client.ts에 적용:
+
+```typescript
+client = new Redis(url, {
+  lazyConnect: true,
+  maxRetriesPerRequest: 3,
+  connectTimeout: 2000,
+  retryStrategy: process.env['VITEST'] === 'true' ? () => null : undefined,
+})
+```
+
+### vitest Shard Coverage 병합
+
+vitest 3.x에 `merge-coverage` 서브커맨드가 없다. shard별 `lcov.info`를 직접 병합한다:
+
+```bash
+# CI에서 shard 1/2, 2/2 실행 후
+mkdir -p coverage
+cat coverage/shard-*/lcov.info > coverage/lcov.info
+```
+
 ## 공통 명령어 패턴
 
 ### Turborepo 기반 (xzawedOrchestrator, xzawedManager)
@@ -196,6 +237,27 @@ PR #9(2026-05-17) 전체 보안 감사를 통해 수립된 공통 보안 패턴.
   RUN pnpm install --frozen-lockfile --ignore-scripts
   ```
 - **Dockerfile을 완전 재작성하면 모든 줄이 "신규 코드"**: SonarCloud PR 분석은 PR diff의 추가·변경된 줄만 신규 코드로 계산. Dockerfile 전체를 재작성한 경우 위 두 규칙 위반이 모두 신규 핫스팟으로 탐지됨.
+
+### 전이 의존성 취약점 (pnpm overrides)
+직접 의존성이 아닌 전이 의존성 취약점은 `pnpm audit`이 잡지만 `pnpm update`로 해결되지 않는다.
+루트 `package.json`에 `pnpm.overrides`로 강제 해결:
+
+```json
+"pnpm": {
+  "overrides": {
+    "취약한-패키지": ">=안전한-버전"
+  }
+}
+```
+
+적용 후 `pnpm install` 실행으로 lock 파일 업데이트 필수.
+
+### 브랜치 의존성 관리
+같은 파일을 병렬 브랜치에서 수정하면 merge conflict가 발생한다.
+
+- **순차 의존 관계**: 선행 PR 머지 확인 후 후행 브랜치 분기
+- **병렬 작업 중 master 머지 발생 시**: 즉시 `git merge origin/master` 실행 후 충돌 해결
+- **PR 설명에 명시**: "이 PR은 #N 머지 후 리뷰 요망" (의존 관계 있을 때)
 
 ## SonarCloud 트러블슈팅
 

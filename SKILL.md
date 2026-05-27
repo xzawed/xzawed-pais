@@ -290,3 +290,74 @@ cd <서비스> && node -e "import('./dist/config.js').then(m => m.loadConfig()).
 ```
 
 **주의**: `dist/` 빌드 후 실행 필요
+
+---
+
+## 디버깅 (Debug)
+
+### ci-failure-debug
+CI 실패 원인 진단
+
+**OOM 의심 시**:
+```bash
+# 1. 로컬에서 CI 환경 재현 (CI=true 설정)
+CI=true NODE_OPTIONS=--max-old-space-size=3072 pnpm test
+
+# 2. 특정 테스트 파일 격리 실행
+pnpm test src/<의심 파일>.test.ts
+
+# 3. Consumer mock에서 setImmediate 사용 여부 확인
+grep -r "mockResolvedValue(null)" src/
+```
+
+**vitest shard 관련**:
+```bash
+# shard 명령 로컬 검증
+pnpm vitest run --coverage --coverage.reportsDirectory=coverage/shard-1 --shard=1/2
+pnpm vitest run --coverage --coverage.reportsDirectory=coverage/shard-2 --shard=2/2
+mkdir -p coverage && cat coverage/shard-*/lcov.info > coverage/lcov.info
+```
+
+---
+
+### fix-audit-vuln
+전이 의존성 취약점 수정
+
+```bash
+# 1. 취약점 확인
+pnpm audit --audit-level=moderate
+
+# 2. 취약한 패키지와 경로 파악 (Path 항목 확인)
+# 예: packages__app>electron-builder>..>tmp
+
+# 3. 루트 package.json에 override 추가
+# "pnpm": { "overrides": { "취약한-패키지": ">=안전한-버전" } }
+
+# 4. lock 파일 업데이트
+pnpm install
+
+# 5. 검증
+pnpm audit --audit-level=moderate
+```
+
+---
+
+### branch-sync
+현재 브랜치를 master 최신 상태로 동기화 (충돌 예방)
+
+```bash
+# master 최신 상태 가져오기
+git fetch origin master
+
+# 현재 브랜치와 master 차이 확인
+git log --oneline HEAD..origin/master
+
+# 차이가 있으면 merge (또는 rebase)
+git merge origin/master
+# 충돌 발생 시: 수동 해결 → git add → git commit
+
+# 검증
+pnpm test && pnpm build
+```
+
+**언제 실행하나**: 작업 시작 전, PR 생성 전, 다른 PR 머지 공지를 받았을 때
