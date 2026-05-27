@@ -11,6 +11,7 @@
 | 익스포트 | 설명 |
 |----------|------|
 | `BaseConsumer<T>` | 제네릭 Redis Streams 소비자 |
+| `SessionDispatcher` | per-session 동적 consumer 팩토리 (Phase 3) |
 | `validateWorkspaceRoot(path)` | 파일시스템 루트 방어 |
 
 ---
@@ -51,6 +52,32 @@ import { validateWorkspaceRoot } from '@xzawed/agent-streams'
 validateWorkspaceRoot(config.workspaceRoot)
 // path.resolve(workspaceRoot) === path.parse(resolved).root 이면 throw
 ```
+
+---
+
+## SessionDispatcher
+
+Phase 3(PR #122)에서 추가된 per-session 동적 consumer 팩토리.
+
+**사용법:**
+게이트웨이 스트림을 구독하고, 세션 알림 수신 시 서비스별 Consumer를 동적으로 생성한다.
+
+**생성자:**
+- `gatewayStream`: 수신할 게이트웨이 스트림 키 (예: `manager:to-planner:sessions`)
+- `consumerFactory`: `(sessionId: string) => ConsumerLike` — 세션별 consumer 생성 함수
+
+**ConsumerLike 인터페이스:**
+```typescript
+interface ConsumerLike {
+  start(sessionId: string): Promise<void>
+  stop(): void
+}
+```
+
+**`@xzawed/agent-streams` 현재 exports:**
+1. `BaseConsumer` — 단일 스트림 소비자 기반 클래스
+2. `SessionDispatcher` — per-session 동적 consumer 팩토리
+3. `validateWorkspaceRoot(root: string): void` — 워크스페이스 루트 검증
 
 ---
 

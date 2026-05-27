@@ -1,8 +1,40 @@
-[홈](../index.md) > [가이드](.) > 로컬 배포
+[홈](../README.md) > [가이드](.) > 로컬 배포
 
 # 로컬 배포
 
 개인 PC에서 xzawedOrchestrator를 실행하는 방법을 안내합니다.
+
+## 전체 스택 실행 (Docker Compose 권장)
+
+xzawedPAIS 전체 9개 서비스를 한 번에 실행하는 방법이다.
+
+### 사전 요구사항
+- Docker Desktop 설치 및 실행
+- `.env` 파일 설정 (`cp .env.example .env` 후 ANTHROPIC_API_KEY 입력)
+
+### 실행
+
+```bash
+# 저장소 루트에서
+docker compose up -d
+```
+
+### 서비스 상태 확인
+
+```bash
+docker compose ps
+```
+
+모든 서비스가 `running` 상태인지 확인한다.
+
+### 접속
+
+- Orchestrator API: http://localhost:3000
+- Electron 앱: xzawedLauncher 사용 권장 (비개발자)
+
+---
+
+## 개별 서비스 수동 실행 (개발자용)
 
 ## 사전 조건
 

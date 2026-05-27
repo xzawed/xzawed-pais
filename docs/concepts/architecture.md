@@ -1,4 +1,4 @@
-[홈](../index.md) > [개념](.) > 시스템 아키텍처
+[홈](../README.md) > [개념](.) > 시스템 아키텍처
 
 # 시스템 아키텍처
 
@@ -29,6 +29,8 @@ xzawedManager (3001)
 ```
 
 모든 에이전트 서비스는 `manager:to-{agent}:{sessionId}` 스트림을 소비하고 `{agent}:to-manager:{sessionId}` 스트림으로 응답한다.
+
+> **Phase 3 이후**: Manager는 `manager:to-{agent}:sessions` 게이트웨이 스트림을 통해 에이전트에 세션을 알리고, `SessionDispatcher`가 per-session 동적 consumer를 생성합니다.
 
 ---
 
@@ -68,7 +70,9 @@ xzawedOrchestrator/
 │   │       ├── config.ts           # 환경변수 로드·검증 (Zod)
 │   │       ├── server.ts           # Fastify 인스턴스·플러그인 조립
 │   │       ├── claude/             # Claude 실행기 추상화
-│   │       ├── streams/            # Redis Streams Producer·Consumer
+│   │       ├── streams/            # Redis Streams Producer·Consumer·Gateway
+│   │       │   ├── session-gateway.ts  # SessionGateway consumer (Phase 1)
+│   │       │   └── project-gateway.ts  # ProjectGateway consumer (Phase 1)
 │   │       ├── sessions/           # 세션 생성·조회·상태 관리
 │   │       ├── tasks/              # TaskStore (pending→running→completed/failed)
 │   │       ├── auth/               # JWT, argon2id, GitHub PAT 암호화

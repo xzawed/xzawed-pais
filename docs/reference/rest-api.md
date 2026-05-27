@@ -1,4 +1,4 @@
-[홈](../index.md) > [레퍼런스](.) > REST API
+[홈](../README.md) > [레퍼런스](.) > REST API
 
 # REST API
 
