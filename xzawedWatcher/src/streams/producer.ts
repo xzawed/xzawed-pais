@@ -6,6 +6,6 @@ export class Producer {
 
   async publish(sessionId: string, message: WatcherToManagerMessage): Promise<void> {
     const stream = `watcher:to-manager:${sessionId}`
-    await this.redis.xadd(stream, '*', 'data', JSON.stringify(message))
+    await this.redis.xadd(stream, 'MAXLEN', '~', '1000', '*', 'data', JSON.stringify(message))
   }
 }

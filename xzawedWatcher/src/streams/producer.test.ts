@@ -17,7 +17,7 @@ describe('Producer', () => {
 
     await producer.publish('sess-1', message)
     expect(redis.xadd).toHaveBeenCalledWith(
-      'watcher:to-manager:sess-1', '*', 'data', JSON.stringify(message),
+      'watcher:to-manager:sess-1', 'MAXLEN', '~', '1000', '*', 'data', JSON.stringify(message),
     )
   })
 })
