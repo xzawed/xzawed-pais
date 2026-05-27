@@ -170,4 +170,45 @@ describe('SessionDispatcher', () => {
     dispatcher.stop()
     await expect(p).resolves.toBeUndefined()
   })
+
+  it('max active consumers 한도 초과 시 새 consumer를 추가하지 않는다', async () => {
+    const sessionId1 = '550e8400-e29b-41d4-a716-446655440001'
+    const sessionId2 = '550e8400-e29b-41d4-a716-446655440002'
+    const sessionId3 = '550e8400-e29b-41d4-a716-446655440003'
+
+    const entries = [
+      ['1-0', ['data', JSON.stringify({ sessionId: sessionId1 })]],
+      ['1-1', ['data', JSON.stringify({ sessionId: sessionId2 })]],
+      ['1-2', ['data', JSON.stringify({ sessionId: sessionId3 })]],
+    ]
+    const gatewayRedis = makeGatewayRedis([
+      [['manager:to-planner:sessions', entries]]
+    ])
+
+    const factory = vi.fn().mockReturnValue({
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn(),
+    })
+
+    // MAX_ACTIVE_CONSUMERS를 2로 줄이기 위해 activeConsumers를 직접 조작
+    const dispatcher = new SessionDispatcher(
+      gatewayRedis,
+      'manager:to-planner:sessions',
+      'planner-session-dispatcher',
+      factory,
+    )
+    // private 필드에 접근하여 한도를 채운다
+    const existing = (dispatcher as unknown as { activeConsumers: Map<string, unknown> }).activeConsumers
+    for (let i = 0; i < 1000; i++) {
+      existing.set(`prefilled-session-${i}`, { start: vi.fn(), stop: vi.fn() })
+    }
+
+    const p = dispatcher.start()
+    await new Promise(r => setTimeout(r, 50))
+    dispatcher.stop()
+    await p
+
+    // 이미 1000개가 채워져 있으므로 factory가 호출되지 않아야 함
+    expect(factory).not.toHaveBeenCalled()
+  })
 })

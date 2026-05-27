@@ -3,18 +3,9 @@ import type { Producer } from './streams/producer.js'
 import type { ClaudeRunner } from './claude/runner.js'
 import { applyChange } from './fileio.js'
 import type { Config } from './config.js'
+import { resolveWorkspaceRoot } from '@xzawed/agent-streams'
 
-// TODO: @xzawed/agent-streams로 추출 예정
-export function resolveWorkspaceRoot(
-  userContext: { workspaceRoot: string; [key: string]: unknown } | undefined,
-  fallback: string | undefined,
-): string {
-  const resolved = userContext?.workspaceRoot || fallback || process.env.WORKSPACE_ROOT
-  if (!resolved) {
-    throw new Error('workspaceRoot를 결정할 수 없습니다: userContext, fallback, WORKSPACE_ROOT 모두 미설정')
-  }
-  return resolved
-}
+export { resolveWorkspaceRoot }
 
 export class Developer {
   constructor(

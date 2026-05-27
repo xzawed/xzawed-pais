@@ -4,17 +4,9 @@ import type { ClaudeRunner } from './claude/runner.js'
 import { analyzeFiles } from './analyzers/static.js'
 import { auditDeps } from './analyzers/deps.js'
 import type { Config } from './config.js'
+import { resolveWorkspaceRoot } from '@xzawed/agent-streams'
 
-export function resolveWorkspaceRoot(
-  userContext: { workspaceRoot: string; [key: string]: unknown } | undefined,
-  fallback: string | undefined,
-): string {
-  const resolved = userContext?.workspaceRoot || fallback || process.env.WORKSPACE_ROOT
-  if (!resolved) {
-    throw new Error('workspaceRoot를 결정할 수 없습니다')
-  }
-  return resolved
-}
+export { resolveWorkspaceRoot }
 
 const SEVERITY_ORDER = ['low', 'medium', 'high', 'critical'] as const
 

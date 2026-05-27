@@ -1,12 +1,12 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
-vi.mock('ioredis', () => ({ Redis: vi.fn() }))
+vi.mock('../streams/redis.client.js', () => ({ getRedisClient: vi.fn() }))
 
-import { Redis } from 'ioredis'
+import { getRedisClient } from '../streams/redis.client.js'
 import { z } from 'zod'
 import { RedisAgentHandler } from './redis-agent-handler.js'
 
-const RedisMock = vi.mocked(Redis)
+const getRedisClientMock = vi.mocked(getRedisClient)
 
 const buildOutputSchema = z.object({
   success: z.boolean().default(false),
@@ -36,7 +36,7 @@ beforeEach(() => {
     xread: vi.fn().mockResolvedValue(null),
     xgroup: vi.fn().mockResolvedValue('OK'),
   }
-  RedisMock.mockImplementation(() => mockRedis as unknown as Redis)
+  getRedisClientMock.mockReturnValue(mockRedis as unknown as ReturnType<typeof getRedisClient>)
   handler = new RedisAgentHandler(
     'redis://localhost:6379',
     'builder',
@@ -198,15 +198,21 @@ describe('RedisAgentHandler', () => {
       await expect(handler.close()).resolves.toBeUndefined()
     })
 
-    it('execute 후 close() — redis.quit() 호출', async () => {
-      const quitFn = vi.fn().mockResolvedValue(undefined)
-      ;(mockRedis as Record<string, unknown>).quit = quitFn
+    it('execute 후 close() — _notifiedSessions를 정리하고 예외 없음', async () => {
       mockRedis.xread.mockResolvedValueOnce(
         makeMsg('build_complete', { success: true, output: '', artifacts: [] })
       )
       await handler.execute({}, 'sess-1')
-      await handler.close()
-      expect(quitFn).toHaveBeenCalledOnce()
+      await expect(handler.close()).resolves.toBeUndefined()
+      // After close, the same session should trigger gateway notification again (session cleared)
+      mockRedis.xread.mockResolvedValueOnce(
+        makeMsg('build_complete', { success: true, output: '', artifacts: [] })
+      )
+      await handler.execute({}, 'sess-1')
+      const gatewayCalls = (mockRedis.xadd.mock.calls as unknown[][]).filter(
+        (c) => c[0] === 'manager:to-builder:sessions'
+      )
+      expect(gatewayCalls).toHaveLength(2)
     })
   })
 })

@@ -20,7 +20,7 @@ async function main() {
   try {
     // origin/master가 얼마나 앞서 있는지 확인
     const aheadCount = execSync(
-      'git rev-list --count HEAD..origin/master 2>nul || echo 0',
+      'git rev-list --count HEAD..origin/master 2>/dev/null || echo 0',
       { encoding: 'utf8', timeout: 5000, shell: true },
     ).trim()
 

@@ -1,7 +1,8 @@
-import { Redis } from 'ioredis'
 import { z } from 'zod'
 import type { AnthropicInputSchema, ToolHandler } from './handler.interface.js'
 import type { UserContext } from '../types/user-context.js'
+import { getRedisClient } from '../streams/redis.client.js'
+import type { Redis } from 'ioredis'
 
 const DEFAULT_TIMEOUT_MS = 120_000
 const BLOCK_STEP_MS = 5_000
@@ -27,7 +28,7 @@ export class RedisAgentHandler<TInput, TOutput>
   ) {}
 
   private get redis(): Redis {
-    this._redis ??= new Redis(this.redisUrl)
+    this._redis ??= getRedisClient(this.redisUrl)
     return this._redis
   }
 
@@ -166,9 +167,9 @@ export class RedisAgentHandler<TInput, TOutput>
   }
 
   async close(): Promise<void> {
-    if (this._redis) {
-      await this._redis.quit()
-      this._redis = null
-    }
+    // _redis is a cached client from getRedisClient; do not quit it here.
+    // Lifecycle is managed by closeRedisClients() at process shutdown.
+    this._redis = null
+    this._notifiedSessions.clear()
   }
 }
