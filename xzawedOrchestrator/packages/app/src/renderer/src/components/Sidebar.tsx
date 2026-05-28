@@ -160,6 +160,7 @@ function SessionItem({ session, index, isActive }: Readonly<{
 
   return (
     <motion.div
+      data-testid="session-list-item"
       initial={{ opacity: 0, x: -6 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: index * 0.04, duration: 0.2 }}

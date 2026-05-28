@@ -53,7 +53,7 @@ export function CodeBlock({ code, filename, lang, streaming = false }: Readonly<
   }
 
   return (
-    <div className="mt-2 overflow-hidden rounded border border-border bg-code">
+    <div data-testid="code-block" className="mt-2 overflow-hidden rounded border border-border bg-code">
       <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
         <span className="font-mono text-[9px] text-fg-ghost">{filename ?? language}</span>
         <button

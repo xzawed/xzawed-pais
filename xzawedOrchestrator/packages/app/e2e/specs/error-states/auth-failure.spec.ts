@@ -1,56 +1,60 @@
 import { test, expect } from '../../fixtures.js'
-import { mockHealthCheck } from '../../helpers/mock-server.js'
+import { mockHealthCheck, mockLoginSuccess } from '../../helpers/mock-server.js'
 
 test.describe('인증 실패 처리', () => {
-  test.beforeEach(async ({ page }) => {
-    await mockHealthCheck(page)
+  test.beforeEach(async ({ loginPage }) => {
+    await mockHealthCheck(loginPage)
   })
 
-  test('만료된 토큰으로 요청 시 로그인 페이지로 리다이렉트된다', async ({ page }) => {
-    await page.route('**/api/**', (route) => {
-      if (route.request().url().includes('/auth')) return void route.continue()
-      void route.fulfill({ status: 401, body: JSON.stringify({ error: 'Unauthorized' }) })
+  test('만료된 토큰으로 요청 시 로그인 페이지로 리다이렉트된다', async ({ loginPage }) => {
+    await loginPage.route('**/api/**', (route) => {
+      if (route.request().url().includes('/auth')) return route.continue()
+      return route.fulfill({ status: 401, body: JSON.stringify({ error: 'Unauthorized' }) })
     })
-    await page.evaluate(() => localStorage.setItem('token', 'expired-token'))
-    await page.reload()
-    await expect(page.getByTestId('login-email')).toBeVisible({ timeout: 5_000 })
+    await loginPage.evaluate(() => localStorage.setItem('token', 'expired-token'))
+    await loginPage.reload()
+    await expect(loginPage.getByTestId('login-email')).toBeVisible({ timeout: 5_000 })
   })
 
-  test('로그아웃 후 localStorage 토큰이 제거된다', async ({ page }) => {
-    await page.evaluate(() => localStorage.setItem('token', 'valid-token'))
-    await page.getByTestId('logout-button').click({ timeout: 5_000 }).catch(() => {})
-    expect(await page.evaluate(() => localStorage.getItem('token'))).toBeNull()
+  test('로그아웃 후 localStorage 토큰이 제거된다', async ({ loginPage }) => {
+    await mockLoginSuccess(loginPage)
+    await loginPage.evaluate(() => localStorage.setItem('token', 'valid-token'))
+    await loginPage.getByTestId('login-email').fill('test@example.com').catch(() => {})
+    await loginPage.getByTestId('login-password').fill('password123').catch(() => {})
+    await loginPage.getByTestId('login-submit').click().catch(() => {})
+    await loginPage.getByTestId('logout-button').click({ timeout: 5_000 }).catch(() => {})
+    expect(await loginPage.evaluate(() => localStorage.getItem('token'))).toBeNull()
   })
 
-  test('Refresh 토큰 만료 시 로그인 페이지로 이동한다', async ({ page }) => {
-    await page.route('**/api/auth/refresh', (route) => {
-      void route.fulfill({ status: 401, body: JSON.stringify({ error: 'Refresh expired' }) })
-    })
-    await page.evaluate(() => {
+  test('Refresh 토큰 만료 시 로그인 페이지로 이동한다', async ({ loginPage }) => {
+    await loginPage.route('**/auth/refresh', (route) =>
+      route.fulfill({ status: 401, body: JSON.stringify({ error: 'Refresh expired' }) })
+    )
+    await loginPage.evaluate(() => {
       localStorage.setItem('token', 'expired-access')
       localStorage.setItem('refreshToken', 'expired-refresh')
     })
-    await page.reload()
-    await expect(page.getByTestId('login-email')).toBeVisible({ timeout: 10_000 })
+    await loginPage.reload()
+    await expect(loginPage.getByTestId('login-email')).toBeVisible({ timeout: 10_000 })
   })
 
-  test('Rate Limit 응답 시 토스트 메시지가 표시된다', async ({ page }) => {
-    await page.route('**/api/auth/login', (route) => {
-      void route.fulfill({ status: 429, body: JSON.stringify({ error: 'Too many requests' }) })
-    })
-    await page.getByTestId('login-email').fill('test@example.com').catch(() => {})
-    await page.getByTestId('login-password').fill('pass').catch(() => {})
-    await page.getByTestId('login-submit').click().catch(() => {})
-    await expect(page.locator('[data-sonner-toast]')).toBeVisible({ timeout: 5_000 })
+  test('Rate Limit 응답 시 토스트 메시지가 표시된다', async ({ loginPage }) => {
+    await loginPage.route('**/auth/login', (route) =>
+      route.fulfill({ status: 429, body: JSON.stringify({ error: 'Too many requests' }) })
+    )
+    await loginPage.getByTestId('login-email').fill('test@example.com').catch(() => {})
+    await loginPage.getByTestId('login-password').fill('pass').catch(() => {})
+    await loginPage.getByTestId('login-submit').click().catch(() => {})
+    await expect(loginPage.locator('[data-sonner-toast]')).toBeVisible({ timeout: 5_000 })
   })
 
-  test('인증 오류 메시지가 표시된다', async ({ page }) => {
-    await page.route('**/api/auth/login', (route) => {
-      void route.fulfill({ status: 401, body: JSON.stringify({ error: 'Invalid credentials' }) })
-    })
-    await page.getByTestId('login-email').fill('wrong@test.com').catch(() => {})
-    await page.getByTestId('login-password').fill('wrong').catch(() => {})
-    await page.getByTestId('login-submit').click().catch(() => {})
-    await expect(page.getByTestId('login-error')).toBeVisible({ timeout: 5_000 })
+  test('인증 오류 메시지가 표시된다', async ({ loginPage }) => {
+    await loginPage.route('**/auth/login', (route) =>
+      route.fulfill({ status: 401, body: JSON.stringify({ error: 'Invalid credentials' }) })
+    )
+    await loginPage.getByTestId('login-email').fill('wrong@test.com').catch(() => {})
+    await loginPage.getByTestId('login-password').fill('wrong').catch(() => {})
+    await loginPage.getByTestId('login-submit').click().catch(() => {})
+    await expect(loginPage.getByTestId('login-error')).toBeVisible({ timeout: 5_000 })
   })
 })

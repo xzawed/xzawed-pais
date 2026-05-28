@@ -17,9 +17,9 @@ test.describe('서버 단절 오류 상태', () => {
   test('서버 복구 후 상태바가 정상으로 돌아온다', async ({ page }) => {
     await mockHealthCheck(page, false)
     await page.waitForTimeout(1_500)
-    await page.route('**/health', (route) => {
-      void route.fulfill({ status: 200, body: JSON.stringify({ status: 'ok' }) })
-    })
+    await page.route('**/health', (route) =>
+      route.fulfill({ status: 200, body: JSON.stringify({ status: 'ok' }) })
+    )
     await expect(page.getByTestId('status-bar-running')).toBeVisible({ timeout: 10_000 })
   })
 
@@ -27,7 +27,7 @@ test.describe('서버 단절 오류 상태', () => {
     await mockHealthCheck(page)
     await mockCreateSession(page)
     await page.getByTestId('new-session-button').click()
-    await page.route('**/ws/**', (route) => void route.abort())
+    await page.route('**/ws/**', (route) => route.abort())
     await page.getByTestId('message-input').fill('테스트')
     await page.getByTestId('message-send-button').click()
     await expect(page.locator('[data-sonner-toast]')).toBeVisible({ timeout: 5_000 })

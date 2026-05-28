@@ -93,6 +93,7 @@ export function ChatView(): React.JSX.Element {
       <div className="flex items-center gap-2 border-b border-border bg-surface-raised px-4 py-2">
         <span className="h-2 w-2 rounded-full bg-ok" />
         <span className="text-[13px] font-semibold text-fg">{t('sidebar.current_session')}</span>
+        <span data-testid="session-id-display" className="text-[10px] text-fg-ghost font-mono">{sessionId}</span>
         <div className="ml-auto">
           <kbd className="rounded border border-border bg-surface px-1.5 py-0.5 text-[9px] text-fg-ghost">⌘K</kbd>
         </div>

@@ -7,7 +7,14 @@ import { App } from './App.js'
 const root = document.getElementById('root')
 if (!root) throw new Error('Root element not found')
 
-const initialPath = globalThis.location?.hash === '#test' ? '/chat' : '/'
+function resolveInitialPath(): string {
+  const hash = globalThis.location?.hash
+  if (hash === '#test') return '/chat'
+  if (hash === '#test-login') return '/login'
+  if (hash === '#test-projects') return '/projects'
+  return '/'
+}
+const initialPath = resolveInitialPath()
 
 createRoot(root).render(
   <StrictMode>

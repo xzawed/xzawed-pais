@@ -104,7 +104,7 @@ export function GitHubPanel(): React.JSX.Element {
           <div className="text-[13px] font-semibold text-fg">
             레포지토리 ({github.repos.length}개)
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div data-testid="github-repo-list" className="flex flex-col gap-1.5">
             {github.repos.map((repo) => (
               <div key={repo.id} className="flex items-center justify-between rounded border border-border bg-surface px-3 py-2">
                 <span className="text-[12px] text-fg">{repo.fullName}</span>

@@ -15,7 +15,7 @@ function WorkspaceIcon({ type }: Readonly<{ type: 'none' | 'local' | 'github' | 
 
 export function ProjectContextBar({ projectName, workspacePath, workspaceType, onSwitch }: Readonly<Props>): React.JSX.Element {
   return (
-    <div className="flex items-center border-t border-border px-3 py-1">
+    <div data-testid="project-context-bar" className="flex items-center border-t border-border px-3 py-1">
       <button
         type="button"
         onClick={onSwitch}

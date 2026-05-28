@@ -38,12 +38,12 @@ test.describe('GitHub 패널', () => {
   })
 
   test('OAuth 성공 mock 시 레포 목록이 표시된다', async ({ page }) => {
-    await page.route('**/api/github/repos', (route) => {
-      void route.fulfill({
+    await page.route('**/api/github/repos', (route) =>
+      route.fulfill({
         status: 200,
         body: JSON.stringify([{ name: 'test-repo', full_name: 'user/test-repo' }]),
       })
-    })
+    )
     await page.evaluate(() => localStorage.setItem('github-connected', 'true'))
     await page.reload()
     const gh = new GitHubPanel(page)

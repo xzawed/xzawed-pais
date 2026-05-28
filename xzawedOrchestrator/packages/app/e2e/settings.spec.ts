@@ -7,12 +7,12 @@ test.describe('Settings', () => {
 
   test('settings modal opens when trigger is clicked', async ({ page }) => {
     await page.getByTestId('settings-trigger').click()
-    await expect(page.getByRole('dialog')).toBeVisible()
-    await expect(page.getByText('설정')).toBeVisible()
+    await expect(page.getByTestId('settings-modal')).toBeVisible()
+    await expect(page.getByTestId('settings-title')).toBeVisible()
   })
 
   test('settings modal contains server URL field', async ({ page }) => {
     await page.getByTestId('settings-trigger').click()
-    await expect(page.getByLabel('서버 URL')).toBeVisible()
+    await expect(page.getByTestId('settings-server-url')).toBeVisible()
   })
 })

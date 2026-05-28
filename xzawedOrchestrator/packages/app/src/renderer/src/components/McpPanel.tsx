@@ -130,7 +130,7 @@ export function McpPanel(): React.JSX.Element {
     <div data-testid="mcp-panel" className="flex flex-1 flex-col gap-4 overflow-y-auto p-5 bg-bg">
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="sm" data-testid="mcp-back-button" onClick={() => setActivePanel('chat')}>{t('back_to_chat', { ns: 'common' })}</Button>
-        <h2 className="text-[13px] font-semibold text-fg">{t('mcp.title')}</h2>
+        <h2 data-testid="mcp-title" className="text-[13px] font-semibold text-fg">{t('mcp.title')}</h2>
       </div>
 
       <div className="flex border-b border-border">

@@ -6,7 +6,7 @@ test.describe('메시지 플로우', () => {
   test.beforeEach(async ({ page }) => {
     await mockHealthCheck(page)
     await mockCreateSession(page)
-    await page.route('**/ws/**', (route) => void route.continue())
+    await page.route('**/ws/**', (route) => route.continue())
   })
 
   test('메시지 입력창에 텍스트를 입력할 수 있다', async ({ page }) => {
