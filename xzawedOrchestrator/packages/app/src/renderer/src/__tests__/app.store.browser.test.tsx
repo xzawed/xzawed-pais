@@ -4,13 +4,17 @@ vi.mock('../lib/i18n.js', () => ({
   default: { changeLanguage: vi.fn().mockResolvedValue(undefined) },
 }))
 
+vi.mock('../lib/detect-locale.js', () => ({
+  detectLocale: vi.fn(() => 'ko'),
+}))
+
 describe('useAppStore — locale', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.resetModules()
   })
 
-  it('기본 locale은 ko이다', async () => {
+  it('기본 locale은 detectLocale() 결과이다', async () => {
     const { useAppStore } = await import('../store/app.store.js')
     expect(useAppStore.getState().locale).toBe('ko')
   })
