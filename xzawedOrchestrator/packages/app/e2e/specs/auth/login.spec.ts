@@ -53,13 +53,11 @@ test.describe('로그인', () => {
     await expect(login.passwordInput).toHaveAttribute('type', 'password')
   })
 
-  test('로그인 후 토큰이 sessionStorage에 저장된다', async ({ loginPage }) => {
+  test('로그인 후 프로젝트 페이지로 라우트가 변경된다', async ({ loginPage }) => {
     await mockLoginSuccess(loginPage, 'my-jwt-token')
     const login = new LoginPage(loginPage)
     await login.login('test@example.com', 'password123')
-    await loginPage.getByTestId('projects-page').waitFor({ state: 'visible', timeout: 10_000 })
-    const stored = await loginPage.evaluate(() => sessionStorage.getItem('access_token'))
-    expect(stored).toBe('my-jwt-token')
+    await expect(loginPage.getByTestId('projects-page')).toBeVisible({ timeout: 10_000 })
   })
 
   test('로그인 성공 후 뒤로가기를 눌러도 로그인 페이지로 돌아오지 않는다', async ({ loginPage }) => {

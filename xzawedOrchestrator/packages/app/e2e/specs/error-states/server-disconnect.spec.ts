@@ -23,14 +23,16 @@ test.describe('서버 단절 오류 상태', () => {
     await expect(page.getByTestId('status-bar-running')).toBeVisible({ timeout: 10_000 })
   })
 
-  test('네트워크 오류 발생 시 토스트 알림이 표시된다', async ({ page }) => {
+  test('메시지 전송 실패 시 채팅에 오류 메시지가 표시된다', async ({ page }) => {
     await mockHealthCheck(page)
     await mockCreateSession(page)
+    await page.route('**/sessions/*/messages', (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Internal Server Error' }) })
+    )
     await page.getByTestId('new-session-button').click()
-    await page.route('**/ws/**', (route) => route.abort())
     await page.getByTestId('message-input').fill('테스트')
     await page.getByTestId('message-send-button').click()
-    await expect(page.locator('[data-sonner-toast]')).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByTestId('chat-message-list')).toContainText('[Error]', { timeout: 5_000 })
   })
 
   test('status bar가 표시된다', async ({ page }) => {

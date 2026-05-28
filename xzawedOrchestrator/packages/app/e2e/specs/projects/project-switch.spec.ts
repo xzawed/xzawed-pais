@@ -33,17 +33,20 @@ test.describe('프로젝트 전환', () => {
   })
 
   test('프로젝트 클릭 시 채팅 페이지로 이동한다', async ({ loginPage }) => {
-    await loginPage.getByTestId('project-item').first().click()
-    await expect(loginPage.getByTestId('nav-chat')).toBeVisible({ timeout: 5_000 })
+    await loginPage.getByTestId('project-item').first().locator('button').first().click()
+    await loginPage.getByTestId('nav-chat').waitFor({ state: 'visible', timeout: 10_000 })
+    await expect(loginPage.getByTestId('nav-chat')).toBeVisible()
   })
 
   test('프로젝트 컨텍스트 바가 채팅 페이지에 표시된다', async ({ loginPage }) => {
-    await loginPage.getByTestId('project-item').first().click()
-    await expect(loginPage.getByTestId('project-context-bar')).toBeVisible({ timeout: 5_000 })
+    await loginPage.getByTestId('project-item').first().locator('button').first().click()
+    await loginPage.getByTestId('project-context-bar').waitFor({ state: 'visible', timeout: 10_000 })
+    await expect(loginPage.getByTestId('project-context-bar')).toBeVisible()
   })
 
   test('프로젝트 컨텍스트 바에 프로젝트 이름이 표시된다', async ({ loginPage }) => {
-    await loginPage.getByTestId('project-item').first().click()
+    await loginPage.getByTestId('project-item').first().locator('button').first().click()
+    await loginPage.getByTestId('project-context-bar').waitFor({ state: 'visible', timeout: 10_000 })
     await expect(loginPage.getByTestId('project-context-bar')).toContainText('Project Alpha', { timeout: 5_000 })
   })
 

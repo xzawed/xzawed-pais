@@ -37,15 +37,24 @@ test.describe('GitHub 패널', () => {
     await expect(gh.panel).not.toBeVisible()
   })
 
-  test('OAuth 성공 mock 시 레포 목록이 표시된다', async ({ page }) => {
-    await page.route('**/api/github/repos', (route) =>
-      route.fulfill({
-        status: 200,
-        body: JSON.stringify([{ name: 'test-repo', full_name: 'user/test-repo' }]),
-      })
-    )
-    await page.evaluate(() => localStorage.setItem('github-connected', 'true'))
+  test('OAuth 성공 mock 시 레포 목록이 표시된다', async ({ electronApp, page }) => {
+    // IPC 핸들러를 main 프로세스에서 교체하여 GitHub 연결 상태를 모킹
+    await electronApp.evaluate(({ ipcMain }) => {
+      ipcMain.removeHandler('github:get-status')
+      ipcMain.handle('github:get-status', () => ({
+        connected: true,
+        username: 'test-user',
+        avatarUrl: '',
+      }))
+      ipcMain.removeHandler('github:list-repos')
+      ipcMain.handle('github:list-repos', () => [
+        { id: 1, name: 'test-repo', fullName: 'test-user/test-repo', private: false, defaultBranch: 'main' },
+      ])
+    })
+
     await page.reload()
+    await page.waitForLoadState('domcontentloaded')
+
     const gh = new GitHubPanel(page)
     await gh.open()
     await expect(page.getByTestId('github-repo-list')).toBeVisible()

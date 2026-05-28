@@ -116,7 +116,7 @@ export function ChatView(): React.JSX.Element {
             <AgentTimelineCard key="streaming" message={streamingMessage} streaming />
           )}
           {isPending && !isStreaming && (
-            <div className="flex items-center gap-1.5 py-1">
+            <div data-testid="streaming-indicator" className="flex items-center gap-1.5 py-1">
               {[0, 1, 2].map((i) => (
                 <span
                   key={i}

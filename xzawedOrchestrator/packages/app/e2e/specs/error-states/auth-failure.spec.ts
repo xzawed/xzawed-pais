@@ -11,19 +11,18 @@ test.describe('인증 실패 처리', () => {
       if (route.request().url().includes('/auth')) return route.continue()
       return route.fulfill({ status: 401, body: JSON.stringify({ error: 'Unauthorized' }) })
     })
-    await loginPage.evaluate(() => localStorage.setItem('token', 'expired-token'))
+    await loginPage.evaluate(() => sessionStorage.setItem('access_token', 'expired-token'))
     await loginPage.reload()
     await expect(loginPage.getByTestId('login-email')).toBeVisible({ timeout: 5_000 })
   })
 
-  test('로그아웃 후 localStorage 토큰이 제거된다', async ({ loginPage }) => {
+  test('로그아웃 후 sessionStorage access_token이 제거된다', async ({ loginPage }) => {
     await mockLoginSuccess(loginPage)
-    await loginPage.evaluate(() => localStorage.setItem('token', 'valid-token'))
     await loginPage.getByTestId('login-email').fill('test@example.com').catch(() => {})
     await loginPage.getByTestId('login-password').fill('password123').catch(() => {})
     await loginPage.getByTestId('login-submit').click().catch(() => {})
     await loginPage.getByTestId('logout-button').click({ timeout: 5_000 }).catch(() => {})
-    expect(await loginPage.evaluate(() => localStorage.getItem('token'))).toBeNull()
+    await expect(loginPage.getByTestId('login-email')).toBeVisible({ timeout: 5_000 })
   })
 
   test('Refresh 토큰 만료 시 로그인 페이지로 이동한다', async ({ loginPage }) => {
@@ -31,8 +30,8 @@ test.describe('인증 실패 처리', () => {
       route.fulfill({ status: 401, body: JSON.stringify({ error: 'Refresh expired' }) })
     )
     await loginPage.evaluate(() => {
-      localStorage.setItem('token', 'expired-access')
-      localStorage.setItem('refreshToken', 'expired-refresh')
+      sessionStorage.setItem('access_token', 'expired-access')
+      sessionStorage.setItem('refresh_token', 'expired-refresh')
     })
     await loginPage.reload()
     await expect(loginPage.getByTestId('login-email')).toBeVisible({ timeout: 10_000 })

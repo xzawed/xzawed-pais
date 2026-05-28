@@ -42,6 +42,7 @@ test.describe('언어 전환', () => {
     await s.open()
     await s.changeLanguage('en')
     await page.reload()
+    await page.waitForSelector('[data-i18n-ready]')
     const s2 = new SettingsModal(page)
     await s2.open()
     await expect(s2.languageSelect).toHaveValue('en')

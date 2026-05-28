@@ -6,10 +6,9 @@ export async function mockLoginSuccess(page: Page, token = 'test-token-123'): Pr
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        token,
-        userId: 'test-user',
         user: { id: 'test-user', email: 'test@example.com' },
         accessToken: token,
+        refreshToken: 'test-refresh-token',
       }),
     })
   )
