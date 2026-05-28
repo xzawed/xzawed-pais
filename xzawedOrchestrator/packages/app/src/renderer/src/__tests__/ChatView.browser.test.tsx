@@ -29,7 +29,7 @@ describe('ChatView', () => {
 
   test('renders empty state when no session', () => {
     render(<MemoryRouter><ChatView /></MemoryRouter>)
-    expect(screen.getByText('새 세션을 시작해주세요')).toBeInTheDocument()
+    expect(screen.getByTestId('empty-chat-message')).toBeInTheDocument()
   })
 
   test('renders chat-message-list when session is active', () => {
