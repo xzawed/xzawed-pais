@@ -107,6 +107,7 @@ export async function publishTaskToManager(
   socket: WebSocket | undefined,
   log: FastifyInstance['log'],
   pool?: Pool,
+  locale: ServerLocale = 'ko',
 ): Promise<void> {
   let userContext: { userId: string; projectId: string; workspaceRoot: string } | undefined
   if (session.projectId) {
@@ -133,7 +134,7 @@ export async function publishTaskToManager(
         ...(userContext ? { userContext } : {}),
       },
     })
-    socket?.send(JSON.stringify({ type: 'status', content: '전달 중...' }))
+    socket?.send(JSON.stringify({ type: 'status', content: t('status.forwarding', locale) }))
   } catch (publishErr: unknown) {
     log.warn({ err: publishErr }, 'Redis publish failed — Manager unavailable, skipping forwarding')
   }
@@ -339,6 +340,7 @@ export async function sessionsRoutes(
 
       const capturedProjectId = session.projectId
       const capturedUserId = session.userId
+      const capturedLocale = resolved.loc
 
       processingSessionIds.add(sessionId)
       ;(async () => {
@@ -363,12 +365,12 @@ export async function sessionsRoutes(
           taskStore.create(sessionId, intent)
 
           const capturedSession = { userId: capturedUserId, projectId: capturedProjectId }
-          await publishTaskToManager(producer, sessionId, intent, snapshot, capturedSession, socket, app.log, pool)
+          await publishTaskToManager(producer, sessionId, intent, snapshot, capturedSession, socket, app.log, pool, capturedLocale)
 
           socket?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
         } catch (err) {
           req.log.error({ err, sessionId }, 'Session processing error')
-          socket?.send(JSON.stringify({ type: 'error', content: '처리 중 오류가 발생했습니다. 다시 시도해주세요.' }))
+          socket?.send(JSON.stringify({ type: 'error', content: t('error.processing_error', capturedLocale) }))
         } finally {
           processingSessionIds.delete(sessionId)
         }

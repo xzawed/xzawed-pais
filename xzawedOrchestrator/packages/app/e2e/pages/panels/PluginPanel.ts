@@ -10,4 +10,9 @@ export class PluginPanel {
     this.navButton = page.getByTestId('nav-plugins')
     this.searchInput = page.getByTestId('plugin-search')
   }
+
+  async open(): Promise<void> {
+    await this.navButton.click()
+    await this.panel.waitFor({ state: 'visible' })
+  }
 }

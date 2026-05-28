@@ -8,6 +8,8 @@
   "error.server_error": "サーバーエラーが発生しました。",
   "error.rate_limit": "リクエストが多すぎます。しばらくしてから再試行してください。",
   "error.token_expired": "トークンが期限切れです。再ログインしてください。",
+  "error.processing_error": "処理中にエラーが発生しました。もう一度お試しください。",
   "status.session_created": "セッションが作成されました。",
-  "status.complete": "完了しました。"
+  "status.complete": "完了しました。",
+  "status.forwarding": "転送中..."
 }

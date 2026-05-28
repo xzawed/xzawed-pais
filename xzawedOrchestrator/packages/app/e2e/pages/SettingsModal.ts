@@ -25,4 +25,9 @@ export class SettingsModal {
   async changeLanguage(locale: 'ko' | 'en' | 'ja'): Promise<void> {
     await this.languageSelect.selectOption(locale)
   }
+
+  async close(): Promise<void> {
+    await this.cancelButton.click()
+    await this.modal.waitFor({ state: 'hidden' })
+  }
 }

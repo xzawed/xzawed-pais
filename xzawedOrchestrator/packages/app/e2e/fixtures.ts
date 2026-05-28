@@ -9,6 +9,7 @@ type E2EFixtures = {
   page: Page
   loginApp: ElectronApplication
   loginPage: Page
+  waitForI18n: () => Promise<void>
 }
 
 export const test = base.extend<E2EFixtures>({
@@ -41,6 +42,11 @@ export const test = base.extend<E2EFixtures>({
     const window = await loginApp.firstWindow()
     await window.waitForLoadState('domcontentloaded')
     await provide(window)
+  },
+
+  // i18n 초기화 완료 대기 헬퍼. reload 후 [data-i18n-ready] 속성 출현까지 대기한다.
+  waitForI18n: async ({ page }, provide) => {
+    await provide(() => page.waitForSelector('[data-i18n-ready]', { timeout: 10_000 }))
   },
 })
 

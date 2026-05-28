@@ -8,6 +8,8 @@
   "error.server_error": "An internal server error occurred.",
   "error.rate_limit": "Too many requests. Please try again later.",
   "error.token_expired": "Token expired. Please log in again.",
+  "error.processing_error": "An error occurred while processing. Please try again.",
   "status.session_created": "Session created.",
-  "status.complete": "Complete."
+  "status.complete": "Complete.",
+  "status.forwarding": "Forwarding..."
 }

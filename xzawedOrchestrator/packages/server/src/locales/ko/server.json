@@ -8,6 +8,8 @@
   "error.server_error": "서버 오류가 발생했습니다.",
   "error.rate_limit": "요청이 너무 많습니다. 잠시 후 다시 시도하세요.",
   "error.token_expired": "토큰이 만료되었습니다. 다시 로그인해 주세요.",
+  "error.processing_error": "처리 중 오류가 발생했습니다. 다시 시도해주세요.",
   "status.session_created": "세션이 생성되었습니다.",
-  "status.complete": "완료되었습니다."
+  "status.complete": "완료되었습니다.",
+  "status.forwarding": "전달 중..."
 }

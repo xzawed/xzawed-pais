@@ -142,6 +142,27 @@ await page.route('**/sessions/*/messages', route => route.fulfill({ status: 500 
 await element.waitFor({ state: 'visible', timeout: 10_000 })
 ```
 
+**i18n 대기 — `waitForI18n` fixture 사용**: `fixtures.ts`의 `waitForI18n` fixture로 `[data-i18n-ready]` 대기를 추상화:
+```typescript
+// ❌ 중복
+await page.waitForSelector('[data-i18n-ready]', { timeout: 10_000 })
+
+// ✅ fixture 사용
+test('...', async ({ page, waitForI18n }) => {
+  await page.addInitScript(() => localStorage.setItem('locale', 'en'))
+  await page.reload()
+  await waitForI18n()
+})
+```
+
+**POM 클래스 패턴**: `PluginPanel`·`SettingsModal` 모두 `open()`/`close()` 메서드를 제공한다. 새 패널 POM 추가 시 동일 패턴 적용:
+```typescript
+async open(): Promise<void> {
+  await this.navButton.click()
+  await this.panel.waitFor({ state: 'visible' })
+}
+```
+
 ## 공통 명령어 패턴
 
 ### Turborepo 기반 (xzawedOrchestrator, xzawedManager)
@@ -215,16 +236,34 @@ MODE=local
 feature/fix 브랜치 생성 → 작업 → 테스트 통과 → 코드 검토 → PR 생성 → 머지
 ```
 
+### Git Hooks 설치 (클론 후 1회)
+
+```bash
+bash scripts/install-hooks.sh
+```
+
+- **pre-commit**: 변경된 서비스만 tsc 타입 체크 (commit 시 자동)
+- **pre-push**: jscpd CPD + pnpm audit (push 시 자동)
+- 긴급 우회: `git commit --no-verify` (CI에서는 여전히 검사됨)
+
+### Claude Code 스킬 (`.claude/commands/`)
+
+- `/pr-ready` — PR 생성 전 7단계 자동 체크 (빌드·테스트·audit·CPD·E2E선택자·i18n·Dockerfile)
+- `/e2e-electron` — E2E 스펙 금지 패턴 자동 감지 및 수정 가이드
+- `/i18n-add <ns.key> <ko-text>` — ko/en/ja 3개 파일 동시 i18n 키 추가
+- `/sonar-check` — SonarCloud 품질 게이트 로컬 사전 검증
+
 ### 규칙
 
 1. `master`에 직접 push 금지 — 반드시 브랜치를 만들어 작업한다
    > master 직접 커밋 시 SonarCloud "New Code" 계산 기준이 꼬여 소급 PR로도 CPD 통과가 어려워진다
 2. PR은 작업 완료 후 마지막에 생성한다 (Draft PR 방식 사용 금지)
-3. PR 생성 전 필수 조건:
+3. PR 생성 전 필수 조건 (`/pr-ready` 스킬로 자동화):
    - 해당 서비스의 테스트 전체 통과 (`pnpm test`)
    - **빌드 성공 (`pnpm build`) — tsc 타입 체크 포함, 테스트 파일도 검사**
    - `pnpm audit` 취약점 0개
    - CPD 로컬 확인: `npx jscpd@3.5.10 --config .jscpd.json` (0 clones 목표)
+   - i18n 키 동기화: `node scripts/check-i18n.js` (ko/en/ja 일치 확인)
 
 ### 장기 디버깅 시 컨텍스트 관리
 
