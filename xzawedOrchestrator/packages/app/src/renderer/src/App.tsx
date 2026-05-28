@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { I18nextProvider } from 'react-i18next'
@@ -13,14 +13,15 @@ import { StatusBar } from './components/layout/StatusBar.js'
 import './lib/i18n.js'
 import i18n from './lib/i18n.js'
 
-function RequireAuth({ children }: { children: React.ReactNode }): React.JSX.Element {
+function RequireAuth({ children, noAuth }: { children: React.ReactNode; noAuth: boolean }): React.JSX.Element {
   const user = useAuthStore((s) => s.user)
-  if (!user) return <Navigate to="/login" replace />
+  if (!noAuth && !user) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
-function RootRedirect(): React.JSX.Element {
+function RootRedirect({ noAuth }: { noAuth: boolean }): React.JSX.Element {
   const user = useAuthStore((s) => s.user)
+  if (noAuth) return <Navigate to="/chat" replace />
   return <Navigate to={user ? '/projects' : '/login'} replace />
 }
 
@@ -28,6 +29,7 @@ export function App(): React.JSX.Element {
   const { settings, updateSettings, setServerStatus } = useAppStore()
   const { restore } = useAuthStore()
   const navigate = useNavigate()
+  const [noAuth, setNoAuth] = useState(false)
 
   useEffect(() => {
     globalThis.electronAPI
@@ -37,10 +39,18 @@ export function App(): React.JSX.Element {
   }, [updateSettings])
 
   useEffect(() => {
-    if (settings.serverUrl) {
-      restore(settings.serverUrl).catch((e: unknown) => console.error('[App] restore error:', e))
-    }
-  }, [settings.serverUrl, restore])
+    if (!settings.serverUrl) return
+    restore(settings.serverUrl).catch((e: unknown) => console.error('[App] restore error:', e))
+    // Probe whether auth routes exist; 404 means AUTH=none mode → go directly to chat
+    fetch(`${settings.serverUrl}/auth/me`)
+      .then((res) => {
+        if (res.status === 404) {
+          setNoAuth(true)
+          navigate('/chat', { replace: true })
+        }
+      })
+      .catch(() => {})
+  }, [settings.serverUrl, restore, navigate])
 
   useEffect(() => {
     let cancelled = false
@@ -62,7 +72,7 @@ export function App(): React.JSX.Element {
         <div className="flex h-full w-full flex-col overflow-hidden bg-bg">
           <div className="flex flex-1 overflow-hidden min-w-0">
             <Routes>
-              <Route path="/" element={<RootRedirect />} />
+              <Route path="/" element={<RootRedirect noAuth={noAuth} />} />
 
               <Route
                 path="/login"
@@ -89,7 +99,7 @@ export function App(): React.JSX.Element {
               <Route
                 path="/projects"
                 element={
-                  <RequireAuth>
+                  <RequireAuth noAuth={noAuth}>
                     <ProjectsPage
                       serverUrl={settings.serverUrl}
                       onSelectProject={(id) => navigate(`/projects/${id}/chat`)}
@@ -102,13 +112,13 @@ export function App(): React.JSX.Element {
               <Route
                 path="/projects/:projectId/chat"
                 element={
-                  <RequireAuth>
+                  <RequireAuth noAuth={noAuth}>
                     <ChatLayout />
                   </RequireAuth>
                 }
               />
 
-              {/* Legacy/local mode: direct chat without auth */}
+              {/* Local/no-auth mode: direct chat */}
               <Route path="/chat" element={<ChatLayout />} />
 
               <Route path="*" element={<Navigate to="/" replace />} />

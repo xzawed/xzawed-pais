@@ -1,0 +1,24 @@
+{
+  "login": {
+    "title": "로그인",
+    "email": "이메일",
+    "password": "비밀번호",
+    "submit": "로그인",
+    "go_register": "회원가입",
+    "error_invalid": "이메일 또는 비밀번호가 올바르지 않습니다."
+  },
+  "register": {
+    "title": "회원가입",
+    "email": "이메일",
+    "password": "비밀번호",
+    "submit": "회원가입",
+    "go_login": "로그인",
+    "error_exists": "이미 사용 중인 이메일입니다."
+  },
+  "projects": {
+    "title": "프로젝트",
+    "new_project": "새 프로젝트",
+    "logout": "로그아웃",
+    "empty": "등록된 프로젝트가 없습니다."
+  }
+}
