@@ -37,25 +37,20 @@ test.describe('GitHub 패널', () => {
     await expect(gh.panel).not.toBeVisible()
   })
 
-  test('OAuth 성공 mock 시 레포 목록이 표시된다', async ({ electronApp, page }) => {
-    // IPC 핸들러를 main 프로세스에서 교체하여 GitHub 연결 상태를 모킹
-    await electronApp.evaluate(({ ipcMain }) => {
-      ipcMain.removeHandler('github:get-status')
-      ipcMain.handle('github:get-status', () => ({
-        connected: true,
-        username: 'test-user',
-        avatarUrl: 'https://avatars.githubusercontent.com/u/1',
-      }))
-      ipcMain.removeHandler('github:list-repos')
-      ipcMain.handle('github:list-repos', () => [
+  test('OAuth 성공 mock 시 레포 목록이 표시된다', async ({ page }) => {
+    // electronApp.evaluate IPC mock은 nav-github 클릭을 블로킹하는 부작용이 있어,
+    // window.__integrationsStore(test 모드에서만 노출)로 스토어 상태를 직접 주입
+    await page.evaluate(() => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const store = (window as any).__integrationsStore
+      store.getState().setGitHubConnected('test-user', 'https://avatars.githubusercontent.com/u/1')
+      store.getState().setGitHubRepos([
         { id: 1, name: 'test-repo', fullName: 'test-user/test-repo', private: false, defaultBranch: 'main' },
       ])
+      store.getState().setActivePanel('github')
     })
 
-    // reload 없이 IPC mock만 설정 — GitHubPanel은 nav-github 클릭 시 마운트되므로
-    // restoreStatus()가 호출되는 시점에 mock이 이미 in-place 상태
-    const gh = new GitHubPanel(page)
-    await gh.open()
+    await expect(page.getByTestId('github-panel')).toBeVisible()
     await expect(page.getByTestId('github-repo-list')).toBeVisible({ timeout: 10000 })
   })
 
