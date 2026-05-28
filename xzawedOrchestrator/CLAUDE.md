@@ -40,7 +40,7 @@ packages/
 ├── server/     # Fastify 백엔드 (API, WebSocket, MCP, Claude 실행기, Redis Streams)
 │   └── src/
 │       ├── api/
-│       │   ├── sessions.route.ts     # POST /sessions, GET /sessions/:id/tasks 등
+│       │   ├── sessions.route.ts     # POST /sessions, GET /sessions/:id/tasks 등; resolveSession() 헬퍼로 중복 검증 통합 (PR #129)
 │       │   ├── auth.route.ts         # POST /auth/register|login|refresh|logout, GET /auth/me (IP Rate Limiting)
 │       │   └── projects.route.ts     # CRUD + PUT|DELETE /projects/:id/github-token, GET /projects/:id/github-token/status
 │       ├── auth/
@@ -58,11 +58,13 @@ packages/
 │       │   ├── http-remote-runner.ts # 원격 HTTP 서버 NDJSON 스트리밍
 │       │   ├── ssh-remote-runner.ts  # SSH 연결 후 원격 claude CLI 실행
 │       │   └── intent-structurer.ts  # Claude API로 사용자 의도 1-2문장 정제
+│       ├── i18n/
+│       │   └── server-i18n.ts        # Accept-Language 파싱, LocalizedRequest 인터페이스 export (PR #129)
 │       └── tasks/
 │           ├── task.ts               # Task 타입 (pending→running→completed/failed)
 │           └── task.store.ts         # TaskStore — 세션별 인메모리 Map 관리
 └── app/        # Electron 앱 (React 19 + Zustand + electron-vite)
-    ├── e2e/                          # Playwright E2E 테스트 (~100건, 17 spec 파일)
+    ├── e2e/                          # Playwright E2E 테스트 (110건, 17 spec 파일)
     │   ├── fixtures.ts               # Electron 자동 실행 fixture — electronApp/page/loginApp/loginPage
     │   ├── helpers/
     │   │   └── mock-server.ts        # HTTP route mock 헬퍼 (auth/sessions/health)
@@ -72,7 +74,7 @@ packages/
     │   │   ├── SettingsModal.ts      # 설정 모달 POM
     │   │   ├── CommandPalette.ts     # 커맨드 팔레트 POM (Control+K)
     │   │   └── panels/               # GitHubPanel/McpPanel/PluginPanel POM
-    │   ├── specs/                    # 기능별 E2E 스펙
+    │   ├── specs/                    # 기능별 E2E 스펙 (PR #129 신규, 97건)
     │   │   ├── auth/login.spec.ts
     │   │   ├── chat/{message-flow,session-lifecycle,streaming}.spec.ts
     │   │   ├── error-states/{auth-failure,server-disconnect}.spec.ts
@@ -98,8 +100,8 @@ packages/
         │   ├── utils.ts               # cn() 유틸리티 (clsx + tailwind-merge)
         │   ├── markdown.ts            # Shiki 싱글턴 하이라이터
         │   ├── parseAgentSteps.ts     # 에이전트 스텝 파서 유틸리티
-        │   ├── i18n.ts                # i18next 초기화 — init 완료 시 data-i18n-ready 속성 설정
-        │   ├── detect-locale.ts       # Accept-Language / localStorage 로케일 감지
+        │   ├── i18n.ts                # i18next 초기화 — init 완료 시 data-i18n-ready 속성 설정 (PR #129)
+        │   ├── detect-locale.ts       # Accept-Language / localStorage 로케일 감지 (PR #129)
         │   └── api.ts                 # fetch 래퍼 (tokenStorage 연동, JSON 파싱)
         ├── store/
         │   ├── app.store.ts           # 앱 설정, 서버 상태
@@ -162,19 +164,21 @@ packages/
 ### 테스트 인프라
 
 - **Vitest 3** + `vitest.config.ts` `projects` API — `unit` (node) + `browser` (playwright/chromium) 두 프로젝트 분리
-  - `unit`: `test/**/*.test.ts` — 17건 (store, main 프로세스 유닛 테스트)
-  - `browser`: `src/renderer/src/__tests__/**/*.browser.test.tsx` — ~61건 (App·Sidebar·ChatView·SettingsModal·CommandPalette·GitHubPanel·McpPanel·PluginPanel 등 컴포넌트 렌더링 + store/detect-locale)
-  - 총 `pnpm test`: **~78건** (app) + **~138건** (server, Redis/DB 없으면 일부 skip) + **29건** (ui, jsdom) = **~245건**
+  - `unit`: `test/**/*.test.ts` + `src/renderer/src/lib/parseAgentSteps.test.ts` — 63건 (store, main 프로세스, 파서 유닛 테스트)
+  - `browser`: `src/renderer/src/__tests__/**/*.browser.test.tsx` — 70건 (App·Sidebar·ChatView·SettingsModal·CommandPalette·GitHubPanel·McpPanel·PluginPanel·detect-locale·app.store 등 컴포넌트·스토어 렌더링)
+  - 총 `pnpm test`: **~133건** (app) + **~272건** (server, Redis/DB 없으면 일부 skip) + **38건** (ui, jsdom) = **~443건**
 - **@vitest/browser + playwright** — 실제 Chromium에서 React 컴포넌트 렌더링 검증
 - **@testing-library/react** — 브라우저 모드 렌더링; `afterEach(cleanup)` 명시 필요
-- **@playwright/test** + `playwright._electron` — Electron E2E (`e2e/`, ~100건/17 spec 파일, `pnpm test:e2e`)
+- **@playwright/test** + `playwright._electron` — Electron E2E (`e2e/`, 110건/17 spec 파일, `pnpm test:e2e`)
   - `e2e/fixtures.ts`: `electronApp`/`page` + `loginApp`/`loginPage` fixture (ELECTRON_TEST_ROUTE 환경변수 분기)
   - `e2e/pages/`: Page Object Model — ChatPage, LoginPage, SettingsModal, CommandPalette, panels/
   - `e2e/helpers/mock-server.ts`: HTTP route mock (auth/sessions/health)
+  - `e2e/specs/`: 기능별 분류 — auth/chat/error-states/i18n/panels/projects/settings/ui (PR #129 신규, 97건)
   - data-testid: ActivityBar·Sidebar·GitHubPanel·McpPanel·MessageInput·CodeBlock·PipelineStrip·ChatView·streaming-indicator·command-palette-item 등
   - CI: `playwright-e2e` 잡 (`ubuntu-latest`, `xvfb-run`, Electron 바이너리 다운로드)
 - **Redis 통합 테스트** (`packages/server/src/__tests__/redis-streams.integration.test.ts`) — 5건, `REDIS_URL` 없으면 skip
-- **@xzawed/ui 테스트** (`packages/ui/src/__tests__/`) — 29건, jsdom 환경 (`vitest.config.ts`), `pnpm --filter @xzawed/ui test`
+- **서버 i18n 테스트** (`packages/server/src/i18n/__tests__/server-i18n.test.ts`) — 18건, Accept-Language 파싱·LocalizedRequest 인터페이스 검증 (PR #129 신규)
+- **@xzawed/ui 테스트** (`packages/ui/src/__tests__/`) — 38건, jsdom 환경 (`vitest.config.ts`), `pnpm --filter @xzawed/ui test`
 
 ### 작업(Task) 생명주기
 
