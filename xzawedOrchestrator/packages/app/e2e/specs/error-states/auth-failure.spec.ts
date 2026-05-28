@@ -37,14 +37,14 @@ test.describe('인증 실패 처리', () => {
     await expect(loginPage.getByTestId('login-email')).toBeVisible({ timeout: 10_000 })
   })
 
-  test('Rate Limit 응답 시 토스트 메시지가 표시된다', async ({ loginPage }) => {
+  test('Rate Limit 응답 시 오류 메시지가 표시된다', async ({ loginPage }) => {
     await loginPage.route('**/auth/login', (route) =>
       route.fulfill({ status: 429, body: JSON.stringify({ error: 'Too many requests' }) })
     )
     await loginPage.getByTestId('login-email').fill('test@example.com').catch(() => {})
     await loginPage.getByTestId('login-password').fill('pass').catch(() => {})
     await loginPage.getByTestId('login-submit').click().catch(() => {})
-    await expect(loginPage.locator('[data-sonner-toast]')).toBeVisible({ timeout: 5_000 })
+    await expect(loginPage.getByTestId('login-error')).toBeVisible({ timeout: 5_000 })
   })
 
   test('인증 오류 메시지가 표시된다', async ({ loginPage }) => {

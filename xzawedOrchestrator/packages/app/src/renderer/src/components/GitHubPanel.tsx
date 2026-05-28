@@ -20,9 +20,9 @@ export function GitHubPanel(): React.JSX.Element {
   useEffect(() => {
     async function restoreStatus(): Promise<void> {
       const status = await globalThis.electronAPI?.githubGetStatus()
-      if (status?.connected && status.username && status.avatarUrl) {
+      if (status?.connected && status.username) {
         const { setGitHubConnected, setGitHubRepos } = useIntegrationsStore.getState()
-        setGitHubConnected(status.username, status.avatarUrl)
+        setGitHubConnected(status.username, status.avatarUrl ?? '')
         const repos = await globalThis.electronAPI?.githubListRepos() ?? []
         setGitHubRepos(repos)
       }

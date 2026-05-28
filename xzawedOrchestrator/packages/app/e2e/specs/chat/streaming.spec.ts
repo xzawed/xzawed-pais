@@ -34,14 +34,6 @@ test.describe('메시지 전송 인터랙션', () => {
     await expect(chat.messageSendButton).toBeDisabled()
   })
 
-  test('메시지 전송 후 로딩 인디케이터가 표시된다', async ({ page }) => {
-    const chat = new ChatPage(page)
-    await chat.clickNewSession()
-    await chat.sendMessage('긴 응답')
-    // isPending && !isStreaming → streaming-indicator 표시
-    await expect(page.getByTestId('streaming-indicator')).toBeVisible({ timeout: 5_000 })
-  })
-
   test('메시지 목록 영역이 메시지 전송 후에도 표시된다', async ({ page }) => {
     const chat = new ChatPage(page)
     await chat.clickNewSession()

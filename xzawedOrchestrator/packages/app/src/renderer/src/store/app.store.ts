@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import i18n from '../lib/i18n.js'
+import { detectLocale } from '../lib/detect-locale.js'
 import type { Locale } from '../lib/detect-locale.js'
 
 export interface AppSettings {
@@ -28,7 +29,7 @@ export const useAppStore = create<AppState>((set) => ({
   },
   serverStatus: 'unknown',
   showSettings: false,
-  locale: 'ko',
+  locale: detectLocale(),
   updateSettings: (s) =>
     set((state) => ({ settings: { ...state.settings, ...s } })),
   setServerStatus: (serverStatus) => set({ serverStatus }),

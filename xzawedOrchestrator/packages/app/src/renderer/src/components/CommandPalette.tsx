@@ -81,26 +81,26 @@ export function CommandPalette(): React.JSX.Element {
               <CommandList>
                 <CommandEmpty>결과 없음</CommandEmpty>
                 <CommandGroup heading="세션">
-                  <CommandItem data-testid="command-palette-item" onSelect={newSession}>
+                  <CommandItem data-testid="command-palette-item" value="새 세션" onSelect={newSession}>
                     <span>＋</span> {t('command_palette.new_session')}
                   </CommandItem>
                 </CommandGroup>
                 <CommandGroup heading="이동">
-                  <CommandItem data-testid="command-palette-item" onSelect={() => navigate('chat')}>
+                  <CommandItem data-testid="command-palette-item" value="채팅으로 이동" onSelect={() => navigate('chat')}>
                     <span>💬</span> 채팅으로 이동
                   </CommandItem>
-                  <CommandItem data-testid="command-palette-item" onSelect={() => navigate('github')}>
+                  <CommandItem data-testid="command-palette-item" value="GitHub 패널" onSelect={() => navigate('github')}>
                     <span>🐙</span> GitHub 패널
                   </CommandItem>
-                  <CommandItem data-testid="command-palette-item" onSelect={() => navigate('mcp')}>
+                  <CommandItem data-testid="command-palette-item" value="MCP 서버 패널" onSelect={() => navigate('mcp')}>
                     <span>🔌</span> MCP 서버 패널
                   </CommandItem>
-                  <CommandItem data-testid="command-palette-item" onSelect={() => navigate('plugins')}>
+                  <CommandItem data-testid="command-palette-item" value="플러그인 패널" onSelect={() => navigate('plugins')}>
                     <span>🧩</span> 플러그인 패널
                   </CommandItem>
                 </CommandGroup>
                 <CommandGroup heading="기타">
-                  <CommandItem data-testid="command-palette-item" onSelect={openSettings}>
+                  <CommandItem data-testid="command-palette-item" value="설정" onSelect={openSettings}>
                     <span>⚙</span> {t('command_palette.settings')}
                   </CommandItem>
                 </CommandGroup>

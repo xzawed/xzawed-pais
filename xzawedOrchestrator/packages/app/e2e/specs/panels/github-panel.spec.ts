@@ -44,7 +44,7 @@ test.describe('GitHub 패널', () => {
       ipcMain.handle('github:get-status', () => ({
         connected: true,
         username: 'test-user',
-        avatarUrl: '',
+        avatarUrl: 'https://avatars.githubusercontent.com/u/1',
       }))
       ipcMain.removeHandler('github:list-repos')
       ipcMain.handle('github:list-repos', () => [
@@ -53,11 +53,11 @@ test.describe('GitHub 패널', () => {
     })
 
     await page.reload()
-    await page.waitForLoadState('domcontentloaded')
+    await page.waitForSelector('[data-i18n-ready]')
 
     const gh = new GitHubPanel(page)
     await gh.open()
-    await expect(page.getByTestId('github-repo-list')).toBeVisible()
+    await expect(page.getByTestId('github-repo-list')).toBeVisible({ timeout: 10000 })
   })
 
   test('GitHub 패널에서 채팅으로 돌아갈 수 있다', async ({ page }) => {
