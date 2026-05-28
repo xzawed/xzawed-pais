@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import type { Pool } from 'pg'
 import { ProjectRepo, type ProjectUpdate } from '../projects/project.repo.js'
 import { WorkspaceService } from '../projects/workspace.service.js'
+import { validateBranchName } from '../projects/branch-validation.js'
 import { makeUserAuthHook } from '../auth/user-auth.hook.js'
 import { assertProjectOwner } from '../auth/ownership.js'
 import { upsertGithubToken, deleteGithubToken } from '../github-tokens/github-token.repo.js'
@@ -152,6 +153,10 @@ export async function projectsRoutes(
       if (!req.authUser) return reply.status(401).send({ error: 'Unauthorized' })
       const { id } = req.params
       const { workspaceType, localPath, repoUrl, branch = 'main', pushStrategy = 'push' } = req.body
+
+      try { validateBranchName(branch) } catch {
+        return reply.status(400).send({ error: 'Invalid branch name' })
+      }
 
       const existing = await repo.findByIdAndUser(id, req.authUser.sub)
       if (!existing) return reply.status(404).send({ error: 'Project not found' })

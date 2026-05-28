@@ -2,6 +2,9 @@ import { spawn } from 'node:child_process'
 import { access, constants, rm } from 'node:fs/promises'
 import { join, resolve, parse } from 'node:path'
 import { homedir } from 'node:os'
+import { validateBranchName } from './branch-validation.js'
+
+export { validateBranchName } from './branch-validation.js'
 
 function assertNotFilesystemRoot(p: string): void {
   const resolved = resolve(p)
@@ -30,6 +33,7 @@ export class WorkspaceService {
   }
 
   async cloneRepo(repoUrl: string, destPath: string, branch: string): Promise<void> {
+    validateBranchName(branch)
     try {
       await this.runGit(
         ['clone', '--branch', branch, '--depth', '1', '--', repoUrl, destPath],
@@ -43,6 +47,7 @@ export class WorkspaceService {
   }
 
   async pullRepo(workspacePath: string, branch: string): Promise<void> {
+    validateBranchName(branch)
     await this.runGit(['fetch', 'origin', branch], workspacePath)
     await this.runGit(['reset', '--hard', `origin/${branch}`], workspacePath)
   }
