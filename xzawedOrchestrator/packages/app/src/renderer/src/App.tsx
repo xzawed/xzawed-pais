@@ -19,8 +19,10 @@ function RequireAuth({ children, noAuth }: { children: React.ReactNode; noAuth: 
   return <>{children}</>
 }
 
-function RootRedirect({ noAuth }: { noAuth: boolean }): React.JSX.Element {
+function RootRedirect({ authChecked, noAuth }: { authChecked: boolean; noAuth: boolean }): React.JSX.Element | null {
   const user = useAuthStore((s) => s.user)
+  // Don't navigate until we know auth mode — prevents flash of login page
+  if (!authChecked) return null
   if (noAuth) return <Navigate to="/chat" replace />
   return <Navigate to={user ? '/projects' : '/login'} replace />
 }
@@ -30,6 +32,7 @@ export function App(): React.JSX.Element {
   const { restore } = useAuthStore()
   const navigate = useNavigate()
   const [noAuth, setNoAuth] = useState(false)
+  const [authChecked, setAuthChecked] = useState(false)
 
   useEffect(() => {
     globalThis.electronAPI
@@ -40,16 +43,19 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     if (!settings.serverUrl) return
-    restore(settings.serverUrl).catch((e: unknown) => console.error('[App] restore error:', e))
-    // Probe whether auth routes exist; 404 means AUTH=none mode → go directly to chat
+    void restore(settings.serverUrl).catch((e: unknown) => console.error('[App] restore error:', e))
+    // Probe auth mode: 404 = AUTH=none (no auth routes registered)
     fetch(`${settings.serverUrl}/auth/me`)
       .then((res) => {
-        if (res.status === 404) {
-          setNoAuth(true)
-          navigate('/chat', { replace: true })
-        }
+        const isNone = res.status === 404
+        setNoAuth(isNone)
+        setAuthChecked(true)
+        if (isNone) navigate('/chat', { replace: true })
       })
-      .catch(() => {})
+      .catch(() => {
+        // Server unreachable at startup — don't block, show login to retry
+        setAuthChecked(true)
+      })
   }, [settings.serverUrl, restore, navigate])
 
   useEffect(() => {
@@ -72,7 +78,7 @@ export function App(): React.JSX.Element {
         <div className="flex h-full w-full flex-col overflow-hidden bg-bg">
           <div className="flex flex-1 overflow-hidden min-w-0">
             <Routes>
-              <Route path="/" element={<RootRedirect noAuth={noAuth} />} />
+              <Route path="/" element={<RootRedirect authChecked={authChecked} noAuth={noAuth} />} />
 
               <Route
                 path="/login"

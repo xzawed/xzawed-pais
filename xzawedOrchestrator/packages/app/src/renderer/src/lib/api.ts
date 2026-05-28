@@ -10,6 +10,11 @@ export type WsMessage =
   | { type: 'chunk'; messageId: string; content: string }
   | { type: 'done'; messageId: string }
   | { type: 'error'; content: string }
+  | { type: 'status'; content: string }
+  | { type: 'agent_status'; agentId: string; content: string }
+  | { type: 'agent_done'; agentId: string; content: string }
+  | { type: 'agent_error'; agentId: string; content: string }
+  | { type: 'agent_info_request'; agentId: string; content: string; uiSpec?: unknown }
 
 export interface CreateSessionResponse {
   sessionId: string

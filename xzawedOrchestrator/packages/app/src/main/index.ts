@@ -1,4 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
+// dev 모드에서 productName(xzawedOrchestrator)이 적용되지 않아 userData 경로가 어긋남
+// electron-builder의 productName과 동기화하여 settings.json 경로를 일관되게 유지
+if (!app.isPackaged) app.setName('xzawedOrchestrator')
 import { join } from 'node:path'
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { ServerManager } from './server-manager.js'
