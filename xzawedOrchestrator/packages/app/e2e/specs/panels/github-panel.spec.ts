@@ -52,9 +52,8 @@ test.describe('GitHub 패널', () => {
       ])
     })
 
-    await page.reload()
-    await page.waitForSelector('[data-i18n-ready]')
-
+    // reload 없이 IPC mock만 설정 — GitHubPanel은 nav-github 클릭 시 마운트되므로
+    // restoreStatus()가 호출되는 시점에 mock이 이미 in-place 상태
     const gh = new GitHubPanel(page)
     await gh.open()
     await expect(page.getByTestId('github-repo-list')).toBeVisible({ timeout: 10000 })

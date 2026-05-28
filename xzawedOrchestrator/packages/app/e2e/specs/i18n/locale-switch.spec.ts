@@ -3,6 +3,10 @@ import { SettingsModal } from '../../pages/SettingsModal.js'
 
 test.describe('언어 전환', () => {
   test('기본 언어가 한국어이다', async ({ page }) => {
+    // CI 브라우저는 navigator.language='en'이므로 localStorage에 'ko'를 명시적으로 주입 후 재로드
+    await page.addInitScript(() => localStorage.setItem('locale', 'ko'))
+    await page.reload()
+    await page.waitForSelector('[data-i18n-ready]')
     const s = new SettingsModal(page)
     await s.open()
     await expect(s.languageSelect).toHaveValue('ko')
