@@ -45,13 +45,15 @@ services:
       PORT: "3000"
       CLAUDE_MODE: ${CLAUDE_MODE:-api}
       MANAGER_URL: http://manager:3001
+    volumes:
+      - workspace:/workspace
     depends_on:
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3000/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -70,11 +72,15 @@ services:
       REDIS_URL: redis://redis:6379
       PORT: "3001"
       CLAUDE_MODE: ${CLAUDE_MODE:-api}
+    volumes:
+      - workspace:/workspace
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3001/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -96,7 +102,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3002/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -121,7 +127,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3003/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -143,7 +149,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3004/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3004/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -168,7 +174,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3005/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3005/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -193,7 +199,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3006/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3006/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -218,7 +224,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3007/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3007/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -243,7 +249,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:3008/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3008/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

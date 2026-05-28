@@ -52,8 +52,8 @@ function writeSettings(settings: AppSettings): void {
 }
 
 const serverManager = new ServerManager()
-const mcpManager = new McpProcessManager()
-const pluginManager = new PluginManager()
+let mcpManager: McpProcessManager
+let pluginManager: PluginManager
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
@@ -216,6 +216,8 @@ ipcMain.handle('plugin:uninstall', (_e, id: string) => pluginManager.uninstall(i
 
 // ── Lifecycle ────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
+  mcpManager = new McpProcessManager()
+  pluginManager = new PluginManager()
   const settings = readSettings()
   if (settings.mode === 'local') serverManager.start()
   createWindow()

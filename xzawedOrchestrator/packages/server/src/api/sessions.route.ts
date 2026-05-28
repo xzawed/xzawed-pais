@@ -232,11 +232,17 @@ export async function sessionsRoutes(
 
   type ResolvedSession = { session: Session; loc: ServerLocale }
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
   async function resolveSession(
     req: FastifyRequest<{ Params: { id: string } }>,
     reply: FastifyReply,
   ): Promise<ResolvedSession | null> {
     const loc = locale(req)
+    if (!UUID_RE.test(req.params.id)) {
+      await reply.status(400).send({ error: t('error.invalid_input', loc) })
+      return null
+    }
     const session = await store.findById(req.params.id)
     if (!session) {
       await reply.status(404).send({ error: t('error.session_not_found', loc) })

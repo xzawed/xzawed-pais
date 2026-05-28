@@ -160,6 +160,9 @@ export async function projectsRoutes(
 
       if (workspaceType === 'local') {
         if (!localPath) return reply.status(400).send({ error: 'localPath required' })
+        if (localPath.includes('..') || !localPath.startsWith('/')) {
+          return reply.status(400).send({ error: 'localPath must be absolute and must not contain ..' })
+        }
         await workspaceSvc.validateLocalPath(localPath)
         workspacePath = localPath
       } else if (workspaceType === 'github') {
@@ -180,7 +183,8 @@ export async function projectsRoutes(
         workspacePath,
         pushStrategy,
       })
-      return reply.send(updated)
+      if (!updated) return reply.status(404).send({ error: 'Project not found' })
+      return reply.send({ project: updated })
     }
   )
 

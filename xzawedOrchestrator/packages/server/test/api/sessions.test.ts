@@ -86,8 +86,22 @@ describe('Sessions API', () => {
   })
 
   it('GET /sessions/:id/messages returns 404 for unknown session', async () => {
-    const res = await app.inject({ method: 'GET', url: '/sessions/no-such-id/messages' })
+    const res = await app.inject({ method: 'GET', url: '/sessions/00000000-0000-0000-0000-000000000000/messages' })
     expect(res.statusCode).toBe(404)
+  })
+
+  it('GET /sessions/:id/messages returns 400 for non-UUID session id', async () => {
+    const res = await app.inject({ method: 'GET', url: '/sessions/not-a-valid-uuid/messages' })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('POST /sessions/:id/messages returns 400 for non-UUID session id', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/sessions/not-a-valid-uuid/messages',
+      payload: { content: 'test' },
+    })
+    expect(res.statusCode).toBe(400)
   })
 
   it('POST /sessions starts a StreamConsumer for the session', async () => {

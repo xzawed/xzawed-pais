@@ -267,8 +267,9 @@ describe('ClaudeRunner', () => {
       ).rejects.toThrow(/timed out/i)
 
       // Additionally verify that the create call received a signal option
-      // (this is the part that fails before Task 5 — no signal is currently passed)
+      // signal is passed as the second argument (RequestOptions) to client.messages.create
       expect(createFn).toHaveBeenCalledWith(
+        expect.any(Object),
         expect.objectContaining({ signal: controller.signal }),
       )
     })
