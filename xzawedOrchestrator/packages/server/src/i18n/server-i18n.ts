@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export type ServerLocale = 'ko' | 'en' | 'ja'
+export interface LocalizedRequest { locale: ServerLocale }
 const SERVER_LOCALES = new Set<ServerLocale>(['ko', 'en', 'ja'])
 
 function loadLocaleFile(locale: ServerLocale): Record<string, string> {

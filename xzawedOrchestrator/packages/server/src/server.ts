@@ -9,7 +9,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { WebSocket } from 'ws'
 import type { Config } from './config.js'
 import type { ClaudeRunner } from './claude/runner.interface.js'
-import { parseLocale, type ServerLocale } from './i18n/server-i18n.js'
+import { parseLocale, type LocalizedRequest } from './i18n/server-i18n.js'
 import { InMemorySessionStore } from './sessions/session.store.js'
 import { PgSessionStore } from './sessions/pg-session.store.js'
 import { makeUserAuthHook } from './auth/user-auth.hook.js'
@@ -74,7 +74,7 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
 
   app.addHook('preHandler', async (request) => {
     const header = request.headers['accept-language']
-    ;(request as typeof request & { locale: ServerLocale }).locale =
+    ;(request as FastifyRequest & LocalizedRequest).locale =
       parseLocale(header as string | undefined)
   })
 
