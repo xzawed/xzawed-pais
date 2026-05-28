@@ -10,7 +10,7 @@ test.describe('Chat Flow', () => {
   })
 
   test('chat view shows empty state prompt without a session', async ({ page }) => {
-    await expect(page.getByText('새 세션을 시작해주세요')).toBeVisible()
+    await expect(page.getByTestId('empty-chat-message')).toBeVisible()
   })
 
   test('message input is not visible until session is active', async ({ page }) => {

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useIntegrationsStore } from '../store/integrations.store.js'
 import { Button } from './ui/button.js'
 
@@ -11,6 +12,7 @@ export function GitHubPanel(): React.JSX.Element {
     disconnectGitHub,
     setActivePanel,
   } = useIntegrationsStore()
+  const { t } = useTranslation('app')
 
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState<string | null>(null)
@@ -18,9 +20,9 @@ export function GitHubPanel(): React.JSX.Element {
   useEffect(() => {
     async function restoreStatus(): Promise<void> {
       const status = await globalThis.electronAPI?.githubGetStatus()
-      if (status?.connected && status.username && status.avatarUrl) {
+      if (status?.connected && status.username) {
         const { setGitHubConnected, setGitHubRepos } = useIntegrationsStore.getState()
-        setGitHubConnected(status.username, status.avatarUrl)
+        setGitHubConnected(status.username, status.avatarUrl ?? '')
         const repos = await globalThis.electronAPI?.githubListRepos() ?? []
         setGitHubRepos(repos)
       }
@@ -59,8 +61,8 @@ export function GitHubPanel(): React.JSX.Element {
   return (
     <div data-testid="github-panel" className="flex flex-1 flex-col gap-4 overflow-y-auto p-5 bg-bg">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={() => setActivePanel('chat')}>← 채팅으로</Button>
-        <h2 className="text-[13px] font-semibold text-fg">🐙 GitHub</h2>
+        <Button variant="ghost" size="sm" onClick={() => setActivePanel('chat')}>{t('back_to_chat', { ns: 'common' })}</Button>
+        <h2 data-testid="github-panel-title" className="text-[13px] font-semibold text-fg">{t('github.title')}</h2>
       </div>
 
       {error && (
@@ -102,7 +104,7 @@ export function GitHubPanel(): React.JSX.Element {
           <div className="text-[13px] font-semibold text-fg">
             레포지토리 ({github.repos.length}개)
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div data-testid="github-repo-list" className="flex flex-col gap-1.5">
             {github.repos.map((repo) => (
               <div key={repo.id} className="flex items-center justify-between rounded border border-border bg-surface px-3 py-2">
                 <span className="text-[12px] text-fg">{repo.fullName}</span>
@@ -113,11 +115,11 @@ export function GitHubPanel(): React.JSX.Element {
         </>
       ) : (
         <div className="flex flex-col items-center gap-4 rounded border border-border bg-surface px-6 py-10">
-          <p className="text-[11px] text-fg-ghost text-center">
-            GitHub 계정을 연결하면 에이전트가 레포지토리 생성, 코드 push, PR 생성을 자동으로 수행합니다.
+          <p data-testid="github-connect-hint" className="text-[11px] text-fg-ghost text-center">
+            {t('github.connect_hint')}
           </p>
-          <Button variant="default" onClick={handleConnect} disabled={loading}>
-            {loading ? '브라우저에서 인증 중...' : '🐙 GitHub으로 로그인'}
+          <Button data-testid="github-oauth-button" variant="default" onClick={handleConnect} disabled={loading}>
+            {loading ? t('loading', { ns: 'common' }) : '🐙 GitHub으로 로그인'}
           </Button>
           <p className="text-[11px] text-fg-ghost text-center">
             GitHub OAuth App Client ID/Secret이 환경변수 GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET에 설정돼 있어야 합니다.

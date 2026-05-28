@@ -1,4 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+
+vi.mock('../../src/renderer/src/lib/i18n.js', () => ({
+  default: { changeLanguage: vi.fn().mockResolvedValue(undefined) },
+}))
+vi.mock('../../src/renderer/src/lib/detect-locale.js', () => ({
+  detectLocale: vi.fn().mockReturnValue('ko'),
+  LOCALES: ['ko', 'en', 'ja'],
+}))
+
 import { useAppStore } from '../../src/renderer/src/store/app.store.js'
 
 describe('app.store', () => {

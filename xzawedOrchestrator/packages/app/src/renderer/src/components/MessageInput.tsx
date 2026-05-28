@@ -1,4 +1,5 @@
 import React, { useState, useRef, type KeyboardEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 
 interface Props {
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export function MessageInput({ onSend, disabled }: Readonly<Props>): React.JSX.Element {
+  const { t } = useTranslation('app')
   const [value, setValue] = useState('')
   const [focused, setFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -55,7 +57,7 @@ export function MessageInput({ onSend, disabled }: Readonly<Props>): React.JSX.E
           onInput={handleInput}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder="메시지를 입력하세요..."
+          placeholder={t('chat.input_placeholder')}
           rows={1}
           disabled={disabled}
           className="flex-1 resize-none bg-transparent text-[12px] text-fg placeholder:text-fg-ghost outline-none disabled:opacity-50 max-h-[120px] leading-relaxed"
@@ -63,7 +65,7 @@ export function MessageInput({ onSend, disabled }: Readonly<Props>): React.JSX.E
         />
         <div className="flex items-center gap-2 flex-shrink-0 self-end pb-0.5">
           <span className="hidden sm:block text-[9px] text-fg-ghost">
-            {disabled ? '' : 'Enter 전송 · Shift+Enter 줄바꿈'}
+            {disabled ? '' : t('chat.send_hint')}
           </span>
           <motion.button
             aria-label="메시지 전송"

@@ -14,8 +14,14 @@ export function StatusBar(): React.JSX.Element {
   const { github, mcp } = useIntegrationsStore()
 
   return (
-    <div className="flex h-5 flex-shrink-0 items-center gap-3 bg-statusbar px-3 text-[10px] text-white/85">
-      <span className={cn('flex items-center gap-1', serverStatus !== 'running' && 'opacity-60')}>
+    <div
+      data-testid="status-bar"
+      className="flex h-5 flex-shrink-0 items-center gap-3 bg-statusbar px-3 text-[10px] text-white/85"
+    >
+      <span
+        data-testid={serverStatus === 'running' ? 'status-bar-running' : serverStatus === 'stopped' ? 'status-bar-error' : 'status-bar-unknown'}
+        className={cn('flex items-center gap-1', serverStatus !== 'running' && 'opacity-60')}
+      >
         <span className={cn('h-1.5 w-1.5 rounded-full', serverStatus === 'running' ? 'bg-ok' : 'bg-danger')} />
         서버 {serverStatusLabel(serverStatus)}
       </span>

@@ -1,0 +1,17 @@
+{
+  "save": "Save",
+  "cancel": "Cancel",
+  "close": "Close",
+  "delete": "Delete",
+  "add": "Add",
+  "search": "Search",
+  "loading": "Loading...",
+  "error": "Error",
+  "back_to_chat": "← Back to Chat",
+  "start": "Start",
+  "stop": "Stop",
+  "remove": "Remove",
+  "install": "+ Install",
+  "installing": "Installing...",
+  "installed": "✓ Installed"
+}

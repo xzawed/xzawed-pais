@@ -12,6 +12,6 @@ test.describe('MCP Panel', () => {
 
   test('mcp panel shows MCP server heading', async ({ page }) => {
     await page.getByTestId('nav-mcp').click()
-    await expect(page.getByRole('heading', { name: /MCP 서버/ })).toBeVisible()
+    await expect(page.getByTestId('mcp-title')).toBeVisible()
   })
 })

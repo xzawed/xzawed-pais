@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore } from '../store/app.store.js'
 import { useIntegrationsStore } from '../store/integrations.store.js'
@@ -10,6 +11,7 @@ import {
 } from './ui/command.js'
 
 export function CommandPalette(): React.JSX.Element {
+  const { t } = useTranslation('app')
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const { settings, toggleSettings } = useAppStore()
@@ -67,6 +69,7 @@ export function CommandPalette(): React.JSX.Element {
           />
 
           <motion.div
+            data-testid="command-palette"
             className="fixed left-1/2 top-[30%] z-50 w-full max-w-md -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-surface shadow-2xl"
             initial={{ opacity: 0, scale: 0.95, y: -8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -74,31 +77,31 @@ export function CommandPalette(): React.JSX.Element {
             transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
           >
             <Command>
-              <CommandInput placeholder="명령어 검색..." value={search} onValueChange={setSearch} />
+              <CommandInput data-testid="command-palette-input" placeholder={t('command_palette.placeholder')} value={search} onValueChange={setSearch} />
               <CommandList>
                 <CommandEmpty>결과 없음</CommandEmpty>
                 <CommandGroup heading="세션">
-                  <CommandItem onSelect={newSession}>
-                    <span>＋</span> 새 세션 시작
+                  <CommandItem data-testid="command-palette-item" value="새 세션" onSelect={newSession}>
+                    <span>＋</span> {t('command_palette.new_session')}
                   </CommandItem>
                 </CommandGroup>
                 <CommandGroup heading="이동">
-                  <CommandItem onSelect={() => navigate('chat')}>
+                  <CommandItem data-testid="command-palette-item" value="채팅으로 이동" onSelect={() => navigate('chat')}>
                     <span>💬</span> 채팅으로 이동
                   </CommandItem>
-                  <CommandItem onSelect={() => navigate('github')}>
+                  <CommandItem data-testid="command-palette-item" value="GitHub 패널" onSelect={() => navigate('github')}>
                     <span>🐙</span> GitHub 패널
                   </CommandItem>
-                  <CommandItem onSelect={() => navigate('mcp')}>
+                  <CommandItem data-testid="command-palette-item" value="MCP 서버 패널" onSelect={() => navigate('mcp')}>
                     <span>🔌</span> MCP 서버 패널
                   </CommandItem>
-                  <CommandItem onSelect={() => navigate('plugins')}>
+                  <CommandItem data-testid="command-palette-item" value="플러그인 패널" onSelect={() => navigate('plugins')}>
                     <span>🧩</span> 플러그인 패널
                   </CommandItem>
                 </CommandGroup>
                 <CommandGroup heading="기타">
-                  <CommandItem onSelect={openSettings}>
-                    <span>⚙</span> 설정 열기
+                  <CommandItem data-testid="command-palette-item" value="설정" onSelect={openSettings}>
+                    <span>⚙</span> {t('command_palette.settings')}
                   </CommandItem>
                 </CommandGroup>
               </CommandList>

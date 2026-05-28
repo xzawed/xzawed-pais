@@ -28,28 +28,30 @@ export function AgentTimelineCard({ message, streaming = false }: Readonly<Props
   if (steps.length === 0) return <div />
 
   return (
-    <motion.div
-      data-testid="agent-timeline-card"
-      className="flex flex-col gap-0"
-      initial={{ opacity: 0, x: -10 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
-    >
-      {/* Timeline */}
-      <div className="relative pl-4">
-        {/* Vertical line */}
-        <div className="absolute left-1.5 top-3 bottom-3 w-px bg-gradient-to-b from-ok via-accent to-border" />
+    <div data-testid="assistant-message">
+      <motion.div
+        data-testid="agent-timeline-card"
+        className="flex flex-col gap-0"
+        initial={{ opacity: 0, x: -10 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.3, ease: 'easeOut' }}
+      >
+        {/* Timeline */}
+        <div className="relative pl-4">
+          {/* Vertical line */}
+          <div className="absolute left-1.5 top-3 bottom-3 w-px bg-gradient-to-b from-ok via-accent to-border" />
 
-        {steps.map((step, i) => (
-          <TimelineStep
-            key={`${step.agentName}-${i}`}
-            step={step}
-            index={i}
-            streaming={streaming}
-          />
-        ))}
-      </div>
-    </motion.div>
+          {steps.map((step, i) => (
+            <TimelineStep
+              key={`${step.agentName}-${i}`}
+              step={step}
+              index={i}
+              streaming={streaming}
+            />
+          ))}
+        </div>
+      </motion.div>
+    </div>
   )
 }
 

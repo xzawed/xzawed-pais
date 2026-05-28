@@ -12,6 +12,6 @@ test.describe('GitHub Panel', () => {
 
   test('github panel shows GitHub heading', async ({ page }) => {
     await page.getByTestId('nav-github').click()
-    await expect(page.getByRole('heading', { name: /GitHub/ })).toBeVisible()
+    await expect(page.getByTestId('github-panel-title')).toBeVisible()
   })
 })

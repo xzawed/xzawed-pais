@@ -1,4 +1,7 @@
 import { create } from 'zustand'
+import i18n from '../lib/i18n.js'
+import { detectLocale } from '../lib/detect-locale.js'
+import type { Locale } from '../lib/detect-locale.js'
 
 export interface AppSettings {
   serverUrl: string
@@ -10,9 +13,11 @@ interface AppState {
   settings: AppSettings
   serverStatus: 'unknown' | 'running' | 'stopped'
   showSettings: boolean
+  locale: Locale
   updateSettings: (s: Partial<AppSettings>) => void
   setServerStatus: (s: 'unknown' | 'running' | 'stopped') => void
   toggleSettings: () => void
+  setLocale: (locale: Locale) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -24,8 +29,14 @@ export const useAppStore = create<AppState>((set) => ({
   },
   serverStatus: 'unknown',
   showSettings: false,
+  locale: detectLocale(),
   updateSettings: (s) =>
     set((state) => ({ settings: { ...state.settings, ...s } })),
   setServerStatus: (serverStatus) => set({ serverStatus }),
   toggleSettings: () => set((state) => ({ showSettings: !state.showSettings })),
+  setLocale: (locale) => {
+    void i18n.changeLanguage(locale)
+    localStorage.setItem('locale', locale)
+    set({ locale })
+  },
 }))

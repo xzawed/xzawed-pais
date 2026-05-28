@@ -9,6 +9,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { WebSocket } from 'ws'
 import type { Config } from './config.js'
 import type { ClaudeRunner } from './claude/runner.interface.js'
+import { parseLocale, type LocalizedRequest } from './i18n/server-i18n.js'
 import { InMemorySessionStore } from './sessions/session.store.js'
 import { PgSessionStore } from './sessions/pg-session.store.js'
 import { makeUserAuthHook } from './auth/user-auth.hook.js'
@@ -70,6 +71,12 @@ async function registerAuthRoutes(
 export async function buildServer(config: Config, runnerOverride?: ClaudeRunner): Promise<FastifyInstance> {
   const app = Fastify({ logger: config.mode !== 'local' })
   const dbPool = await setupDatabase(app, config)
+
+  app.addHook('preHandler', async (request) => {
+    const header = request.headers['accept-language']
+    ;(request as FastifyRequest & LocalizedRequest).locale =
+      parseLocale(header as string | undefined)
+  })
 
   const store = dbPool ? new PgSessionStore(dbPool) : new InMemorySessionStore()
   const runner = runnerOverride ?? createRunner(config)

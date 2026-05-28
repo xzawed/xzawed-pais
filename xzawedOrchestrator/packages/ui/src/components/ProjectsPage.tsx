@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '../stores/auth.store.js'
 import { useProjectsStore } from '../stores/projects.store.js'
 import { AddWorkspaceDialog } from './AddWorkspaceDialog.js'
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function ProjectsPage({ serverUrl, onSelectProject, onLogout }: Readonly<Props>): React.JSX.Element {
+  const { t } = useTranslation('ui')
   const { user, accessToken, logout } = useAuthStore()
   const { projects, isLoading, fetchProjects, createProject, updateWorkspace } = useProjectsStore()
   const [showCreate, setShowCreate] = useState(false)
@@ -44,19 +46,20 @@ export function ProjectsPage({ serverUrl, onSelectProject, onLogout }: Readonly<
   }
 
   return (
-    <div className="min-h-screen overflow-auto bg-bg p-8">
+    <div className="min-h-screen overflow-auto bg-bg p-8" data-testid="projects-page">
       <div className="mx-auto max-w-2xl">
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-fg">Projects</h1>
+            <h1 className="text-2xl font-semibold text-fg">{t('projects.title')}</h1>
             <p className="text-sm text-fg-muted">{user?.email}</p>
           </div>
           <button
             type="button"
             onClick={() => void handleLogout()}
             className="rounded-lg border border-border px-3 py-1.5 text-sm text-fg-muted hover:text-fg"
+            data-testid="logout-button"
           >
-            Sign out
+            {t('projects.logout')}
           </button>
         </div>
 
@@ -64,46 +67,52 @@ export function ProjectsPage({ serverUrl, onSelectProject, onLogout }: Readonly<
           <p className="text-sm text-fg-muted">Loading…</p>
         ) : (
           <div className="space-y-3">
-            {projects.map((project) => (
-              <div
-                key={project.id}
-                className="rounded-xl border border-border bg-surface p-4 hover:border-accent"
-              >
-                <div className="flex items-start justify-between">
-                  <button
-                    type="button"
-                    onClick={() => onSelectProject(project.id)}
-                    className="flex-1 text-left"
-                  >
-                    <p className="font-medium text-fg">{project.name}</p>
-                    {project.description !== undefined && project.description !== '' && (
-                      <p className="mt-0.5 text-sm text-fg-muted">{project.description}</p>
-                    )}
-                    {project.workspace_path !== undefined && project.workspace_path !== null && project.workspace_path !== '' ? (
-                      <p className="mt-0.5 text-xs text-gray-500">
-                        {project.workspace_type === 'github' ? '🐙' : '📁'} {project.workspace_path}
-                      </p>
-                    ) : (
-                      <p className="mt-0.5 text-xs text-gray-400">워크스페이스 미설정</p>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); setWorkspaceTarget(project.id) }}
-                    className="ml-2 rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-900"
-                  >
-                    {project.workspace_path !== undefined && project.workspace_path !== null && project.workspace_path !== '' ? '변경' : '+ 워크스페이스'}
-                  </button>
+            {projects.length === 0 ? (
+              <p className="text-sm text-fg-muted">{t('projects.empty')}</p>
+            ) : (
+              projects.map((project) => (
+                <div
+                  key={project.id}
+                  data-testid="project-item"
+                  className="rounded-xl border border-border bg-surface p-4 hover:border-accent"
+                >
+                  <div className="flex items-start justify-between">
+                    <button
+                      type="button"
+                      onClick={() => onSelectProject(project.id)}
+                      className="flex-1 text-left"
+                    >
+                      <p className="font-medium text-fg">{project.name}</p>
+                      {project.description !== undefined && project.description !== '' && (
+                        <p className="mt-0.5 text-sm text-fg-muted">{project.description}</p>
+                      )}
+                      {project.workspace_path !== undefined && project.workspace_path !== null && project.workspace_path !== '' ? (
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {project.workspace_type === 'github' ? '🐙' : '📁'} {project.workspace_path}
+                        </p>
+                      ) : (
+                        <p className="mt-0.5 text-xs text-gray-400">워크스페이스 미설정</p>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setWorkspaceTarget(project.id) }}
+                      className="ml-2 rounded px-2 py-1 text-xs text-gray-500 hover:text-gray-900"
+                    >
+                      {project.workspace_path !== undefined && project.workspace_path !== null && project.workspace_path !== '' ? '변경' : '+ 워크스페이스'}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
 
             <button
               type="button"
               onClick={() => setShowCreate(!showCreate)}
               className="w-full rounded-xl border border-dashed border-border p-4 text-sm text-fg-muted hover:border-accent hover:text-fg"
+              data-testid="new-project-button"
             >
-              + New project
+              {t('projects.new_project')}
             </button>
           </div>
         )}

@@ -4,7 +4,7 @@ import type { WebSocket } from 'ws'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { ClaudeRunner, RunOptions } from '../claude/runner.interface.js'
 import type { StreamProducer } from '../streams/producer.js'
-import type { Message, ManagerToOrchestratorMessage, Chunk } from '@xzawed/shared'
+import type { Message, Session, ManagerToOrchestratorMessage, Chunk } from '@xzawed/shared'
 import { StreamConsumer } from '../streams/consumer.js'
 import Anthropic from '@anthropic-ai/sdk'
 import { resolve, parse } from 'node:path'
@@ -13,6 +13,7 @@ import { TaskStore } from '../tasks/task.store.js'
 import { MessageRepo } from '../sessions/message.repo.js'
 import { assertProjectOwner } from '../auth/ownership.js'
 import { ProjectRepo, type Project } from '../projects/project.repo.js'
+import { t, type ServerLocale, type LocalizedRequest } from '../i18n/server-i18n.js'
 
 function assertNotFilesystemRoot(p: string): void {
   const resolved = resolve(p)
@@ -224,6 +225,34 @@ export async function sessionsRoutes(
   const effectiveAuthHook = userAuthHook ?? authHook
   const routeOpts = effectiveAuthHook ? { preHandler: effectiveAuthHook } : {}
 
+  function locale(req: FastifyRequest): ServerLocale {
+    return (req as FastifyRequest & Partial<LocalizedRequest>).locale ?? 'ko'
+  }
+
+  type ResolvedSession = { session: Session; loc: ServerLocale }
+
+  async function resolveSession(
+    req: FastifyRequest<{ Params: { id: string } }>,
+    reply: FastifyReply,
+  ): Promise<ResolvedSession | null> {
+    const loc = locale(req)
+    const session = await store.findById(req.params.id)
+    if (!session) {
+      await reply.status(404).send({ error: t('error.session_not_found', loc) })
+      return null
+    }
+    // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
+    if (userAuthHook && !req.authUser) {
+      await reply.status(401).send({ error: t('error.unauthorized', loc) })
+      return null
+    }
+    if (req.authUser && session.userId !== req.authUser.sub) {
+      await reply.status(404).send({ error: t('error.session_not_found', loc) })
+      return null
+    }
+    return { session, loc }
+  }
+
   app.post<{ Body: { userId?: string; projectId?: string } }>('/sessions', routeOpts, async (req, reply) => {
     let userId: string
     let projectId: string | null = null
@@ -269,13 +298,8 @@ export async function sessionsRoutes(
   })
 
   app.get<{ Params: { id: string } }>('/sessions/:id/messages', routeOpts, async (req, reply) => {
-    const session = await store.findById(req.params.id)
-    if (!session) return reply.status(404).send({ error: 'Session not found' })
-    // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
-    if (userAuthHook && !req.authUser) return reply.status(401).send({ error: 'User authentication required' })
-    if (req.authUser && session.userId !== req.authUser.sub) {
-      return reply.status(404).send({ error: 'Session not found' })
-    }
+    const resolved = await resolveSession(req, reply)
+    if (!resolved) return
     if (msgRepo) return reply.send(await msgRepo.findBySession(req.params.id))
     return messageStore.get(req.params.id) ?? []
   })
@@ -284,13 +308,9 @@ export async function sessionsRoutes(
     '/sessions/:id/messages',
     routeOpts,
     async (req, reply) => {
-      const session = await store.findById(req.params.id)
-      if (!session) return reply.status(404).send({ error: 'Session not found' })
-      // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
-      if (userAuthHook && !req.authUser) return reply.status(401).send({ error: 'User authentication required' })
-      if (req.authUser && session.userId !== req.authUser.sub) {
-        return reply.status(404).send({ error: 'Session not found' })
-      }
+      const resolved = await resolveSession(req, reply)
+      if (!resolved) return
+      const { session } = resolved
 
       const sessionId = req.params.id
       // Guard against concurrent message processing for the same session
@@ -362,14 +382,9 @@ export async function sessionsRoutes(
   )
 
   app.get<{ Params: { id: string } }>('/sessions/:id/tasks', routeOpts, async (req, reply) => {
-    const session = await store.findById(req.params.id)
-    if (!session) return reply.status(404).send({ error: 'Session not found' })
-    // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
-    if (userAuthHook && !req.authUser) return reply.status(401).send({ error: 'User authentication required' })
-    if (req.authUser && session.userId !== req.authUser.sub) {
-      return reply.status(404).send({ error: 'Session not found' })
-    }
-    return { tasks: taskStore.findBySessionId(req.params.id) }
+    const resolved = await resolveSession(req, reply)
+    if (!resolved) return
+    return reply.send({ tasks: taskStore.findBySessionId(req.params.id) })
   })
 
   app.post<{
@@ -379,16 +394,12 @@ export async function sessionsRoutes(
     '/sessions/:id/ui-actions',
     routeOpts,
     async (req, reply) => {
-      const session = await store.findById(req.params.id)
-      if (!session) return reply.status(404).send({ error: 'Session not found' })
-      // When userAuthHook is configured, req.authUser must be set; absence means unauthenticated access
-      if (userAuthHook && !req.authUser) return reply.status(401).send({ error: 'User authentication required' })
-      if (req.authUser && session.userId !== req.authUser.sub) {
-        return reply.status(404).send({ error: 'Session not found' })
-      }
+      const resolved = await resolveSession(req, reply)
+      if (!resolved) return
+      const { loc } = resolved
       const { action } = req.body
       if (!action || typeof action !== 'string') {
-        return reply.status(400).send({ error: 'action is required' })
+        return reply.status(400).send({ error: t('error.invalid_input', loc) })
       }
 
       try {

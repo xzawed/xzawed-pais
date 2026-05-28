@@ -9,6 +9,7 @@ interface Props {
 export function UserBubble({ message }: Readonly<Props>): React.JSX.Element {
   return (
     <motion.div
+      data-testid="user-message"
       className="flex justify-end"
       initial={{ opacity: 0, x: 12 }}
       animate={{ opacity: 1, x: 0 }}

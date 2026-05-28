@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useIntegrationsStore, type McpServerConfig } from '../store/integrations.store.js'
 import { Button } from './ui/button.js'
@@ -13,28 +14,23 @@ const RECOMMENDED: Array<Omit<McpServerConfig, 'id' | 'autoStart'>> = [
 
 type Tab = 'installed' | 'recommended' | 'custom'
 
-function getTabLabel(t: Tab, serverCount: number): string {
-  if (t === 'installed') return `설치됨 (${serverCount})`
-  if (t === 'recommended') return '추천 서버'
-  return '직접 추가'
+function getFieldLabel(t: (key: string) => string, field: 'name' | 'command' | 'args' | 'env'): string {
+  if (field === 'name') return t('mcp.field_name')
+  if (field === 'command') return t('mcp.field_command')
+  if (field === 'args') return t('mcp.field_args')
+  return t('mcp.field_env')
 }
 
-function getFieldLabel(field: 'name' | 'command' | 'args' | 'env'): string {
-  if (field === 'name') return '이름'
-  if (field === 'command') return '실행 명령어'
-  if (field === 'args') return '인수 (공백 구분)'
-  return '환경변수 (JSON)'
-}
-
-function getFieldPlaceholder(field: 'name' | 'command' | 'args' | 'env'): string {
-  if (field === 'name') return '예: my-custom-mcp'
-  if (field === 'command') return '예: npx'
-  if (field === 'args') return '공백으로 구분 (따옴표 포함 인수 미지원)'
-  return '예: {"API_KEY": "sk-..."}'
+function getFieldPlaceholder(t: (key: string) => string, field: 'name' | 'command' | 'args' | 'env'): string {
+  if (field === 'name') return t('mcp.placeholder_name')
+  if (field === 'command') return t('mcp.placeholder_command')
+  if (field === 'args') return t('mcp.placeholder_args')
+  return t('mcp.placeholder_env')
 }
 
 export function McpPanel(): React.JSX.Element {
   const { mcp, setActivePanel } = useIntegrationsStore()
+  const { t } = useTranslation('app')
   const [tab, setTab] = useState<Tab>('installed')
   const [form, setForm] = useState({ name: '', command: 'npx', args: '', env: '' })
   const [loading, setLoading] = useState<string | null>(null)
@@ -133,32 +129,57 @@ export function McpPanel(): React.JSX.Element {
   return (
     <div data-testid="mcp-panel" className="flex flex-1 flex-col gap-4 overflow-y-auto p-5 bg-bg">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={() => setActivePanel('chat')}>← 채팅으로</Button>
-        <h2 className="text-[13px] font-semibold text-fg">🔌 MCP 서버</h2>
+        <Button variant="ghost" size="sm" data-testid="mcp-back-button" onClick={() => setActivePanel('chat')}>{t('back_to_chat', { ns: 'common' })}</Button>
+        <h2 data-testid="mcp-title" className="text-[13px] font-semibold text-fg">{t('mcp.title')}</h2>
       </div>
 
       <div className="flex border-b border-border">
-        {(['installed', 'recommended', 'custom'] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={[
-              'px-4 py-2 text-[13px] border-b-2 -mb-px transition-colors',
-              tab === t
-                ? 'text-fg border-accent'
-                : 'text-fg-ghost border-transparent hover:text-fg',
-            ].join(' ')}
-          >
-            {getTabLabel(t, mcp.servers.length)}
-          </button>
-        ))}
+        <button
+          key="installed"
+          data-testid="mcp-tab-installed"
+          onClick={() => setTab('installed')}
+          className={[
+            'px-4 py-2 text-[13px] border-b-2 -mb-px transition-colors',
+            tab === 'installed'
+              ? 'text-fg border-accent'
+              : 'text-fg-ghost border-transparent hover:text-fg',
+          ].join(' ')}
+        >
+          {t('mcp.tab_installed', { count: mcp.servers.length })}
+        </button>
+        <button
+          key="recommended"
+          data-testid="mcp-tab-recommended"
+          onClick={() => setTab('recommended')}
+          className={[
+            'px-4 py-2 text-[13px] border-b-2 -mb-px transition-colors',
+            tab === 'recommended'
+              ? 'text-fg border-accent'
+              : 'text-fg-ghost border-transparent hover:text-fg',
+          ].join(' ')}
+        >
+          {t('mcp.tab_recommended')}
+        </button>
+        <button
+          key="custom"
+          data-testid="mcp-tab-custom"
+          onClick={() => setTab('custom')}
+          className={[
+            'px-4 py-2 text-[13px] border-b-2 -mb-px transition-colors',
+            tab === 'custom'
+              ? 'text-fg border-accent'
+              : 'text-fg-ghost border-transparent hover:text-fg',
+          ].join(' ')}
+        >
+          {t('mcp.tab_custom')}
+        </button>
       </div>
 
       {tab === 'installed' && (
         <div className="flex flex-col gap-2">
           {mcp.servers.length === 0 && (
-            <div className="py-10 text-center text-[11px] text-fg-ghost">
-              설치된 MCP 서버가 없습니다. &quot;추천 서버&quot; 탭에서 설치하세요.
+            <div data-testid="mcp-empty-message" className="py-10 text-center text-[11px] text-fg-ghost">
+              {t('mcp.no_servers')}
             </div>
           )}
           {mcp.servers.map((s) => {
@@ -167,9 +188,9 @@ export function McpPanel(): React.JSX.Element {
             if (status === 'running') statusColor = 'text-ok'
             else if (status === 'error') statusColor = 'text-danger'
 
-            let toggleLabel = '시작'
-            if (loading === s.id) toggleLabel = '...'
-            else if (status === 'running') toggleLabel = '중지'
+            let toggleLabel = t('start', { ns: 'common' })
+            if (loading === s.id) toggleLabel = t('mcp.toggle_loading')
+            else if (status === 'running') toggleLabel = t('stop', { ns: 'common' })
             return (
               <div key={s.id} className="flex items-center justify-between rounded border border-border bg-surface px-3 py-2 text-[11px] text-fg">
                 <span className={`mr-2 text-[10px] ${statusColor}`}>●</span>
@@ -181,7 +202,7 @@ export function McpPanel(): React.JSX.Element {
                   <Button variant="ghost" size="sm" disabled={loading === s.id} onClick={() => void toggle(s.id)}>
                     {toggleLabel}
                   </Button>
-                  <Button variant="danger" size="sm" disabled={loading === s.id} onClick={() => void remove(s.id)}>제거</Button>
+                  <Button variant="danger" size="sm" disabled={loading === s.id} onClick={() => void remove(s.id)}>{t('remove', { ns: 'common' })}</Button>
                 </div>
               </div>
             )
@@ -193,11 +214,11 @@ export function McpPanel(): React.JSX.Element {
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))' }}>
           {RECOMMENDED.map((rec) => {
             const installed = installedIds.has(rec.name)
-            let installBtnLabel = '+ 설치'
-            if (loading === rec.name) installBtnLabel = '설치 중...'
-            else if (installed) installBtnLabel = '✓ 설치됨'
+            let installBtnLabel = t('install', { ns: 'common' })
+            if (loading === rec.name) installBtnLabel = t('installing', { ns: 'common' })
+            else if (installed) installBtnLabel = t('installed', { ns: 'common' })
             return (
-              <div key={rec.name} className="flex flex-col gap-2 rounded border border-border bg-surface px-3 py-3">
+              <div key={rec.name} data-testid="mcp-recommended-item" className="flex flex-col gap-2 rounded border border-border bg-surface px-3 py-3">
                 <div className="text-[13px] font-semibold text-fg">{rec.name}</div>
                 <div className="text-[11px] text-fg-ghost">{rec.command} {rec.args.join(' ')}</div>
                 <Button
@@ -220,18 +241,18 @@ export function McpPanel(): React.JSX.Element {
           {(['name', 'command', 'args', 'env'] as const).map((field) => (
             <div key={field} className="flex flex-col gap-1">
               <label className="text-[11px] text-fg-ghost">
-                {getFieldLabel(field)}
+                {getFieldLabel(t, field)}
               </label>
               <input
                 className="w-full rounded border border-border bg-bg px-3 py-2 text-[13px] text-fg placeholder:text-fg-ghost focus:outline-none focus:border-accent"
-                placeholder={getFieldPlaceholder(field)}
+                placeholder={getFieldPlaceholder(t, field)}
                 value={form[field]}
                 onChange={(e) => setForm({ ...form, [field]: e.target.value })}
               />
             </div>
           ))}
           <Button variant="default" onClick={() => void addCustom()} disabled={!form.name || !form.command}>
-            + 추가 및 시작
+            {t('mcp.btn_add_start')}
           </Button>
         </div>
       )}

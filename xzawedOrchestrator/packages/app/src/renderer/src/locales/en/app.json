@@ -1,0 +1,55 @@
+{
+  "settings": {
+    "title": "Settings",
+    "server_url": "Server URL",
+    "mode": "Mode",
+    "mode_local": "Local",
+    "mode_remote": "Remote",
+    "user_id": "User ID",
+    "language": "Language",
+    "lang_ko": "한국어",
+    "lang_en": "English",
+    "lang_ja": "日本語"
+  },
+  "sidebar": {
+    "new_session": "New Session",
+    "search_placeholder": "Search sessions...",
+    "current_session": "Current Session",
+    "today": "Today"
+  },
+  "chat": {
+    "empty_state": "Start a new session",
+    "input_placeholder": "Type a message...",
+    "send_hint": "Enter to send · Shift+Enter for new line"
+  },
+  "mcp": {
+    "title": "🔌 MCP Servers",
+    "tab_installed": "Installed ({{count}})",
+    "tab_recommended": "Recommended",
+    "tab_custom": "Custom",
+    "no_servers": "No MCP servers installed. Go to the \"Recommended\" tab to install one.",
+    "field_name": "Name",
+    "field_command": "Command",
+    "field_args": "Args (space-separated)",
+    "field_env": "Env vars (JSON)",
+    "placeholder_name": "e.g. my-custom-mcp",
+    "placeholder_command": "e.g. npx",
+    "placeholder_args": "Space-separated (quoted args not supported)",
+    "placeholder_env": "e.g. {\"API_KEY\": \"sk-...\"}",
+    "btn_add_start": "+ Add & Start",
+    "toggle_loading": "..."
+  },
+  "github": {
+    "title": "GitHub",
+    "connect_hint": "Connect your GitHub account to manage repositories."
+  },
+  "plugins": {
+    "title": "Plugins",
+    "search_placeholder": "Search plugins..."
+  },
+  "command_palette": {
+    "placeholder": "Search commands...",
+    "new_session": "New Session",
+    "settings": "Settings"
+  }
+}
