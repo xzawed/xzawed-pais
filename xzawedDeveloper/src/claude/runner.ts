@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import path from 'node:path'
 import type { FileChange } from '../types.js'
 
-const API_TIMEOUT_MS = 30_000
+const API_TIMEOUT_MS = Number(process.env['DEVELOPER_CLAUDE_TIMEOUT_MS'] ?? '120000')
 
 const SYSTEM_PROMPT = `You are an expert software developer. Given a development plan and project context, implement the required code changes.
 

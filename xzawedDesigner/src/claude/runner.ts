@@ -8,7 +8,7 @@ const DesignResponseSchema = z.object({
   uiSpec: UISpecSchema.optional(),
 })
 
-const API_TIMEOUT_MS = 30_000
+const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
 
 const SYSTEM_PROMPT = `You are a UI/UX design agent. Given a design intent and context, produce component specifications.
 

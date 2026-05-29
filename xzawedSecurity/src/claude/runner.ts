@@ -4,7 +4,7 @@ import path from 'node:path'
 import type { SecurityIssue } from '../types.js'
 import { validatePath } from '../executor.js'
 
-const API_TIMEOUT_MS = 30_000
+const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
 
 const SYSTEM_PROMPT = `You are a security code auditor specializing in OWASP Top 10 vulnerabilities.
 Analyze the provided code files and return a JSON array of security issues found.

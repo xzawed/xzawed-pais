@@ -109,9 +109,10 @@ export async function publishTaskToManager(
   pool?: Pool,
   locale: ServerLocale = 'ko',
 ): Promise<void> {
-  let userContext: { userId: string; projectId: string; workspaceRoot: string } | undefined
+  const envFallback = process.env.WORKSPACE_ROOT ?? '/workspace'
+  let userContext: { userId: string; projectId: string; workspaceRoot: string }
+
   if (session.projectId) {
-    const envFallback = process.env.WORKSPACE_ROOT ?? process.cwd()
     let workspaceRoot = envFallback
     if (pool) {
       const repo = new ProjectRepo(pool)
@@ -120,6 +121,10 @@ export async function publishTaskToManager(
     }
     assertNotFilesystemRoot(workspaceRoot)
     userContext = { userId: session.userId, projectId: session.projectId, workspaceRoot }
+  } else {
+    // AUTH=none 또는 프로젝트 미선택 시: 기본 workspace를 전달하여 Manager가 register_project를 호출하지 않도록 방지
+    assertNotFilesystemRoot(envFallback)
+    userContext = { userId: session.userId, projectId: 'default', workspaceRoot: envFallback }
   }
   try {
     await producer.publish({

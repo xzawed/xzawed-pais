@@ -16,12 +16,16 @@ export class ServerManager {
     this.proc = spawn(process.execPath, [entry], {
       env: {
         ...process.env,
+        // ELECTRON_RUN_AS_NODE makes the electron binary run the script as Node.js
+        ELECTRON_RUN_AS_NODE: '1',
         PORT: process.env['PORT'] ?? '3000',
         MODE: process.env['MODE'] ?? 'local',
         AUTH: process.env['AUTH'] ?? 'none',
-        CLAUDE_MODE: process.env['CLAUDE_MODE'] ?? 'cli',
+        CLAUDE_MODE: process.env['CLAUDE_MODE'] ?? 'api',
         CLAUDE_MODEL: process.env['CLAUDE_MODEL'] ?? 'claude-sonnet-4-6',
         REDIS_URL: process.env['REDIS_URL'] ?? 'redis://localhost:6379',
+        WORKSPACE_ROOT: process.env['WORKSPACE_ROOT'] ?? '/workspace',
+        MANAGER_URL: process.env['MANAGER_URL'] ?? 'http://localhost:3001',
       },
       stdio: 'inherit',
       shell: false,

@@ -128,8 +128,12 @@ export class ClaudeRunner {
       },
     ]
 
+    const allRegistryTools = this.registry.toAnthropicTools()
     const tools: Anthropic.Tool[] = [
-      ...this.registry.toAnthropicTools(),
+      // workspaceRoot가 이미 제공된 경우 register_project를 제외 — LLM이 불필요하게 호출하는 것을 방지
+      ...(userContext?.workspaceRoot
+        ? allRegistryTools.filter((t) => t.name !== 'register_project')
+        : allRegistryTools),
       REQUEST_INFO_TOOL,
     ]
 

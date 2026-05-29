@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import type { Step, UISpec } from '../types.js'
 
-const API_TIMEOUT_MS = 30_000
+const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
 
 const StepSchema = z.object({
   id: z.string().min(1),
