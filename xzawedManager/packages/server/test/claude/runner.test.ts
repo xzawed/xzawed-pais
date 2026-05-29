@@ -156,24 +156,36 @@ describe('ClaudeRunner', () => {
     })).rejects.toThrow('exceeded')
   })
 
-  it('throws when Claude calls unknown tool', async () => {
-    mockCreate.mockResolvedValueOnce({
-      stop_reason: 'tool_use',
-      content: [
-        { type: 'tool_use', id: 'tool-3', name: 'nonexistent_tool', input: {} },
-      ],
-    })
+  it('wraps unknown tool error as is_error tool_result and continues loop', async () => {
+    mockCreate
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'tool_use', id: 'tool-3', name: 'nonexistent_tool', input: {} },
+        ],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'Error handled.' }],
+      })
 
     const { runner, sessionStore, producer } = makeRunner(new ToolRegistry())
     sessionStore.create('sess-3')
 
-    await expect(runner.run({
+    const result = await runner.run({
       sessionId: 'sess-3',
       intent: 'test',
       context: {},
       producer,
       sessionStore,
-    })).rejects.toThrow('Unknown tool: nonexistent_tool')
+    })
+    expect(result).toBe('Error handled.')
+
+    const secondCallMessages = mockCreate.mock.calls[1][0].messages as Array<{ role: string; content: unknown }>
+    const toolResultMsg = secondCallMessages[secondCallMessages.length - 1]
+    const content = toolResultMsg.content as Array<{ type: string; is_error?: boolean; content?: string }>
+    expect(content[0].is_error).toBe(true)
+    expect(content[0].content).toContain('Unknown tool: nonexistent_tool')
   })
 
   it.each<[string, object[], string, string]>([
