@@ -23,6 +23,7 @@ import { createRegisterProjectHandler } from './tools/register-project.js'
 import { createSwitchProjectHandler } from './tools/switch-project.js'
 import { createDeployProjectHandler } from './tools/deploy-project.js'
 import { SessionGatewayConsumer } from './streams/session-gateway.js'
+import { WatcherEventConsumer } from './streams/watcher-event-consumer.js'
 
 export async function buildServer(
   config: Config,
@@ -86,8 +87,20 @@ export async function buildServer(
     app.log.error({ err }, 'SessionGatewayConsumer crashed')
   })
 
+  const watcherEventConsumer = new WatcherEventConsumer(
+    config.REDIS_URL,
+    async (event) => {
+      app.log.info(
+        { sessionId: event.sessionId, path: event.path, event: event.event },
+        '[watcher] file_changed 이벤트 수신'
+      )
+    }
+  )
+  watcherEventConsumer.start()
+
   const closeAll = async () => {
     sessionGateway.stop()
+    watcherEventConsumer.stop()
     for (const c of activeConsumers.values()) c.stop()
     await registry.closeAll()
     await closePool()
