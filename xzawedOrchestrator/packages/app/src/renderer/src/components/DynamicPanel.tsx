@@ -1,4 +1,8 @@
 import React, { useState } from 'react'
+
+interface PanelProps {
+  style?: React.CSSProperties
+}
 import type { UISpec, UIField } from '@xzawed/shared'
 import { useChatStore } from '../store/chat.store.js'
 import { useAppStore } from '../store/app.store.js'
@@ -158,12 +162,12 @@ function FormPanel({ spec }: Readonly<FormPanelProps>): React.JSX.Element {
   )
 }
 
-const panelClass = 'flex w-[280px] flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden'
+const panelClass = 'flex flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden'
 const headerClass = 'border-b border-border px-4 py-2 text-[13px] font-semibold text-fg'
 
-function EmptyPanel(): React.JSX.Element {
+function EmptyPanel({ style }: Readonly<PanelProps>): React.JSX.Element {
   return (
-    <div className={panelClass}>
+    <div className={panelClass} style={style}>
       <div className={headerClass}>Context</div>
       <div className="flex-1 overflow-y-auto p-4">
         <p className="text-[13px] text-fg-ghost">
@@ -174,9 +178,9 @@ function EmptyPanel(): React.JSX.Element {
   )
 }
 
-function MockupViewerPanel({ spec }: Readonly<{ spec: UISpec }>): React.JSX.Element {
+function MockupViewerPanel({ spec, style }: Readonly<{ spec: UISpec } & PanelProps>): React.JSX.Element {
   return (
-    <div className={panelClass}>
+    <div className={panelClass} style={style}>
       <div className={headerClass}>{spec.title ?? 'Mockup'}</div>
       <div className="flex-1 overflow-y-auto p-4">
         <pre className="text-[12px] text-fg-ghost whitespace-pre-wrap break-words">
@@ -187,9 +191,9 @@ function MockupViewerPanel({ spec }: Readonly<{ spec: UISpec }>): React.JSX.Elem
   )
 }
 
-function ProgressBoardPanel({ spec }: Readonly<{ spec: UISpec }>): React.JSX.Element {
+function ProgressBoardPanel({ spec, style }: Readonly<{ spec: UISpec } & PanelProps>): React.JSX.Element {
   return (
-    <div className={panelClass}>
+    <div className={panelClass} style={style}>
       <div className={headerClass}>{spec.title ?? 'Progress'}</div>
       <div className="flex-1 overflow-y-auto p-4">
         <p className="text-[13px] text-fg-ghost">{spec.content ?? 'Working…'}</p>
@@ -198,25 +202,25 @@ function ProgressBoardPanel({ spec }: Readonly<{ spec: UISpec }>): React.JSX.Ele
   )
 }
 
-export function DynamicPanel(): React.JSX.Element {
+export function DynamicPanel({ style }: Readonly<PanelProps>): React.JSX.Element {
   const { uiSpec } = useChatStore()
 
-  if (!uiSpec) return <EmptyPanel />
+  if (!uiSpec) return <EmptyPanel style={style} />
 
   if (uiSpec.type === 'form') {
     return (
-      <div className={panelClass}>
+      <div className={panelClass} style={style}>
         <FormPanel spec={uiSpec as UISpec & { type: 'form' }} />
       </div>
     )
   }
 
-  if (uiSpec.type === 'mockup_viewer') return <MockupViewerPanel spec={uiSpec} />
+  if (uiSpec.type === 'mockup_viewer') return <MockupViewerPanel spec={uiSpec} style={style} />
 
-  if (uiSpec.type === 'progress_board') return <ProgressBoardPanel spec={uiSpec} />
+  if (uiSpec.type === 'progress_board') return <ProgressBoardPanel spec={uiSpec} style={style} />
 
   return (
-    <div className={panelClass}>
+    <div className={panelClass} style={style}>
       <div className={headerClass}>Context</div>
     </div>
   )

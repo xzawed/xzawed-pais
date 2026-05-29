@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu } from 'electron'
 // dev 모드에서 productName(xzawedOrchestrator)이 적용되지 않아 userData 경로가 어긋남
 // electron-builder의 productName과 동기화하여 settings.json 경로를 일관되게 유지
 if (!app.isPackaged) app.setName('xzawedOrchestrator')
@@ -71,6 +71,8 @@ function createWindow(): void {
       contextIsolation: true,
     },
   })
+
+  Menu.setApplicationMenu(null)
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     void mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']) // NOSONAR — dev-only env set by electron-vite
