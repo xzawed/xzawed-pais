@@ -21,6 +21,7 @@ import { createSecurityAuditHandler } from './tools/security-audit.js'
 import { createGithubOpsHandler } from './tools/github-ops.js'
 import { createRegisterProjectHandler } from './tools/register-project.js'
 import { createSwitchProjectHandler } from './tools/switch-project.js'
+import { createDeployProjectHandler } from './tools/deploy-project.js'
 import { SessionGatewayConsumer } from './streams/session-gateway.js'
 
 export async function buildServer(
@@ -51,6 +52,7 @@ export async function buildServer(
   registry.register(createSecurityAuditHandler(config.REDIS_URL))
   if (config.GITHUB_TOKEN) {
     registry.register(createGithubOpsHandler(config.GITHUB_TOKEN))
+    registry.register(createDeployProjectHandler(config.GITHUB_TOKEN, config.REDIS_URL))
   }
   // ORCHESTRATOR_URL 조건 제거: Redis URL만 필요
   registry.register(createRegisterProjectHandler(config.REDIS_URL))
