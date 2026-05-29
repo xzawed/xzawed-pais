@@ -2,7 +2,13 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 
 vi.mock('node:child_process', () => ({
   execFile: vi.fn(),
-  execFileSync: vi.fn().mockReturnValue('/usr/bin/npm\n'),
+  execFileSync: vi.fn().mockImplementation((cmd: string, args: string[]) => {
+    // npm audit → /usr/bin/npm, pnpm audit → '' (pnpm not found)
+    if (args[0] === 'pnpm') {
+      return ''
+    }
+    return '/usr/bin/npm\n'
+  }),
 }))
 
 vi.mock('node:fs/promises', () => ({
@@ -16,7 +22,7 @@ vi.mock('../executor.js', () => ({
 import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
 import { validatePath } from '../executor.js'
-import { auditDeps } from './deps.js'
+import { auditDeps, resetPackageManagerPaths } from './deps.js'
 
 const mockExecFile = vi.mocked(execFile)
 const mockAccess = vi.mocked(fs.access)
@@ -45,8 +51,15 @@ const npmAuditOutput = JSON.stringify({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetPackageManagerPaths()
   mockValidatePath.mockImplementation((p: string) => Promise.resolve(p))
-  mockAccess.mockResolvedValue(undefined as never)
+  // default: no pnpm-lock.yaml, package.json exists
+  mockAccess.mockImplementation((p: string) => {
+    if (p.endsWith('pnpm-lock.yaml')) {
+      return Promise.reject(new Error('ENOENT'))
+    }
+    return Promise.resolve(undefined as never)
+  })
   // default: npm audit succeeds with empty output
   mockExecFile.mockImplementation(cbSuccess() as never)
 })
