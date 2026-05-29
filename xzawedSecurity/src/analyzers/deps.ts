@@ -18,10 +18,21 @@ interface NpmAuditOutput {
   vulnerabilities?: Record<string, NpmAuditVuln>
 }
 
-function resolveNpmPath(): string | null {
+interface PnpmAuditAdvisory {
+  severity: string
+  title?: string
+  cwe?: string[]
+  fixAvailable?: boolean
+}
+
+interface PnpmAuditOutput {
+  advisories?: Record<string, PnpmAuditAdvisory>
+}
+
+function resolveBinPath(name: string): string | null {
   const whichCmd = process.platform === 'win32' ? 'where' : 'which'
   try {
-    const result = execFileSync(whichCmd, ['npm'], { encoding: 'utf-8', timeout: 5_000 })
+    const result = execFileSync(whichCmd, [name], { encoding: 'utf-8', timeout: 5_000 })
     const firstLine = result.trim().split(/\r?\n/)[0] ?? ''
     return firstLine.length > 0 ? firstLine : null
   } catch {
@@ -30,11 +41,24 @@ function resolveNpmPath(): string | null {
 }
 
 let _npmPath: string | null | undefined = undefined
+let _pnpmPath: string | null | undefined = undefined
 
 function getNpmPath(): string | null {
   if (_npmPath !== undefined) return _npmPath
-  _npmPath = resolveNpmPath()
+  _npmPath = resolveBinPath('npm')
   return _npmPath
+}
+
+function getPnpmPath(): string | null {
+  if (_pnpmPath !== undefined) return _pnpmPath
+  _pnpmPath = resolveBinPath('pnpm')
+  return _pnpmPath
+}
+
+/** 테스트 또는 경로 변경 시 npm/pnpm 경로 캐시 초기화 */
+export function resetPackageManagerPaths(): void {
+  _npmPath = undefined
+  _pnpmPath = undefined
 }
 
 function mapSeverity(s: string): SecurityIssue['severity'] {
@@ -44,24 +68,16 @@ function mapSeverity(s: string): SecurityIssue['severity'] {
   return 'low'
 }
 
-export async function auditDeps(
-  projectPath: string,
-  workspaceRoot: string,
-): Promise<SecurityIssue[]> {
-  const validPath = await validatePath(projectPath, workspaceRoot)
-
+async function hasPnpmLock(dir: string): Promise<boolean> {
   try {
-    await fs.access(path.join(validPath, 'package.json'))
+    await fs.access(path.join(dir, 'pnpm-lock.yaml'))
+    return true
   } catch {
-    return []
+    return false
   }
+}
 
-  const npmPath = getNpmPath()
-  if (npmPath === null) {
-    console.warn('[deps] npm not found — dependency audit skipped')
-    return []
-  }
-
+async function runNpmAudit(npmPath: string, validPath: string): Promise<SecurityIssue[]> {
   let stdout = ''
   try {
     const result = await execFileAsync(
@@ -104,4 +120,72 @@ export async function auditDeps(
     if (cwe !== undefined) issue.cwe = cwe
     return issue
   })
+}
+
+async function runPnpmAudit(pnpmPath: string, validPath: string): Promise<SecurityIssue[]> {
+  let stdout = ''
+  try {
+    const result = await execFileAsync(
+      pnpmPath,
+      ['audit', '--json'],
+      { cwd: validPath, timeout: AUDIT_TIMEOUT_MS }
+    )
+    stdout = result.stdout
+  } catch (e: unknown) {
+    if (e && typeof e === 'object' && 'stdout' in e && typeof (e as { stdout: unknown }).stdout === 'string') {
+      stdout = (e as { stdout: string }).stdout
+    } else {
+      return []
+    }
+  }
+
+  let auditData: PnpmAuditOutput
+  try {
+    auditData = JSON.parse(stdout) as PnpmAuditOutput
+  } catch {
+    return []
+  }
+
+  return Object.entries(auditData.advisories ?? {}).map(([id, adv]) => {
+    const issue: SecurityIssue = {
+      id: `DEP-PNPM-${id}`,
+      severity: mapSeverity(adv.severity),
+      category: 'dependency',
+      file: path.join(validPath, 'package.json'),
+      description: adv.title ?? '취약한 의존성 (pnpm audit)',
+      suggestion: adv.fixAvailable ? 'pnpm update로 업그레이드하세요' : '안전한 대안을 검토하세요',
+    }
+    if (adv.cwe?.[0]) issue.cwe = adv.cwe[0]
+    return issue
+  })
+}
+
+export async function auditDeps(
+  projectPath: string,
+  workspaceRoot: string,
+): Promise<SecurityIssue[]> {
+  const validPath = await validatePath(projectPath, workspaceRoot)
+
+  try {
+    await fs.access(path.join(validPath, 'package.json'))
+  } catch {
+    return []
+  }
+
+  // pnpm-lock.yaml이 있으면 pnpm audit 우선
+  if (await hasPnpmLock(validPath)) {
+    const pnpmPath = getPnpmPath()
+    if (pnpmPath !== null) {
+      return runPnpmAudit(pnpmPath, validPath)
+    }
+    console.warn('[deps] pnpm not found — falling back to npm audit')
+  }
+
+  const npmPath = getNpmPath()
+  if (npmPath === null) {
+    console.warn('[deps] npm not found — dependency audit skipped')
+    return []
+  }
+
+  return runNpmAudit(npmPath, validPath)
 }

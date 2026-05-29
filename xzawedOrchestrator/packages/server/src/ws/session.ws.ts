@@ -58,15 +58,6 @@ export async function sessionWsRoutes(
         }
       })
 
-      socket.on('message', (raw: Buffer) => {
-        try {
-          const msg = JSON.parse(raw.toString())
-          socket.send(JSON.stringify({ type: 'ack', messageId: msg.id }))
-        } catch {
-          socket.send(JSON.stringify({ type: 'error', content: 'Invalid JSON' }))
-        }
-      })
-
       socket.send(JSON.stringify({ type: 'connected', sessionId }))
     }
   )
