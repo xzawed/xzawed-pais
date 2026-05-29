@@ -3,7 +3,8 @@ import type { ToolRegistry } from '../tools/registry.js'
 import type { StreamProducer } from '../streams/producer.js'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { UserContext } from '../types/user-context.js'
-import type { ManagerToOrchestratorMessage } from '../types/streams.js'
+import type { ManagerToOrchestratorMessage, UISpec } from '../types/streams.js'
+import { ClarificationNeededError } from '../tools/errors.js'
 
 const MAX_ITERATIONS = Number(process.env['MANAGER_MAX_ITERATIONS'] ?? '50')
 const MAX_TOKENS = Number(process.env['MANAGER_MAX_TOKENS'] ?? '16384')
@@ -78,24 +79,40 @@ export class ClaudeRunner {
     if (!handler) throw new Error(`Unknown tool: ${block.name}`)
 
     await this.publishStatus(producer, sessionId, `Starting ${block.name}...`)
-    try {
-      const result = await handler.execute(block.input, sessionId, userContext)
-      await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
+    // ClarificationNeededError는 catch하지 않고 processToolUseBlocks로 전파
+    const result = await handler.execute(block.input, sessionId, userContext)
 
-      const resultStr = JSON.stringify(result)
-      return {
-        type: 'tool_result',
-        tool_use_id: block.id,
-        content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
+    // design_ui 완료 시 uiSpec을 포함한 상태 업데이트 발행
+    if (block.name === 'design_ui') {
+      const designResult = result as Record<string, unknown>
+      if (designResult['uiSpec'] !== undefined) {
+        await producer.publish({
+          sessionId,
+          messageId: crypto.randomUUID(),
+          timestamp: Date.now(),
+          type: 'status_update',
+          payload: {
+            agentId: 'manager',
+            content: `UI 설계 완료: ${String(designResult['content'] ?? '')}`,
+            uiSpec: designResult['uiSpec'] as UISpec,
+          },
+        })
+        const resultStr = JSON.stringify(result)
+        return {
+          type: 'tool_result',
+          tool_use_id: block.id,
+          content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
+        }
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      return {
-        type: 'tool_result',
-        tool_use_id: block.id,
-        content: `Tool execution failed: ${message}`,
-        is_error: true,
-      }
+    }
+
+    await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
+
+    const resultStr = JSON.stringify(result)
+    return {
+      type: 'tool_result',
+      tool_use_id: block.id,
+      content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
     }
   }
 
@@ -112,7 +129,58 @@ export class ClaudeRunner {
       if (block.name === 'request_info') {
         toolResults.push(await this.handleRequestInfoTool(block, sessionId, producer, sessionStore))
       } else {
-        toolResults.push(await this.handleAgentTool(block, sessionId, producer, userContext))
+        try {
+          toolResults.push(await this.handleAgentTool(block, sessionId, producer, userContext))
+        } catch (err) {
+          if (err instanceof ClarificationNeededError) {
+            // 하위 에이전트의 명확화 요청을 사용자에게 중계
+            const basePayload = { agentId: 'manager', content: err.content }
+            const infoRequestMsg: ManagerToOrchestratorMessage = {
+              sessionId,
+              messageId: crypto.randomUUID(),
+              timestamp: Date.now(),
+              type: 'info_request',
+              payload: err.uiSpec !== undefined
+                ? { ...basePayload, uiSpec: err.uiSpec as UISpec }
+                : basePayload,
+            }
+            await producer.publish(infoRequestMsg)
+            const answer = await sessionStore.waitForInfo(sessionId)
+            // 명확화 응답을 포함하여 에이전트 재실행
+            const handler = this.registry.get(block.name)
+            if (!handler) throw new Error(`Unknown tool: ${block.name}`)
+            try {
+              const augmented = {
+                ...(block.input as Record<string, unknown>),
+                clarificationContext: answer,
+              }
+              const result = await handler.execute(augmented, sessionId, userContext)
+              await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
+              const resultStr = JSON.stringify(result)
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
+              })
+            } catch (retryErr) {
+              const msg = retryErr instanceof Error ? retryErr.message : String(retryErr)
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: `Tool execution failed after clarification: ${msg}`,
+                is_error: true,
+              })
+            }
+          } else {
+            const message = err instanceof Error ? err.message : String(err)
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: block.id,
+              content: `Tool execution failed: ${message}`,
+              is_error: true,
+            })
+          }
+        }
       }
     }
     return toolResults

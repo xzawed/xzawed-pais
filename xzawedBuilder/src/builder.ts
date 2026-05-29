@@ -77,6 +77,7 @@ export class Builder {
       )
 
       const errors = success ? [] : await this.runner.analyzeBuildFailure(output)
+      const artifacts = success ? [buildRoot] : []
 
       await this.producer.publish(sessionId, {
         sessionId,
@@ -88,6 +89,7 @@ export class Builder {
           output,
           duration,
           errors,
+          artifacts,
           content: success ? '빌드 완료' : `빌드 실패: ${errors.length}개 오류`,
         },
       })

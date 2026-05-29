@@ -14,7 +14,7 @@ export interface UISpec {
   fields: Array<{
     id: string
     label: string
-    type: 'text' | 'select' | 'multiline'
+    type: 'text' | 'select' | 'textarea'
     options?: string[]
     required?: boolean
   }>

@@ -5,6 +5,7 @@ vi.mock('../streams/redis.client.js', () => ({ getRedisClient: vi.fn() }))
 import { getRedisClient } from '../streams/redis.client.js'
 import { z } from 'zod'
 import { RedisAgentHandler } from './redis-agent-handler.js'
+import { ClarificationNeededError } from './errors.js'
 
 const getRedisClientMock = vi.mocked(getRedisClient)
 
@@ -71,7 +72,9 @@ describe('RedisAgentHandler', () => {
     mockRedis.xread.mockResolvedValueOnce(
       makeMsg('info_request', { content: '프레임워크를 선택해 주세요' })
     )
-    await expect(handler.execute({}, 'sess-1')).rejects.toThrow('Clarification needed from builder: 프레임워크를 선택해 주세요')
+    const err = await handler.execute({}, 'sess-1').catch(e => e)
+    expect(err).toBeInstanceOf(ClarificationNeededError)
+    expect(err.content).toBe('프레임워크를 선택해 주세요')
   })
 
   it('build_progress를 무시하고 build_complete를 기다린다', async () => {

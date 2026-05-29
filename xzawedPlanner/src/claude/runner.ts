@@ -108,7 +108,7 @@ export class ClaudeRunner {
         const ClarificationFieldSchema = z.object({
           id: z.string(),
           label: z.string(),
-          type: z.enum(['text', 'select', 'multiline']),
+          type: z.enum(['text', 'select', 'textarea']),
           options: z.array(z.string()).optional(),
           required: z.boolean().optional(),
         })
