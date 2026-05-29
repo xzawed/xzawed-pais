@@ -45,6 +45,27 @@ export function ChatView(): React.JSX.Element {
       } else if (msg.type === 'error') {
         store.setPending(false)
         store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `[Error] ${msg.content}`, timestamp: Date.now() })
+      } else if (msg.type === 'status') {
+        store.addLogLine(`[STATUS] ${msg.content}`)
+      } else if (msg.type === 'agent_status') {
+        const agentTag = (msg.agentId ?? 'AGENT').toUpperCase().slice(0, 8)
+        store.addLogLine(`[${agentTag}] ${msg.content}`)
+      } else if (msg.type === 'agent_done') {
+        store.addMessage({
+          id: crypto.randomUUID(),
+          sessionId,
+          role: 'assistant',
+          content: msg.content,
+          timestamp: Date.now(),
+        })
+      } else if (msg.type === 'agent_error') {
+        store.addMessage({
+          id: crypto.randomUUID(),
+          sessionId,
+          role: 'assistant',
+          content: `[에이전트 오류 - ${msg.agentId}] ${msg.content}`,
+          timestamp: Date.now(),
+        })
       }
     }, () => { useChatStore.getState().cancelStream() })
     return teardown

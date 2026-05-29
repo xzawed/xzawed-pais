@@ -109,9 +109,10 @@ export async function publishTaskToManager(
   pool?: Pool,
   locale: ServerLocale = 'ko',
 ): Promise<void> {
-  let userContext: { userId: string; projectId: string; workspaceRoot: string } | undefined
+  const envFallback = process.env.WORKSPACE_ROOT ?? '/workspace'
+  let userContext: { userId: string; projectId: string; workspaceRoot: string }
+
   if (session.projectId) {
-    const envFallback = process.env.WORKSPACE_ROOT ?? process.cwd()
     let workspaceRoot = envFallback
     if (pool) {
       const repo = new ProjectRepo(pool)
@@ -120,6 +121,10 @@ export async function publishTaskToManager(
     }
     assertNotFilesystemRoot(workspaceRoot)
     userContext = { userId: session.userId, projectId: session.projectId, workspaceRoot }
+  } else {
+    // AUTH=none 또는 프로젝트 미선택 시: 기본 workspace를 전달하여 Manager가 register_project를 호출하지 않도록 방지
+    assertNotFilesystemRoot(envFallback)
+    userContext = { userId: session.userId, projectId: 'default', workspaceRoot: envFallback }
   }
   try {
     await producer.publish({
@@ -232,11 +237,17 @@ export async function sessionsRoutes(
 
   type ResolvedSession = { session: Session; loc: ServerLocale }
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
   async function resolveSession(
     req: FastifyRequest<{ Params: { id: string } }>,
     reply: FastifyReply,
   ): Promise<ResolvedSession | null> {
     const loc = locale(req)
+    if (!UUID_RE.test(req.params.id)) {
+      await reply.status(400).send({ error: t('error.invalid_input', loc) })
+      return null
+    }
     const session = await store.findById(req.params.id)
     if (!session) {
       await reply.status(404).send({ error: t('error.session_not_found', loc) })

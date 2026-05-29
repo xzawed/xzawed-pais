@@ -1,0 +1,24 @@
+{
+  "login": {
+    "title": "ログイン",
+    "email": "メールアドレス",
+    "password": "パスワード",
+    "submit": "ログイン",
+    "go_register": "新規登録",
+    "error_invalid": "メールアドレスまたはパスワードが正しくありません。"
+  },
+  "register": {
+    "title": "新規登録",
+    "email": "メールアドレス",
+    "password": "パスワード",
+    "submit": "登録",
+    "go_login": "ログイン",
+    "error_exists": "このメールアドレスはすでに使用されています。"
+  },
+  "projects": {
+    "title": "プロジェクト",
+    "new_project": "新規プロジェクト",
+    "logout": "ログアウト",
+    "empty": "プロジェクトがありません。"
+  }
+}

@@ -115,7 +115,7 @@ describe('sessions route integration', () => {
   it('GET /sessions/:id/messages returns 404 for unknown session', async () => {
     ;({ app, port } = await startServer(makeMockRunner([])))
 
-    const res = await fetch(`http://127.0.0.1:${port}/sessions/does-not-exist/messages`)
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/00000000-0000-0000-0000-000000000000/messages`)
     expect(res.status).toBe(404)
   })
 
@@ -180,7 +180,7 @@ describe('sessions route integration', () => {
 
   it('GET /sessions/:id/tasks returns 404 for unknown session', async () => {
     ;({ app, port } = await startServer(makeMockRunner([])))
-    const res = await fetch(`http://127.0.0.1:${port}/sessions/does-not-exist/tasks`)
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/00000000-0000-0000-0000-000000000000/tasks`)
     expect(res.status).toBe(404)
   })
 
@@ -207,7 +207,7 @@ describe('sessions route integration', () => {
   it('POST /sessions/:id/ui-actions returns 404 for unknown session', async () => {
     ;({ app, port } = await startServer(makeMockRunner([])))
 
-    const res = await fetch(`http://127.0.0.1:${port}/sessions/does-not-exist/ui-actions`, {
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/00000000-0000-0000-0000-000000000000/ui-actions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'submit', data: {} }),
@@ -267,7 +267,7 @@ describe('sessions route integration', () => {
   it('Accept-Language: en 헤더로 요청하면 영어 에러 메시지를 반환한다', async () => {
     ;({ app, port } = await startServer(makeMockRunner([])))
 
-    const res = await fetch(`http://127.0.0.1:${port}/sessions/does-not-exist/messages`, {
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/00000000-0000-0000-0000-000000000000/messages`, {
       headers: { 'Accept-Language': 'en' },
     })
     expect(res.status).toBe(404)
@@ -278,7 +278,7 @@ describe('sessions route integration', () => {
   it('Accept-Language: ja 헤더로 요청하면 일본어 에러 메시지를 반환한다', async () => {
     ;({ app, port } = await startServer(makeMockRunner([])))
 
-    const res = await fetch(`http://127.0.0.1:${port}/sessions/does-not-exist/messages`, {
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/00000000-0000-0000-0000-000000000000/messages`, {
       headers: { 'Accept-Language': 'ja' },
     })
     expect(res.status).toBe(404)
@@ -289,7 +289,7 @@ describe('sessions route integration', () => {
   it('Accept-Language 헤더 없이 요청하면 기본 한국어 에러 메시지를 반환한다', async () => {
     ;({ app, port } = await startServer(makeMockRunner([])))
 
-    const res = await fetch(`http://127.0.0.1:${port}/sessions/does-not-exist/messages`)
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/00000000-0000-0000-0000-000000000000/messages`)
     expect(res.status).toBe(404)
     const body = (await res.json()) as { error: string }
     expect(body.error).toBe('세션을 찾을 수 없습니다.')
@@ -298,7 +298,7 @@ describe('sessions route integration', () => {
   it('Accept-Language: ko 헤더로 요청하면 한국어 에러 메시지를 반환한다', async () => {
     ;({ app, port } = await startServer(makeMockRunner([])))
 
-    const res = await fetch(`http://127.0.0.1:${port}/sessions/does-not-exist/messages`, {
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/00000000-0000-0000-0000-000000000000/messages`, {
       headers: { 'Accept-Language': 'ko' },
     })
     expect(res.status).toBe(404)
@@ -309,7 +309,7 @@ describe('sessions route integration', () => {
   it('Accept-Language: en 헤더로 GET /sessions/:id/tasks 요청하면 영어 에러 메시지를 반환한다', async () => {
     ;({ app, port } = await startServer(makeMockRunner([])))
 
-    const res = await fetch(`http://127.0.0.1:${port}/sessions/does-not-exist/tasks`, {
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/00000000-0000-0000-0000-000000000000/tasks`, {
       headers: { 'Accept-Language': 'en' },
     })
     expect(res.status).toBe(404)
@@ -320,7 +320,7 @@ describe('sessions route integration', () => {
   it('Accept-Language: en 헤더로 POST /sessions/:id/ui-actions 요청하면 영어 에러 메시지를 반환한다', async () => {
     ;({ app, port } = await startServer(makeMockRunner([])))
 
-    const res = await fetch(`http://127.0.0.1:${port}/sessions/does-not-exist/ui-actions`, {
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/00000000-0000-0000-0000-000000000000/ui-actions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept-Language': 'en' },
       body: JSON.stringify({ action: 'submit', data: {} }),
@@ -348,7 +348,7 @@ describe('sessions route integration', () => {
   it('지원하지 않는 언어(fr) Accept-Language 헤더는 ko로 폴백하여 한국어 에러 메시지를 반환한다', async () => {
     ;({ app, port } = await startServer(makeMockRunner([])))
 
-    const res = await fetch(`http://127.0.0.1:${port}/sessions/does-not-exist/messages`, {
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/00000000-0000-0000-0000-000000000000/messages`, {
       headers: { 'Accept-Language': 'fr-FR,fr;q=0.9' },
     })
     expect(res.status).toBe(404)

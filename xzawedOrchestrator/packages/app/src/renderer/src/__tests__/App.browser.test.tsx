@@ -1,5 +1,5 @@
 import React from 'react'
-import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { useAuthStore } from '@xzawed/ui'
@@ -81,18 +81,24 @@ describe('App', () => {
       locale: 'ko',
     })
     useAuthStore.setState({ user: null, accessToken: null, isLoading: false })
+    // fetch('/auth/me') mock: status 200 → noAuth=false, authChecked=true (인증 모드)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200 }))
   })
 
-  test('/ 경로에서 user가 없으면 /login으로 리다이렉트된다', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  test('/ 경로에서 user가 없으면 /login으로 리다이렉트된다', async () => {
     useAuthStore.setState({ user: null })
     renderApp('/')
-    expect(screen.getByTestId('login-page')).toBeInTheDocument()
+    expect(await screen.findByTestId('login-page')).toBeInTheDocument()
   })
 
-  test('/ 경로에서 user가 있으면 /projects로 리다이렉트된다', () => {
+  test('/ 경로에서 user가 있으면 /projects로 리다이렉트된다', async () => {
     useAuthStore.setState({ user: { id: '1', email: 'test@example.com' } })
     renderApp('/')
-    expect(screen.getByTestId('projects-page')).toBeInTheDocument()
+    expect(await screen.findByTestId('projects-page')).toBeInTheDocument()
   })
 
   test('/login 경로에서 LoginPage가 렌더링된다', () => {

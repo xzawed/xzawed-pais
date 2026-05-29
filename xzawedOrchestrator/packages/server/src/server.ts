@@ -89,8 +89,10 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     : undefined
 
   const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(s => s.trim()).filter(Boolean) ?? []
-  let corsOrigin: string[] | false = false
-  if (config.mode !== 'local' && allowedOrigins.length > 0) {
+  let corsOrigin: string[] | boolean = false
+  if (config.mode === 'local') {
+    corsOrigin = true  // Electron dev renderer at localhost:5173 needs cross-origin access
+  } else if (allowedOrigins.length > 0) {
     corsOrigin = allowedOrigins
   }
   await app.register(cors, { origin: corsOrigin })

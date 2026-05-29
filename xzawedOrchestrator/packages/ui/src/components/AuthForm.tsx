@@ -10,7 +10,7 @@ export function AuthCard({
   children: React.ReactNode
 }>): React.JSX.Element {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bg">
+    <div className="flex h-full w-full items-center justify-center bg-bg">
       <div className="w-full max-w-sm space-y-6 rounded-xl border border-border bg-surface p-8">
         <div>
           <h1 className="text-2xl font-semibold text-fg">{title}</h1>

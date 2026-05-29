@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { TestFailure } from '../types.js'
 
-const API_TIMEOUT_MS = 30_000
+const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
 
 const SYSTEM_PROMPT = `You are a test failure analyzer. Given test output, extract all failures as a JSON array.
 

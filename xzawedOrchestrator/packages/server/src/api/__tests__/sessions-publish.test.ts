@@ -44,12 +44,21 @@ afterEach(() => {
 })
 
 describe('publishTaskToManager — projectId null', () => {
-  it('userContext 없이 publish', async () => {
+  it('WORKSPACE_ROOT 미설정 시 기본 /workspace로 userContext 전달 (register_project 호출 방지)', async () => {
     const producer = makeProducer()
     await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, undefined, makeLog())
     expect(producer.publish).toHaveBeenCalledOnce()
-    const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: { userContext?: unknown } }
-    expect(msg.payload.userContext).toBeUndefined()
+    const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: { userContext: { userId: string; projectId: string; workspaceRoot: string } } }
+    expect(msg.payload.userContext).toEqual({ userId: 'u1', projectId: 'default', workspaceRoot: '/workspace' })
+  })
+
+  it('WORKSPACE_ROOT 설정 시 해당 경로로 userContext 전달', async () => {
+    process.env.WORKSPACE_ROOT = '/custom/ws'
+    const producer = makeProducer()
+    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, undefined, makeLog())
+    expect(producer.publish).toHaveBeenCalledOnce()
+    const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: { userContext: { workspaceRoot: string } } }
+    expect(msg.payload.userContext.workspaceRoot).toBe('/custom/ws')
   })
 })
 

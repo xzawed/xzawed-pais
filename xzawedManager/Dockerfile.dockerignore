@@ -17,7 +17,6 @@
 
 # 다른 서비스 (xzawedManager 빌드에 불필요)
 xzawedOrchestrator
-xzawedShared
 xzawedPlanner
 xzawedDeveloper
 xzawedDesigner
@@ -26,3 +25,4 @@ xzawedBuilder
 xzawedWatcher
 xzawedSecurity
 xzawedLauncher
+# xzawedShared는 제외하지 않음 — shared-build 스테이지에서 COPY 필요

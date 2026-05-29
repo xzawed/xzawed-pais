@@ -133,6 +133,45 @@ describe('workspace routes', () => {
       expect(res.statusCode).toBe(400)
     })
 
+    it('localPath에 .. 포함 — 400 반환 (경로 traversal 차단)', async () => {
+      const app = await buildApp(pool)
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/projects/proj-1/workspace',
+        headers: { authorization: `Bearer ${makeToken()}` },
+        payload: { workspaceType: 'local', localPath: '/../../../etc/passwd' },
+      })
+      expect(res.statusCode).toBe(400)
+      expect((res.json() as { error: string }).error).toContain('absolute')
+    })
+
+    it('localPath가 상대경로 — 400 반환 (절대경로 필수)', async () => {
+      const app = await buildApp(pool)
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/projects/proj-1/workspace',
+        headers: { authorization: `Bearer ${makeToken()}` },
+        payload: { workspaceType: 'local', localPath: 'relative/path/to/project' },
+      })
+      expect(res.statusCode).toBe(400)
+      expect((res.json() as { error: string }).error).toContain('absolute')
+    })
+
+    it('local 타입 — 응답 body에 project 포함', async () => {
+      pool = makePool([LOCAL_PROJECT_ROW])
+      const app = await buildApp(pool)
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/projects/proj-1/workspace',
+        headers: { authorization: `Bearer ${makeToken()}` },
+        payload: { workspaceType: 'local', localPath: '/home/user/project' },
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as { project: { id: string } }
+      expect(body).toHaveProperty('project')
+      expect(body.project.id).toBe('proj-1')
+    })
+
     it('인증 없음 — 401 반환', async () => {
       const app = await buildApp(pool)
       const res = await app.inject({

@@ -1,0 +1,24 @@
+{
+  "login": {
+    "title": "Sign In",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign In",
+    "go_register": "Register",
+    "error_invalid": "Invalid email or password."
+  },
+  "register": {
+    "title": "Sign Up",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign Up",
+    "go_login": "Sign In",
+    "error_exists": "Email already in use."
+  },
+  "projects": {
+    "title": "Projects",
+    "new_project": "New Project",
+    "logout": "Logout",
+    "empty": "No projects registered."
+  }
+}
