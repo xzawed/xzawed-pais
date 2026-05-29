@@ -21,7 +21,9 @@ import { createSecurityAuditHandler } from './tools/security-audit.js'
 import { createGithubOpsHandler } from './tools/github-ops.js'
 import { createRegisterProjectHandler } from './tools/register-project.js'
 import { createSwitchProjectHandler } from './tools/switch-project.js'
+import { createDeployProjectHandler } from './tools/deploy-project.js'
 import { SessionGatewayConsumer } from './streams/session-gateway.js'
+import { WatcherEventConsumer } from './streams/watcher-event-consumer.js'
 
 export async function buildServer(
   config: Config,
@@ -51,6 +53,7 @@ export async function buildServer(
   registry.register(createSecurityAuditHandler(config.REDIS_URL))
   if (config.GITHUB_TOKEN) {
     registry.register(createGithubOpsHandler(config.GITHUB_TOKEN))
+    registry.register(createDeployProjectHandler(config.GITHUB_TOKEN, config.REDIS_URL))
   } else {
     app.log.warn(
       'GITHUB_TOKEN이 설정되지 않았습니다. GitHub 관련 작업(repo 생성, 코드 push, PR 생성 등)을 요청하면 "Unknown tool: github_ops" 오류가 발생합니다. .env 파일에 GITHUB_TOKEN을 추가하세요.',
@@ -88,8 +91,20 @@ export async function buildServer(
     app.log.error({ err }, 'SessionGatewayConsumer crashed')
   })
 
+  const watcherEventConsumer = new WatcherEventConsumer(
+    config.REDIS_URL,
+    async (event) => {
+      app.log.info(
+        { sessionId: event.sessionId, path: event.path, event: event.event },
+        '[watcher] file_changed 이벤트 수신'
+      )
+    }
+  )
+  watcherEventConsumer.start()
+
   const closeAll = async () => {
     sessionGateway.stop()
+    watcherEventConsumer.stop()
     for (const c of activeConsumers.values()) c.stop()
     await registry.closeAll()
     await closePool()
