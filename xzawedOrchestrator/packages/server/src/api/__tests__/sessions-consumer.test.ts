@@ -151,3 +151,30 @@ describe('handleConsumerMessage — info_request', () => {
     expect(sent.uiSpec).toEqual(uiSpec)
   })
 })
+
+describe('handleConsumerMessage — status_update with uiSpec', () => {
+  it('status_update 메시지에 uiSpec이 있으면 agent_status 소켓 메시지에 uiSpec 포함', () => {
+    const socket = makeSocket()
+    const taskStore = new TaskStore()
+    const { map } = makeConsumers()
+    const uiSpec = { type: 'mockup_viewer' as const, title: 'UI 미리보기', content: 'preview' } as NonNullable<ManagerToOrchestratorMessage['payload']['uiSpec']>
+
+    handleConsumerMessage(makeMsg('status_update', { uiSpec }), SID, socket, map, taskStore)
+
+    const sent = JSON.parse((socket.send as ReturnType<typeof vi.fn>).mock.calls[0][0] as string) as SentPayload
+    expect(sent.type).toBe('agent_status')
+    expect(sent.uiSpec).toEqual(uiSpec)
+  })
+
+  it('status_update 메시지에 uiSpec이 없으면 agent_status 소켓 메시지에 uiSpec 미포함', () => {
+    const socket = makeSocket()
+    const taskStore = new TaskStore()
+    const { map } = makeConsumers()
+
+    handleConsumerMessage(makeMsg('status_update'), SID, socket, map, taskStore)
+
+    const sent = JSON.parse((socket.send as ReturnType<typeof vi.fn>).mock.calls[0][0] as string) as SentPayload
+    expect(sent.type).toBe('agent_status')
+    expect('uiSpec' in sent).toBe(false)
+  })
+})

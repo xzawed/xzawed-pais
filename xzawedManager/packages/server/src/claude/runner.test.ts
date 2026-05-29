@@ -276,14 +276,23 @@ describe('ClaudeRunner', () => {
   })
 
   describe('알 수 없는 툴', () => {
-    it('등록되지 않은 툴 이름이면 에러를 throw한다', async () => {
-      createFn.mockResolvedValueOnce(
-        makeMessage('tool_use', [
-          makeToolUseBlock('tu-x', 'unknown_tool', {}),
-        ]),
-      )
+    it('등록되지 않은 툴 이름이면 is_error: true tool_result로 감싸고 루프를 계속한다', async () => {
+      createFn
+        .mockResolvedValueOnce(
+          makeMessage('tool_use', [
+            makeToolUseBlock('tu-x', 'unknown_tool', {}),
+          ]),
+        )
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('오류 처리 완료')]))
 
-      await expect(runner.run(baseRunOptions())).rejects.toThrow('Unknown tool: unknown_tool')
+      const result = await runner.run(baseRunOptions())
+      expect(result).toBe('오류 처리 완료')
+
+      const secondCallMessages = createFn.mock.calls[1][0].messages as Anthropic.MessageParam[]
+      const toolResultMsg = secondCallMessages[secondCallMessages.length - 1]
+      const content = toolResultMsg.content as Array<Anthropic.ToolResultBlockParam & { is_error?: boolean }>
+      expect(content[0].is_error).toBe(true)
+      expect(content[0].content).toContain('Unknown tool: unknown_tool')
     })
   })
 

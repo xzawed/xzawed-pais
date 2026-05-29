@@ -51,6 +51,10 @@ export async function buildServer(
   registry.register(createSecurityAuditHandler(config.REDIS_URL))
   if (config.GITHUB_TOKEN) {
     registry.register(createGithubOpsHandler(config.GITHUB_TOKEN))
+  } else {
+    app.log.warn(
+      'GITHUB_TOKEN이 설정되지 않았습니다. GitHub 관련 작업(repo 생성, 코드 push, PR 생성 등)을 요청하면 "Unknown tool: github_ops" 오류가 발생합니다. .env 파일에 GITHUB_TOKEN을 추가하세요.',
+    )
   }
   // ORCHESTRATOR_URL 조건 제거: Redis URL만 필요
   registry.register(createRegisterProjectHandler(config.REDIS_URL))
