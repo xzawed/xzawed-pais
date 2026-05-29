@@ -16,12 +16,40 @@ export async function validatePath(filePath: string, workspaceRoot: string): Pro
   return realFile
 }
 
+/** maxAgeDays일 이상 된 .bak.{timestamp} 파일을 삭제한다. */
+export async function cleanupOldBakFiles(directory: string, maxAgeDays = 7): Promise<number> {
+  const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000
+  let removed = 0
+  try {
+    const entries = await fs.readdir(directory, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isFile()) continue
+      if (!/\.bak\.\d+$/.test(entry.name)) continue
+      const filePath = path.join(directory, entry.name)
+      try {
+        const stat = await fs.stat(filePath)
+        if (stat.mtimeMs < cutoff) {
+          await fs.unlink(filePath)
+          removed++
+        }
+      } catch {
+        // 이미 삭제됐거나 접근 불가: 무시
+      }
+    }
+  } catch {
+    // 디렉터리 읽기 실패: 무시
+  }
+  return removed
+}
+
 export async function applyChange(change: FileChange, workspaceRoot: string): Promise<void> {
   const validated = await validatePath(change.path, workspaceRoot)
 
   if (change.operation === 'delete') {
     const bakPath = `${validated}.bak.${Date.now()}`
     await fs.rename(validated, bakPath)
+    // 오래된 .bak 파일 정리 (7일 기준, 비동기 - 실패 무시)
+    void cleanupOldBakFiles(path.dirname(validated), 7)
     return
   }
 
