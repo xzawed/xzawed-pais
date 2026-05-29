@@ -50,6 +50,9 @@ export function ChatView(): React.JSX.Element {
       } else if (msg.type === 'agent_status') {
         const agentTag = (msg.agentId ?? 'AGENT').toUpperCase().slice(0, 8)
         store.addLogLine(`[${agentTag}] ${msg.content}`)
+        if ((msg as { uiSpec?: unknown }).uiSpec) {
+          store.setUiSpec((msg as { uiSpec: import('@xzawed/shared').UISpec }).uiSpec)
+        }
       } else if (msg.type === 'agent_done') {
         store.addMessage({
           id: crypto.randomUUID(),

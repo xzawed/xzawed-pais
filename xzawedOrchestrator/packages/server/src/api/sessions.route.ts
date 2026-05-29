@@ -178,6 +178,7 @@ export function handleConsumerMessage(
         type: 'agent_status',
         agentId: msg.payload.agentId,
         content: msg.payload.content,
+        ...(msg.payload.uiSpec !== undefined ? { uiSpec: msg.payload.uiSpec } : {}),
       }))
       break
     case 'task_complete':

@@ -81,6 +81,31 @@ export class ClaudeRunner {
     await this.publishStatus(producer, sessionId, `Starting ${block.name}...`)
     // ClarificationNeededError는 catch하지 않고 processToolUseBlocks로 전파
     const result = await handler.execute(block.input, sessionId, userContext)
+
+    // design_ui 완료 시 uiSpec을 포함한 상태 업데이트 발행
+    if (block.name === 'design_ui') {
+      const designResult = result as Record<string, unknown>
+      if (designResult['uiSpec'] !== undefined) {
+        await producer.publish({
+          sessionId,
+          messageId: crypto.randomUUID(),
+          timestamp: Date.now(),
+          type: 'status_update',
+          payload: {
+            agentId: 'manager',
+            content: `UI 설계 완료: ${String(designResult['content'] ?? '')}`,
+            uiSpec: designResult['uiSpec'] as UISpec,
+          },
+        })
+        const resultStr = JSON.stringify(result)
+        return {
+          type: 'tool_result',
+          tool_use_id: block.id,
+          content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
+        }
+      }
+    }
+
     await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
 
     const resultStr = JSON.stringify(result)
