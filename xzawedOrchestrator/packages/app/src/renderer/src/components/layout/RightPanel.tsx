@@ -20,7 +20,7 @@ function getLineColor(line: string): string {
   return 'text-fg-ghost'
 }
 
-export function RightPanel(): React.JSX.Element {
+export function RightPanel({ style }: Readonly<{ style?: React.CSSProperties }>): React.JSX.Element {
   const { logLines, tokenCount, elapsedMs, modifiedFiles, isStreaming } = useChatStore()
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -32,7 +32,7 @@ export function RightPanel(): React.JSX.Element {
   const elapsedStr = `${String(Math.floor(elapsedSec / 60)).padStart(2, '0')}:${String(elapsedSec % 60).padStart(2, '0')}`
 
   return (
-    <div className="flex w-[200px] flex-shrink-0 flex-col border-l border-border bg-bg overflow-hidden">
+    <div className="flex flex-shrink-0 flex-col border-l border-border bg-bg overflow-hidden" style={style}>
 
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-border bg-surface px-3 py-2">

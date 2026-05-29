@@ -22,7 +22,7 @@ function useSessions(currentSessionId: string | null, currentSessionLabel: strin
   return { today, yesterday: [] }
 }
 
-export function Sidebar(): React.JSX.Element {
+export function Sidebar({ style }: Readonly<{ style?: React.CSSProperties }>): React.JSX.Element {
   const { settings } = useAppStore()
   const { t } = useTranslation('app')
   const { sessionId, initSession } = useChatStore()
@@ -51,7 +51,7 @@ export function Sidebar(): React.JSX.Element {
   )
 
   return (
-    <div className="flex w-[210px] flex-shrink-0 flex-col border-r border-border bg-surface overflow-hidden">
+    <div className="flex flex-shrink-0 flex-col border-r border-border bg-surface overflow-hidden" style={style}>
 
       {/* Search */}
       <div className="px-2.5 pt-2.5 pb-1.5">
