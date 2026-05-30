@@ -81,27 +81,6 @@ export async function buildServer(
 
   const authHook = config.SERVICE_JWT_SECRET ? verifyServiceToken : undefined
 
-  await app.register(healthRoute)
-  await app.register(sessionsRoute, {
-    redisUrl: config.REDIS_URL,
-    runner,
-    producer,
-    sessionStore,
-    registry,
-    activeConsumers,
-    ...(authHook && { authHook }),
-  })
-
-  const startManagedSession = makeSessionStarter({
-    redisUrl: config.REDIS_URL, runner, producer, sessionStore, activeConsumers,
-    log: { error: (obj, msg) => app.log.error(obj, msg) },
-  })
-
-  const sessionGateway = new SessionGatewayConsumer(config.REDIS_URL, startManagedSession)
-  void sessionGateway.start().catch((err: unknown) => {
-    app.log.error({ err }, 'SessionGatewayConsumer crashed')
-  })
-
   const watcherEventConsumer = new WatcherEventConsumer(
     config.REDIS_URL,
     async (event) => {
@@ -135,6 +114,29 @@ export async function buildServer(
     }
   )
   watcherEventConsumer.start()
+
+  await app.register(healthRoute)
+  await app.register(sessionsRoute, {
+    redisUrl: config.REDIS_URL,
+    runner,
+    producer,
+    sessionStore,
+    registry,
+    activeConsumers,
+    watcherEventConsumer,
+    ...(authHook && { authHook }),
+  })
+
+  const startManagedSession = makeSessionStarter({
+    redisUrl: config.REDIS_URL, runner, producer, sessionStore, activeConsumers,
+    watcherEventConsumer,
+    log: { error: (obj, msg) => app.log.error(obj, msg) },
+  })
+
+  const sessionGateway = new SessionGatewayConsumer(config.REDIS_URL, startManagedSession)
+  void sessionGateway.start().catch((err: unknown) => {
+    app.log.error({ err }, 'SessionGatewayConsumer crashed')
+  })
 
   const closeAll = async () => {
     sessionGateway.stop()

@@ -47,6 +47,7 @@ export class WatcherEventConsumer {
 
   stop(): void {
     this._running = false
+    this._redis?.disconnect()  // 진행 중인 BLOCK 즉시 중단
     this._redis = null
   }
 
