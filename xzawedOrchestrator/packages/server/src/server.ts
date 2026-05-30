@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply, type FastifyError } from 'fastify'
 import websocket from '@fastify/websocket'
 import cors from '@fastify/cors'
 import jwtPlugin from '@fastify/jwt'
@@ -69,8 +69,18 @@ async function registerAuthRoutes(
 }
 
 export async function buildServer(config: Config, runnerOverride?: ClaudeRunner): Promise<FastifyInstance> {
-  const app = Fastify({ logger: config.mode !== 'local' })
+  const app = Fastify({ logger: config.mode !== 'local', trustProxy: true })
   const dbPool = await setupDatabase(app, config)
+
+  app.setErrorHandler<FastifyError>((err, req, reply) => {
+    app.log.error({ err, url: req.url }, 'Unhandled error')
+    const statusCode = err.statusCode ?? 500
+    if (statusCode >= 500) {
+      return reply.status(500).send({ error: 'Internal Server Error' })
+    }
+    const errorField = (err as unknown as { error?: string }).error ?? err.message
+    return reply.status(statusCode).send({ error: errorField })
+  })
 
   app.addHook('preHandler', async (request) => {
     const header = request.headers['accept-language']
