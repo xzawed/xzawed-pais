@@ -139,4 +139,49 @@ describe('McpProcessManager', () => {
     expect(mockKill).toHaveBeenCalledWith('SIGKILL')
     vi.useRealTimers()
   })
+
+  // BLOCKED_ARG_PATTERNS 완성 검증
+  it('npx --yes 위험 플래그는 throw', async () => {
+    await manager.addServer({ id: 's1', name: 's1', command: 'npx', args: ['--yes', 'some-pkg'], env: {}, autoStart: false })
+    await expect(manager.startServer('s1')).rejects.toThrow("Argument '--yes' is not permitted")
+  })
+
+  it('npx -y 위험 플래그는 throw', async () => {
+    await manager.addServer({ id: 's2', name: 's2', command: 'npx', args: ['-y', 'some-pkg'], env: {}, autoStart: false })
+    await expect(manager.startServer('s2')).rejects.toThrow("Argument '-y' is not permitted")
+  })
+
+  it('npx --package 위험 플래그는 throw', async () => {
+    await manager.addServer({ id: 's3', name: 's3', command: 'npx', args: ['--package', 'evil'], env: {}, autoStart: false })
+    await expect(manager.startServer('s3')).rejects.toThrow("Argument '--package' is not permitted")
+  })
+
+  it('deno run 위험 플래그는 throw', async () => {
+    await manager.addServer({ id: 's4', name: 's4', command: 'deno', args: ['run', 'script.ts'], env: {}, autoStart: false })
+    await expect(manager.startServer('s4')).rejects.toThrow("Argument 'run' is not permitted")
+  })
+
+  it('deno eval 위험 플래그는 throw', async () => {
+    await manager.addServer({ id: 's5', name: 's5', command: 'deno', args: ['eval', 'console.log(1)'], env: {}, autoStart: false })
+    await expect(manager.startServer('s5')).rejects.toThrow("Argument 'eval' is not permitted")
+  })
+
+  it('deno --allow-all 위험 플래그는 throw', async () => {
+    await manager.addServer({ id: 's6', name: 's6', command: 'deno', args: ['--allow-all', 'script.ts'], env: {}, autoStart: false })
+    await expect(manager.startServer('s6')).rejects.toThrow("Argument '--allow-all' is not permitted")
+  })
+
+  it('node index.js 정상 인수는 pass', async () => {
+    await manager.addServer({ id: 's7', name: 's7', command: 'node', args: ['index.js'], env: {}, autoStart: false })
+    await expect(manager.startServer('s7')).resolves.toBeUndefined()
+  })
+
+  // Zod 검증: 잘못된 config 파일은 빈 배열 반환
+  it('load() — 잘못된 JSON config 무시하고 빈 배열 반환', async () => {
+    const { readFileSync, existsSync } = await import('node:fs')
+    vi.mocked(existsSync).mockReturnValue(true)
+    vi.mocked(readFileSync).mockReturnValue('[{"id":"","name":"","command":""}]') // id/name/command 빈 문자열 — Zod 검증 실패
+    const freshManager = new McpProcessManager()
+    expect(freshManager.listServers()).toHaveLength(0)
+  })
 })

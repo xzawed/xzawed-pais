@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
+import { z } from 'zod'
 
 export interface McpServerConfig {
   id: string
@@ -12,6 +13,15 @@ export interface McpServerConfig {
   autoStart: boolean
 }
 
+const McpServerConfigSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  command: z.string().min(1),
+  args: z.array(z.string()).default([]),
+  env: z.record(z.string()).default({}),
+  autoStart: z.boolean().default(false),
+})
+
 type McpStatus = 'running' | 'stopped' | 'error'
 
 const ALLOWED_MCP_COMMANDS = new Set(['npx', 'node', 'python', 'python3', 'deno', 'uvx', 'bunx', 'bun', 'uv'])
@@ -21,11 +31,11 @@ const BLOCKED_ARG_PATTERNS: Record<string, RegExp[]> = {
   node:    [/^-[erpc]$/, /^--eval$/, /^--require$/, /^--print$/, /^--input-type$/],
   python:  [/^-[cm]$/],
   python3: [/^-[cm]$/],
-  deno:    [],
-  uvx:     [],
-  bunx:    [],
+  deno:    [/^run$/, /^eval$/, /--allow-all/, /-A$/],
+  uvx:     [/--from/, /--with/],
+  bunx:    [/--bun/, /--shell/],
   bun:     [/^-e$/, /^--eval$/],
-  npx:     [],
+  npx:     [/-p$/, /--package/, /--call/, /--yes/, /-y$/],
   uv:      [],
 }
 
@@ -75,7 +85,15 @@ export class McpProcessManager {
   private load(): McpServerConfig[] {
     const path = this.configPath()
     if (!existsSync(path)) return []
-    try { return JSON.parse(readFileSync(path, 'utf-8')) as McpServerConfig[] }
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(path, 'utf-8'))
+      const result = McpServerConfigSchema.array().safeParse(parsed)
+      if (!result.success) {
+        console.error('[McpProcessManager] Invalid config file, ignoring:', result.error.message)
+        return []
+      }
+      return result.data as McpServerConfig[]
+    }
     catch { return [] }
   }
 
