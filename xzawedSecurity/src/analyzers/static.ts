@@ -6,6 +6,8 @@ import { CRYPTO_RULES } from './static-crypto.js'
 import { CONFIG_RULES } from './static-config.js'
 import { INJECTION_RULES } from './static-injection.js'
 import { TRAVERSAL_RULES } from './static-traversal.js'
+import { XSS_RULES } from './static-xss.js'
+import { ACCESS_RULES } from './static-access.js'
 
 const MAX_FILE_SIZE_BYTES = 1_048_576 // 1 MB
 
@@ -73,6 +75,8 @@ const ALL_RULES: StaticRule[] = [
   ...CONFIG_RULES,
   ...INJECTION_RULES,
   ...TRAVERSAL_RULES,
+  ...XSS_RULES,
+  ...ACCESS_RULES,
 ]
 
 const CONCURRENCY_LIMIT = 5
