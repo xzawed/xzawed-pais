@@ -1,6 +1,7 @@
 import type { Page } from 'playwright'
 import type { FeatureResult, StepResult } from '../helpers/screenshot-helper.js'
 import { ScreenshotHelper } from '../helpers/screenshot-helper.js'
+import { ensureSessionActive } from '../helpers/launch-electron.js'
 
 const TEST_MESSAGE = '안녕하세요. 현재 날짜가 언제인지 알려주세요.'
 
@@ -14,13 +15,7 @@ export async function runFeat04Message(
 
   // 세션이 없으면 새 세션 생성 후 메시지 입력창 대기
   try {
-    const hasInput = await page.locator('[data-testid="message-input"]').isVisible({ timeout: 2_000 }).catch(() => false)
-    if (!hasInput) {
-      const newSession = page.locator('[data-testid="new-session-button"]')
-      if (await newSession.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await newSession.click()
-      }
-    }
+    await ensureSessionActive(page)
     await page.waitForSelector('[data-testid="message-input"]', { timeout: 10_000 })
     await page.locator('[data-testid="message-input"]').fill(TEST_MESSAGE)
     const shot = await ss.take(page, dir, '01-message-input')

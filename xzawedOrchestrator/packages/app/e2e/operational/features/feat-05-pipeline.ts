@@ -1,6 +1,7 @@
 import type { Page } from 'playwright'
 import type { FeatureResult, StepResult } from '../helpers/screenshot-helper.js'
 import { ScreenshotHelper } from '../helpers/screenshot-helper.js'
+import { ensureSessionActive } from '../helpers/launch-electron.js'
 
 const PIPELINE_MESSAGE = '간단한 TypeScript 함수를 하나 작성해주세요: 두 숫자를 더하는 add 함수'
 
@@ -14,13 +15,7 @@ export async function runFeat05Pipeline(
 
   // 세션이 없으면 새 세션 생성 후 메시지 전송
   try {
-    const hasInput = await page.locator('[data-testid="message-input"]').isVisible({ timeout: 2_000 }).catch(() => false)
-    if (!hasInput) {
-      const newSession = page.locator('[data-testid="new-session-button"]')
-      if (await newSession.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        await newSession.click()
-      }
-    }
+    await ensureSessionActive(page)
     await page.waitForSelector('[data-testid="message-input"]', { timeout: 10_000 })
     await page.locator('[data-testid="message-input"]').fill(PIPELINE_MESSAGE)
     await page.locator('[data-testid="message-send-button"]').click()
