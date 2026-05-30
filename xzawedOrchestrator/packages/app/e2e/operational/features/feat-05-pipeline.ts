@@ -12,7 +12,15 @@ export async function runFeat05Pipeline(
   const steps: StepResult[] = []
   const dir = '05-pipeline'
 
+  // 세션이 없으면 새 세션 생성 후 메시지 전송
   try {
+    const hasInput = await page.locator('[data-testid="message-input"]').isVisible({ timeout: 2_000 }).catch(() => false)
+    if (!hasInput) {
+      const newSession = page.locator('[data-testid="new-session-button"]')
+      if (await newSession.isVisible({ timeout: 3_000 }).catch(() => false)) {
+        await newSession.click()
+      }
+    }
     await page.waitForSelector('[data-testid="message-input"]', { timeout: 10_000 })
     await page.locator('[data-testid="message-input"]').fill(PIPELINE_MESSAGE)
     await page.locator('[data-testid="message-send-button"]').click()
