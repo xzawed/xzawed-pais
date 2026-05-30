@@ -152,6 +152,44 @@ describe('handleConsumerMessage — info_request', () => {
   })
 })
 
+describe('handleConsumerMessage — onTerminate 콜백', () => {
+  it('task_complete 수신 시 onTerminate가 sessionId와 함께 호출됨', () => {
+    const socket = makeSocket()
+    const taskStore = new TaskStore()
+    const { map } = makeConsumers()
+    const onTerminate = vi.fn()
+
+    handleConsumerMessage(makeMsg('task_complete'), SID, socket, map, taskStore, onTerminate)
+
+    expect(onTerminate).toHaveBeenCalledOnce()
+    expect(onTerminate).toHaveBeenCalledWith(SID)
+  })
+
+  it('error 수신 시 onTerminate가 sessionId와 함께 호출됨', () => {
+    const socket = makeSocket()
+    const taskStore = new TaskStore()
+    const { map } = makeConsumers()
+    const onTerminate = vi.fn()
+
+    handleConsumerMessage(makeMsg('error'), SID, socket, map, taskStore, onTerminate)
+
+    expect(onTerminate).toHaveBeenCalledOnce()
+    expect(onTerminate).toHaveBeenCalledWith(SID)
+  })
+
+  it('onTerminate가 제공되면 consumers Map을 직접 수정하지 않음', () => {
+    const socket = makeSocket()
+    const taskStore = new TaskStore()
+    const { map, consumer } = makeConsumers()
+    const onTerminate = vi.fn()
+
+    handleConsumerMessage(makeMsg('task_complete'), SID, socket, map, taskStore, onTerminate)
+
+    expect(consumer.stop).not.toHaveBeenCalled()
+    expect(map.has(SID)).toBe(true)
+  })
+})
+
 describe('handleConsumerMessage — status_update with uiSpec', () => {
   it('status_update 메시지에 uiSpec이 있으면 agent_status 소켓 메시지에 uiSpec 포함', () => {
     const socket = makeSocket()

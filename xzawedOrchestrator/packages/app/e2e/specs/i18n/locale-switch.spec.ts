@@ -6,7 +6,7 @@ test.describe('언어 전환', () => {
     // CI 브라우저는 navigator.language='en'이므로 localStorage에 'ko'를 명시적으로 주입 후 재로드
     await page.addInitScript(() => localStorage.setItem('locale', 'ko'))
     await page.reload()
-    await page.waitForSelector('[data-i18n-ready]')
+    await page.waitForSelector('[data-i18n-ready]', { timeout: 10_000 })
     const s = new SettingsModal(page)
     await s.open()
     await expect(s.languageSelect).toHaveValue('ko')
@@ -46,7 +46,7 @@ test.describe('언어 전환', () => {
     await s.open()
     await s.changeLanguage('en')
     await page.reload()
-    await page.waitForSelector('[data-i18n-ready]')
+    await page.waitForSelector('[data-i18n-ready]', { timeout: 10_000 })
     const s2 = new SettingsModal(page)
     await s2.open()
     await expect(s2.languageSelect).toHaveValue('en')

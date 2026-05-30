@@ -4,6 +4,8 @@ import type { ZodType } from 'zod'
 const INITIAL_RETRY_DELAY_MS = 1_000
 const MAX_RETRY_DELAY_MS = 30_000
 const MAX_MESSAGE_BYTES = 10 * 1024 * 1024 // 10 MiB
+const PENDING_MIN_IDLE_MS = 5 * 60 * 1000  // 5분
+const PENDING_CLAIM_COUNT = 10
 
 export class BaseConsumer<TMessage> {
   private running = false
@@ -17,6 +19,7 @@ export class BaseConsumer<TMessage> {
     private readonly schema: ZodType<TMessage>,
     private readonly sleep: (ms: number) => Promise<void> = (ms) =>
       new Promise((r) => setTimeout(r, ms)),
+    private readonly ownsRedis: boolean = true,
   ) {}
 
   async start(sessionId: string): Promise<void> {
@@ -25,10 +28,37 @@ export class BaseConsumer<TMessage> {
     await this.ensureGroup(stream)
 
     this.running = true
+    await this.claimPendingMessages(stream)
+
     let retryDelay = INITIAL_RETRY_DELAY_MS
 
     while (this.running) {
       retryDelay = await this.readOnce(stream, retryDelay)
+    }
+  }
+
+  /**
+   * XAUTOCLAIM으로 5분 이상 미처리 메시지를 재획득해 처리한다.
+   * Redis 6.2+ 미만이거나 XAUTOCLAIM을 지원하지 않으면 무시한다.
+   */
+  private async claimPendingMessages(stream: string): Promise<void> {
+    try {
+      const rawResult = await this.redis.xautoclaim(
+        stream,
+        this.consumerGroup,
+        this.consumerName,
+        PENDING_MIN_IDLE_MS,
+        '0-0',
+        'COUNT', String(PENDING_CLAIM_COUNT),
+      )
+
+      if (!Array.isArray(rawResult) || !Array.isArray(rawResult[1])) return
+      const messages = rawResult[1] as [string, string[]][]
+      if (messages.length > 0) {
+        await this.processMessages(stream, messages)
+      }
+    } catch {
+      // XAUTOCLAIM 미지원 Redis 버전이거나 스트림이 없는 경우 무시
     }
   }
 
@@ -118,6 +148,8 @@ export class BaseConsumer<TMessage> {
 
   async close(): Promise<void> {
     this.running = false
-    await this.redis.quit()
+    if (this.ownsRedis) {
+      await this.redis.quit()
+    }
   }
 }

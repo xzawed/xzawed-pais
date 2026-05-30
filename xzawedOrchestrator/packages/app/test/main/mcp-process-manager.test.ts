@@ -184,4 +184,59 @@ describe('McpProcessManager', () => {
     const freshManager = new McpProcessManager()
     expect(freshManager.listServers()).toHaveLength(0)
   })
+
+  it('stopAll() — Promise<void>를 반환하여 await 가능하다', async () => {
+    vi.useFakeTimers()
+    // spawn mock: once('exit') cb를 즉시 호출 → 정상 종료
+    vi.mocked(spawn).mockReturnValue({
+      pid: 1111,
+      on: vi.fn(),
+      once: vi.fn((_event: string, cb: () => void) => { cb() }),
+      kill: vi.fn(),
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+    } as unknown as ReturnType<typeof spawn>)
+
+    await manager.addServer({ id: 'a', name: 'a', command: 'npx', args: ['pkg-a'], env: {}, autoStart: false })
+    await manager.addServer({ id: 'b', name: 'b', command: 'npx', args: ['pkg-b'], env: {}, autoStart: false })
+    await manager.startServer('a')
+    await manager.startServer('b')
+
+    // stopAll()이 Promise<void>여야 함 — resolves.toBeUndefined()로 검증
+    await expect(manager.stopAll()).resolves.toBeUndefined()
+
+    vi.useRealTimers()
+  })
+
+  it('stopServer() settled 플래그 — exit 이벤트 후 타이머 만료 시 SIGKILL 전송 안 함', async () => {
+    vi.useFakeTimers()
+    const mockKill = vi.fn()
+    let exitCb: (() => void) | undefined
+
+    vi.mocked(spawn).mockReturnValueOnce({
+      pid: 2222,
+      on: vi.fn(),
+      once: vi.fn((event: string, cb: () => void) => {
+        if (event === 'exit') exitCb = cb
+      }),
+      kill: mockKill,
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+    } as unknown as ReturnType<typeof spawn>)
+
+    await manager.addServer({ id: 'c', name: 'c', command: 'npx', args: ['pkg-c'], env: {}, autoStart: false })
+    await manager.startServer('c')
+
+    const stopPromise = manager.stopServer('c')
+    // exit 이벤트를 먼저 발생시킨 뒤 3초 타이머 실행
+    exitCb?.()
+    await vi.advanceTimersByTimeAsync(3000)
+    await stopPromise
+
+    // SIGTERM은 전송, exit 이후에는 SIGKILL 전송 안 됨
+    expect(mockKill).toHaveBeenCalledWith('SIGTERM')
+    expect(mockKill).not.toHaveBeenCalledWith('SIGKILL')
+
+    vi.useRealTimers()
+  })
 })

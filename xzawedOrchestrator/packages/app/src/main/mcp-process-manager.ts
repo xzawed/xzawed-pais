@@ -156,25 +156,25 @@ export class McpProcessManager {
     const proc = this.processes.get(id)
     if (!proc) return
     await new Promise<void>((resolve) => {
-      proc.once('exit', () => resolve())
+      let settled = false
+      const done = (): void => {
+        if (!settled) { settled = true; resolve() }
+      }
+      proc.once('exit', done)
       proc.kill('SIGTERM')
       // 3초 후 강제 종료 폴백
       setTimeout(() => {
-        if (this.processes.has(id)) proc.kill('SIGKILL')
-        resolve()
+        if (!settled && this.processes.has(id)) proc.kill('SIGKILL')
+        done()
       }, 3000)
     })
     this.processes.delete(id)
     this.statuses.set(id, 'stopped')
   }
 
-  stopAll(): void {
+  async stopAll(): Promise<void> {
     const ids = [...this.processes.keys()]
-    for (const id of ids) {
-      this.stopServer(id).catch((err: unknown) => {
-        console.error(`[McpProcessManager] stopAll error for ${id}:`, err)
-      })
-    }
+    await Promise.allSettled(ids.map(id => this.stopServer(id)))
   }
 
   async startAutoStart(): Promise<void> {
