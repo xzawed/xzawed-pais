@@ -301,4 +301,50 @@ describe.skipIf(!hasRedis)('Redis Streams Integration', () => {
     expect(msgA!.payload.intent).not.toContain('task for B')
     expect(msgB!.payload.intent).not.toContain('task for A')
   })
+
+  // ── Scenario 2: 동일 세션에 여러 번 publish ──────────────────────────────
+
+  it('StreamProducer — 동일 sessionId에 두 번 publish하면 두 엔트리가 스트림에 저장된다', async () => {
+    const sessionId = randomUUID()
+    const streamKeyName = `orchestrator:to-manager:${sessionId}`
+    usedKeys.push(streamKeyName)
+
+    const producer = new StreamProducer(REDIS_URL)
+
+    const id1 = await producer.publish({
+      sessionId,
+      messageId: randomUUID(),
+      timestamp: Date.now(),
+      type: 'task_request',
+      payload: { intent: 'first', context: {}, priority: 'normal' },
+    })
+
+    const id2 = await producer.publish({
+      sessionId,
+      messageId: randomUUID(),
+      timestamp: Date.now(),
+      type: 'task_request',
+      payload: { intent: 'second', context: {}, priority: 'normal' },
+    })
+
+    expect(id1).not.toBe(id2)
+
+    const entries = await redis.xrange(streamKeyName, '-', '+')
+    expect(entries).toHaveLength(2)
+  })
+
+  it('StreamProducer — 잘못된 REDIS_URL이면 publish()가 reject된다', async () => {
+    const badProducer = new StreamProducer('redis://127.0.0.1:19999')
+    const sessionId = randomUUID()
+
+    await expect(
+      badProducer.publish({
+        sessionId,
+        messageId: randomUUID(),
+        timestamp: Date.now(),
+        type: 'task_request',
+        payload: { intent: 'fail', context: {}, priority: 'normal' },
+      })
+    ).rejects.toThrow()
+  })
 })

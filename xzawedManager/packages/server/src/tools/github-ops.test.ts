@@ -93,4 +93,46 @@ describe('github-ops handler', () => {
       )
     ).rejects.toThrow('files array must not be empty')
   })
+
+  describe('validateCommitPath — commitAndPush 경계값', () => {
+    it('../../../etc/passwd — 경로 순회 차단', async () => {
+      await expect(handler.execute(
+        { action: 'commitAndPush', owner: 'o', repo: 'r', branch: 'main', commitMessage: 'msg',
+          files: [{ path: '../../../etc/passwd', content: 'x' }] },
+        'session-1'
+      )).rejects.toThrow('Path traversal rejected')
+    })
+
+    it('.github/workflows/deploy.yml — CI 파이프라인 쓰기 차단', async () => {
+      await expect(handler.execute(
+        { action: 'commitAndPush', owner: 'o', repo: 'r', branch: 'main', commitMessage: 'msg',
+          files: [{ path: '.github/workflows/deploy.yml', content: 'x' }] },
+        'session-1'
+      )).rejects.toThrow('Writing to .github/workflows/ is not permitted')
+    })
+
+    it('제어문자 포함 경로 차단', async () => {
+      await expect(handler.execute(
+        { action: 'commitAndPush', owner: 'o', repo: 'r', branch: 'main', commitMessage: 'msg',
+          files: [{ path: 'src/\x00index.ts', content: 'x' }] },
+        'session-1'
+      )).rejects.toThrow('Invalid characters in path')
+    })
+
+    it('빈 문자열 경로 차단', async () => {
+      await expect(handler.execute(
+        { action: 'commitAndPush', owner: 'o', repo: 'r', branch: 'main', commitMessage: 'msg',
+          files: [{ path: '', content: 'x' }] },
+        'session-1'
+      )).rejects.toThrow('Invalid file path')
+    })
+
+    it('정상 상대경로는 통과한다', async () => {
+      await expect(handler.execute(
+        { action: 'commitAndPush', owner: 'o', repo: 'r', branch: 'main', commitMessage: 'msg',
+          files: [{ path: 'src/components/Button.tsx', content: 'export default function Button() { return null }'}] },
+        'session-1'
+      )).resolves.toBeDefined()
+    })
+  })
 })

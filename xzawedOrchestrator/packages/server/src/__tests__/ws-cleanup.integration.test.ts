@@ -138,4 +138,45 @@ describe('WebSocket session cleanup', () => {
 
     ws2.close()
   })
+
+  it('존재하지 않는 sessionId로 WS 연결 시 정상 종료가 아닌 코드로 닫힌다', async () => {
+    ;({ app } = await startServer())
+    const address = app.server.address()
+    const port = typeof address === 'object' && address ? address.port : 0
+
+    const fakeSessionId = '00000000-0000-0000-0000-000000000000'
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/sessions/${fakeSessionId}`)
+
+    const closeCode = await new Promise<number>((resolve) => {
+      ws.on('close', (code) => resolve(code))
+      ws.on('error', () => resolve(1006))
+    })
+
+    // 존재하지 않는 세션 → 정상 종료(1000)가 아니어야 함
+    expect(closeCode).not.toBe(1000)
+  })
+
+  it('UUID 형식이 아닌 sessionId로 WS 연결 시 정상 종료가 아닌 코드로 닫힌다', async () => {
+    ;({ app } = await startServer())
+    const address = app.server.address()
+    const port = typeof address === 'object' && address ? address.port : 0
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/sessions/not-a-uuid`)
+
+    const closeCode = await new Promise<number>((resolve) => {
+      ws.on('close', (code) => resolve(code))
+      ws.on('error', () => resolve(1006))
+    })
+
+    expect(closeCode).not.toBe(1000)
+  })
+
+  it('HTTP /sessions/:id/messages — UUID 아닌 ID는 400을 반환한다', async () => {
+    ;({ app } = await startServer())
+    const address = app.server.address()
+    const port = typeof address === 'object' && address ? address.port : 0
+
+    const res = await fetch(`http://127.0.0.1:${port}/sessions/not-a-uuid/messages`)
+    expect(res.status).toBe(400)
+  })
 })
