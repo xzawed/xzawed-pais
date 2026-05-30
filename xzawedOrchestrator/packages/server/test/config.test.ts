@@ -3,8 +3,12 @@ import { describe, it, expect, beforeEach } from 'vitest'
 describe('config', () => {
   beforeEach(() => {
     delete process.env.PORT
+    delete process.env.MODE
+    delete process.env.AUTH
     delete process.env.CLAUDE_MODE
     delete process.env.REDIS_URL
+    delete process.env.SERVICE_JWT_SECRET
+    delete process.env.USER_JWT_SECRET
     process.env.ANTHROPIC_API_KEY = 'sk-test-key' // NOSONAR
   })
 

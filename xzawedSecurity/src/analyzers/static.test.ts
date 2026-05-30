@@ -84,4 +84,22 @@ describe('analyzeFiles', () => {
     const issues = await analyzeFiles(['/workspace/clean.ts'], '/workspace')
     expect(issues).toEqual([])
   })
+
+  it('S017 — document.write() 탐지', async () => {
+    mockReadFile.mockResolvedValueOnce('document.write("<script>alert(1)</script>")' as never)
+    const issues = await analyzeFiles(['/workspace/test.ts'], '/workspace')
+    expect(issues.some(i => i.id.startsWith('S017'))).toBe(true)
+  })
+
+  it('S019 — dangerouslySetInnerHTML 탐지', async () => {
+    mockReadFile.mockResolvedValueOnce('return <div dangerouslySetInnerHTML={{ __html: userInput }} />' as never)
+    const issues = await analyzeFiles(['/workspace/test.tsx'], '/workspace')
+    expect(issues.some(i => i.id.startsWith('S019'))).toBe(true)
+  })
+
+  it('S020 — 인증 훅 없는 라우트 탐지', async () => {
+    mockReadFile.mockResolvedValueOnce('app.get("/admin", async (req, reply) => { return "ok" })' as never)
+    const issues = await analyzeFiles(['/workspace/test.ts'], '/workspace')
+    expect(issues.some(i => i.id.startsWith('S020'))).toBe(true)
+  })
 })

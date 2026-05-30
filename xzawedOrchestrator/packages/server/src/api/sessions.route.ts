@@ -7,6 +7,7 @@ import type { StreamProducer } from '../streams/producer.js'
 import type { Message, Session, ManagerToOrchestratorMessage, Chunk } from '@xzawed/shared'
 import { StreamConsumer } from '../streams/consumer.js'
 import Anthropic from '@anthropic-ai/sdk'
+import { z } from 'zod'
 import { resolve, parse } from 'node:path'
 import { structureIntent } from '../claude/intent-structurer.js'
 import { TaskStore } from '../tasks/task.store.js'
@@ -273,19 +274,30 @@ export async function sessionsRoutes(
     return { session, loc }
   }
 
-  app.post<{ Body: { userId?: string; projectId?: string } }>('/sessions', routeOpts, async (req, reply) => {
+  const CreateSessionBodySchema = z.object({
+    userId: z.string().optional(),
+    projectId: z.string().optional(),
+  })
+
+  app.post('/sessions', routeOpts, async (req, reply) => {
+    const bodyResult = CreateSessionBodySchema.safeParse(req.body ?? {})
+    if (!bodyResult.success) {
+      return reply.status(400).send({ error: 'Invalid request body', details: bodyResult.error.flatten() })
+    }
+    const body = bodyResult.data
+
     let userId: string
     let projectId: string | null = null
 
     if (userAuthHook) {
       if (!req.authUser) return reply.status(401).send({ error: 'Unauthorized' })
-      if (!req.body.projectId) return reply.status(400).send({ error: 'projectId is required' })
-      const project = await assertProjectOwner(req.authUser.sub, req.body.projectId, pool!, reply)
+      if (!body.projectId) return reply.status(400).send({ error: 'projectId is required' })
+      const project = await assertProjectOwner(req.authUser.sub, body.projectId, pool!, reply)
       if (!project) return
       userId = req.authUser.sub
       projectId = project.id
     } else {
-      userId = req.body.userId ?? 'anonymous'
+      userId = body.userId ?? 'anonymous'
     }
 
     const session = await store.create(userId, projectId, 'cli')
