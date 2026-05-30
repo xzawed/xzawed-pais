@@ -236,12 +236,18 @@ app.whenReady().then(async () => {
   app.quit()
 })
 
+let isQuittingMcp = false
 app.on('before-quit', () => {
   serverManager.stop()
 })
 app.on('will-quit', (event) => {
+  if (isQuittingMcp) return  // 두 번째 will-quit은 통과 (infinite loop 방지)
+  isQuittingMcp = true
   event.preventDefault()
-  mcpManager.stopAll().finally(() => app.quit())
+  const safetyTimer = setTimeout(() => app.quit(), 5_000)  // 5s safety timeout
+  void mcpManager.stopAll()
+    .catch(() => {})
+    .finally(() => { clearTimeout(safetyTimer); app.quit() })
 })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
