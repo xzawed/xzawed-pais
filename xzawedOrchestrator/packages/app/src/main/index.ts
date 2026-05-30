@@ -238,7 +238,10 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   serverManager.stop()
-  mcpManager.stopAll()
+})
+app.on('will-quit', (event) => {
+  event.preventDefault()
+  mcpManager.stopAll().finally(() => app.quit())
 })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

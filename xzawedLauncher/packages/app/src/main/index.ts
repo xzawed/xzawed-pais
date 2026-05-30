@@ -139,7 +139,7 @@ app.whenReady().then(() => {
   initUpdater(w)
 
   // Poll service statuses to update tray icon color
-  setInterval(async () => {
+  const trayInterval = setInterval(async () => {
     try {
       const { getServiceStatuses } = await import('./docker-manager.js')
       const states = await getServiceStatuses()
@@ -158,6 +158,7 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
+  clearInterval(trayInterval)
   stopMonitoring()
   // Stop the Docker Compose stack when the user quits the app.
   // Note: before-quit is synchronous so we cannot await this; the containers
