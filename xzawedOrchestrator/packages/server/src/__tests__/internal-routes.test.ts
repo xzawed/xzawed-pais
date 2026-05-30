@@ -175,7 +175,7 @@ describe('POST /internal/sessions/:id/register-project — background clone 실�
       clonePath: vi.fn().mockReturnValue('/workspace/proj-1'),
       cloneRepo: vi.fn().mockRejectedValue(new Error('git clone: auth failed')),
       pullRepo: vi.fn().mockResolvedValue(undefined),
-    }))
+    }) as unknown as WorkspaceService)
 
     const poolQueryMock = vi.fn()
       .mockResolvedValueOnce({ rows: [PROJECT_DB_ROW] } as unknown as QueryResult)
@@ -212,7 +212,7 @@ describe('POST /internal/sessions/:id/register-project — background clone 실�
       clonePath: vi.fn().mockReturnValue('/workspace/proj-1'),
       cloneRepo: vi.fn().mockRejectedValue(new Error('clone failed')),
       pullRepo: vi.fn().mockResolvedValue(undefined),
-    }))
+    }) as unknown as WorkspaceService)
 
     const poolQueryMock = vi.fn()
       .mockResolvedValueOnce({ rows: [PROJECT_DB_ROW] } as unknown as QueryResult)  // SELECT project
