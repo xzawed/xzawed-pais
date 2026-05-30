@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import { DatabaseError } from 'pg'
 import type { Pool } from 'pg'
 
 export interface ProjectWorkspace {
@@ -77,13 +79,12 @@ function rowToProject(row: ProjectRow): Project {
 }
 
 function toSlug(name: string): string {
-  return name
+  const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .split('-')
-    .filter(Boolean)
-    .join('-')
+    .replace(/^-|-$/g, '')
     .slice(0, 60)
+  return slug || `proj-${randomUUID().slice(0, 8)}`
 }
 
 export class ProjectRepo {
@@ -101,23 +102,30 @@ export class ProjectRepo {
     } = {}
   ): Promise<Project> {
     const slug = options.slug ?? toSlug(name)
-    const { rows } = await this.pool.query<ProjectRow>(
-      `INSERT INTO projects (user_id, name, slug, description, github_owner, github_repo, github_branch)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [
-        userId,
-        name,
-        slug,
-        options.description ?? null,
-        options.githubOwner ?? null,
-        options.githubRepo ?? null,
-        options.githubBranch ?? 'main',
-      ]
-    )
-    const row = rows[0]
-    if (!row) throw new Error('Failed to create project')
-    return rowToProject(row)
+    try {
+      const { rows } = await this.pool.query<ProjectRow>(
+        `INSERT INTO projects (user_id, name, slug, description, github_owner, github_repo, github_branch)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING *`,
+        [
+          userId,
+          name,
+          slug,
+          options.description ?? null,
+          options.githubOwner ?? null,
+          options.githubRepo ?? null,
+          options.githubBranch ?? 'main',
+        ]
+      )
+      const row = rows[0]
+      if (!row) throw new Error('Failed to create project')
+      return rowToProject(row)
+    } catch (err) {
+      if (err instanceof DatabaseError && err.code === '23505') {
+        throw Object.assign(new Error('이미 동일한 이름의 프로젝트가 있습니다.'), { statusCode: 409 })
+      }
+      throw err
+    }
   }
 
   async findByUser(userId: string): Promise<Project[]> {

@@ -58,6 +58,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
     restart: unless-stopped
 
   # ── Manager (port 3001) ─────────────────────────────────────────────────────
@@ -85,6 +90,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
     restart: unless-stopped
 
   # ── Planner (port 3002) ─────────────────────────────────────────────────────
@@ -107,6 +117,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
     restart: unless-stopped
 
   # ── Developer (port 3003) ───────────────────────────────────────────────────
@@ -132,6 +147,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
     restart: unless-stopped
 
   # ── Designer (port 3004) ────────────────────────────────────────────────────
@@ -154,6 +174,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
     restart: unless-stopped
 
   # ── Tester (port 3005) ──────────────────────────────────────────────────────
@@ -179,6 +204,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
     restart: unless-stopped
 
   # ── Builder (port 3006) ─────────────────────────────────────────────────────
@@ -204,6 +234,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
     restart: unless-stopped
 
   # ── Watcher (port 3007) ─────────────────────────────────────────────────────
@@ -229,6 +264,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
     restart: unless-stopped
 
   # ── Security (port 3008) ────────────────────────────────────────────────────
@@ -254,6 +294,11 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
     restart: unless-stopped
 
 volumes:
