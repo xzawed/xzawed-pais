@@ -12,7 +12,7 @@ vi.mock('@anthropic-ai/sdk', () => {
 })
 
 import AnthropicDefault from '@anthropic-ai/sdk'
-import { ClaudeRunner } from './runner.js'
+import { ClaudeRunner, parseMaxIterations } from './runner.js'
 import { ToolRegistry } from '../tools/registry.js'
 
 const AnthropicMock = vi.mocked(AnthropicDefault)
@@ -413,5 +413,52 @@ describe('ClaudeRunner', () => {
       const systemPrompt = createFn.mock.calls[0][0].system as string
       expect(systemPrompt).toContain('/my-workspace')
     })
+  })
+
+  describe('publishStatus 실패 격리', () => {
+    it('publishStatus 실패 시 루프가 계속 진행된다', async () => {
+      // producer.publish가 첫 번째 호출에서 실패해도 루프가 중단되지 않아야 한다
+      mockProducer.publish.mockRejectedValueOnce(new Error('Redis 연결 실패'))
+      mockProducer.publish.mockResolvedValue(undefined)
+
+      registry.register({
+        name: 'develop_code',
+        description: 'Develop code',
+        inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: vi.fn().mockResolvedValue({ success: true }),
+      })
+
+      createFn
+        .mockResolvedValueOnce(
+          makeMessage('tool_use', [
+            makeToolUseBlock('tu-ps', 'develop_code', { projectPath: '/workspace' }),
+          ]),
+        )
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('완료')]))
+
+      // publishStatus 실패에도 불구하고 run()이 정상 완료되어야 한다
+      const result = await runner.run(baseRunOptions())
+      expect(result).toBe('완료')
+    })
+  })
+})
+
+describe('MAX_ITERATIONS 검증 (parseMaxIterations)', () => {
+  it('NaN 값이면 에러를 throw한다', () => {
+    expect(() => parseMaxIterations('not-a-number')).toThrow(
+      /MANAGER_MAX_ITERATIONS must be a positive integer/,
+    )
+  })
+
+  it('0이면 에러를 throw한다', () => {
+    expect(() => parseMaxIterations('0')).toThrow(
+      /MANAGER_MAX_ITERATIONS must be a positive integer/,
+    )
+  })
+
+  it('음수이면 에러를 throw한다', () => {
+    expect(() => parseMaxIterations('-5')).toThrow(
+      /MANAGER_MAX_ITERATIONS must be a positive integer/,
+    )
   })
 })

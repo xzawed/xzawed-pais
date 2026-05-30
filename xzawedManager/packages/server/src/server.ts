@@ -52,7 +52,7 @@ export async function buildServer(
     sessionRepo = new SessionRepo(pool)
   }
 
-  const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY })
+  const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY, maxRetries: 3 })
 
   const registry = new ToolRegistry()
   registry.register(createPlanTaskHandler(config.REDIS_URL))
