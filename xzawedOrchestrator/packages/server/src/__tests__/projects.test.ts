@@ -1,6 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { Pool, QueryResult } from 'pg'
+import { vi, describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest'
+import { randomUUID } from 'node:crypto'
+import { Pool } from 'pg'
+import type { QueryResult } from 'pg'
 import { ProjectRepo } from '../projects/project.repo.js'
+import { buildServer } from '../server.js'
+
+vi.mock('../projects/project-gateway.js', () => ({
+  ProjectGatewayConsumer: vi.fn().mockImplementation(() => ({
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
+  })),
+}))
 
 function makePool(rows: Record<string, unknown>[]) {
   const querySpy = vi.fn().mockResolvedValue({ rows } as QueryResult)
@@ -127,7 +137,142 @@ describe('toSlug (create 경유 쿼리 인자 검증)', () => {
 const DATABASE_URL = process.env['TEST_DATABASE_URL'] ?? ''
 const hasDb = DATABASE_URL !== ''
 
+const BASE_CONFIG = {
+  port: 0,
+  redisUrl: 'redis://127.0.0.1:6380',
+  claudeMode: 'cli' as const,
+  mode: 'local' as const,
+  auth: 'none' as const,
+  claudeModel: 'test',
+  serveWeb: false,
+  databaseUrl: DATABASE_URL,
+  userJwtSecret: 'integration-test-secret-key-32chars!!',
+}
+
+async function registerAndLogin(
+  app: import('fastify').FastifyInstance,
+  email: string,
+  password: string,
+): Promise<string> {
+  await app.inject({
+    method: 'POST', url: '/auth/register',
+    payload: { email, password },
+  })
+  const res = await app.inject({
+    method: 'POST', url: '/auth/login',
+    payload: { email, password },
+  })
+  return (res.json() as { accessToken: string }).accessToken
+}
+
 describe.skipIf(!hasDb)('projects routes integration', () => {
-  it.todo('GET/POST /projects, GET/PATCH/DELETE /projects/:id 전체 흐름 (DB 필요)')
-  it.todo('타 사용자 프로젝트 접근 시 404 반환 (정보 누출 방지)')
+  let app: import('fastify').FastifyInstance
+  let dbPool: Pool
+  const suffix = randomUUID()
+  const emailA = `proj-a-${suffix}@test.example.com`
+  const emailB = `proj-b-${suffix}@test.example.com`
+  const password = 'Passw0rd!ok'
+
+  beforeAll(async () => {
+    app = await buildServer(BASE_CONFIG, {
+      async *send() { yield { type: 'done' as const, content: '' } },
+    })
+    dbPool = new Pool({ connectionString: DATABASE_URL })
+  })
+
+  afterAll(async () => {
+    await dbPool.query(
+      'DELETE FROM users WHERE email = ANY($1)',
+      [[emailA, emailB]],
+    ).catch(() => {})
+    await dbPool.end().catch(() => {})
+    await app?.close()
+  })
+
+  it('GET/POST /projects, GET/PATCH/DELETE /projects/:id 전체 흐름', async () => {
+    const token = await registerAndLogin(app, emailA, password)
+    const authHeader = { Authorization: `Bearer ${token}` }
+
+    // POST /projects
+    const createRes = await app.inject({
+      method: 'POST', url: '/projects',
+      headers: authHeader,
+      payload: { name: 'Test Project' },
+    })
+    expect(createRes.statusCode).toBe(201)
+    const created = createRes.json() as { id: string; name: string; slug: string }
+    expect(created.id).toBeTruthy()
+    expect(created.name).toBe('Test Project')
+    const projectId = created.id
+
+    // GET /projects
+    const listRes = await app.inject({ method: 'GET', url: '/projects', headers: authHeader })
+    expect(listRes.statusCode).toBe(200)
+    const list = listRes.json() as { projects: Array<{ id: string }> }
+    expect(list.projects.some(p => p.id === projectId)).toBe(true)
+
+    // GET /projects/:id
+    const getRes = await app.inject({ method: 'GET', url: `/projects/${projectId}`, headers: authHeader })
+    expect(getRes.statusCode).toBe(200)
+    expect((getRes.json() as { id: string }).id).toBe(projectId)
+
+    // PATCH /projects/:id
+    const patchRes = await app.inject({
+      method: 'PATCH', url: `/projects/${projectId}`,
+      headers: authHeader,
+      payload: { description: 'Updated description' },
+    })
+    expect(patchRes.statusCode).toBe(200)
+    expect((patchRes.json() as { description: string }).description).toBe('Updated description')
+
+    // DELETE /projects/:id
+    const deleteRes = await app.inject({
+      method: 'DELETE', url: `/projects/${projectId}`,
+      headers: authHeader,
+    })
+    expect(deleteRes.statusCode).toBe(204)
+
+    // 삭제 후 GET → 404
+    const afterDeleteRes = await app.inject({
+      method: 'GET', url: `/projects/${projectId}`,
+      headers: authHeader,
+    })
+    expect(afterDeleteRes.statusCode).toBe(404)
+  })
+
+  it('타 사용자 프로젝트 접근 시 404 반환 (정보 누출 방지)', async () => {
+    const tokenA = await registerAndLogin(app, emailA, password)
+    const tokenB = await registerAndLogin(app, emailB, password)
+
+    // 사용자 A가 프로젝트 생성
+    const createRes = await app.inject({
+      method: 'POST', url: '/projects',
+      headers: { Authorization: `Bearer ${tokenA}` },
+      payload: { name: 'Private Project A' },
+    })
+    expect(createRes.statusCode).toBe(201)
+    const projectId = (createRes.json() as { id: string }).id
+
+    // 사용자 B가 사용자 A의 프로젝트 접근 → 404 (정보 노출 없음)
+    const getRes = await app.inject({
+      method: 'GET', url: `/projects/${projectId}`,
+      headers: { Authorization: `Bearer ${tokenB}` },
+    })
+    expect(getRes.statusCode).toBe(404)
+
+    // 사용자 B가 사용자 A의 프로젝트 수정 → 404
+    const patchRes = await app.inject({
+      method: 'PATCH', url: `/projects/${projectId}`,
+      headers: { Authorization: `Bearer ${tokenB}` },
+      payload: { description: 'hijack' },
+    })
+    expect(patchRes.statusCode).toBe(404)
+
+    // 사용자 B가 사용자 A의 프로젝트 삭제 → 404
+    const deleteRes = await app.inject({
+      method: 'DELETE', url: `/projects/${projectId}`,
+      headers: { Authorization: `Bearer ${tokenB}` },
+    })
+    expect(deleteRes.statusCode).toBe(404)
+  })
 })
