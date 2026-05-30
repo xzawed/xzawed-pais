@@ -24,6 +24,7 @@ import { createSwitchProjectHandler } from './tools/switch-project.js'
 import { createDeployProjectHandler } from './tools/deploy-project.js'
 import { SessionGatewayConsumer } from './streams/session-gateway.js'
 import { WatcherEventConsumer } from './streams/watcher-event-consumer.js'
+import { getRedisClient } from './streams/redis.client.js'
 
 export async function buildServer(
   config: Config,
@@ -96,8 +97,31 @@ export async function buildServer(
     async (event) => {
       app.log.info(
         { sessionId: event.sessionId, path: event.path, event: event.event },
-        '[watcher] file_changed 이벤트 수신'
+        '[watcher] file_changed 이벤트 수신 — 빌드/테스트 자동 재실행'
       )
+      // file_changed → orchestrator:to-manager:{sessionId}에 task_request 발행
+      // Manager가 이를 새 태스크로 처리하여 빌드/테스트를 자동 실행
+      try {
+        const requestStream = `orchestrator:to-manager:${event.sessionId}`
+        const redis = getRedisClient(config.REDIS_URL)
+        await redis.xadd(requestStream, '*', 'data', JSON.stringify({
+          sessionId: event.sessionId,
+          messageId: crypto.randomUUID(),
+          timestamp: Date.now(),
+          type: 'task_request',
+          payload: {
+            intent: `파일 변경 감지: ${event.path} (${event.event}). 변경된 파일을 기반으로 빌드와 테스트를 자동으로 실행합니다.`,
+            context: {
+              triggeredBy: 'file_changed',
+              changedFile: event.path,
+              changeType: event.event,
+            },
+            priority: 'normal',
+          },
+        }))
+      } catch (err) {
+        app.log.error({ err, sessionId: event.sessionId }, '[watcher] task_request 발행 실패')
+      }
     }
   )
   watcherEventConsumer.start()
