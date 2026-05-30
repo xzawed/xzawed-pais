@@ -335,6 +335,38 @@ describe('BaseConsumer', () => {
       expect(redis.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '2-0')
     })
 
+    it('XAUTOCLAIM이 배열이 아닌 값을 반환해도 정상 실행된다 (invalid format)', async () => {
+      const redis = makeRedis({
+        xautoclaim: vi.fn().mockResolvedValueOnce(null),  // null 반환 — Array.isArray 검증 실패
+      })
+      const consumer = new BaseConsumer(redis as any, vi.fn(), 'grp', 'c1', 'prefix', MessageSchema, noopSleep)
+
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) consumer.stop()
+        return null
+      })
+
+      await expect(consumer.start('sess-1')).resolves.not.toThrow()
+    })
+
+    it('XAUTOCLAIM이 result[1]이 배열이 아닌 경우 processMessages를 건너뛴다', async () => {
+      const onMessage = vi.fn()
+      const redis = makeRedis({
+        xautoclaim: vi.fn().mockResolvedValueOnce(['cursor', 'not-an-array', []]),
+      })
+      const consumer = new BaseConsumer(redis as any, onMessage, 'grp', 'c1', 'prefix', MessageSchema, noopSleep)
+
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) consumer.stop()
+        return null
+      })
+
+      await consumer.start('sess-1')
+      expect(onMessage).not.toHaveBeenCalled()
+    })
+
     it('XAUTOCLAIM이 에러를 던져도 start()가 정상 실행된다 (미지원 버전 호환)', async () => {
       const redis = makeRedis({
         xautoclaim: vi.fn().mockRejectedValue(new Error('ERR unknown command `XAUTOCLAIM`')),
