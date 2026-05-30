@@ -19,6 +19,8 @@ describe.skipIf(!hasDb)('Migration runner', () => {
     pool = createPool(DATABASE_URL)
     tmpDir = join(tmpdir(), `xzawed-migrate-test-${randomUUID()}`)
     await mkdir(tmpDir, { recursive: true })
+    // 다른 통합 테스트(buildServer 호출)가 schema_migrations를 선점했을 수 있으므로 초기화
+    await pool.query('DROP TABLE IF EXISTS schema_migrations CASCADE').catch(() => {})
   })
 
   afterAll(async () => {
