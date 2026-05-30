@@ -21,7 +21,10 @@ const config: Configuration = {
   // electron-updater verifies update packages via SHA-512 checksum by default;
   // do NOT set autoUpdater.verifyUpdateCodeSignature = false anywhere.
   mac: { target: [{ target: 'dmg', arch: ['x64', 'arm64'] }], notarize: false },
-  linux: { target: [{ target: 'AppImage', arch: ['x64'] }] },
+  linux: { target: [
+    { target: 'AppImage', arch: ['x64'] },
+    { target: 'deb',      arch: ['x64'] },
+  ]},
   nsis: { oneClick: false, allowToChangeInstallationDirectory: true },
 }
 

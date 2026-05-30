@@ -19,15 +19,23 @@ jobs:
       - name: Build shared
         working-directory: xzawedLauncher/packages/shared
         run: pnpm build
+      - name: Test
+        working-directory: xzawedLauncher/packages/app
+        run: pnpm test
+      - name: Build app
+        working-directory: xzawedLauncher/packages/app
+        run: pnpm build
       - name: Package app
         working-directory: xzawedLauncher/packages/app
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm package
+        run: pnpm exec electron-builder --publish never
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: launcher-windows
-          path: xzawedLauncher/packages/app/dist/*.exe
+          path: |
+            xzawedLauncher/packages/app/dist/*.exe
+            xzawedLauncher/packages/app/dist/latest.yml
 
   build-macos:
     runs-on: macos-13
@@ -43,15 +51,23 @@ jobs:
       - name: Build shared
         working-directory: xzawedLauncher/packages/shared
         run: pnpm build
+      - name: Test
+        working-directory: xzawedLauncher/packages/app
+        run: pnpm test
+      - name: Build app
+        working-directory: xzawedLauncher/packages/app
+        run: pnpm build
       - name: Package app
         working-directory: xzawedLauncher/packages/app
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm package
+        run: pnpm exec electron-builder --publish never
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: launcher-macos
-          path: xzawedLauncher/packages/app/dist/*.dmg
+          path: |
+            xzawedLauncher/packages/app/dist/*.dmg
+            xzawedLauncher/packages/app/dist/latest-mac.yml
 
   build-linux:
     runs-on: ubuntu-22.04
@@ -67,15 +83,24 @@ jobs:
       - name: Build shared
         working-directory: xzawedLauncher/packages/shared
         run: pnpm build
+      - name: Test
+        working-directory: xzawedLauncher/packages/app
+        run: pnpm test
+      - name: Build app
+        working-directory: xzawedLauncher/packages/app
+        run: pnpm build
       - name: Package app
         working-directory: xzawedLauncher/packages/app
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm package
+        run: pnpm exec electron-builder --publish never
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: launcher-linux
-          path: xzawedLauncher/packages/app/dist/*.AppImage
+          path: |
+            xzawedLauncher/packages/app/dist/*.AppImage
+            xzawedLauncher/packages/app/dist/*.deb
+            xzawedLauncher/packages/app/dist/latest-linux.yml
 
   release:
     needs: [build-windows, build-macos, build-linux]
