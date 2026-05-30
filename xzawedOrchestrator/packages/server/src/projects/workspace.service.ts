@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { access, constants } from 'node:fs/promises'
+import { access, constants, rm } from 'node:fs/promises'
 import { join, resolve, parse } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -30,10 +30,16 @@ export class WorkspaceService {
   }
 
   async cloneRepo(repoUrl: string, destPath: string, branch: string): Promise<void> {
-    await this.runGit(
-      ['clone', '--branch', branch, '--depth', '1', '--', repoUrl, destPath],
-      undefined,
-    )
+    try {
+      await this.runGit(
+        ['clone', '--branch', branch, '--depth', '1', '--', repoUrl, destPath],
+        undefined,
+      )
+    } catch (err) {
+      // 실패 시 부분적으로 생성된 디렉토리 정리 — 재시도 시 "이미 존재하는 디렉토리" 에러 방지
+      await rm(destPath, { recursive: true, force: true }).catch(() => {})
+      throw err
+    }
   }
 
   async pullRepo(workspacePath: string, branch: string): Promise<void> {

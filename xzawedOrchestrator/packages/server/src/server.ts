@@ -164,8 +164,18 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
             throw new Error('repoUrl must use https protocol')
           }
           workspacePath = workspaceSvc.clonePath(project.id)
-          void workspaceSvc.cloneRepo(payload.repoUrl, workspacePath, payload.branch ?? 'main').catch((err: unknown) => {
+          void workspaceSvc.cloneRepo(payload.repoUrl, workspacePath, payload.branch ?? 'main').catch(async (err: unknown) => {
             app.log.error({ err }, 'background git clone failed')
+            await projectRepo.updateWorkspace(project.id, {
+              workspaceType: 'github',
+              localPath: payload.localPath,
+              repoUrl: payload.repoUrl,
+              branch: payload.branch,
+              workspacePath: undefined,
+              pushStrategy: 'push',
+            }).catch((updateErr: unknown) => {
+              app.log.error({ err: updateErr }, 'failed to reset workspace_path after clone failure')
+            })
           })
           status = 'cloning'
         }
