@@ -52,8 +52,18 @@ export async function internalRoutes(
           return reply.status(400).send({ error: 'repoUrl must use https protocol' })
         }
         workspacePath = workspaceSvc.clonePath(project.id)
-        void workspaceSvc.cloneRepo(repoUrl, workspacePath, branch).catch((err: unknown) => {
+        void workspaceSvc.cloneRepo(repoUrl, workspacePath, branch).catch(async (err: unknown) => {
           app.log.error({ err }, 'background git clone failed')
+          await repo.updateWorkspace(project.id, {
+            workspaceType,
+            localPath,
+            repoUrl,
+            branch,
+            workspacePath: undefined,
+            pushStrategy: 'push',
+          }).catch((updateErr: unknown) => {
+            app.log.error({ err: updateErr }, 'failed to reset workspace_path after clone failure')
+          })
         })
         status = 'cloning'
       }
