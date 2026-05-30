@@ -236,17 +236,9 @@ app.whenReady().then(async () => {
   app.quit()
 })
 
-let isQuittingMcp = false
 app.on('before-quit', () => {
   serverManager.stop()
-})
-app.on('will-quit', (event) => {
-  if (isQuittingMcp) return  // 두 번째 will-quit은 통과 (infinite loop 방지)
-  isQuittingMcp = true
-  event.preventDefault()
-  // stopAll()은 void 반환(fire-and-forget) — Promise 체인 불필요
-  try { mcpManager.stopAll() } catch { /* ignore */ }
-  app.quit()
+  mcpManager.stopAll()
 })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
