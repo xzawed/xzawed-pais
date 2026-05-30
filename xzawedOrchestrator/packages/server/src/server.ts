@@ -117,6 +117,9 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   await app.register(healthRoutes)
   if (dbPool && config.userJwtSecret) {
     await registerAuthRoutes(app, dbPool, config)
+  } else {
+    // AUTH=none: stub /auth/me so clients receive { user: null } instead of 404
+    app.get('/auth/me', async (_req, reply) => reply.code(200).send({ user: null }))
   }
   const userAuthHook = (dbPool && config.userJwtSecret)
     ? makeUserAuthHook(config.userJwtSecret)

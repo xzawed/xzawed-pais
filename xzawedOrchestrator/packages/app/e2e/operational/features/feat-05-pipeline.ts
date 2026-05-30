@@ -13,6 +13,9 @@ export async function runFeat05Pipeline(
   const steps: StepResult[] = []
   const dir = '05-pipeline'
 
+  // 이전 feat의 스트리밍이 아직 진행 중이면 완료 대기 (최대 120초)
+  await page.waitForSelector('[data-testid="streaming-indicator"]', { state: 'hidden', timeout: 120_000 }).catch(() => {})
+
   // 세션이 없으면 새 세션 생성 후 메시지 전송
   try {
     await ensureSessionActive(page)

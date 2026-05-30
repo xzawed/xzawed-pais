@@ -44,10 +44,14 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (!settings.serverUrl) return
     void restore(settings.serverUrl).catch((e: unknown) => console.error('[App] restore error:', e))
-    // Probe auth mode: 404 = AUTH=none (no auth routes registered)
+    // Probe auth mode: { user: null } = AUTH=none, 404 = legacy server without stub
     fetch(`${settings.serverUrl}/auth/me`)
-      .then((res) => {
-        const isNone = res.status === 404
+      .then(async (res) => {
+        let isNone = res.status === 404
+        if (!isNone && res.ok) {
+          const body = (await res.json()) as { user: unknown }
+          isNone = body.user === null
+        }
         setNoAuth(isNone)
         setAuthChecked(true)
         if (isNone) navigate('/chat', { replace: true })

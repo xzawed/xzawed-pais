@@ -10,15 +10,25 @@ export async function runFeat03Project(
   const steps: StepResult[] = []
   const dir = '03-project'
 
+  // ProjectContextBar는 ChatView에 항상 표시됨 (AUTH=none 포함)
+  // /projects 라우트의 new-project-button은 AUTH=jwt 모드에서만 접근 가능
   try {
     const btn = page.locator('[data-testid="new-project-button"]')
     const visible = await btn.isVisible({ timeout: 5_000 }).catch(() => false)
     const shot = await ss.take(page, dir, '01-project-list')
     steps.push({ name: '새 프로젝트 버튼 표시', status: visible ? 'pass' : 'warn', screenshotPath: shot })
+
     if (!visible) {
-      steps.push({ name: '프로젝트 생성 (버튼 없음, 스킵)', status: 'skip' })
+      // AUTH=none: /projects 페이지 접근 방법 확인 (project-context-bar 존재 여부)
+      const contextBarBtn = page.locator('[data-testid="project-context-bar"] button')
+      const barVisible = await contextBarBtn.isVisible({ timeout: 2_000 }).catch(() => false)
+      steps.push(
+        { name: '프로젝트 컨텍스트 바 표시', status: barVisible ? 'pass' : 'warn' },
+        { name: '프로젝트 생성 (AUTH=none, 스킵)', status: 'skip' },
+      )
       return { featureId: '03', featureName: '프로젝트 생성·전환', status: 'warn', steps, durationMs: Date.now() - start }
     }
+
     await btn.click()
     await page.waitForTimeout(500)
     const shot2 = await ss.take(page, dir, '02-new-project-clicked')
@@ -28,6 +38,7 @@ export async function runFeat03Project(
     return { featureId: '03', featureName: '프로젝트 생성·전환', status: 'fail', steps, durationMs: Date.now() - start }
   }
 
+  // 프로젝트 생성 후 세션 버튼 표시 확인
   try {
     const newSessionBtn = page.locator('[data-testid="new-session-button"]')
     const visible = await newSessionBtn.isVisible({ timeout: 3_000 }).catch(() => false)
@@ -44,6 +55,6 @@ export async function runFeat03Project(
   const failed = steps.some(s => s.status === 'fail')
   return {
     featureId: '03', featureName: '프로젝트 생성·전환',
-    status: failed ? 'fail' : 'pass', steps, durationMs: Date.now() - start,
+    status: failed ? 'fail' : 'warn', steps, durationMs: Date.now() - start,
   }
 }
