@@ -200,7 +200,7 @@ describe.skipIf(!hasDb)('projects routes integration', () => {
       payload: { name: 'Test Project' },
     })
     expect(createRes.statusCode).toBe(201)
-    const created = createRes.json() as { id: string; name: string; slug: string }
+    const { project: created } = createRes.json() as { project: { id: string; name: string; slug: string } }
     expect(created.id).toBeTruthy()
     expect(created.name).toBe('Test Project')
     const projectId = created.id
@@ -214,7 +214,7 @@ describe.skipIf(!hasDb)('projects routes integration', () => {
     // GET /projects/:id
     const getRes = await app.inject({ method: 'GET', url: `/projects/${projectId}`, headers: authHeader })
     expect(getRes.statusCode).toBe(200)
-    expect((getRes.json() as { id: string }).id).toBe(projectId)
+    expect((getRes.json() as { project: { id: string } }).project.id).toBe(projectId)
 
     // PATCH /projects/:id
     const patchRes = await app.inject({
@@ -223,7 +223,7 @@ describe.skipIf(!hasDb)('projects routes integration', () => {
       payload: { description: 'Updated description' },
     })
     expect(patchRes.statusCode).toBe(200)
-    expect((patchRes.json() as { description: string }).description).toBe('Updated description')
+    expect((patchRes.json() as { project: { description: string } }).project.description).toBe('Updated description')
 
     // DELETE /projects/:id
     const deleteRes = await app.inject({
@@ -251,7 +251,7 @@ describe.skipIf(!hasDb)('projects routes integration', () => {
       payload: { name: 'Private Project A' },
     })
     expect(createRes.statusCode).toBe(201)
-    const projectId = (createRes.json() as { id: string }).id
+    const projectId = (createRes.json() as { project: { id: string } }).project.id
 
     // 사용자 B가 사용자 A의 프로젝트 접근 → 404 (정보 노출 없음)
     const getRes = await app.inject({
