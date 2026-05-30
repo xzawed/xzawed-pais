@@ -16,7 +16,7 @@ describe('useProjectsStore', () => {
     it('프로젝트 목록을 가져와 상태에 저장한다', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => [mockProject],
+        json: async () => ({ projects: [mockProject] }),
       }))
 
       const { useProjectsStore } = await import('../stores/projects.store.js')
@@ -52,7 +52,7 @@ describe('useProjectsStore', () => {
     it('새 프로젝트를 생성하고 목록에 추가한다', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => mockProject,
+        json: async () => ({ project: mockProject }),
       }))
 
       const { useProjectsStore } = await import('../stores/projects.store.js')
@@ -113,8 +113,10 @@ describe('useProjectsStore', () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: true,
         json: async () => ({
-          id: 'p1', name: 'my-app', slug: 'my-app', createdAt: '2026-01-01T00:00:00Z',
-          workspace_type: 'local', workspace_path: '/home/user/app',
+          project: {
+            id: 'p1', name: 'my-app', slug: 'my-app', createdAt: '2026-01-01T00:00:00Z',
+            workspace_type: 'local', workspace_path: '/home/user/app',
+          },
         }),
       }))
 
