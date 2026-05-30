@@ -14,7 +14,7 @@ test.describe('프로젝트 전환', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_PROJECTS),
+        body: JSON.stringify({ projects: MOCK_PROJECTS }),
       })
     )
     // Navigate to projects page via login

@@ -171,6 +171,33 @@ describe('SessionDispatcher', () => {
     await expect(p).resolves.toBeUndefined()
   })
 
+  it('동일 sessionId에 대해 handleSessionEntry 동시 호출 시 consumer를 1개만 생성한다', async () => {
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000'
+    const gatewayRedis = makeGatewayRedis([])
+
+    let resolveStart!: () => void
+    const startPromise = new Promise<void>(r => { resolveStart = r })
+    const consumerStart = vi.fn().mockReturnValue(startPromise)
+    const factory = vi.fn().mockReturnValue({ start: consumerStart, stop: vi.fn() })
+
+    const dispatcher = new SessionDispatcher(
+      gatewayRedis,
+      'manager:to-planner:sessions',
+      'planner-session-dispatcher',
+      factory,
+    )
+
+    // 두 개 동시 진입 — pendingConsumers 가드가 두 번째 진입을 차단해야 한다
+    const p1 = (dispatcher as unknown as { handleSessionEntry(id: string): Promise<void> }).handleSessionEntry(sessionId)
+    const p2 = (dispatcher as unknown as { handleSessionEntry(id: string): Promise<void> }).handleSessionEntry(sessionId)
+
+    resolveStart()
+    await Promise.all([p1, p2])
+
+    expect(factory).toHaveBeenCalledTimes(1)
+    expect(consumerStart).toHaveBeenCalledTimes(1)
+  })
+
   it('max active consumers 한도 초과 시 새 consumer를 추가하지 않는다', async () => {
     const sessionId1 = '550e8400-e29b-41d4-a716-446655440001'
     const sessionId2 = '550e8400-e29b-41d4-a716-446655440002'

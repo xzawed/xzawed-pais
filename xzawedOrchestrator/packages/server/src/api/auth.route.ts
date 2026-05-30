@@ -12,12 +12,6 @@ interface AuthRoutesConfig {
   userJwtSecret: string
 }
 
-function getClientIp(req: { headers: Record<string, string | string[] | undefined>; ip: string }): string {
-  const forwarded = req.headers['x-forwarded-for']
-  const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0]
-  return ip?.trim() ?? req.ip
-}
-
 export async function authRoutes(
   app: FastifyInstance,
   config: AuthRoutesConfig
@@ -29,7 +23,6 @@ export async function authRoutes(
 
   await app.register(rateLimit, {
     global: false,
-    keyGenerator: (req) => getClientIp(req as Parameters<typeof getClientIp>[0]),
     errorResponseBuilder: () => ({
       statusCode: 429,
       error: 'Too Many Requests',

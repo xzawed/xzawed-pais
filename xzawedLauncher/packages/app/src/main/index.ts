@@ -90,12 +90,14 @@ function registerIpc(w: BrowserWindow): void {
   // token:get is intentionally NOT exposed to the renderer via preload.
   // It is kept here for internal use only (e.g. injecting the key into docker env).
   ipcMain.handle('token:get', () => {
+    if (!safeStorage.isEncryptionAvailable()) return null
     try {
       const raw = fs.readFileSync(encKeyPath())
       return safeStorage.decryptString(raw)
     } catch { return null }
   })
   ipcMain.handle('token:has', () => {
+    if (!safeStorage.isEncryptionAvailable()) return false
     try {
       const raw = fs.readFileSync(encKeyPath())
       safeStorage.decryptString(raw)
@@ -105,6 +107,9 @@ function registerIpc(w: BrowserWindow): void {
   ipcMain.handle('token:set', (_e, key: unknown) => {
     if (typeof key !== 'string' || key.length === 0 || key.length > 512) {
       return { success: false, error: 'Invalid key' }
+    }
+    if (!safeStorage.isEncryptionAvailable()) {
+      return { success: false, error: '암호화를 지원하지 않는 환경에서는 API 키를 저장할 수 없습니다.' }
     }
     try {
       const enc = safeStorage.encryptString(key)

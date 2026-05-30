@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { mockSpawn, mockAccess } = vi.hoisted(() => ({
+const { mockSpawn, mockAccess, mockRm } = vi.hoisted(() => ({
   mockSpawn: vi.fn(),
   mockAccess: vi.fn(),
+  mockRm: vi.fn(),
 }))
 
 vi.mock('node:child_process', () => ({ spawn: mockSpawn }))
-vi.mock('node:fs/promises', () => ({ access: mockAccess, constants: { R_OK: 4 } }))
+vi.mock('node:fs/promises', () => ({ access: mockAccess, constants: { R_OK: 4 }, rm: mockRm }))
 
 import { WorkspaceService } from '../workspace.service.js'
 
@@ -17,6 +18,8 @@ describe('WorkspaceService', () => {
     svc = new WorkspaceService()
     mockSpawn.mockReset()
     mockAccess.mockReset()
+    mockRm.mockReset()
+    mockRm.mockResolvedValue(undefined)
   })
 
   it('validateLocalPath resolves when path is accessible', async () => {
@@ -104,5 +107,32 @@ describe('WorkspaceService', () => {
     mockSpawn.mockReturnValue(mockProc)
 
     await expect(svc.cloneRepo('https://github.com/user/repo', '/tmp/dest', 'main')).rejects.toThrow('git clone failed')
+  })
+
+  it('clone 실패 시 destPath를 정리한다 (fs.rm 호출 확인)', async () => {
+    const mockProc = {
+      stderr: { on: vi.fn((e, cb) => { if (e === 'data') cb(Buffer.from('fatal: repository not found')) }) },
+      on: vi.fn((event, cb) => { if (event === 'close') cb(128) }),
+    }
+    mockSpawn.mockReturnValue(mockProc)
+
+    await expect(
+      svc.cloneRepo('https://github.com/user/nonexistent', '/tmp/clone-dest', 'main')
+    ).rejects.toThrow('git clone failed')
+
+    expect(mockRm).toHaveBeenCalledWith('/tmp/clone-dest', { recursive: true, force: true })
+  })
+
+  it('clone 실패 시 fs.rm 자체가 실패해도 원래 에러를 throw한다', async () => {
+    const mockProc = {
+      stderr: { on: vi.fn((e, cb) => { if (e === 'data') cb(Buffer.from('fatal: auth failed')) }) },
+      on: vi.fn((event, cb) => { if (event === 'close') cb(128) }),
+    }
+    mockSpawn.mockReturnValue(mockProc)
+    mockRm.mockRejectedValue(new Error('EPERM: permission denied'))
+
+    await expect(
+      svc.cloneRepo('https://github.com/user/repo', '/tmp/clone-dest', 'main')
+    ).rejects.toThrow('git clone failed')
   })
 })

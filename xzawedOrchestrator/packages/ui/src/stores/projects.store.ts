@@ -55,7 +55,7 @@ export const useProjectsStore = create<ProjectsState>()((set, get) => ({
         headers: { Authorization: `Bearer ${accessToken}` },
       })
       if (!res.ok) throw new Error('Failed to fetch projects')
-      const projects = (await res.json()) as Project[]
+      const { projects } = (await res.json()) as { projects: Project[] }
       set({ projects, isLoading: false })
     } catch (err) {
       set({ isLoading: false })
@@ -73,7 +73,7 @@ export const useProjectsStore = create<ProjectsState>()((set, get) => ({
       body: JSON.stringify(data),
     })
     if (!res.ok) throw new Error('Failed to create project')
-    const project = (await res.json()) as Project
+    const { project } = (await res.json()) as { project: Project }
     set({ projects: [...get().projects, project] })
     return project
   },
@@ -90,7 +90,7 @@ export const useProjectsStore = create<ProjectsState>()((set, get) => ({
       body: JSON.stringify(workspace),
     })
     if (!res.ok) throw new Error(`workspace 업데이트 실패: ${res.status}`)
-    const updated = await res.json() as Project
+    const { project: updated } = await res.json() as { project: Project }
     set((s) => ({
       projects: s.projects.map((p) => p.id === projectId ? { ...p, ...updated } : p),
     }))

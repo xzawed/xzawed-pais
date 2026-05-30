@@ -1,4 +1,4 @@
-import Fastify from 'fastify'
+import Fastify, { type FastifyError } from 'fastify'
 import Anthropic from '@anthropic-ai/sdk'
 import type { Config } from './config.js'
 import { registerJwt, verifyServiceToken } from './auth/jwt.plugin.js'
@@ -29,7 +29,17 @@ import { getRedisClient } from './streams/redis.client.js'
 export async function buildServer(
   config: Config,
 ): Promise<{ app: ReturnType<typeof Fastify>; closeAll: () => Promise<void> }> {
-  const app = Fastify({ logger: config.MODE === 'local' })
+  const app = Fastify({ logger: config.MODE === 'local', trustProxy: true })
+
+  app.setErrorHandler<FastifyError>((err, req, reply) => {
+    app.log.error({ err, url: req.url }, 'Unhandled error')
+    const statusCode = err.statusCode ?? 500
+    if (statusCode >= 500) {
+      return reply.status(500).send({ error: 'Internal Server Error' })
+    }
+    const errorField = (err as unknown as { error?: string }).error ?? err.message
+    return reply.status(statusCode).send({ error: errorField })
+  })
 
   if (config.SERVICE_JWT_SECRET) {
     await registerJwt(app, config.SERVICE_JWT_SECRET)

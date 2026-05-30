@@ -12,6 +12,7 @@ export interface ConsumerLike {
 export class SessionDispatcher {
   private running = false
   private readonly activeConsumers = new Map<string, ConsumerLike>()
+  private readonly pendingConsumers = new Set<string>()
   private readonly MAX_ACTIVE_CONSUMERS = 1000
 
   constructor(
@@ -86,19 +87,30 @@ export class SessionDispatcher {
       return
     }
 
-    if (!sessionId || this.activeConsumers.has(sessionId)) return
+    if (!sessionId) return
+
+    void this.handleSessionEntry(sessionId)
+  }
+
+  private async handleSessionEntry(sessionId: string): Promise<void> {
+    // 투-페이즈 가드: activeConsumers 또는 pendingConsumers에 이미 있으면 중복 진입 차단
+    if (this.activeConsumers.has(sessionId) || this.pendingConsumers.has(sessionId)) return
 
     if (this.activeConsumers.size >= this.MAX_ACTIVE_CONSUMERS) {
       console.warn(`[SessionDispatcher] max consumers (${this.MAX_ACTIVE_CONSUMERS}) reached, ignoring session ${sessionId}`)
       return
     }
 
-    const consumer = this.consumerFactory(sessionId)
-    this.activeConsumers.set(sessionId, consumer)
-
-    void consumer.start(sessionId).catch((err: unknown) => {
+    this.pendingConsumers.add(sessionId)
+    try {
+      const consumer = this.consumerFactory(sessionId)
+      this.activeConsumers.set(sessionId, consumer)
+      await consumer.start(sessionId)
+    } catch (err: unknown) {
       console.error(`[SessionDispatcher] consumer error for ${sessionId}:`, err)
-    })
+    } finally {
+      this.pendingConsumers.delete(sessionId)
+    }
   }
 
   stop(): void {
