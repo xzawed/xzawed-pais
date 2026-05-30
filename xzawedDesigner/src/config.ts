@@ -6,6 +6,7 @@ const ConfigSchema = z.object({
   redisUrl: z.string().default('redis://localhost:6379'),
   port: z.coerce.number().int().positive().default(3004),
   mode: z.enum(['local', 'remote']).default('local'),
+  workspaceRoot: z.string().min(1, 'WORKSPACE_ROOT is required'),
 })
 
 export type Config = z.infer<typeof ConfigSchema>
@@ -17,5 +18,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     redisUrl: env.REDIS_URL,
     port: env.PORT,
     mode: env.MODE,
+    workspaceRoot: env.WORKSPACE_ROOT,
   })
 }
