@@ -155,6 +155,7 @@ export function handleConsumerMessage(
   socket: WebSocket,
   consumers: Map<string, StreamConsumer>,
   taskStore: TaskStore,
+  onTerminate?: (sessionId: string) => void,
 ): void {
   const activeTask = taskStore
     .findBySessionId(sessionId)
@@ -177,8 +178,7 @@ export function handleConsumerMessage(
         agentId: msg.payload.agentId,
         content: msg.payload.content,
       }))
-      consumers.get(sessionId)?.stop()
-      consumers.delete(sessionId)
+      onTerminate ? onTerminate(sessionId) : (consumers.get(sessionId)?.stop(), consumers.delete(sessionId))
       break
     case 'error':
       if (activeTask) taskStore.update(activeTask.id, 'failed', msg.payload.content)
@@ -187,8 +187,7 @@ export function handleConsumerMessage(
         agentId: msg.payload.agentId,
         content: msg.payload.content,
       }))
-      consumers.get(sessionId)?.stop()
-      consumers.delete(sessionId)
+      onTerminate ? onTerminate(sessionId) : (consumers.get(sessionId)?.stop(), consumers.delete(sessionId))
       break
     case 'info_request':
       socket.send(JSON.stringify({
@@ -219,6 +218,16 @@ export async function sessionsRoutes(
   const msgRepo = pool ? new MessageRepo(pool) : undefined
   const effectiveAuthHook = userAuthHook ?? authHook
   const routeOpts = effectiveAuthHook ? { preHandler: effectiveAuthHook } : {}
+
+  function cleanupSession(sessionId: string): void {
+    sessionCleanup.get(sessionId)?.()
+    sessionCleanup.delete(sessionId)
+    sessionConsumers.get(sessionId)?.stop()
+    sessionConsumers.delete(sessionId)
+    wsSessions.delete(sessionId)
+    taskStore.deleteBySessionId(sessionId)
+    messageStore.delete(sessionId)
+  }
 
   function locale(req: FastifyRequest): ServerLocale {
     return (req as FastifyRequest & Partial<LocalizedRequest>).locale ?? 'ko'
@@ -288,7 +297,7 @@ export async function sessionsRoutes(
     void consumer.start(session.id, async (msg) => {
       const socket = wsSessions.get(session.id)
       if (!socket) return
-      handleConsumerMessage(msg, session.id, socket, sessionConsumers, taskStore)
+      handleConsumerMessage(msg, session.id, socket, sessionConsumers, taskStore, cleanupSession)
     }).catch((err: unknown) => {
       req.log.warn({ err, sessionId: session.id }, 'StreamConsumer error')
     })
