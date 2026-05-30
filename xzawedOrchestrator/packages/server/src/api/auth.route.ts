@@ -1,18 +1,13 @@
 import type { FastifyInstance } from 'fastify'
 import type { Pool } from 'pg'
-import { createHash } from 'node:crypto'
 import rateLimit from '@fastify/rate-limit'
 import { UserRepo, toPublic } from '../auth/user.repo.js'
 import { RefreshRepo } from '../auth/refresh.repo.js'
 import { hashPassword, verifyPassword } from '../auth/password.js'
-import { issueAccessToken, issueRefreshToken } from '../auth/tokens.js'
+import { issueAccessToken, issueRefreshToken, sha256Hex } from '../auth/tokens.js'
 import { makeUserAuthHook } from '../auth/user-auth.hook.js'
 
 const MAX_SESSIONS_PER_USER = 5
-
-function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex')
-}
 
 interface AuthRoutesConfig {
   pool: Pool
@@ -159,7 +154,7 @@ export async function authRoutes(
       if (req.authUser) {
         const body = req.body as { refreshToken?: string; all?: boolean }
         if (body?.refreshToken) {
-          await refreshes.revokeByToken(hashToken(body.refreshToken), req.authUser.sub)
+          await refreshes.revokeByToken(sha256Hex(body.refreshToken), req.authUser.sub)
         } else {
           await refreshes.revokeAllForUser(req.authUser.sub)
         }
