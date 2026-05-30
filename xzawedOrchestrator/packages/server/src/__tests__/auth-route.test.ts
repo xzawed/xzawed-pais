@@ -30,12 +30,18 @@ vi.mock('../auth/user.repo.js', () => ({
 const mockRefreshFindValid = vi.fn<(token: string, client?: unknown) => Promise<{ id: string; userId: string } | undefined>>()
 const mockRefreshCreate = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
 const mockRefreshRevokeAllForUser = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
+const mockRefreshRevokeByToken = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
+const mockRefreshCountByUser = vi.fn<() => Promise<number>>().mockResolvedValue(0)
+const mockRefreshRevokeOldestByUser = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
 
 vi.mock('../auth/refresh.repo.js', () => ({
   RefreshRepo: vi.fn().mockImplementation(() => ({
     create: mockRefreshCreate,
     findValid: mockRefreshFindValid,
     revokeAllForUser: mockRefreshRevokeAllForUser,
+    revokeByToken: mockRefreshRevokeByToken,
+    countByUser: mockRefreshCountByUser,
+    revokeOldestByUser: mockRefreshRevokeOldestByUser,
   })),
 }))
 
@@ -353,6 +359,20 @@ describe('POST /auth/login', () => {
     })
     expect(res.statusCode).toBe(401)
   })
+
+  it('로그인 성공 시 세션 수 5 이상이면 oldest revoke 후 새 토큰 생성', async () => {
+    mockFindByEmail.mockResolvedValueOnce(mockUser)
+    mockRefreshCountByUser.mockResolvedValueOnce(5)
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { email: 'test@example.com', password: 'password123' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(mockRefreshRevokeOldestByUser).toHaveBeenCalledTimes(1)
+    expect(mockRefreshCreate).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('POST /auth/logout + GET /auth/me', () => {
@@ -384,6 +404,34 @@ describe('POST /auth/logout + GET /auth/me', () => {
     app = await startServer()
     const res = await app.inject({ method: 'POST', url: '/auth/logout' })
     expect(res.statusCode).toBe(401)
+  })
+
+  it('logout — refreshToken 포함 시 해당 토큰만 revoke (revokeByToken 1회 호출)', async () => {
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/logout',
+      headers: { Authorization: `Bearer ${getToken()}` },
+      payload: { refreshToken: 'some-refresh-token-value' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect((res.json() as { ok: boolean }).ok).toBe(true)
+    expect(mockRefreshRevokeByToken).toHaveBeenCalledTimes(1)
+    expect(mockRefreshRevokeAllForUser).not.toHaveBeenCalled()
+  })
+
+  it('logout — refreshToken 없으면 전체 revoke (revokeAllForUser 1회 호출)', async () => {
+    app = await startServer()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/auth/logout',
+      headers: { Authorization: `Bearer ${getToken()}` },
+      payload: {},
+    })
+    expect(res.statusCode).toBe(200)
+    expect((res.json() as { ok: boolean }).ok).toBe(true)
+    expect(mockRefreshRevokeAllForUser).toHaveBeenCalledTimes(1)
+    expect(mockRefreshRevokeByToken).not.toHaveBeenCalled()
   })
 
   it('/me — 사용자 조회 성공 — 200 반환', async () => {

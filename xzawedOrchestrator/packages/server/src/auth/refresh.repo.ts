@@ -36,4 +36,33 @@ export class RefreshRepo {
       [userId]
     )
   }
+
+  async revokeByToken(tokenHash: string, userId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE refresh_tokens SET revoked_at = NOW()
+       WHERE token_hash = $1 AND user_id = $2 AND revoked_at IS NULL AND expires_at > NOW()`,
+      [tokenHash, userId]
+    )
+  }
+
+  async countByUser(userId: string): Promise<number> {
+    const { rows } = await this.pool.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM refresh_tokens
+       WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()`,
+      [userId]
+    )
+    return parseInt(rows[0]?.count ?? '0', 10)
+  }
+
+  async revokeOldestByUser(userId: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE refresh_tokens SET revoked_at = NOW()
+       WHERE id = (
+         SELECT id FROM refresh_tokens
+         WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > NOW()
+         ORDER BY created_at ASC LIMIT 1
+       )`,
+      [userId]
+    )
+  }
 }

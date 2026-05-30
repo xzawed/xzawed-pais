@@ -13,6 +13,7 @@ interface ChatState {
   tokenCount: number
   elapsedMs: number
   modifiedFiles: string[]
+  pendingInfoRequest: { agentId: string; prompt: string } | null
   initSession: (sessionId: string) => void
   addMessage: (msg: Message) => void
   setPending: (v: boolean) => void
@@ -25,6 +26,7 @@ interface ChatState {
   setTokenCount: (n: number) => void
   setElapsedMs: (ms: number) => void
   addModifiedFile: (path: string) => void
+  setPendingInfoRequest: (req: { agentId: string; prompt: string } | null) => void
   reset: () => void
 }
 
@@ -40,6 +42,7 @@ const initialState = {
   tokenCount: 0,
   elapsedMs: 0,
   modifiedFiles: [] as string[],
+  pendingInfoRequest: null as { agentId: string; prompt: string } | null,
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -94,6 +97,8 @@ export const useChatStore = create<ChatState>((set) => ({
         ? state.modifiedFiles
         : [...state.modifiedFiles, path],
     })),
+
+  setPendingInfoRequest: (req) => set({ pendingInfoRequest: req }),
 
   reset: () => set({ ...initialState }),
 }))

@@ -110,6 +110,12 @@ export class SessionWsClient {
     }
   }
 
+  send(data: unknown): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(data))
+    }
+  }
+
   disconnect(): void {
     this.ws?.close()
     this.ws = null

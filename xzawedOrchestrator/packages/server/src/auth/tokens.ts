@@ -18,7 +18,7 @@ export function issueAccessToken(
   secret: string,
   expiresIn = '15m'
 ): string {
-  return jwt.sign(payload, secret, { expiresIn } as jwt.SignOptions)
+  return jwt.sign(payload, secret, { algorithm: 'HS256', expiresIn } as jwt.SignOptions)
 }
 
 export function verifyAccessToken(token: string, secret: string): AccessTokenPayload {
@@ -27,9 +27,13 @@ export function verifyAccessToken(token: string, secret: string): AccessTokenPay
 
 const REFRESH_TOKEN_TTL_MS = Number(process.env.REFRESH_TOKEN_TTL_MS ?? String(30 * 24 * 60 * 60 * 1000))
 
+export function sha256Hex(input: string): string {
+  return createHash('sha256').update(input).digest('hex')
+}
+
 export function issueRefreshToken(): IssuedRefreshToken {
   const token = randomBytes(48).toString('base64url')
-  const hash = createHash('sha256').update(token).digest('hex')
+  const hash = sha256Hex(token)
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS)
   return { token, hash, expiresAt }
 }

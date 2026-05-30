@@ -7,7 +7,7 @@ import { ChatView } from '../components/ChatView.js'
 
 vi.mock('../lib/api.js', () => ({
   postMessage: vi.fn(),
-  SessionWsClient: vi.fn(() => ({ connect: vi.fn(() => () => {}) })),
+  SessionWsClient: vi.fn(() => ({ connect: vi.fn(() => () => {}), send: vi.fn() })),
 }))
 
 describe('ChatView', () => {
@@ -24,6 +24,7 @@ describe('ChatView', () => {
       tokenCount: 0,
       elapsedMs: 0,
       modifiedFiles: [],
+      pendingInfoRequest: null,
     })
   })
 
@@ -36,5 +37,17 @@ describe('ChatView', () => {
     useChatStore.setState({ sessionId: 'test-session' })
     render(<MemoryRouter><ChatView /></MemoryRouter>)
     expect(screen.getByTestId('chat-message-list')).toBeInTheDocument()
+  })
+
+  test('renders agent_info_request prompt when pendingInfoRequest is set', () => {
+    useChatStore.setState({
+      sessionId: 'test-session',
+      pendingInfoRequest: { agentId: 'planner', prompt: 'What is the target framework?' },
+    })
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
+    expect(screen.getByTestId('agent-info-request')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-info-request-prompt')).toHaveTextContent('What is the target framework?')
+    expect(screen.getByTestId('agent-info-response-input')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-info-response-send')).toBeInTheDocument()
   })
 })

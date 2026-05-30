@@ -7,6 +7,7 @@ import type { SessionStore } from '../sessions/session.store.js'
 import type { ToolRegistry } from '../tools/registry.js'
 import type { OrchestratorToManagerMessage } from '../types/streams.js'
 import { ensureWorkspace } from '../workspace.js'
+import type { WatcherEventConsumer } from '../streams/watcher-event-consumer.js'
 
 type RouteHook = (req: FastifyRequest, reply: FastifyReply) => Promise<void>
 
@@ -18,12 +19,14 @@ export interface SessionsRouteOptions {
   registry?: ToolRegistry
   activeConsumers?: Map<string, StreamConsumer>
   authHook?: RouteHook
+  watcherEventConsumer?: WatcherEventConsumer
 }
 
 export function makeSessionStarter(
   opts: Pick<SessionsRouteOptions, 'redisUrl' | 'runner' | 'producer' | 'sessionStore'> & {
     activeConsumers: Map<string, StreamConsumer>
     registry?: ToolRegistry
+    watcherEventConsumer?: WatcherEventConsumer
     log: { error: (obj: unknown, msg: string) => void }
   },
 ) {
@@ -31,6 +34,7 @@ export function makeSessionStarter(
     if (opts.activeConsumers.has(sessionId)) return
 
     opts.sessionStore.create(sessionId)
+    opts.watcherEventConsumer?.watchSession(sessionId)
     const consumer = new StreamConsumer(opts.redisUrl)
     opts.activeConsumers.set(sessionId, consumer)
 
@@ -75,6 +79,7 @@ export function makeSessionStarter(
               },
             })
           } finally {
+            opts.watcherEventConsumer?.unwatchSession(sessionId)
             consumer.stop()
             opts.sessionStore.delete(sessionId)
             opts.activeConsumers.delete(sessionId)
@@ -86,6 +91,7 @@ export function makeSessionStarter(
       } else if (msg.type === 'info_response') {
         opts.sessionStore.resolveInfo(sessionId, msg.payload.answer)
       } else if (msg.type === 'abort') {
+        opts.watcherEventConsumer?.unwatchSession(sessionId)
         opts.sessionStore.abort(sessionId)
         consumer.stop()
         opts.activeConsumers.delete(sessionId)
@@ -93,6 +99,7 @@ export function makeSessionStarter(
       }
     }).catch((err: unknown) => {
       opts.log.error({ err, sessionId }, 'StreamConsumer error')
+      opts.watcherEventConsumer?.unwatchSession(sessionId)
       opts.sessionStore.delete(sessionId)
       opts.activeConsumers.delete(sessionId)
     })
@@ -110,6 +117,7 @@ export async function sessionsRoute(
   const startManagedSession = makeSessionStarter({
     redisUrl, runner, producer, sessionStore, activeConsumers,
     ...(registry !== undefined && { registry }),
+    ...(opts.watcherEventConsumer !== undefined && { watcherEventConsumer: opts.watcherEventConsumer }),
     log: { error: (obj, msg) => app.log.error(obj, msg) },
   })
 

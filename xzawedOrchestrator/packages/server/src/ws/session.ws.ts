@@ -28,6 +28,14 @@ export async function sessionWsRoutes(
     { websocket: true as const, ...(effectiveAuthHook ? { preHandler: effectiveAuthHook } : {}) },
     async (socket, req) => {
       const sessionId = req.params.id
+
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      if (!UUID_RE.test(sessionId)) {
+        socket.send(JSON.stringify({ type: 'error', content: 'Invalid session ID' }))
+        socket.close(1008)
+        return
+      }
+
       const session = await store.findById(sessionId)
 
       if (!session) {

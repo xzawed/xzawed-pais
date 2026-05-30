@@ -6,7 +6,16 @@ import type { UserContext } from '../types/user-context.js'
 import type { ManagerToOrchestratorMessage, UISpec } from '../types/streams.js'
 import { ClarificationNeededError } from '../tools/errors.js'
 
-const MAX_ITERATIONS = Number(process.env['MANAGER_MAX_ITERATIONS'] ?? '50')
+/** MANAGER_MAX_ITERATIONS 환경변수를 파싱하고 유효성을 검증한다. 유효하지 않으면 Error를 throw한다. */
+export function parseMaxIterations(raw: string | undefined): number {
+  const value = Number(raw ?? '50')
+  if (!Number.isFinite(value) || value < 1) {
+    throw new Error(`MANAGER_MAX_ITERATIONS must be a positive integer, got: ${raw}`)
+  }
+  return value
+}
+
+const MAX_ITERATIONS = parseMaxIterations(process.env['MANAGER_MAX_ITERATIONS'])
 const MAX_TOKENS = Number(process.env['MANAGER_MAX_TOKENS'] ?? '16384')
 const CLAUDE_CALL_TIMEOUT_MS = Number(process.env['MANAGER_CLAUDE_TIMEOUT_MS'] ?? '120000')
 
@@ -45,13 +54,17 @@ export class ClaudeRunner {
     content: string,
     type: ManagerToOrchestratorMessage['type'] = 'status_update',
   ): Promise<void> {
-    await producer.publish({
-      sessionId,
-      messageId: crypto.randomUUID(),
-      timestamp: Date.now(),
-      type,
-      payload: { agentId: 'manager', content },
-    })
+    try {
+      await producer.publish({
+        sessionId,
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now(),
+        type,
+        payload: { agentId: 'manager', content },
+      })
+    } catch (err) {
+      console.warn('[runner] publishStatus 실패 — 작업 계속:', err)
+    }
   }
 
   private async handleRequestInfoTool(

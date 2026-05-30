@@ -4,8 +4,10 @@ import rateLimit from '@fastify/rate-limit'
 import { UserRepo, toPublic } from '../auth/user.repo.js'
 import { RefreshRepo } from '../auth/refresh.repo.js'
 import { hashPassword, verifyPassword } from '../auth/password.js'
-import { issueAccessToken, issueRefreshToken } from '../auth/tokens.js'
+import { issueAccessToken, issueRefreshToken, sha256Hex } from '../auth/tokens.js'
 import { makeUserAuthHook } from '../auth/user-auth.hook.js'
+
+const MAX_SESSIONS_PER_USER = 5
 
 interface AuthRoutesConfig {
   pool: Pool
@@ -83,6 +85,11 @@ export async function authRoutes(
         userJwtSecret
       )
       const { token: refreshToken, hash, expiresAt } = issueRefreshToken()
+
+      const count = await refreshes.countByUser(user.id)
+      if (count >= MAX_SESSIONS_PER_USER) {
+        await refreshes.revokeOldestByUser(user.id)
+      }
       await refreshes.create(user.id, hash, expiresAt, req.headers['user-agent'])
 
       return reply.send({ user: toPublic(user), accessToken, refreshToken })
@@ -140,11 +147,18 @@ export async function authRoutes(
     }
   )
 
-  app.post(
+  app.post<{ Body: { refreshToken?: string; all?: boolean } }>(
     '/auth/logout',
     { preHandler: authHook },
     async (req, reply) => {
-      if (req.authUser) await refreshes.revokeAllForUser(req.authUser.sub)
+      if (req.authUser) {
+        const body = req.body as { refreshToken?: string; all?: boolean }
+        if (body?.refreshToken) {
+          await refreshes.revokeByToken(sha256Hex(body.refreshToken), req.authUser.sub)
+        } else {
+          await refreshes.revokeAllForUser(req.authUser.sub)
+        }
+      }
       return reply.send({ ok: true })
     }
   )

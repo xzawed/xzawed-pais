@@ -1,5 +1,5 @@
 import { Redis } from 'ioredis'
-import { SessionDispatcher } from '@xzawed/agent-streams'
+import { validateWorkspaceRoot, SessionDispatcher } from '@xzawed/agent-streams'
 import { loadConfig } from './config.js'
 import { createServer } from './server.js'
 import { Producer } from './streams/producer.js'
@@ -9,6 +9,7 @@ import { Planner } from './planner.js'
 
 async function main() {
   const config = loadConfig()
+  validateWorkspaceRoot(config.workspaceRoot) // throws if root is filesystem root
 
   const gatewayRedis = new Redis(config.redisUrl)
   const runner = new ClaudeRunner(config.anthropicApiKey, config.claudeModel)

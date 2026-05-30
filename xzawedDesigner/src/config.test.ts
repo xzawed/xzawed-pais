@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest'
 import { loadConfig } from './config.js'
 
-const base = { ANTHROPIC_API_KEY: 'sk-test-key' }
+const base = { ANTHROPIC_API_KEY: 'sk-test-key', WORKSPACE_ROOT: '/workspace' }
 
 describe('loadConfig', () => {
   it('parses required fields', () => {
     const cfg = loadConfig(base)
     expect(cfg.anthropicApiKey).toBe('sk-test-key')
+    expect(cfg.workspaceRoot).toBe('/workspace')
   })
 
   it('applies defaults', () => {
@@ -18,7 +19,11 @@ describe('loadConfig', () => {
   })
 
   it('throws when ANTHROPIC_API_KEY is missing', () => {
-    expect(() => loadConfig({})).toThrow()
+    expect(() => loadConfig({ WORKSPACE_ROOT: '/workspace' })).toThrow()
+  })
+
+  it('throws when WORKSPACE_ROOT is missing', () => {
+    expect(() => loadConfig({ ANTHROPIC_API_KEY: 'sk-test-key' })).toThrow()
   })
 
   it('overrides defaults with env values', () => {
