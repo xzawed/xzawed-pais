@@ -29,7 +29,11 @@ export class ScreenshotHelper {
     const dir = path.join(this.baseDir, 'screenshots', featureDir)
     fs.mkdirSync(dir, { recursive: true })
     const filePath = path.join(dir, `${name}.png`)
-    await page.screenshot({ path: filePath, fullPage: false })
+    try {
+      await page.screenshot({ path: filePath, fullPage: false })
+    } catch (err) {
+      throw new Error(`스크린샷 저장 실패 (${filePath}): ${String(err)}`)
+    }
     return filePath
   }
 }

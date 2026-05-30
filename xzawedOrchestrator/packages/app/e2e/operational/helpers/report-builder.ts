@@ -50,6 +50,10 @@ ${featureRows}
 `
 
   const reportPath = path.join(outputDir, `report-${round}.md`)
-  fs.writeFileSync(reportPath, md, 'utf-8')
+  try {
+    fs.writeFileSync(reportPath, md, 'utf-8')
+  } catch (err) {
+    throw new Error(`보고서 저장 실패 (${reportPath}): ${String(err)}`)
+  }
   return reportPath
 }
