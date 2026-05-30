@@ -115,3 +115,31 @@ describe('Auth rate limiting', () => {
     )
   })
 })
+
+describe('setErrorHandler', () => {
+  let app: FastifyInstance
+
+  afterEach(async () => { await app?.close() })
+
+  it('500 에러는 내부 정보 없이 Internal Server Error 반환', async () => {
+    app = await startServer()
+    app.get('/test-500', async () => {
+      throw Object.assign(new Error('DB connection failed: password=secret'), { statusCode: 500 })
+    })
+    const res = await app.inject({ method: 'GET', url: '/test-500' })
+    expect(res.statusCode).toBe(500)
+    const body = res.json() as { error: string }
+    expect(body.error).toBe('Internal Server Error')
+    expect(JSON.stringify(body)).not.toContain('secret')
+  })
+
+  it('400 에러는 error 메시지를 그대로 반환', async () => {
+    app = await startServer()
+    app.get('/test-400', async () => {
+      throw Object.assign(new Error('Bad Request: invalid field'), { statusCode: 400 })
+    })
+    const res = await app.inject({ method: 'GET', url: '/test-400' })
+    expect(res.statusCode).toBe(400)
+    expect((res.json() as { error: string }).error).toBe('Bad Request: invalid field')
+  })
+})
