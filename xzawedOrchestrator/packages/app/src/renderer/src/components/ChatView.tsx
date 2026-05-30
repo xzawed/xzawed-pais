@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { Message } from '@xzawed/shared'
@@ -17,10 +17,12 @@ import { postMessage, SessionWsClient } from '../lib/api.js'
 export function ChatView(): React.JSX.Element {
   const { t } = useTranslation('app')
   const {
-    sessionId, messages, streamingContent, streamingMsgId, isStreaming, isPending,
+    sessionId, messages, streamingContent, streamingMsgId, isStreaming, isPending, pendingInfoRequest,
   } = useChatStore()
   const { settings } = useAppStore()
   const bottomRef = useRef<HTMLDivElement>(null)
+  const wsClientRef = useRef<SessionWsClient | null>(null)
+  const [infoResponseValue, setInfoResponseValue] = useState('')
   const { projectId } = useParams<{ projectId?: string }>()
   const navigate = useNavigate()
   const projects = useProjectsStore((s) => s.projects)
@@ -33,6 +35,7 @@ export function ChatView(): React.JSX.Element {
   useEffect(() => {
     if (!sessionId) return
     const client = new SessionWsClient()
+    wsClientRef.current = client
     const teardown = client.connect(settings.serverUrl, sessionId, (msg) => {
       const store = useChatStore.getState()
       if (msg.type === 'chunk') {
@@ -69,9 +72,17 @@ export function ChatView(): React.JSX.Element {
           content: `[에이전트 오류 - ${msg.agentId}] ${msg.content}`,
           timestamp: Date.now(),
         })
+      } else if (msg.type === 'agent_info_request') {
+        store.setPendingInfoRequest({ agentId: msg.agentId, prompt: msg.content })
       }
-    }, () => { useChatStore.getState().cancelStream() })
-    return teardown
+    }, () => {
+      useChatStore.getState().cancelStream()
+      wsClientRef.current = null
+    })
+    return () => {
+      teardown()
+      wsClientRef.current = null
+    }
   }, [sessionId, settings.serverUrl])
 
   async function handleSend(content: string): Promise<void> {
@@ -84,6 +95,23 @@ export function ChatView(): React.JSX.Element {
     } catch (err) {
       store.setPending(false)
       store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `[Error] ${err instanceof Error ? err.message : String(err)}`, timestamp: Date.now() })
+    }
+  }
+
+  function handleInfoResponseSend(): void {
+    const trimmed = infoResponseValue.trim()
+    if (!trimmed || !sessionId) return
+    const store = useChatStore.getState()
+    store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'user', content: trimmed, timestamp: Date.now() })
+    wsClientRef.current?.send({ type: 'info_response', content: trimmed })
+    store.setPendingInfoRequest(null)
+    setInfoResponseValue('')
+  }
+
+  function handleInfoResponseKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleInfoResponseSend()
     }
   }
 
@@ -152,8 +180,48 @@ export function ChatView(): React.JSX.Element {
             </div>
           </ScrollArea>
 
+          {/* Agent info request inline prompt */}
+          {pendingInfoRequest && (
+            <div
+              data-testid="agent-info-request"
+              className="border-t border-border bg-surface px-4 py-3 flex flex-col gap-2"
+            >
+              <div className="flex items-center gap-2">
+                <span className="h-1.5 w-1.5 rounded-full bg-warn flex-shrink-0" />
+                <span className="text-[11px] font-medium text-fg-dim">
+                  Agent ({pendingInfoRequest.agentId}) is requesting additional input
+                </span>
+              </div>
+              <p
+                data-testid="agent-info-request-prompt"
+                className="text-[12px] text-fg px-2 py-1.5 rounded bg-surface-raised border border-border"
+              >
+                {pendingInfoRequest.prompt}
+              </p>
+              <div className="flex items-end gap-2">
+                <textarea
+                  data-testid="agent-info-response-input"
+                  value={infoResponseValue}
+                  onChange={(e) => setInfoResponseValue(e.target.value)}
+                  onKeyDown={handleInfoResponseKeyDown}
+                  placeholder="Type your response..."
+                  rows={2}
+                  className="flex-1 resize-none rounded border border-border bg-bg px-2 py-1.5 text-[12px] text-fg placeholder:text-fg-ghost outline-none focus:border-accent transition-colors"
+                />
+                <button
+                  data-testid="agent-info-response-send"
+                  onClick={handleInfoResponseSend}
+                  disabled={!infoResponseValue.trim()}
+                  className="h-8 px-3 rounded text-[11px] bg-accent text-white disabled:opacity-30 transition-colors flex-shrink-0"
+                >
+                  Send
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Input */}
-          <MessageInput onSend={handleSend} disabled={isStreaming || isPending} />
+          <MessageInput onSend={handleSend} disabled={isStreaming || isPending || !!pendingInfoRequest} />
         </>
       )}
 
