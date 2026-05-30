@@ -18,7 +18,7 @@ export function issueAccessToken(
   secret: string,
   expiresIn = '15m'
 ): string {
-  return jwt.sign(payload, secret, { expiresIn } as jwt.SignOptions)
+  return jwt.sign(payload, secret, { algorithm: 'HS256', expiresIn } as jwt.SignOptions)
 }
 
 export function verifyAccessToken(token: string, secret: string): AccessTokenPayload {
