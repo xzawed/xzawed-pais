@@ -16,6 +16,8 @@ function makeRedis(overrides: Record<string, unknown> = {}) {
     xgroup: vi.fn().mockResolvedValue('OK'),
     xreadgroup: vi.fn().mockResolvedValue(null),
     xack: vi.fn().mockResolvedValue(1),
+    xautoclaim: vi.fn().mockResolvedValue(['0-0', [], []]),
+    quit: vi.fn().mockResolvedValue('OK'),
     ...overrides,
   }
 }
@@ -295,6 +297,81 @@ describe('BaseConsumer', () => {
 
       await consumer.start('sess-1')
       expect(redis.xreadgroup).toHaveBeenCalledTimes(3)
+    })
+  })
+
+  describe('XAUTOCLAIM 재처리 (claimPendingMessages)', () => {
+    it('start() 시 XAUTOCLAIM을 호출해 pending 메시지를 재처리한다', async () => {
+      const redis = makeRedis()
+      const handler = vi.fn().mockResolvedValue(undefined)
+      const pendingMsg: Message = { id: 'pending-1', value: 99 }
+
+      // xautoclaim이 pending 메시지 1건을 반환하도록 설정
+      redis.xautoclaim.mockResolvedValueOnce([
+        '0-0',
+        [['2-0', ['data', JSON.stringify(pendingMsg)]]],
+        [],
+      ])
+
+      const consumer = new BaseConsumer(redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep)
+
+      let readCalls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (readCalls++ === 0) consumer.stop()
+        return null
+      })
+
+      await consumer.start('sess-1')
+
+      expect(redis.xautoclaim).toHaveBeenCalledWith(
+        'prefix:sess-1',
+        'grp',
+        'c1',
+        300000, // 5 * 60 * 1000
+        '0-0',
+        'COUNT', '10',
+      )
+      expect(handler).toHaveBeenCalledWith(pendingMsg)
+      expect(redis.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '2-0')
+    })
+
+    it('XAUTOCLAIM이 에러를 던져도 start()가 정상 실행된다 (미지원 버전 호환)', async () => {
+      const redis = makeRedis({
+        xautoclaim: vi.fn().mockRejectedValue(new Error('ERR unknown command `XAUTOCLAIM`')),
+      })
+      const consumer = new BaseConsumer(redis as any, vi.fn(), 'grp', 'c1', 'prefix', MessageSchema, noopSleep)
+
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) consumer.stop()
+        return null
+      })
+
+      await expect(consumer.start('sess-1')).resolves.not.toThrow()
+    })
+  })
+
+  describe('ownsRedis 플래그 (close)', () => {
+    it('ownsRedis=true(기본값)이면 close() 시 redis.quit()을 호출한다', async () => {
+      const redis = makeRedis()
+      // ownsRedis 기본값(true) 사용
+      const consumer = new BaseConsumer(redis as any, vi.fn(), 'grp', 'c1', 'prefix', MessageSchema, noopSleep)
+
+      await consumer.close()
+
+      expect(redis.quit).toHaveBeenCalledTimes(1)
+    })
+
+    it('ownsRedis=false이면 close() 시 redis.quit()을 호출하지 않는다', async () => {
+      const redis = makeRedis()
+      const consumer = new BaseConsumer(
+        redis as any, vi.fn(), 'grp', 'c1', 'prefix', MessageSchema, noopSleep,
+        false, // ownsRedis = false
+      )
+
+      await consumer.close()
+
+      expect(redis.quit).not.toHaveBeenCalled()
     })
   })
 })
