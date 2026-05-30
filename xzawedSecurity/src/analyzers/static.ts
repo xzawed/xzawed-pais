@@ -2,10 +2,14 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { SecurityIssue } from '../types.js'
 import { validatePath } from '../executor.js'
+import { CRYPTO_RULES } from './static-crypto.js'
+import { CONFIG_RULES } from './static-config.js'
+import { INJECTION_RULES } from './static-injection.js'
+import { TRAVERSAL_RULES } from './static-traversal.js'
 
 const MAX_FILE_SIZE_BYTES = 1_048_576 // 1 MB
 
-interface StaticRule {
+export interface StaticRule {
   id: string
   pattern: RegExp
   severity: SecurityIssue['severity']
@@ -63,6 +67,14 @@ const RULES: StaticRule[] = [
   },
 ]
 
+const ALL_RULES: StaticRule[] = [
+  ...RULES,
+  ...CRYPTO_RULES,
+  ...CONFIG_RULES,
+  ...INJECTION_RULES,
+  ...TRAVERSAL_RULES,
+]
+
 const CONCURRENCY_LIMIT = 5
 
 export async function analyzeFiles(
@@ -108,7 +120,7 @@ async function analyzeFile(filePath: string, workspaceRoot: string): Promise<Sec
 
 function scanLines(lines: string[], filePath: string): SecurityIssue[] {
   const issues: SecurityIssue[] = []
-  for (const rule of RULES) {
+  for (const rule of ALL_RULES) {
     for (let i = 0; i < lines.length; i++) {
       rule.pattern.lastIndex = 0
       const line = lines[i]
