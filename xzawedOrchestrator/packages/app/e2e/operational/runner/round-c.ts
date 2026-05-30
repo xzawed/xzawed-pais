@@ -43,10 +43,12 @@ test('Wave 2 — 전체 피처 재검증', async () => {
   fs.mkdirSync(ROUND_C_DIR, { recursive: true })
 
   const services = await checkAllServices()
+  const env = { ...process.env } as Record<string, string>
+  delete env['ELECTRON_RUN_AS_NODE']
   const app = await electron.launch({
     args: [mainEntry],
     env: {
-      ...process.env,
+      ...env,
       NODE_ENV: 'test',
       SERVER_URL: process.env['SERVER_URL'] ?? 'http://localhost:3000',
     },

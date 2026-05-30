@@ -33,10 +33,12 @@ test('Round A — 전체 피처 순차 검증', async () => {
   console.log('✅ 모든 서비스 정상 확인')
 
   // 1. Electron 앱 실행
+  const env = { ...process.env } as Record<string, string>
+  delete env['ELECTRON_RUN_AS_NODE']
   const app = await electron.launch({
     args: [mainEntry],
     env: {
-      ...process.env,
+      ...env,
       NODE_ENV: 'test',
       SERVER_URL: process.env['SERVER_URL'] ?? 'http://localhost:3000',
     },

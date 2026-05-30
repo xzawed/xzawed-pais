@@ -12,11 +12,19 @@ type E2EFixtures = {
   waitForI18n: () => Promise<void>
 }
 
+function makeEnv(overrides: Record<string, string> = {}): Record<string, string> {
+  const env = { ...process.env } as Record<string, string>
+  // ELECTRON_RUN_AS_NODE=1 causes electron.exe to behave as plain Node.js,
+  // rejecting Chromium flags like --remote-debugging-port=0 that Playwright needs.
+  delete env['ELECTRON_RUN_AS_NODE']
+  return { ...env, NODE_ENV: 'test', ...overrides }
+}
+
 export const test = base.extend<E2EFixtures>({
   electronApp: async ({}, provide) => {
     const app = await electron.launch({
       args: [mainEntry],
-      env: { ...process.env, NODE_ENV: 'test' },
+      env: makeEnv(),
     })
     await provide(app)
     await app.close()
@@ -32,7 +40,7 @@ export const test = base.extend<E2EFixtures>({
   loginApp: async ({}, provide) => {
     const app = await electron.launch({
       args: [mainEntry],
-      env: { ...process.env, NODE_ENV: 'test', ELECTRON_TEST_ROUTE: 'login' },
+      env: makeEnv({ ELECTRON_TEST_ROUTE: 'login' }),
     })
     await provide(app)
     await app.close()
