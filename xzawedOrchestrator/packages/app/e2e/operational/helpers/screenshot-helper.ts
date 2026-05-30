@@ -12,7 +12,7 @@ export interface FeatureResult {
 
 export interface StepResult {
   name: string
-  status: 'pass' | 'fail' | 'skip'
+  status: 'pass' | 'fail' | 'skip' | 'warn'
   screenshotPath?: string
   error?: string
 }
