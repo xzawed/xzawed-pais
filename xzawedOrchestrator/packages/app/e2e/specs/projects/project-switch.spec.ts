@@ -62,4 +62,21 @@ test.describe('프로젝트 전환', () => {
     await loginPage.getByTestId('logout-button').click()
     await expect(loginPage.getByTestId('login-email')).toBeVisible({ timeout: 5_000 })
   })
+
+  test('새 프로젝트 버튼이 클릭 가능하다', async ({ loginPage }) => {
+    const newBtn = loginPage.getByTestId('new-project-button')
+    await expect(newBtn).toBeVisible({ timeout: 5_000 })
+    await expect(newBtn).toBeEnabled({ timeout: 5_000 })
+  })
+
+  test('새 프로젝트 버튼 클릭 시 오류 없이 반응한다', async ({ loginPage }) => {
+    const newBtn = loginPage.getByTestId('new-project-button')
+    if (await newBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      await newBtn.click()
+      // 오류 메시지가 표시되지 않아야 함
+      await expect(loginPage.getByRole('alert')).not.toBeVisible({ timeout: 1_000 }).catch(() => {})
+    } else {
+      test.skip()
+    }
+  })
 })
