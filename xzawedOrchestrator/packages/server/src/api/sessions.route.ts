@@ -178,7 +178,12 @@ export function handleConsumerMessage(
         agentId: msg.payload.agentId,
         content: msg.payload.content,
       }))
-      onTerminate ? onTerminate(sessionId) : (consumers.get(sessionId)?.stop(), consumers.delete(sessionId))
+      if (onTerminate) {
+        onTerminate(sessionId)
+      } else {
+        consumers.get(sessionId)?.stop()
+        consumers.delete(sessionId)
+      }
       break
     case 'error':
       if (activeTask) taskStore.update(activeTask.id, 'failed', msg.payload.content)
@@ -187,7 +192,12 @@ export function handleConsumerMessage(
         agentId: msg.payload.agentId,
         content: msg.payload.content,
       }))
-      onTerminate ? onTerminate(sessionId) : (consumers.get(sessionId)?.stop(), consumers.delete(sessionId))
+      if (onTerminate) {
+        onTerminate(sessionId)
+      } else {
+        consumers.get(sessionId)?.stop()
+        consumers.delete(sessionId)
+      }
       break
     case 'info_request':
       socket.send(JSON.stringify({
@@ -297,7 +307,11 @@ export async function sessionsRoutes(
     void consumer.start(session.id, async (msg) => {
       const socket = wsSessions.get(session.id)
       if (!socket) return
-      handleConsumerMessage(msg, session.id, socket, sessionConsumers, taskStore, cleanupSession)
+      try {
+        handleConsumerMessage(msg, session.id, socket, sessionConsumers, taskStore, cleanupSession)
+      } catch (err) {
+        req.log.error({ err, sessionId: session.id }, 'handleConsumerMessage error')
+      }
     }).catch((err: unknown) => {
       req.log.warn({ err, sessionId: session.id }, 'StreamConsumer error')
     })

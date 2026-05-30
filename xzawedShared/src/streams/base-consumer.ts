@@ -43,17 +43,18 @@ export class BaseConsumer<TMessage> {
    */
   private async claimPendingMessages(stream: string): Promise<void> {
     try {
-      const result = await this.redis.xautoclaim(
+      const rawResult = await this.redis.xautoclaim(
         stream,
         this.consumerGroup,
         this.consumerName,
         PENDING_MIN_IDLE_MS,
         '0-0',
         'COUNT', String(PENDING_CLAIM_COUNT),
-      ) as [string, [string, string[]][], string[]]
+      )
 
-      const messages = result[1]
-      if (messages && messages.length > 0) {
+      if (!Array.isArray(rawResult) || !Array.isArray(rawResult[1])) return
+      const messages = rawResult[1] as [string, string[]][]
+      if (messages.length > 0) {
         await this.processMessages(stream, messages)
       }
     } catch {
