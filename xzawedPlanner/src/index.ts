@@ -11,7 +11,13 @@ async function main() {
   const config = loadConfig()
   validateWorkspaceRoot(config.workspaceRoot) // throws if root is filesystem root
 
-  const gatewayRedis = new Redis(config.redisUrl)
+  const redisOptions = {
+    lazyConnect: true,
+    maxRetriesPerRequest: 3,
+    connectTimeout: 2000,
+    retryStrategy: process.env['VITEST'] === 'true' ? () => null : undefined,
+  }
+  const gatewayRedis = new Redis(config.redisUrl, redisOptions)
   const runner = new ClaudeRunner(config.anthropicApiKey, config.claudeModel)
 
   const dispatcher = new SessionDispatcher(
@@ -19,7 +25,7 @@ async function main() {
     'manager:to-planner:sessions',
     'planner-session-dispatcher',
     (_sessionId: string) => {
-      const sessionRedis = new Redis(config.redisUrl)
+      const sessionRedis = new Redis(config.redisUrl, redisOptions)
       const producer = new Producer(sessionRedis)
       const planner = new Planner(producer, runner)
       return new Consumer(sessionRedis, (msg) => planner.handle(msg))
