@@ -6,6 +6,21 @@ const streamKey = (sessionId: string) => `orchestrator:to-manager:${sessionId}`
 
 const RETRY_DELAYS = [100, 200, 400]
 
+async function withXaddRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastErr = err
+      if (attempt < RETRY_DELAYS.length) {
+        await new Promise<void>(r => setTimeout(r, RETRY_DELAYS[attempt]))
+      }
+    }
+  }
+  throw lastErr
+}
+
 export class StreamProducer {
   private readonly redisUrl: string
 
@@ -18,25 +33,11 @@ export class StreamProducer {
       throw new Error(`Invalid sessionId format: ${message.sessionId}`)
     }
     const redis = getRedisClient(this.redisUrl)
-    let lastErr: unknown
-    for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
-      try {
-        const id = await redis.xadd(
-          streamKey(message.sessionId),
-          '*',
-          'data',
-          JSON.stringify(message)
-        )
-        if (id === null) throw new Error('Redis xadd returned null — stream may be at MAXLEN')
-        return id
-      } catch (err) {
-        lastErr = err
-        if (attempt < RETRY_DELAYS.length) {
-          await new Promise<void>(r => setTimeout(r, RETRY_DELAYS[attempt]))
-        }
-      }
-    }
-    throw lastErr
+    return withXaddRetry(async () => {
+      const id = await redis.xadd(streamKey(message.sessionId), '*', 'data', JSON.stringify(message))
+      if (id === null) throw new Error('Redis xadd returned null — stream may be at MAXLEN')
+      return id
+    })
   }
 
   async publishSessionGateway(sessionId: string): Promise<void> {
@@ -44,24 +45,14 @@ export class StreamProducer {
       throw new Error(`Invalid sessionId format: ${sessionId}`)
     }
     const redis = getRedisClient(this.redisUrl)
-    let lastErr: unknown
-    for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
-      try {
-        const id = await redis.xadd(
-          'orchestrator:to-manager:sessions',
-          '*',
-          'data',
-          JSON.stringify({ sessionId, timestamp: Date.now() }),
-        )
-        if (id === null) throw new Error('Redis xadd returned null — stream may be at MAXLEN')
-        return
-      } catch (err) {
-        lastErr = err
-        if (attempt < RETRY_DELAYS.length) {
-          await new Promise<void>(r => setTimeout(r, RETRY_DELAYS[attempt]))
-        }
-      }
-    }
-    throw lastErr
+    await withXaddRetry(async () => {
+      const id = await redis.xadd(
+        'orchestrator:to-manager:sessions',
+        '*',
+        'data',
+        JSON.stringify({ sessionId, timestamp: Date.now() }),
+      )
+      if (id === null) throw new Error('Redis xadd returned null — stream may be at MAXLEN')
+    })
   }
 }
