@@ -38,21 +38,13 @@ interface ChunkProcessResult {
 
 async function processChunk(
   chunk: Chunk,
-  sessionId: string,
   assistantMsgId: string,
   socket: WebSocket | undefined,
-  store: SessionStore,
   accumulator: { fullContent: string },
-  claudeSessionIds: Map<string, string>,
 ): Promise<'continue' | 'error' | 'done'> {
   if (chunk.type === 'text') {
     accumulator.fullContent += chunk.content
     socket?.send(JSON.stringify({ type: 'chunk', messageId: assistantMsgId, content: chunk.content }))
-    return 'continue'
-  }
-  if (chunk.type === 'claude_session') {
-    claudeSessionIds.set(sessionId, chunk.content)
-    await store.updateClaudeSessionId(sessionId, chunk.content)
     return 'continue'
   }
   if (chunk.type === 'error') {
@@ -67,15 +59,12 @@ async function processRunnerChunks(
   runner: ClaudeRunner,
   snapshot: Message[],
   runOptions: RunOptions,
-  sessionId: string,
   assistantMsgId: string,
   socket: WebSocket | undefined,
-  store: SessionStore,
-  claudeSessionIds: Map<string, string>,
 ): Promise<ChunkProcessResult> {
   const acc = { fullContent: '' }
   for await (const chunk of runner.send(snapshot, runOptions)) {
-    const result = await processChunk(chunk, sessionId, assistantMsgId, socket, store, acc, claudeSessionIds)
+    const result = await processChunk(chunk, assistantMsgId, socket, acc)
     if (result === 'error') return { fullContent: acc.fullContent, aborted: true }
     if (result === 'done') break
   }
@@ -223,7 +212,6 @@ export async function sessionsRoutes(
   } = config
 
   const messageStore = new Map<string, Message[]>()
-  const claudeSessionIds = new Map<string, string>()
   const taskStore = new TaskStore()
   // Guard against concurrent message processing for the same session
   const processingSessionIds = new Set<string>()
@@ -282,12 +270,10 @@ export async function sessionsRoutes(
     }
 
     const session = await store.create(userId, projectId, 'cli')
-    claudeSessionIds.set(session.id, '')
 
     if (!msgRepo) messageStore.set(session.id, [])
 
     sessionCleanup.set(session.id, () => {
-      claudeSessionIds.delete(session.id)
       taskStore.deleteBySessionId(session.id)
       messageStore.delete(session.id)
       void store.delete(session.id).catch(() => undefined)
@@ -360,11 +346,8 @@ export async function sessionsRoutes(
         const assistantMsgId = crypto.randomUUID()
 
         try {
-          const storedClaudeSessionId = claudeSessionIds.get(sessionId)
-          const runOptions: RunOptions = storedClaudeSessionId ? { claudeSessionId: storedClaudeSessionId } : {}
-
           const { fullContent, aborted } = await processRunnerChunks(
-            runner, snapshot, runOptions, sessionId, assistantMsgId, socket, store, claudeSessionIds,
+            runner, snapshot, {}, assistantMsgId, socket,
           )
           if (aborted) return
 

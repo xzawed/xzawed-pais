@@ -20,10 +20,15 @@ export class APIRunner implements ClaudeRunner {
 
   async *send(messages: Message[], options: RunOptions = {}): AsyncIterable<Chunk> {
     try {
+      const systemParam: Array<{ type: 'text'; text: string; cache_control: { type: 'ephemeral' } }> | undefined =
+        options.systemPrompt
+          ? [{ type: 'text', text: options.systemPrompt, cache_control: { type: 'ephemeral' } }]
+          : undefined
+
       const stream = this.client.messages.stream({
         model: options.model ?? this.model,
         max_tokens: MAX_TOKENS,
-        system: options.systemPrompt,
+        ...(systemParam ? { system: systemParam } : {}),
         messages: messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
       }, { signal: options.signal })
 
