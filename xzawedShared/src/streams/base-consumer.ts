@@ -74,7 +74,7 @@ export class BaseConsumer<TMessage> {
     try {
       const results = await this.redis.xreadgroup(
         'GROUP', this.consumerGroup, this.consumerName,
-        'COUNT', '1', 'BLOCK', '1000',
+        'COUNT', '10', 'BLOCK', '1000',
         'STREAMS', stream, '>',
       ) as unknown as [string, [string, string[]][]][] | null
 
@@ -99,45 +99,59 @@ export class BaseConsumer<TMessage> {
   }
 
   private async processMessages(stream: string, messages: [string, string[]][]) {
-    for (const [msgId, fields] of messages) {
-      const dataIdx = fields.indexOf('data')
-      if (dataIdx === -1) {
-        console.error('[Consumer] missing data field, skipping')
-        await this.redis.xack(stream, this.consumerGroup, msgId)
-        continue
-      }
+    // xack 대상 ID를 수집해 처리 후 pipeline으로 일괄 확인
+    const toAck: string[] = []
 
-      const raw = fields[dataIdx + 1]
-      if (raw === undefined) {
-        console.error('[Consumer] data field has no value, skipping')
-        await this.redis.xack(stream, this.consumerGroup, msgId)
-        continue
-      }
+    try {
+      for (const [msgId, fields] of messages) {
+        const dataIdx = fields.indexOf('data')
+        if (dataIdx === -1) {
+          console.error('[Consumer] missing data field, skipping')
+          toAck.push(msgId)
+          continue
+        }
 
-      if (Buffer.byteLength(raw, 'utf8') > MAX_MESSAGE_BYTES) {
-        console.error('[Consumer] message too large, skipping')
-        await this.redis.xack(stream, this.consumerGroup, msgId)
-        continue
-      }
+        const raw = fields[dataIdx + 1]
+        if (raw === undefined) {
+          console.error('[Consumer] data field has no value, skipping')
+          toAck.push(msgId)
+          continue
+        }
 
-      let parsed: ReturnType<typeof this.schema.safeParse>
-      try {
-        parsed = this.schema.safeParse(JSON.parse(raw))
-      } catch {
-        console.error('[Consumer] JSON parse error, skipping')
-        await this.redis.xack(stream, this.consumerGroup, msgId)
-        continue
-      }
-      if (!parsed.success) {
-        console.error('[Consumer] invalid message, skipping:', parsed.error.issues)
-        await this.redis.xack(stream, this.consumerGroup, msgId)
-        continue
-      }
+        if (Buffer.byteLength(raw, 'utf8') > MAX_MESSAGE_BYTES) {
+          console.error('[Consumer] message too large, skipping')
+          toAck.push(msgId)
+          continue
+        }
 
-      try {
-        await this.onMessage(parsed.data)
-      } finally {
-        await this.redis.xack(stream, this.consumerGroup, msgId)
+        let parsed: ReturnType<typeof this.schema.safeParse>
+        try {
+          parsed = this.schema.safeParse(JSON.parse(raw))
+        } catch {
+          console.error('[Consumer] JSON parse error, skipping')
+          toAck.push(msgId)
+          continue
+        }
+        if (!parsed.success) {
+          console.error('[Consumer] invalid message, skipping:', parsed.error.issues)
+          toAck.push(msgId)
+          continue
+        }
+
+        try {
+          await this.onMessage(parsed.data)
+        } finally {
+          toAck.push(msgId)
+        }
+      }
+    } finally {
+      // onMessage 예외 시에도 수집된 ID를 pipeline으로 일괄 xack — Redis RTT 최소화
+      if (toAck.length > 0) {
+        const pipeline = this.redis.pipeline()
+        for (const id of toAck) {
+          pipeline.xack(stream, this.consumerGroup, id)
+        }
+        await pipeline.exec()
       }
     }
   }

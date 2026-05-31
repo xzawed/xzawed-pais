@@ -110,6 +110,7 @@ export class SessionDispatcher {
       console.error(`[SessionDispatcher] consumer error for ${sessionId}:`, err)
     } finally {
       this.pendingConsumers.delete(sessionId)
+      this.activeConsumers.delete(sessionId)
     }
   }
 

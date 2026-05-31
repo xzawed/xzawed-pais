@@ -126,6 +126,11 @@ export class StreamConsumer {
         }
       } catch (err) {
         if (!this.running) break
+        if (err instanceof Error && err.message.includes('NOGROUP')) {
+          // consumer group이 삭제된 경우 — 재생성 후 재시도
+          await this.ensureGroup(sessionId)
+          continue
+        }
         console.error(`[StreamConsumer] xreadgroup error (will retry in 1s):`, err)
         await new Promise(r => setTimeout(r, 1000))
       }

@@ -51,6 +51,68 @@ export class WatcherEventConsumer {
     this._redis = null
   }
 
+  private async _ensureGroups(streams: string[]): Promise<void> {
+    for (const stream of streams) {
+      try {
+        await this.redis.xgroup('CREATE', stream, CONSUMER_GROUP, '$', 'MKSTREAM')
+      } catch (e: unknown) {
+        if (e instanceof Error && !e.message.includes('BUSYGROUP')) {
+          // 새 스트림이면 BUSYGROUP이 아닌 에러는 무시
+        }
+      }
+    }
+  }
+
+  private async _processMessage(
+    streamKey: string,
+    msgId: string,
+    fields: string[],
+    sessionId: string,
+  ): Promise<void> {
+    const dataIdx = fields.indexOf('data')
+    try {
+      if (dataIdx !== -1) {
+        const parsed = JSON.parse(fields[dataIdx + 1] ?? '{}') as Record<string, unknown>
+        if (parsed['type'] === 'file_changed' && parsed['payload']) {
+          const payload = parsed['payload'] as Record<string, unknown>
+          await this.onFileChanged({
+            sessionId,
+            path:      String(payload['path'] ?? ''),
+            event:     (payload['event'] as 'add' | 'change' | 'unlink') ?? 'change',
+            timestamp: Number(payload['timestamp'] ?? Date.now()),
+          })
+        }
+      }
+    } catch {
+      // 파싱/처리 실패 무시
+    } finally {
+      await this.redis.xack(streamKey, CONSUMER_GROUP, msgId)
+    }
+  }
+
+  private async _processResults(
+    results: [string, [string, string[]][]][],
+  ): Promise<void> {
+    for (const [streamKey, messages] of results) {
+      const sessionId = streamKey.replace(WATCHER_STREAM_PREFIX, '')
+      for (const [msgId, fields] of messages) {
+        await this._processMessage(streamKey, msgId, fields, sessionId)
+      }
+    }
+  }
+
+  private async _readOnce(streams: string[], lastIds: string[]): Promise<boolean> {
+    await this._ensureGroups(streams)
+    const results = await this.redis.xreadgroup(
+      'GROUP', CONSUMER_GROUP, CONSUMER_NAME,
+      'COUNT', '50', 'BLOCK', String(BLOCK_MS),
+      'STREAMS', ...streams, ...lastIds,
+    ) as [string, [string, string[]][]][] | null
+
+    if (results) await this._processResults(results)
+    return true
+  }
+
   private async _loop(): Promise<void> {
     while (this._running) {
       const sessions = [...this._watchedSessions]
@@ -63,53 +125,15 @@ export class WatcherEventConsumer {
       const lastIds = sessions.map(() => '>')
 
       try {
-        // consumer group 자동 생성
-        for (const stream of streams) {
-          try {
-            await this.redis.xgroup('CREATE', stream, CONSUMER_GROUP, '$', 'MKSTREAM')
-          } catch (e: unknown) {
-            if (!(e instanceof Error && e.message.includes('BUSYGROUP'))) {
-              // 새 스트림이면 BUSYGROUP이 아닌 에러는 무시
-            }
-          }
-        }
-
-        const results = await this.redis.xreadgroup(
-          'GROUP', CONSUMER_GROUP, CONSUMER_NAME,
-          'COUNT', '50', 'BLOCK', String(BLOCK_MS),
-          'STREAMS', ...streams, ...lastIds,
-        ) as [string, [string, string[]][]][] | null
-
-        if (!results) continue
-
-        for (const [streamKey, messages] of results) {
-          const sessionId = streamKey.replace(WATCHER_STREAM_PREFIX, '')
-          for (const [msgId, fields] of messages) {
-            const dataIdx = fields.indexOf('data')
-            try {
-              if (dataIdx !== -1) {
-                const parsed = JSON.parse(fields[dataIdx + 1] ?? '{}') as Record<string, unknown>
-                if (parsed['type'] === 'file_changed' && parsed['payload']) {
-                  const payload = parsed['payload'] as Record<string, unknown>
-                  await this.onFileChanged({
-                    sessionId,
-                    path:      String(payload['path'] ?? ''),
-                    event:     (payload['event'] as 'add' | 'change' | 'unlink') ?? 'change',
-                    timestamp: Number(payload['timestamp'] ?? Date.now()),
-                  })
-                }
-              }
-            } catch {
-              // 파싱/처리 실패 무시
-            } finally {
-              await this.redis.xack(streamKey, CONSUMER_GROUP, msgId)
-            }
-          }
-        }
+        await this._readOnce(streams, lastIds)
       } catch (err) {
-        if (!(err instanceof Error && err.message.includes('NOGROUP'))) {
-          // NOGROUP 이외 에러도 루프 계속
+        if (!this._running) break
+        if (err instanceof Error && err.message.includes('NOGROUP')) {
+          // 스트림이 삭제되어 consumer group이 없는 경우 — 다음 반복에서 재생성
+          continue
         }
+        console.error('[WatcherEventConsumer] xreadgroup error:', err)
+        await new Promise<void>(r => setTimeout(r, 1_000))
       }
     }
   }
