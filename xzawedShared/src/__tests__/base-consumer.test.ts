@@ -12,12 +12,22 @@ type Message = z.infer<typeof MessageSchema>
 const validMsg: Message = { id: 'msg-1', value: 42 }
 
 function makeRedis(overrides: Record<string, unknown> = {}) {
+  // pipeline mock: exec()가 xack 결과 배열을 반환한다
+  const makePipeline = () => {
+    const ops: Array<() => Promise<unknown>> = []
+    const p = {
+      xack: vi.fn().mockImplementation(() => { ops.push(() => Promise.resolve(1)); return p }),
+      exec: vi.fn().mockImplementation(() => Promise.resolve(ops.map(() => [null, 1]))),
+    }
+    return p
+  }
   return {
     xgroup: vi.fn().mockResolvedValue('OK'),
     xreadgroup: vi.fn().mockResolvedValue(null),
     xack: vi.fn().mockResolvedValue(1),
     xautoclaim: vi.fn().mockResolvedValue(['0-0', [], []]),
     quit: vi.fn().mockResolvedValue('OK'),
+    pipeline: vi.fn().mockImplementation(makePipeline),
     ...overrides,
   }
 }
@@ -119,6 +129,32 @@ describe('BaseConsumer', () => {
 
       await consumer.start('sess-1')
       expect(handler).toHaveBeenCalledWith(validMsg)
+      // pipeline.xack가 호출돼야 하며 pipeline.exec로 일괄 처리됨
+      expect(redis.pipeline).toHaveBeenCalled()
+      const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
+      expect(pipelineInstance.exec).toHaveBeenCalled()
+    })
+
+    it('pipeline 미지원 클라이언트는 개별 xack로 폴백한다', async () => {
+      // pipeline 메서드가 없는 클라이언트(ioredis 호환 mock 등) 시뮬레이션
+      const redis = makeRedis()
+      delete (redis as Record<string, unknown>)['pipeline']
+      const handler = vi.fn().mockResolvedValue(undefined)
+      const consumer = new BaseConsumer(redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep)
+
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) {
+          return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        }
+        consumer.stop()
+        return null
+      })
+
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledWith(validMsg)
+      // pipeline이 없으므로 redis.xack가 직접 호출됨
       expect(redis.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
 
@@ -137,7 +173,9 @@ describe('BaseConsumer', () => {
       })
 
       await consumer.start('sess-1')
-      expect(redis.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
+      expect(redis.pipeline).toHaveBeenCalled()
+      const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
 
     it('스키마 검증 실패 시 핸들러를 호출하지 않고 xack한다', async () => {
@@ -156,7 +194,8 @@ describe('BaseConsumer', () => {
 
       await consumer.start('sess-1')
       expect(handler).not.toHaveBeenCalled()
-      expect(redis.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
+      const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
 
     it('JSON 파싱 실패 시 xack하고 skip한다', async () => {
@@ -175,7 +214,8 @@ describe('BaseConsumer', () => {
 
       await consumer.start('sess-1')
       expect(handler).not.toHaveBeenCalled()
-      expect(redis.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
+      const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
 
     it('data 필드가 없는 메시지는 xack하고 skip한다', async () => {
@@ -194,7 +234,8 @@ describe('BaseConsumer', () => {
 
       await consumer.start('sess-1')
       expect(handler).not.toHaveBeenCalled()
-      expect(redis.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
+      const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
 
     it('data 필드 값이 undefined인 경우 xack하고 skip한다', async () => {
@@ -214,7 +255,8 @@ describe('BaseConsumer', () => {
 
       await consumer.start('sess-1')
       expect(handler).not.toHaveBeenCalled()
-      expect(redis.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
+      const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
 
     it('10MiB 초과 메시지는 xack하고 skip한다', async () => {
@@ -234,7 +276,8 @@ describe('BaseConsumer', () => {
 
       await consumer.start('sess-1')
       expect(handler).not.toHaveBeenCalled()
-      expect(redis.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
+      const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
   })
 
@@ -332,7 +375,10 @@ describe('BaseConsumer', () => {
         'COUNT', '10',
       )
       expect(handler).toHaveBeenCalledWith(pendingMsg)
-      expect(redis.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '2-0')
+      // claimPendingMessages → processMessages → pipeline xack
+      expect(redis.pipeline).toHaveBeenCalled()
+      const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '2-0')
     })
 
     it('XAUTOCLAIM이 배열이 아닌 값을 반환해도 정상 실행된다 (invalid format)', async () => {

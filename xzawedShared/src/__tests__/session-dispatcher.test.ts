@@ -50,9 +50,13 @@ describe('SessionDispatcher', () => {
       [['manager:to-planner:sessions', [entry, entry]]]
     ])
 
+    // xack 사이에 마이크로태스크가 처리되므로 start()가 즉시 완료되면
+    // pendingConsumers/activeConsumers 가드가 해제될 수 있다.
+    // 실제 consumer.start()는 무한 루프이므로 stop() 전까지 완료되지 않는다.
+    let resolveStart!: () => void
     const factory = vi.fn().mockReturnValue({
-      start: vi.fn().mockResolvedValue(undefined),
-      stop: vi.fn(),
+      start: vi.fn().mockReturnValue(new Promise<void>(r => { resolveStart = r })),
+      stop: vi.fn().mockImplementation(() => { resolveStart?.() }),
     })
 
     const dispatcher = new SessionDispatcher(
@@ -77,9 +81,12 @@ describe('SessionDispatcher', () => {
     ])
 
     const consumerStop = vi.fn()
+    // 실제 consumer.start()는 무한 루프라 stop()이 호출되기 전까지 완료되지 않는다.
+    // 테스트에서도 dispatcher.stop() 호출 전까지 완료되지 않도록 pending promise를 사용한다.
+    let resolveStart!: () => void
     const factory = vi.fn().mockReturnValue({
-      start: vi.fn().mockResolvedValue(undefined),
-      stop: consumerStop,
+      start: vi.fn().mockReturnValue(new Promise<void>(r => { resolveStart = r })),
+      stop: vi.fn().mockImplementation(() => { consumerStop(); resolveStart?.() }),
     })
 
     const dispatcher = new SessionDispatcher(
@@ -104,9 +111,10 @@ describe('SessionDispatcher', () => {
     ])
 
     const consumerClose = vi.fn().mockResolvedValue(undefined)
+    let resolveStart!: () => void
     const factory = vi.fn().mockReturnValue({
-      start: vi.fn().mockResolvedValue(undefined),
-      stop: vi.fn(),
+      start: vi.fn().mockReturnValue(new Promise<void>(r => { resolveStart = r })),
+      stop: vi.fn().mockImplementation(() => { resolveStart?.() }),
       close: consumerClose,
     })
 
@@ -132,9 +140,10 @@ describe('SessionDispatcher', () => {
     ])
 
     const consumerClose = vi.fn().mockResolvedValue(undefined)
+    let resolveStart!: () => void
     const factory = vi.fn().mockReturnValue({
-      start: vi.fn().mockResolvedValue(undefined),
-      stop: vi.fn(),
+      start: vi.fn().mockReturnValue(new Promise<void>(r => { resolveStart = r })),
+      stop: vi.fn().mockImplementation(() => { resolveStart?.() }),
       close: consumerClose,
     })
 

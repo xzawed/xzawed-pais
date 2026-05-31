@@ -96,6 +96,7 @@ export function makeSessionStarter(
         consumer.stop()
         opts.activeConsumers.delete(sessionId)
         opts.sessionStore.delete(sessionId)
+        opts.registry?.releaseAll(sessionId)
       }
     }).catch((err: unknown) => {
       opts.log.error({ err, sessionId }, 'StreamConsumer error')

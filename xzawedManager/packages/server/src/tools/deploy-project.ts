@@ -103,8 +103,17 @@ class DeployProjectHandler implements ToolHandler<DeployProjectInput, DeployProj
           auto_init: true,
         })
         repoUrl = created.data.html_url
-        // auto_init으로 생성 직후 약간 대기
-        await new Promise<void>(r => setTimeout(r, 2000))
+        // auto_init 완료 폴링: default branch ref가 준비될 때까지 지수 백오프
+        const defaultBranch = created.data.default_branch ?? 'main'
+        for (let i = 0; i < 6; i++) {
+          await new Promise<void>(r => setTimeout(r, 500 * (i + 1)))
+          try {
+            await octokit.git.getRef({ owner, repo, ref: `heads/${defaultBranch}` })
+            break
+          } catch {
+            // 아직 준비 안 됨, 계속 폴링
+          }
+        }
       } else {
         throw e
       }

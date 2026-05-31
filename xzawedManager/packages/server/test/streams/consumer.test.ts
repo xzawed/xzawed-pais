@@ -110,6 +110,38 @@ describe('StreamConsumer', () => {
     expect(calls).toBeGreaterThanOrEqual(2)
   })
 
+  it('recreates consumer group and continues when xreadgroup throws NOGROUP', async () => {
+    const { StreamConsumer } = await import('../../src/streams/consumer.js')
+    const consumer = new StreamConsumer('redis://localhost:6379')
+
+    const msg = makeMsg('sess-nogroup')
+    let calls = 0
+    mockXreadgroup.mockImplementation(async () => {
+      calls++
+      if (calls === 1) throw new Error('NOGROUP No such key or consumer group')
+      if (calls === 2) {
+        return [['orchestrator:to-manager:sess-nogroup', [['1-0', ['data', JSON.stringify(msg)]]]]]
+      }
+      consumer.stop()
+      return null
+    })
+
+    const handler = vi.fn().mockResolvedValue(undefined)
+    await consumer.start('sess-nogroup', handler)
+
+    // NOGROUP 분기 → ensureGroup 재생성(xgroup CREATE: start 시 1회 + 복구 시 1회) 후 정상 처리
+    expect(handler).toHaveBeenCalledWith(msg)
+    expect(mockXgroup).toHaveBeenCalledWith(
+      'CREATE',
+      'orchestrator:to-manager:sess-nogroup',
+      'manager-consumers',
+      '$',
+      'MKSTREAM',
+    )
+    expect(mockXgroup.mock.calls.filter(c => c[1] === 'orchestrator:to-manager:sess-nogroup').length)
+      .toBeGreaterThanOrEqual(2)
+  })
+
   // CQ-4: xack must be called exactly once with correct args even when handler throws (try/finally guarantee)
   it('CQ-4: xack is called exactly once with correct args when handler throws (finally guarantee)', async () => {
     const msg = makeMsg('sess-cq4', 'fail')

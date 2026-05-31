@@ -161,6 +161,93 @@ describe('WatcherEventConsumer', () => {
     expect(mockRedis.xreadgroup).toHaveBeenCalled()
   })
 
+  it('NOGROUP 에러 시 break 없이 다음 반복에서 그룹을 재생성하고 계속 처리한다', async () => {
+    const sessionId = 'nogroup-session'
+    const streamKey = `watcher:to-manager:${sessionId}`
+    const fileEvent = {
+      type: 'file_changed',
+      payload: { path: '/workspace/recovered.ts', event: 'change', timestamp: 7 },
+    }
+
+    const mockRedis = makeRedis([])
+    let calls = 0
+    mockRedis.xreadgroup.mockImplementation(() => {
+      calls++
+      if (calls === 1) return Promise.reject(new Error('NOGROUP No such consumer group'))
+      if (calls === 2) {
+        return Promise.resolve([[streamKey, [['7-0', ['data', JSON.stringify(fileEvent)]]]]])
+      }
+      return new Promise<null>(r => setImmediate(() => r(null)))
+    })
+    vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+
+    const onFileChanged = vi.fn().mockResolvedValue(undefined)
+    const consumer = new WatcherEventConsumer('redis://localhost:6379', onFileChanged)
+    consumer.watchSession(sessionId)
+    consumer.start()
+
+    await new Promise(r => setTimeout(r, 50))
+    consumer.stop()
+
+    // NOGROUP으로 continue된 뒤 다음 반복에서 그룹 재생성(xgroup CREATE 재호출) + 정상 처리
+    expect(mockRedis.xgroup).toHaveBeenCalledWith(
+      'CREATE', streamKey, 'manager-watcher-consumers', '$', 'MKSTREAM'
+    )
+    expect(onFileChanged).toHaveBeenCalledWith({
+      sessionId,
+      path: '/workspace/recovered.ts',
+      event: 'change',
+      timestamp: 7,
+    })
+  })
+
+  it('일반 xreadgroup 에러는 로깅 후 재시도 대기 경로로 진입한다', async () => {
+    const sessionId = 'generic-err-session'
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    const mockRedis = makeRedis([])
+    let calls = 0
+    mockRedis.xreadgroup.mockImplementation(() => {
+      calls++
+      if (calls === 1) return Promise.reject(new Error('Redis connection lost'))
+      return new Promise<null>(r => setImmediate(() => r(null)))
+    })
+    vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+
+    const consumer = new WatcherEventConsumer('redis://localhost:6379', vi.fn())
+    consumer.watchSession(sessionId)
+    consumer.start()
+
+    await new Promise(r => setTimeout(r, 50))
+    consumer.stop()
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[WatcherEventConsumer] xreadgroup error:', expect.any(Error)
+    )
+    errorSpy.mockRestore()
+  })
+
+  it('stop() 이후 발생한 에러는 재시도 없이 루프를 종료한다', async () => {
+    const sessionId = 'stop-during-error'
+    const mockRedis = makeRedis([])
+    const consumer = new WatcherEventConsumer('redis://localhost:6379', vi.fn())
+
+    mockRedis.xreadgroup.mockImplementation(() => {
+      // 에러 발생 직전 stop() — catch의 `if (!this._running) break` 경로 진입
+      consumer.stop()
+      return Promise.reject(new Error('boom during shutdown'))
+    })
+    vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+
+    consumer.watchSession(sessionId)
+    consumer.start()
+
+    await new Promise(r => setTimeout(r, 50))
+
+    // break로 루프 종료 — stop()에서 disconnect 호출
+    expect(mockRedis.disconnect).toHaveBeenCalled()
+  })
+
   it('watchSession() MAX_SESSIONS(1000) 초과 시 추가하지 않는다', () => {
     const consumer = new WatcherEventConsumer('redis://localhost', vi.fn())
     for (let i = 0; i < 1000; i++) {

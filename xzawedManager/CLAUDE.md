@@ -44,7 +44,7 @@ packages/
         ├── server.ts           # Fastify HTTP (/health, port 3001)
         ├── streams/            # Redis consumer + producer
         ├── claude/runner.ts    # Claude tool-calling 루프
-        ├── tools/              # ToolHandler 8개 (plan-task, develop-code, design-ui, run-tests, build-project, watch-changes, security-audit, github-ops)
+        ├── tools/              # ToolHandler 11개 (7 RedisAgent + register-project + switch-project + github-ops* + deploy-project* / *GITHUB_TOKEN 조건부)
         ├── sessions/           # 세션 상태 추적
         └── api/                # health 라우트
 ```
@@ -77,9 +77,16 @@ interface ToolHandler<TInput = unknown, TOutput = unknown> {
 }
 ```
 
-8개 핸들러:
-- 7개: `RedisAgentHandler` 팩토리 함수 — `createPlanTaskHandler`, `createDevelopCodeHandler`, `createDesignUiHandler`, `createRunTestsHandler`, `createBuildProjectHandler`, `createWatchChangesHandler`, `createSecurityAuditHandler`
-- 1개: **`createGithubOpsHandler`** — Octokit 직접 호출 (createRepo, createBranch, commitAndPush, createPR, createIssue, mergeBranch, listRepos, listBranches). `GITHUB_TOKEN` 환경변수 설정 시에만 등록됨.
+11개 핸들러 (상시 9개 + 조건부 2개):
+
+**상시 등록 (9개)**:
+- 7개 `RedisAgentHandler` 팩토리: `createPlanTaskHandler`, `createDevelopCodeHandler`, `createDesignUiHandler`, `createRunTestsHandler`, `createBuildProjectHandler`, `createWatchChangesHandler`, `createSecurityAuditHandler`
+- `createRegisterProjectHandler` — 프로젝트 등록 (workspace clone/init)
+- `createSwitchProjectHandler` — 프로젝트 전환
+
+**조건부 등록 (GITHUB_TOKEN 설정 시, 2개)**:
+- `createGithubOpsHandler` — Octokit 직접 호출 (createRepo, createBranch, commitAndPush, createPR, createIssue, mergeBranch, listRepos, listBranches)
+- `createDeployProjectHandler` — GitHub 저장소에 프로젝트 파일 배포
 
 ## 환경 변수
 
