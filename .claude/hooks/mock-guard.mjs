@@ -16,6 +16,11 @@ const DANGEROUS_PATTERNS = [
     message: 'xreadgroup mock이 빈 배열을 즉시 resolve → macrotask 차단 위험',
     fix: 'responses가 없을 때 setImmediate 패턴으로 대체',
   },
+  {
+    pattern: /xautoclaim.*\.mockResolvedValue\s*\(\s*null\s*\)/,
+    message: 'xautoclaim mock이 null을 즉시 resolve → macrotask 차단 → OOM 위험',
+    fix: "new Promise(r => setImmediate(() => r(['0-0', [], []]))) 사용",
+  },
 ]
 
 async function main() {

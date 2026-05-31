@@ -1,0 +1,378 @@
+{
+  "summary": "Deep research harness — fan-out web searches, fetch sources, adversarially verify claims, synthesize a cited report.",
+  "agentCount": 107,
+  "logs": [
+    "Q: Claude Code의 Skill(슬래시 커맨드/플러그인 스킬)과 Hook 메커니즘, 그리고 Claude Agent SDK의 에이전트 Skill…",
+    "Decomposed into 6 angles: broad/primary — 공식 문서, technical/spec — Hook 메커니즘, Agent SDK — 런타임 에이전트, 안전 설계 — 보안 안티패턴, practitioner — 판별 기준·실패 사례, 모노레포/멀티에이전트 적용",
+    "practitioner — 판별 기준·실패 사례: 6 results",
+    "모노레포/멀티에이전트 적용: 6 results",
+    "Agent SDK — 런타임 에이전트: 6 results",
+    "Agent SDK — 런타임 에이전트: 3 novel (3 filtered)",
+    "broad/primary — 공식 문서: 6 results",
+    "broad/primary — 공식 문서: 5 novel (1 filtered)",
+    "안전 설계 — 보안 안티패턴: 6 results",
+    "안전 설계 — 보안 안티패턴: 3 novel (3 filtered)",
+    "technical/spec — Hook 메커니즘: 6 results",
+    "technical/spec — Hook 메커니즘: 1 novel (5 filtered)",
+    "Fetched 24 sources → 120 claims → verifying top 25",
+    "\"A good SKILL.md must keep its body concise because…\": 3-0 ✓",
+    "\"Two frontmatter fields control who invokes a skill…\": 3-0 ✓",
+    "\"In Claude Code, custom slash commands have been me…\": 3-0 ✓",
+    "\"Exit code 0 means success and JSON output on stdou…\": 3-0 ✓",
+    "\"Only exit code 2 blocks a hook action; exit code 1…\": 3-0 ✓",
+    "\"Blocking behavior is event-specific: PreToolUse, U…\": 3-0 ✓",
+    "\"Claude Code hooks communicate via stdin/stdout/std…\": 3-0 ✓",
+    "\"Hook events fire at defined lifecycle points inclu…\": 3-0 ✓",
+    "\"For structured control, a hook should exit 0 and p…\": 3-0 ✓",
+    "\"In the Claude Agent SDK, an AgentDefinition suppor…\": 3-0 ✓",
+    "\"Subagent tool access is restricted via the `tools`…\": 3-0 ✓",
+    "\"Skills (reusable workflows/commands) are created a…\": 3-0 ✓",
+    "\"Subagents cannot spawn their own subagents, and th…\": 3-0 ✓",
+    "\"Hooks run scripts deterministically at specific wo…\": 3-0 ✓",
+    "\"A Stop hook acts as a deterministic verification g…\": 3-0 ✓",
+    "\"CLAUDE.md is loaded every session and should be ke…\": 3-0 ✓",
+    "\"The AgentDefinition supports a 'skills' field that…\": 3-0 ✓",
+    "\"Subagents in the SDK can be defined three ways — p…\": 3-0 ✓",
+    "\"Subagents should be given restricted tool sets to …\": 3-0 ✓",
+    "\"The Claude Agent SDK provides a defined set of hoo…\": 3-0 ✓",
+    "\"PreToolUse hooks control operations by returning h…\": 3-0 ✓",
+    "\"When multiple hooks or permission rules apply, den…\": 3-0 ✓",
+    "\"The Claude Agent SDK's core design principle is to…\": 3-0 ✓",
+    "\"Effective SDK agents operate on a three-phase loop…\": 3-0 ✓",
+    "\"Subagents in the SDK serve two purposes: enabling …\": 3-0 ✓",
+    "Verify done: 25 claims → 25 confirmed, 0 killed"
+  ],
+  "result": {
+    "question": "Claude Code의 Skill(슬래시 커맨드/플러그인 스킬)과 Hook 메커니즘, 그리고 Claude Agent SDK의 에이전트 Skill/Hook 메커니즘에 대한 공식 베스트프랙티스와 안티패턴을 조사한다. 구체적으로: (1) Claude Code에서 효과적인 슬래시 커맨드/스킬을 만드는 기준과 구조, (2) Claude Code Hook의 종류(PreToolUse/PostToolUse/Stop 등)·exit 코드 규약·차단 vs 비차단 패턴·안전한 설계 원칙, (3) Claude Agent SDK에서 커스텀 에이전트가 Skill/Hook을 활용하는 방법과 패턴, (4) \"좋은 SKILL/HOOK의 판별 기준\"과 흔한 실패/안티패턴. 목적은 멀티 서비스 모노레포(9개 AI 에이전트 서비스)의 개발 보조용 .claude/ 자산과 플랫폼 런타임 에이전트 기능을 강화하기 위한 근거 확보다.",
+    "summary": "Anthropic's official documentation (now consolidated at code.claude.com) establishes clear, verifiable best practices across four areas. (1) Slash commands and Skills have merged: both .claude/commands/X.md and .claude/skills/X/SKILL.md create /X identically, with SKILL.md adding supporting files, invocation-control frontmatter (disable-model-invocation, user-invocable), and on-demand auto-loading; good skills keep SKILL.md under 500 lines, state what to do over why, and put the key use case first (descriptions truncate at 1,536 chars). (2) Claude Code Hooks are deterministic guarantees (vs advisory CLAUDE.md) configured in .claude/settings.json, with a strict exit-code contract: 0 = success (JSON-on-stdout processed only here), 2 = block (stderr fed to Claude, JSON ignored), any other code = non-blocking error; blocking is event-specific (PreToolUse/UserPromptSubmit/Stop/PreCompact/PermissionRequest can block; PostToolUse/SessionEnd cannot), and you must not mix exit-2 with JSON output. (3) The Claude Agent SDK exposes subagents via three definition paths (programmatic agents param — recommended, .claude/agents/ markdown, built-in general-purpose), with restricted tools fields, a skills preload field, no nested subagents, and a JSON-based hook system using permissionDecision (allow/deny/ask/defer) with deny>defer>ask>allow priority. (4) The \"good vs bad\" judgment criteria center on context economy (concise SKILL.md/CLAUDE.md to avoid instruction-dilution), determinism for must-happen actions (hooks/Stop-gates), least-privilege tooling for subagents, and the SDK's gather-context → act → verify self-verification loop. The single most actionable anti-pattern across all sources: bloated always-loaded context (CLAUDE.md or SKILL.md) causes Claude to ignore real instructions — move sometimes-relevant knowledge to on-demand skills.",
+    "findings": [
+      {
+        "claim": "Custom slash commands and Skills have merged into one mechanism: .claude/commands/X.md and .claude/skills/X/SKILL.md both create /X and work identically; existing commands keep working; skills add supporting-file directories, invocation-control frontmatter, and automatic on-demand loading; when a skill and command share a name the skill takes precedence.",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://code.claude.com/docs/en/slash-commands",
+          "https://code.claude.com/docs/en/skills",
+          "https://www.anthropic.com/engineering/claude-code-best-practices"
+        ],
+        "evidence": "Primary docs state verbatim: 'Custom commands have been merged into skills... both create /deploy and work the same way' and 'if a skill and a command share the same name, the skill takes precedence.' Skills live in .claude/skills/<name>/SKILL.md; commands in .claude/commands/. Merges claims [0] and [12]."
+      },
+      {
+        "claim": "A good SKILL.md keeps its body concise (under 500 lines) because once loaded it stays in context across all turns at recurring token cost; detailed reference (API specs, examples) belongs in separate supporting files loaded only when needed; descriptions/when_to_use should put the key use case first since the combined text is truncated at 1,536 characters in the listing.",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://code.claude.com/docs/en/skills",
+          "https://code.claude.com/docs/en/slash-commands"
+        ],
+        "evidence": "Verbatim: 'Once a skill loads, its content stays in context across turns, so every line is a recurring token cost. State what to do rather than narrating how or why... Keep SKILL.md under 500 lines. Move detailed reference material to separate files.' and 'the combined description and when_to_use text is truncated at 1,536 characters in the skill listing.' Merges claims [1] and [2]."
+      },
+      {
+        "claim": "Two frontmatter fields control invocation: 'disable-model-invocation: true' makes a skill user-only (recommended for side-effecting workflows like /commit, /deploy, /send-slack-message so Claude doesn't auto-trigger them), and 'user-invocable: false' makes a skill Claude-only background knowledge (only controls /-menu visibility, not Skill-tool access). Skills support $ARGUMENTS substitution; if absent, args are appended as 'ARGUMENTS: <value>'.",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://code.claude.com/docs/en/skills",
+          "https://code.claude.com/docs/en/slash-commands",
+          "https://www.anthropic.com/engineering/claude-code-best-practices"
+        ],
+        "evidence": "Verbatim: disable-model-invocation:true = 'Only you can invoke... like /commit, /deploy... You don't want Claude deciding to deploy because your code looks ready'; user-invocable:false = 'Only Claude can invoke... background knowledge that isn't actionable as a command'; example /fix-issue 1234 with 'Analyze and fix the GitHub issue: $ARGUMENTS.' Merges claims [2] and [12]. Nuance: user-invocable only hides from menu, does not block Skill-tool access."
+      },
+      {
+        "claim": "Claude Code Hooks run scripts deterministically at workflow points and — unlike advisory CLAUDE.md — guarantee the action happens; use them for actions that must happen every time with zero exceptions; configured in .claude/settings.json, browsable via /hooks.",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://www.anthropic.com/engineering/claude-code-best-practices",
+          "https://code.claude.com/docs/en/hooks-guide"
+        ],
+        "evidence": "Verbatim: 'Use hooks for actions that must happen every time with zero exceptions... Unlike CLAUDE.md instructions which are advisory, hooks are deterministic and guarantee the action happens... Edit .claude/settings.json directly... run /hooks to browse.' Claim [13]."
+      },
+      {
+        "claim": "Hook events fire at defined lifecycle points: PreToolUse (before a tool call, can block), PostToolUse (after success), Stop (Claude finishes responding), SessionStart, UserPromptSubmit, SubagentStop, PreCompact, Notification; PreToolUse/PostToolUse matchers filter on tool name, while Stop and UserPromptSubmit have no matcher and always fire.",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://docs.anthropic.com/en/docs/claude-code/hooks-guide",
+          "https://code.claude.com/docs/en/hooks-guide"
+        ],
+        "evidence": "Official lifecycle table: PreToolUse='Before a tool call executes. Can block it', PostToolUse='After a tool call succeeds', Stop='When Claude finishes responding'. Matcher table lists tool-name filtering for PreToolUse/PostToolUse (Bash, Edit|Write, mcp__.*). Claim [7]."
+      },
+      {
+        "claim": "Exit-code contract: exit 0 = success and JSON-on-stdout is processed ONLY on exit 0; exit 2 = block (stdout/JSON ignored, stderr fed back to Claude as error); any other code = non-blocking error, action proceeds with a hook-error notice. Exit 1 is treated as non-blocking, so policy-enforcing hooks MUST use exit 2.",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://docs.claude.com/en/docs/claude-code/hooks",
+          "https://docs.anthropic.com/en/docs/claude-code/hooks-guide",
+          "https://code.claude.com/docs/en/hooks"
+        ],
+        "evidence": "Verbatim: 'only exit code 2 blocks the action. Claude Code treats exit code 1 as a non-blocking error and proceeds... If your hook is meant to enforce a policy, use exit 2.' and 'JSON output is only processed on exit 0.' and 'Any other exit code: the action proceeds. The transcript shows a <hook name> hook error notice.' Merges claims [3], [4], [6]. Exception: WorktreeCreate aborts on ANY non-zero exit."
+      },
+      {
+        "claim": "Blocking is event-specific: PreToolUse, UserPromptSubmit, PermissionRequest, Stop/SubagentStop, and PreCompact can block on exit 2 (e.g., PreToolUse blocks the tool call, UserPromptSubmit erases the prompt, Stop prevents Claude stopping), while PostToolUse, StopFailure, and SessionEnd cannot block (stderr shown but tool already ran).",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://docs.claude.com/en/docs/claude-code/hooks",
+          "https://code.claude.com/docs/en/hooks"
+        ],
+        "evidence": "Official 'Exit Code 2 Behavior per Event' table confirms all 9 categorizations: blocking = PreToolUse/PermissionRequest/UserPromptSubmit/Stop/SubagentStop/PreCompact; non-blocking = PostToolUse/StopFailure/SessionEnd. Claim [5]."
+      },
+      {
+        "claim": "For structured control a hook should exit 0 and print JSON to stdout rather than rely on exit codes; you must NOT mix the two because JSON is ignored on exit 2. PreToolUse JSON supports permissionDecision values allow / deny / ask (with a defer value in headless/-p mode).",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://docs.anthropic.com/en/docs/claude-code/hooks-guide",
+          "https://code.claude.com/docs/en/hooks"
+        ],
+        "evidence": "Verbatim Note: 'Use exit 2 to block with a stderr message, or exit 0 with JSON for structured control. Don't mix them: Claude Code ignores JSON when you exit 2.' allow='skip the interactive permission prompt', deny='cancel the tool call and send the reason to Claude', ask='show the permission prompt'. Claim [8]."
+      },
+      {
+        "claim": "A Stop hook acts as a deterministic verification gate that blocks a turn from ending until a check script passes, but Claude Code overrides the hook and ends the turn after 8 consecutive blocks (preventing infinite loops).",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://www.anthropic.com/engineering/claude-code-best-practices",
+          "https://code.claude.com/docs/en/hooks"
+        ],
+        "evidence": "Verbatim: 'a Stop hook runs your check as a script and blocks the turn from ending until it passes. Claude Code overrides the hook and ends the turn after 8 consecutive blocks.' Hooks reference confirms Stop 'Can block: Yes — Prevents Claude from stopping, continues the conversation.' Claim [14]. Caveat: real-world bug reports exist (GitHub #55754 infinite-loop) but describe defects, not documented design."
+      },
+      {
+        "claim": "CLAUDE.md is loaded every session and must be kept short; bloated/over-specified CLAUDE.md causes Claude to ignore actual instructions because rules get lost in the noise. Domain-specific or sometimes-relevant knowledge should be moved to skills (loaded on demand), or over-rigid rules converted to a hook.",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://www.anthropic.com/engineering/claude-code-best-practices",
+          "https://code.claude.com/docs/en/best-practices"
+        ],
+        "evidence": "Verbatim: 'CLAUDE.md is loaded every session, so only include things that apply broadly. For domain knowledge or workflows that are only relevant sometimes, use skills instead... Bloated CLAUDE.md files cause Claude to ignore your actual instructions!' and 'The over-specified CLAUDE.md... Fix: Ruthlessly prune... or convert it to a hook.' Claim [15] — directly relevant to this monorepo's large CLAUDE.md files."
+      },
+      {
+        "claim": "In the Claude Agent SDK, AgentDefinition supports a 'skills' field (string[]) that preloads named skills into the agent's context at startup; unlisted skills remain invocable via the Skill tool; subagents do NOT inherit the parent's preloaded skill content unless explicitly listed in AgentDefinition.skills.",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://code.claude.com/docs/en/agent-sdk/subagents",
+          "https://docs.claude.com/en/docs/agent-sdk/subagents"
+        ],
+        "evidence": "AgentDefinition table: 'skills | string[] | No | List of skill names to preload into the agent's context at startup. Unlisted skills remain invocable through the Skill tool.' Inheritance table: subagent 'does not receive... Preloaded skill content, unless listed in AgentDefinition.skills'. Merges claims [9] and [16]."
+      },
+      {
+        "claim": "SDK subagents can be defined three ways — programmatically via the agents parameter (recommended for SDK apps), filesystem-based markdown in .claude/agents/, or the built-in general-purpose subagent — and programmatic definitions take precedence over filesystem agents of the same name. Subagents cannot spawn their own subagents; do not include the Agent tool in a subagent's tools array.",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://code.claude.com/docs/en/agent-sdk/subagents",
+          "https://docs.claude.com/en/docs/agent-sdk/subagents"
+        ],
+        "evidence": "Verbatim: 'You can create subagents in three ways: Programmatically... Filesystem-based... Built-in general-purpose... Programmatically defined agents take precedence over filesystem-based agents with the same name.' and 'Subagents cannot spawn their own subagents. Don't include Agent in a subagent's tools array.' Corroborated by GitHub issues #19077/#31977/#23506. Merges claims [10] and [17]."
+      },
+      {
+        "claim": "Subagent tool access is restricted via the tools field for least-privilege/risk reduction: omitting it inherits all tools, specifying it limits the agent to listed tools only (read-only analysis uses Read/Grep/Glob with no Edit/Write/Bash). Claude auto-delegates to subagents based on their description field, so descriptions must clearly state when to use the agent.",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://code.claude.com/docs/en/agent-sdk/subagents",
+          "https://docs.claude.com/en/docs/agent-sdk/subagents"
+        ],
+        "evidence": "Verbatim: 'Subagents can be limited to specific tools, reducing the risk of unintended actions'; 'Omit the field: agent inherits all available tools'; 'Specify tools: agent can only use listed tools'; example tools=[Read,Grep,Glob] '// Read-only tools: no Edit, Write, or Bash access'; 'Claude determines whether to invoke them based on each subagent's description field.' Merges claims [11] and [18]."
+      },
+      {
+        "claim": "The Agent SDK defines a set of hook events, 10 available in both Python and TypeScript (PreToolUse, PostToolUse, PostToolUseFailure, UserPromptSubmit, Stop, SubagentStart, SubagentStop, PreCompact, PermissionRequest, Notification) plus 10 TypeScript-only events (PostToolBatch, MessageDisplay, SessionStart, SessionEnd, Setup, TeammateIdle, TaskCompleted, ConfigChange, WorktreeCreate, WorktreeRemove).",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://code.claude.com/docs/en/agent-sdk/hooks"
+        ],
+        "evidence": "Official 'Available hooks' table confirms all 20 rows with the exact Python/TypeScript availability split; 'Fix common issues' section confirms SessionStart/SessionEnd are TypeScript-only callback hooks not available in Python. Claim [19]. Single (but authoritative primary) source — TypeScript-only set is time-sensitive as SDK evolves."
+      },
+      {
+        "claim": "SDK PreToolUse hooks control operations by returning hookSpecificOutput with permissionDecision (allow/deny/ask/defer), optional permissionDecisionReason and updatedInput — JSON objects, not shell exit codes. When multiple hooks/rules apply, priority is deny > defer > ask > allow; a single deny from any hook blocks the operation; hooks run in parallel with non-deterministic completion order so each must act independently.",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://code.claude.com/docs/en/agent-sdk/hooks"
+        ],
+        "evidence": "Verbatim: 'For PreToolUse hooks... set permissionDecision (allow, deny, ask, or defer), permissionDecisionReason, and updatedInput.' and 'deny takes priority over defer, which takes priority over ask, which takes priority over allow. If any hook returns deny, the operation is blocked regardless of other hooks.' and 'all matching hooks run in parallel... completion order is non-deterministic, write each hook to act independently.' Merges claims [20] and [21]."
+      },
+      {
+        "claim": "The Claude Agent SDK's core design principle is to give agents a computer (file system, terminal, code execution) so they work like humans; effective SDK agents run a three-phase loop — gather context, take action, verify work — and self-verifying agents are fundamentally more reliable. Subagents serve two purposes: parallelization and managing/isolating context via separate context windows.",
+        "confidence": "high",
+        "vote": "3-0",
+        "sources": [
+          "https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk",
+          "https://claude.com/blog/building-agents-with-the-claude-agent-sdk"
+        ],
+        "evidence": "Verbatim: 'give your agents a computer, allowing them to work like humans do'; 'gather context -> take action -> verify work -> repeat'; 'Agents that can check and improve their own output are fundamentally more reliable'; 'Subagents are useful for two main reasons. First, they enable parallelization... Second, they help manage context: subagents use their own isolated context windows.' Merges claims [22], [23], [24]."
+      }
+    ],
+    "caveats": "All 25 claims passed 3-0 adversarial verification against Anthropic's first-party documentation, so confidence is uniformly high; no claim rested on blog-quality or contested sourcing. Time-sensitivity is the main risk: (1) The slash-command-into-skills merge is recent (attributed to Claude Code ~v2.1.3/v2.1.x) — older tutorials and any pre-merge .claude/commands/ guidance may conflict, though existing command files still work. (2) The Agent SDK hook event set, especially the TypeScript-only events and the 'defer' permissionDecision value, is actively expanding across SDK releases (pages reference v2.1.63 and SDK v0.3.149); the exact event list should be re-verified against the installed SDK version before relying on TS-only events. (3) Documentation URLs have migrated (docs.anthropic.com / docs.claude.com / platform.claude.com now 301/308-redirect to code.claude.com); cite code.claude.com as canonical. (4) Two behavioral caveats are documented defects rather than design: the Stop-hook 8-block cap has real-world infinite-loop bug reports (GitHub #55754), and SDK permissionDecision 'allow' has an interactive-CLI prompt-suppression bug (#52822) — treat the documented design as the spec but expect edge cases. (5) The 1,536-char description truncation is the default and is configurable via maxSkillDescriptionChars. (6) The WorktreeCreate event aborts on ANY non-zero exit, an exception to the general 'only exit 2 blocks' rule.",
+    "openQuestions": [
+      "How should the existing .claude/commands/ assets in this monorepo (pr-ready, e2e-electron, i18n-add, sonar-check) be migrated to the SKILL.md format to gain supporting-file and auto-loading benefits, and which of them should set disable-model-invocation:true given their side effects (e.g. PR creation, file writes)?",
+      "For the platform's runtime agents (the 9 services), should subagent orchestration use the SDK's programmatic agents parameter with explicit per-service tool restrictions and skills preloading, and how does the no-nested-subagents constraint interact with the current Manager-dispatches-to-agents architecture?",
+      "Which deterministic guarantees in this repo's workflow (currently enforced via git pre-commit/pre-push hooks and CLAUDE.md prose) would be better implemented as Claude Code PreToolUse/Stop hooks with exit-2 policy enforcement — e.g. blocking direct master commits, enforcing --ignore-scripts, or gating on pnpm test/build?",
+      "Given that bloated always-loaded context degrades instruction-following, how much of the large per-service CLAUDE.md content (security patterns, E2E patterns, SonarCloud rules) should be moved into on-demand skills versus kept in the broadly-applicable CLAUDE.md, and what is the practical line-count threshold for this monorepo?"
+    ],
+    "refuted": [],
+    "sources": [
+      {
+        "url": "https://code.claude.com/docs/en/slash-commands",
+        "quality": "primary",
+        "angle": "broad/primary — 공식 문서",
+        "claimCount": 5
+      },
+      {
+        "url": "https://docs.claude.com/en/docs/claude-code/hooks",
+        "quality": "primary",
+        "angle": "broad/primary — 공식 문서",
+        "claimCount": 5
+      },
+      {
+        "url": "https://docs.anthropic.com/en/docs/claude-code/hooks-guide",
+        "quality": "primary",
+        "angle": "broad/primary — 공식 문서",
+        "claimCount": 5
+      },
+      {
+        "url": "https://docs.claude.com/en/docs/agent-sdk/subagents",
+        "quality": "primary",
+        "angle": "broad/primary — 공식 문서",
+        "claimCount": 5
+      },
+      {
+        "url": "https://www.anthropic.com/engineering/claude-code-best-practices",
+        "quality": "primary",
+        "angle": "broad/primary — 공식 문서",
+        "claimCount": 5
+      },
+      {
+        "url": "https://generalanalysis.com/guides/anthropic-claude-code-security-best-practices",
+        "quality": "secondary",
+        "angle": "technical/spec — Hook 메커니즘",
+        "claimCount": 5
+      },
+      {
+        "url": "https://code.claude.com/docs/en/agent-sdk/subagents",
+        "quality": "primary",
+        "angle": "Agent SDK — 런타임 에이전트",
+        "claimCount": 5
+      },
+      {
+        "url": "https://code.claude.com/docs/en/agent-sdk/hooks",
+        "quality": "primary",
+        "angle": "Agent SDK — 런타임 에이전트",
+        "claimCount": 5
+      },
+      {
+        "url": "https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk",
+        "quality": "primary",
+        "angle": "Agent SDK — 런타임 에이전트",
+        "claimCount": 5
+      },
+      {
+        "url": "https://code.claude.com/docs/en/hooks",
+        "quality": "primary",
+        "angle": "안전 설계 — 보안 안티패턴",
+        "claimCount": 5
+      },
+      {
+        "url": "https://dev.to/yurukusa/5-claude-code-hook-mistakes-that-silently-break-your-safety-net-58l3",
+        "quality": "blog",
+        "angle": "안전 설계 — 보안 안티패턴",
+        "claimCount": 5
+      },
+      {
+        "url": "https://dev.to/boucle2026/what-claude-code-hooks-can-and-cannot-enforce-148o",
+        "quality": "blog",
+        "angle": "안전 설계 — 보안 안티패턴",
+        "claimCount": 5
+      },
+      {
+        "url": "https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices",
+        "quality": "primary",
+        "angle": "practitioner — 판별 기준·실패 사례",
+        "claimCount": 5
+      },
+      {
+        "url": "https://dev.to/lizechengnet/why-claude-code-skills-dont-trigger-and-how-to-fix-them-in-2026-o7h",
+        "quality": "blog",
+        "angle": "practitioner — 판별 기준·실패 사례",
+        "claimCount": 5
+      },
+      {
+        "url": "https://claude.com/blog/improving-skill-creator-test-measure-and-refine-agent-skills",
+        "quality": "primary",
+        "angle": "practitioner — 판별 기준·실패 사례",
+        "claimCount": 5
+      },
+      {
+        "url": "https://scottspence.com/posts/measuring-claude-code-skill-activation-with-sandboxed-evals",
+        "quality": "blog",
+        "angle": "practitioner — 판별 기준·실패 사례",
+        "claimCount": 5
+      },
+      {
+        "url": "https://github.com/obra/superpowers/blob/main/skills/writing-skills/SKILL.md",
+        "quality": "secondary",
+        "angle": "practitioner — 판별 기준·실패 사례",
+        "claimCount": 5
+      },
+      {
+        "url": "https://github.com/anthropics/claude-code/issues/36570",
+        "quality": "primary",
+        "angle": "practitioner — 판별 기준·실패 사례",
+        "claimCount": 5
+      },
+      {
+        "url": "https://code.claude.com/docs/en/features-overview",
+        "quality": "primary",
+        "angle": "모노레포/멀티에이전트 적용",
+        "claimCount": 5
+      },
+      {
+        "url": "https://code.claude.com/docs/en/hooks-guide",
+        "quality": "primary",
+        "angle": "모노레포/멀티에이전트 적용",
+        "claimCount": 5
+      },
+      {
+        "url": "https://platform.claude.com/docs/en/agent-sdk/hooks",
+        "quality": "primary",
+        "angle": "모노레포/멀티에이전트 적용",
+        "claimCount": 5
+      },
+      {
+        "url": "https://platform.claude.com/docs/en/agent-sdk/skills",
+        "quality": "primary",
+        "angle": "모노레포/멀티에이전트 적용",
+        "claimCount": 5
+      },
+      {
+        "url": "https://code.claude.com/docs/en/skills",
+        "quality": "primary",
+        "angle": "모노레포/멀티에이전트 적용",
+        "claimCount": 5
+      },
+      {
+        "url": "https://www.openaitoolshub.org/en/blog/claude-code-workflow-examples",
+        "quality": "blog",
+        "angle": "모노레포/멀티에이전트 적용",
+        "claimCount": 5
+      }
+    ],
+    "stats": {
+      "angles": 6,
+      "sourcesFetched": 24,
+      "claimsExtracted": 120,
+      "claimsVerified": 25,
+      "confirmed": 25,
+      "killed": 0,
+      "afterSynthesis": 16,
+      "urlDupes": 3,
+      "budgetDropped": 9,
+      "agentCalls": 107
+    }
+  }
+}
