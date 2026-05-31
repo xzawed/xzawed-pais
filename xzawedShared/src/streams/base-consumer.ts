@@ -145,14 +145,29 @@ export class BaseConsumer<TMessage> {
         }
       }
     } finally {
-      // onMessage 예외 시에도 수집된 ID를 pipeline으로 일괄 xack — Redis RTT 최소화
+      // onMessage 예외 시에도 수집된 ID를 일괄 xack — PEL 누수 방지
       if (toAck.length > 0) {
-        const pipeline = this.redis.pipeline()
-        for (const id of toAck) {
-          pipeline.xack(stream, this.consumerGroup, id)
-        }
-        await pipeline.exec()
+        await this.ackAll(stream, toAck)
       }
+    }
+  }
+
+  /**
+   * 수집된 메시지 ID를 ack한다.
+   * pipeline을 지원하는 클라이언트(실제 ioredis)는 일괄 처리로 Redis RTT를 최소화하고,
+   * pipeline 미지원 클라이언트는 개별 xack로 폴백한다.
+   */
+  private async ackAll(stream: string, ids: string[]): Promise<void> {
+    if (typeof this.redis.pipeline === 'function') {
+      const pipeline = this.redis.pipeline()
+      for (const id of ids) {
+        pipeline.xack(stream, this.consumerGroup, id)
+      }
+      await pipeline.exec()
+      return
+    }
+    for (const id of ids) {
+      await this.redis.xack(stream, this.consumerGroup, id)
     }
   }
 
