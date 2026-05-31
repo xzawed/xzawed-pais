@@ -1,0 +1,2015 @@
+{
+  "summary": "10개 서비스를 병렬 분석해 SKILL/HOOK 후보를 도출하고 deep-research 근거로 심사·우선순위화",
+  "agentCount": 15,
+  "logs": [
+    "분석 완료: 10/10 단위",
+    "후보 수집: 트랙A 41건, 트랙B 40건",
+    "심사 완료: 트랙A 36건, 트랙B 38건",
+    "구현 후보 적대적 검증 대상: 4건",
+    "검증 통과(구현 확정): 2건, 강등: 2건"
+  ],
+  "result": {
+    "analyses": [
+      {
+        "unit": "xzawedOrchestrator",
+        "workSummary": "사용자 지시를 intent-structurer로 정제해 Manager로 중계하는 지휘자 서비스. Fastify 서버(JWT 인증·Redis Streams·MCP·세션 API) + Electron 앱(React19/Zustand UI·GitHub OAuth·MCP 프로세스 관리·플러그인) + ko/en/ja i18n + Turborepo 모노레포(shared/server/app/ui)로 구성된다.",
+        "repetitiveTasks": [
+          "IPC 채널 1개 추가 시 preload/index.ts(채널 문자열)+electron.d.ts(ElectronAPI 인터페이스+global var)+main/index.ts(ipcMain.handle) 3곳 동시 수정·동기화",
+          "i18n 문자열 추가 시 app/common/ui/server namespace별 ko/en/ja 파일 동시 갱신 + check-i18n.js 파리티 검증",
+          "Electron E2E 스펙 작성 시 data-testid POM·waitForI18n fixture·window.__integrationsStore 주입 패턴 준수",
+          "새 React 컴포넌트의 하드코딩 한국어 문자열을 useTranslation 키로 치환",
+          "MCP/CLI/원격 러너의 보안 allowlist(ALLOWED_MCP_COMMANDS·BLOCKED_ARG_PATTERNS·URL scheme·openExternal prefix) 검증 로직 유지",
+          "Redis StreamConsumer 핸들러에 try/finally xack 보장 + Zod safeParse 검증 패턴 적용",
+          "CLAUDE_MODE(api/cli/remote) 4-way 분기에 따른 runner.factory·환경변수 정합성 확인",
+          "Turborepo 패키지 빌드 순서(shared→server/app/ui) 및 pnpm build 전체 타입 체크"
+        ],
+        "failurePatterns": [
+          "preload/electron.d.ts/main 3자 IPC 계약 드리프트: 채널 문자열 오타나 시그니처 불일치가 런타임까지 조용히 통과(예: githubListRepos 반환형이 full_name vs fullName 불일치)",
+          "i18n 키 누락: 신규 컴포넌트에 하드코딩 한글 잔존, 또는 ko에만 추가하고 en/ja 미동기화 → check-i18n.js·CI i18n-check 잡 실패",
+          "ui.json은 check-i18n.js CHECKS 배열에 미포함되어 @xzawed/ui 패키지 i18n 파리티가 자동 검증 안 됨",
+          "E2E에서 electronApp.evaluate()로 ipcMain 교체 시 nav 큐 블로킹, 텍스트 기반 선택자가 로케일 변경 시 깨짐, ws:// mock 불가",
+          "보안 allowlist 회귀: MCP command/args/env 검증·shell.openExternal prefix·validateRemoteUrl·CLI '--' 구분자 제거 시 인젝션 핫스팟",
+          "Redis 핸들러 예외 시 xack 누락으로 PEL 누수, 블로킹 mock을 setImmediate 없이 즉시 resolve해 OOM",
+          "AUTH=jwt인데 SERVICE_JWT_SECRET/USER_JWT_SECRET 32자 미만, GITHUB_TOKEN_ENCRYPTION_KEY 64자 hex 아님 → 시작 시 거부",
+          "Dockerfile USER node(S6501)·--ignore-scripts(S6505) 누락, master 직접 커밋으로 SonarCloud New Code 기준 꼬임"
+        ],
+        "trackA": [
+          {
+            "name": "/ipc-contract-check",
+            "kind": "command",
+            "purpose": "preload/index.ts·electron.d.ts·main/index.ts 3곳의 IPC 채널 문자열과 메서드 시그니처가 일치하는지 교차 검증해 드리프트(누락 핸들러·오타·반환형 불일치)를 보고. 이 서비스 고유의 3자 계약 구조에 특화",
+            "trigger": "IPC 채널 추가/수정 후 또는 PR 전 수동 호출",
+            "blocking": "n/a",
+            "value": 5,
+            "risk": 1,
+            "effort": 2
+          },
+          {
+            "name": "hook:ipc-contract-guard",
+            "kind": "hook",
+            "purpose": "preload/index.ts 또는 main/index.ts 또는 electron.d.ts 편집 시 세 파일의 채널 집합 차집합을 계산해 불일치하면 경고(차단은 과함). post-edit 테스트 훅과 역할 분리됨",
+            "trigger": "PostToolUse, matcher: Edit/Write on packages/app/src/{preload,main/index}.ts·electron.d.ts",
+            "blocking": "non-blocking",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "hook:hardcoded-i18n-guard",
+            "kind": "hook",
+            "purpose": "renderer 컴포넌트(.tsx) 편집 시 JSX 텍스트 노드·aria-label에 한글 리터럴이 직접 박히면 useTranslation 키 사용을 권고. /i18n-add(추가)와 달리 누락 탐지 역할로 비중복",
+            "trigger": "PostToolUse, matcher: Edit/Write on packages/app/src/renderer/**/*.tsx",
+            "blocking": "non-blocking",
+            "value": 4,
+            "risk": 2,
+            "effort": 2
+          },
+          {
+            "name": "/mcp-sec-audit",
+            "kind": "command",
+            "purpose": "mcp-process-manager·cli-runner·http-remote-runner·github-oauth-handler의 보안 불변식(ALLOWED_MCP_COMMANDS·BLOCKED_ARG_PATTERNS·URL scheme·openExternal startsWith·'--' 구분자·validateRemoteUrl)이 유지되는지 체크리스트 검증. 이 서비스 5개 고유 보안 지점에 특화",
+            "trigger": "main 프로세스/러너 파일 수정 후 또는 PR 전",
+            "blocking": "n/a",
+            "value": 4,
+            "risk": 1,
+            "effort": 2
+          },
+          {
+            "name": "/i18n-parity-ui",
+            "kind": "command",
+            "purpose": "check-i18n.js가 누락한 ui.json(@xzawed/ui) ko/en/ja 파리티를 포함해 4개 namespace 전체 파리티를 검증·보고. 기존 스크립트 사각지대 보완",
+            "trigger": "i18n 편집 후 또는 PR 전",
+            "blocking": "n/a",
+            "value": 3,
+            "risk": 1,
+            "effort": 1
+          }
+        ],
+        "trackB": [
+          {
+            "name": "intent-structurer-self-verify",
+            "purpose": "structureIntent가 생성한 1-2문장 요약이 원문 핵심 의도를 누락/왜곡하지 않았는지 동일 LLM으로 자가 검증 후 미달 시 1회 재요약. 현재는 예외 시 원문 그대로 fallback만 존재",
+            "applyPoint": "packages/server/src/claude/intent-structurer.ts structureIntent() 반환 직전",
+            "value": 4,
+            "risk": 2,
+            "effort": 2
+          },
+          {
+            "name": "manager-relay-schema-hook",
+            "purpose": "Manager로 전달하는 메시지 payload를 producer 전송 직전 Zod로 강제 검증하는 런타임 PreToolUse 류 훅으로, 정제된 intent가 스키마 위반 시 전송 차단(deny). Redis 계약 불변식 결정론적 보장",
+            "applyPoint": "packages/server/src/streams/producer.ts 메시지 publish 직전",
+            "value": 4,
+            "risk": 2,
+            "effort": 2
+          },
+          {
+            "name": "mcp-spawn-policy-skill",
+            "purpose": "런타임 에이전트가 MCP 서버 추가를 제안할 때 ALLOWED_MCP_COMMANDS·BLOCKED_ARG_PATTERNS·BLOCKED_ENV_KEYS 정책을 preload 지식으로 주입해 위험 command/args/env 제안 자체를 사전 차단",
+            "applyPoint": "packages/app/src/main/mcp-process-manager.ts addServer/startServer 경로의 에이전트 제안 단계",
+            "value": 3,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "remote-runner-egress-guard",
+            "purpose": "CLAUDE_MODE=remote에서 HTTPRemoteRunner/SSHRemoteRunner의 대상 URL·호스트를 fetch 직전 allowlist 검증하는 hook(deny>ask). validateRemoteUrl(scheme)보다 강한 호스트 단위 SSRF 방어를 런타임에 결정론적으로 적용",
+            "applyPoint": "packages/server/src/claude/http-remote-runner.ts·ssh-remote-runner.ts send() 진입",
+            "value": 3,
+            "risk": 3,
+            "effort": 3
+          }
+        ]
+      },
+      {
+        "unit": "xzawedManager",
+        "workSummary": "xzawedOrchestrator로부터 Redis Streams로 작업 지시를 받아 Claude tool-calling 루프(runner.ts)로 처리하고, 11개 ToolHandler(7개 RedisAgentHandler 팩토리 + register/switch-project + 조건부 github-ops/deploy-project)로 하위 에이전트에 디스패치한 뒤 결과를 orchestrator에 반환한다. WatcherEventConsumer로 파일 변경 이벤트를 재트리거하고 세션 상태(SessionStore)·JWT 인증을 관리한다.",
+        "repetitiveTasks": [
+          "새 하위 에이전트 ToolHandler 추가 시 RedisAgentHandler 팩토리(plan-task 등 7개와 동일한 구조: Input/Output 타입 + inputSchema JSON + zod outputSchema + createXHandler) 보일러플레이트 복제·registry.ts 등록",
+          "Redis 수신 루프(consumer.ts / watcher-event-consumer.ts / redis-agent-handler / session-gateway) 추가·수정 시 parseMessage→safeParse→handler→xack(try/finally) 패턴 반복 작성",
+          "스트림 키 문자열(manager:to-{agent}:{sessionId}, {agent}:to-manager:{sessionId}, orchestrator:to-manager:projects:{sessionId}, watcher:to-manager: 등)을 각 파일에 raw template literal로 직접 작성·테스트의 mock 스트림 키와 수동 동기화",
+          "Octokit 기반 핸들러(github-ops, deploy-project)에 액션 분기·need() 필수필드 검증·validateCommitPath 경로 검증 추가",
+          "ToolHandler 추가/변경 후 SonarCloud 80% 신규코드 커버리지 게이트 충족용 테스트 보강(git log에 반복 등장)",
+          "runner 루프 변경 시 stop_reason·빈 tool_use·MAX_ITERATIONS·타임아웃 가드 회귀 테스트 작성",
+          "info_request/ClarificationNeededError 중계 경로 변경 시 producer publish + waitForInfo + 재실행 로직 동기 검증"
+        ],
+        "failurePatterns": [
+          "xack 누락/오배치로 PEL(Pending Entries List) 누수 — CLAUDE.md가 handler 호출을 반드시 try/finally로 감싸 xack 보장하라 명시. 신규 consumer 작성 시 catch에서 return해버려 xack 건너뛰는 실수 빈발",
+          "RedisAgentHandler 7개 팩토리가 거의 동일 구조라 jscpd CPD 중복 탐지에 자주 걸림 — git log에 'CPD 4% 해소 롤백', 'withXaddRetry 중복 제거→교차파일 중복→inline 복원' 반복. 중복 제거 리팩터가 오히려 CPD를 악화시키는 역설",
+          "스트림 키 오타·규칙 위반({출발}:to-{목적}:{sessionId} 패턴 이탈) 시 메시지가 조용히 라우팅 실패 — 중앙 상수 없이 파일마다 raw 문자열, 테스트 mock 키와 불일치하면 통과하지만 런타임 무응답",
+          "runner.ts의 block.input을 각 핸들러 inputSchema로 검증하지 않는 부분 구현 상태 — LLM이 잘못된 input을 보내면 핸들러 깊은 곳에서 실패",
+          "AbortController 재사용 실수 — AbortSignal은 단방향이라 abort() 후 new AbortController()로 교체 필수(session.store.ts). 누락 시 세션 재사용 불가",
+          "블로킹 xreadgroup/xread mock을 즉시 resolve해 macrotask 차단→OOM, 또는 redis 재연결로 이벤트 루프 활성 유지(setImmediate·retryStrategy 누락) — CLAUDE.md 테스트 패턴",
+          "info_request 대기 중 abort/delete 시 infoReject 호출 누락으로 waitForInfo Promise가 영구 pending(세션 hang)",
+          "조건부 핸들러(github-ops/deploy-project)는 GITHUB_TOKEN 설정 시에만 등록되어 테스트·도구 목록에서 누락되기 쉬움",
+          "github-ops commitAndPush 경로에 validateCommitPath 미적용 시 path traversal/.github/workflows 쓰기 허용 위험"
+        ],
+        "trackA": [
+          {
+            "name": "/new-agent-tool",
+            "kind": "command",
+            "purpose": "새 하위 에이전트 RedisAgentHandler 팩토리(Input/Output 타입·inputSchema JSON·zod outputSchema·createXHandler) + registry 등록 + 기본 테스트 골격을 plan-task.ts 패턴 그대로 생성. 7개 기존 팩토리 구조와 정렬해 CPD 위험을 일관된 형태로 흡수하고 스트림 키 규칙을 자동 주입",
+            "trigger": "사용자가 manager에 새 에이전트 tool 추가 요청 시 수동 호출",
+            "blocking": "n/a",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "hook:redis-xack-guard",
+            "kind": "hook",
+            "purpose": "streams/*.ts·redis-agent-handler.ts 편집 시 handler(msg)/onMessage 호출이 try/finally 내 xack로 감싸졌는지, catch에서 xack 없이 return하지 않는지 정적 점검. PEL 누수 패턴을 결정론적으로 차단(CLAUDE.md 필수 규칙의 강제화)",
+            "trigger": "PostToolUse, matcher: Edit/Write on xzawedManager/**/streams/**.ts 및 redis-agent-handler.ts",
+            "blocking": "non-blocking",
+            "value": 5,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "hook:stream-key-lint",
+            "kind": "hook",
+            "purpose": "raw 스트림 키 template literal이 {src}:to-{dst}:{sessionId} 규칙(또는 :sessions/:projects 게이트웨이 예외)에 맞는지 검사. 소스 파일과 같은 PR의 테스트 mock 키 불일치도 경고해 조용한 라우팅 실패 예방",
+            "trigger": "PostToolUse, matcher: Edit/Write on xzawedManager/**/*.ts containing ':to-'",
+            "blocking": "non-blocking",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "/manager-cpd-check",
+            "kind": "command",
+            "purpose": "7개 RedisAgentHandler 팩토리·producer retry 등 manager 특유의 CPD 단골 파일에 jscpd를 좁게 돌려 신규 중복을 PR 전 사전 탐지. 기존 /sonar-check보다 manager 중복 핫스팟에 특화(git log의 반복 CPD 롤백 대응)",
+            "trigger": "manager 도구·스트림 코드 수정 후 PR 직전 수동 호출",
+            "blocking": "n/a",
+            "value": 3,
+            "risk": 1,
+            "effort": 2
+          },
+          {
+            "name": "/runner-loop-review",
+            "kind": "command",
+            "purpose": "runner.ts 변경 시 stop_reason 분기(end_turn/tool_use 외 throw)·빈 toolResults 가드·MAX_ITERATIONS·CLAUDE_CALL_TIMEOUT·block.input inputSchema 검증 누락 여부를 체크리스트로 점검하고 해당 회귀 테스트 존재를 확인",
+            "trigger": "claude/runner.ts 수정 후 수동 호출",
+            "blocking": "n/a",
+            "value": 3,
+            "risk": 1,
+            "effort": 2
+          }
+        ],
+        "trackB": [
+          {
+            "name": "runner-input-validator-hook",
+            "purpose": "Claude tool-calling 루프에서 handler.execute 직전 block.input을 해당 핸들러 inputSchema로 검증해 LLM의 잘못된 인자(누락·타입 불일치)를 즉시 차단하고 구조화된 오류를 tool_result(is_error)로 반환. CLAUDE.md가 '부분 구현'으로 표시한 갭을 런타임 PreToolUse 게이트로 메움",
+            "applyPoint": "runner.ts processToolUseBlocks → handleAgentTool 진입 직전(PreToolUse 유사 게이트)",
+            "value": 5,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "agent-result-self-verify",
+            "purpose": "하위 에이전트 응답(plan_complete/develop_complete 등)을 outputSchema 통과 후 task 의도와 정합한지 자가검증(예: plan steps의 dependencies가 실제 step id 참조, agentType가 등록된 7종 내). 불일치 시 재요청해 신뢰도 향상(gather→act→verify 루프)",
+            "applyPoint": "redis-agent-handler.ts handleMessage의 completeType 분기 직후 검증 단계",
+            "value": 4,
+            "risk": 3,
+            "effort": 3
+          },
+          {
+            "name": "github-write-permission-gate",
+            "purpose": "github-ops/deploy-project의 쓰기 액션(commitAndPush/createRepo/mergeBranch/배포)을 부작용 작업으로 분류해 permissionDecision ask/deny로 게이트. validateCommitPath를 deploy-project에도 일관 적용하고 .github/workflows·절대경로·traversal을 deny로 결정론적 차단",
+            "applyPoint": "runner 도구 디스패치 시 github_ops/deploy_project 핸들러에 대한 permission hook",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "session-hang-watchdog-hook",
+            "purpose": "waitForInfo로 진입한 세션이 타임아웃 내 응답·abort·delete 중 무엇도 받지 못하면 infoReject로 강제 종료해 영구 pending(세션 hang) 방지. abort/delete 시 infoReject 누락 회귀를 런타임에서 안전망으로 보강",
+            "applyPoint": "session.store.ts waitForInfo Promise에 deadline 감시 + abort/delete 경로",
+            "value": 4,
+            "risk": 3,
+            "effort": 2
+          },
+          {
+            "name": "watcher-retrigger-debounce-skill",
+            "purpose": "WatcherEventConsumer의 file_changed 이벤트를 task_request로 재발행할 때 동일 세션 연속 변경을 디바운스·중복 제거하는 정책 스킬. 빌드/테스트 폭주(이벤트당 전체 루프 재기동) 방지, MAX_SESSIONS 한도와 연계",
+            "applyPoint": "server.ts file_changed → orchestrator:to-manager task_request 발행 경로",
+            "value": 3,
+            "risk": 3,
+            "effort": 3
+          }
+        ]
+      },
+      {
+        "unit": "xzawedShared (@xzawed/agent-streams)",
+        "workSummary": "7개 독립 에이전트 서비스가 공통 의존하는 Redis Streams 기반 라이브러리로, BaseConsumer(XREADGROUP 루프·xack 보장·XAUTOCLAIM PEL 재획득), validateWorkspaceRoot/resolveWorkspaceRoot(경로 보안), SessionDispatcher(per-session 동적 consumer 팩토리)를 제공한다. 순수 라이브러리이므로 직접 실행되지 않고 dist 빌드 산출물로 소비된다.",
+        "repetitiveTasks": [
+          "BaseConsumer/SessionDispatcher의 모든 종료 경로(정상·예외·스키마실패·파싱실패)에 try/finally xack 보장 유지 검증 — 신규 분기 추가 시마다 반복",
+          "라이브러리 수정 후 pnpm build로 dist 갱신 → 7개 의존 서비스 테스트 재실행(CLAUDE.md가 3회 강조)",
+          "blocking xreadgroup/xautoclaim mock 작성 시 setImmediate 매크로태스크 양보 패턴 재적용 (OOM·타임아웃 방지)",
+          "BaseConsumer 8개 위치 인자(redis,onMessage,group,name,prefix,schema,sleep,ownsRedis) 시그니처 변경 시 39개 호출처 동기 갱신",
+          "SonarCloud 신규코드 80% 커버리지 게이트용 엣지케이스 테스트 보강 (b5f522b)",
+          "ESM .js import 확장자 수동 부착(./streams/base-consumer.js) 및 누락 점검",
+          "Redis 응답 배열 구조(xreadgroup [stream,[id,fields]], xautoclaim [cursor,msgs,deleted]) 인덱싱 mock 정합성 유지"
+        ],
+        "failurePatterns": [
+          "xack 누락으로 PEL 누수 — 신규 skip/early-return 분기에서 toAck.push 또는 finally 빠뜨림 (git #93·#176·#178 반복 수정)",
+          "SessionDispatcher 동시진입 race — activeConsumers만 체크하고 pendingConsumers 투-페이즈 가드 누락 시 중복 consumer 생성 (cc20578)",
+          "blocking I/O mock을 즉시 resolve(mockResolvedValue(null))로 작성 → 마이크로태스크 루프로 stop() 미실행·OOM (CLAUDE.md 명시)",
+          "라이브러리 수정 후 pnpm build 누락 → 의존 서비스가 stale dist 소비해 엉뚱한 곳에서 실패",
+          "ESM 상대 import에서 .js 확장자 누락 → 빌드/런타임 모듈 해석 실패",
+          "8-positional-arg 생성자 인자 순서·추가 시 호출처 silent breakage (타입은 통과해도 의미 어긋남)",
+          "validateWorkspaceRoot 크로스플랫폼 root 판정(/ vs C:\\, 후행 슬래시) 엣지 회귀",
+          "MAX_MESSAGE_BYTES·MAX_ACTIVE_CONSUMERS 등 상수 변경 시 백프레셔/메모리 가드 의도 훼손"
+        ],
+        "trackA": [
+          {
+            "name": "/xack-invariant-check",
+            "kind": "command",
+            "purpose": "base-consumer.ts·session-dispatcher.ts의 processMessages/handleSessionEntry 내 모든 분기(continue·early return·예외 경로)가 xack 또는 toAck.push로 귀결되는지, try/finally 누수 가능 경로가 있는지 정적 점검하고 누락 지점을 보고. 이 라이브러리 최대 회귀원인(PEL 누수) 전용 가드.",
+            "trigger": "BaseConsumer/SessionDispatcher 분기 추가·수정 직후 사용자가 호출",
+            "blocking": "n/a",
+            "value": 5,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "hook:shared-build-then-dependents",
+            "kind": "hook",
+            "purpose": "xzawedShared/src/** 편집 후 dist가 stale해지면 의존 서비스 테스트가 무의미해지므로, 편집 시 pnpm build 실행 후 빌드 실패 시 차단·성공 시 dist 갱신 알림. 기존 post-edit.mjs(해당 서비스 테스트만 실행)와 달리 라이브러리→dist→소비자 순서를 강제.",
+            "trigger": "PostToolUse, matcher Edit|Write on xzawedShared/src/**/*.ts",
+            "blocking": "non-blocking",
+            "value": 4,
+            "risk": 2,
+            "effort": 2
+          },
+          {
+            "name": "hook:consumer-signature-guard",
+            "kind": "hook",
+            "purpose": "BaseConsumer 생성자 시그니처(인자 개수·순서) 또는 SessionDispatcher 생성자가 변경되면 39개 호출처 동기화 필요를 경고. base-consumer.ts/session-dispatcher.ts의 constructor 라인 diff 감지 시 의존 호출처 목록과 함께 경고.",
+            "trigger": "PostToolUse, matcher Edit on base-consumer.ts|session-dispatcher.ts",
+            "blocking": "non-blocking",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "hook:redis-mock-yield-guard",
+            "kind": "hook",
+            "purpose": "테스트 파일에서 xreadgroup/xautoclaim를 mockResolvedValue(null)/mockResolvedValue 즉시-resolve로 작성하면 매크로태스크 미양보로 stop() 불가·OOM. setImmediate 패턴 미적용 시 차단. 기존 mock-guard.mjs(일반 위험 mock)를 이 라이브러리 blocking-I/O 패턴으로 특화·보강.",
+            "trigger": "PreToolUse, matcher Write|Edit on xzawedShared/**/__tests__/**",
+            "blocking": "blocking",
+            "value": 4,
+            "risk": 3,
+            "effort": 3
+          },
+          {
+            "name": "/shared-release-check",
+            "kind": "command",
+            "purpose": "라이브러리 변경 PR 전 전용 게이트: pnpm build·test·SonarCloud 80% 신규코드 커버리지 추정·ESM .js 확장자 누락 스캔·생성자 시그니처 호환성·7개 의존 서비스 빌드 통과를 순차 점검. pr-ready는 i18n/Dockerfile 등 라이브러리에 무관한 항목을 포함하므로 경량 전용 버전.",
+            "trigger": "라이브러리 변경 PR 직전 사용자가 호출",
+            "blocking": "n/a",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          }
+        ],
+        "trackB": [
+          {
+            "name": "poison-message-quarantine",
+            "purpose": "현재 BaseConsumer는 파싱·스키마 실패 메시지를 로그 후 즉시 xack drop한다. 동일 sessionId에서 검증실패가 임계치 초과 시 dead-letter 스트림(예: {prefix}:dlq:{sessionId})으로 격리·요약 보고하는 메커니즘. 데이터 유실 없이 디버깅 가능.",
+            "applyPoint": "base-consumer.ts processMessages의 safeParse 실패·JSON.parse 실패 분기",
+            "value": 4,
+            "risk": 3,
+            "effort": 3
+          },
+          {
+            "name": "schema-version-negotiation",
+            "purpose": "메시지에 schemaVersion 필드를 두고 BaseConsumer가 소비 측 schema와 불일치 시 단순 drop 대신 호환 변환 또는 명시적 거부 사유를 기록. 7개 서비스가 동일 라이브러리로 메시지를 검증하므로 계약 진화 시 silent drop을 줄임.",
+            "applyPoint": "base-consumer.ts schema.safeParse 직전 버전 게이트",
+            "value": 3,
+            "risk": 3,
+            "effort": 4
+          },
+          {
+            "name": "pel-reclaim-self-verify",
+            "purpose": "claimPendingMessages(XAUTOCLAIM) 후 실제 재처리 건수·잔여 PEL 길이를 XPENDING으로 자가검증해 누수 조기 탐지하는 verify 루프. 핵심 reliability 불변식(xack 보장)을 런타임에서 능동 점검.",
+            "applyPoint": "base-consumer.ts claimPendingMessages 직후 검증 단계 추가",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "adaptive-consumer-backpressure",
+            "purpose": "SessionDispatcher의 MAX_ACTIVE_CONSUMERS(1000) 고정 한도를 프로세스 메모리/이벤트루프 지연 기반 동적 조절로 전환하고, 한도 도달 시 무시(drop) 대신 게이트웨이 재시도/지연 큐로 보류해 세션 유실 방지.",
+            "applyPoint": "session-dispatcher.ts handleSessionEntry의 size>=MAX 분기",
+            "value": 3,
+            "risk": 3,
+            "effort": 4
+          },
+          {
+            "name": "workspace-root-runtime-assert",
+            "purpose": "validateWorkspaceRoot/resolveWorkspaceRoot를 소비 서비스 부팅 시점에 강제 호출하는 SessionStart 성격의 게이트로 표준화해, LLM 생성 절대경로·루트 주입 같은 보안 위반을 메시지 처리 이전에 차단(deny). 4개 executor 서비스가 제각각 호출하는 패턴을 라이브러리 차원 hook으로 일원화.",
+            "applyPoint": "resolveWorkspaceRoot 반환 직후 validateWorkspaceRoot 강제 체이닝",
+            "value": 4,
+            "risk": 2,
+            "effort": 2
+          }
+        ]
+      },
+      {
+        "unit": "xzawedPlanner",
+        "workSummary": "xzawedManager로부터 intent(plan_request)를 Redis Streams(manager:to-planner:{sessionId})로 수신해 Claude API로 실행 가능한 Step[] 계획으로 분해하고, JSON 응답을 PlanResponseSchema.safeParse로 검증한 뒤 planner:to-manager로 발행하는 계획 에이전트. 정보 부족 시 clarification(info_request·UISpec form)을 반환한다.",
+        "repetitiveTasks": [
+          "Step/agentType enum 스키마 동기화: types.ts의 Step interface, runner.ts의 StepSchema(Zod), runner.ts SYSTEM_PROMPT 내 하드코딩된 agentType 목록, Manager plan-task.ts의 Step 타입 4곳을 항상 일관되게 수정",
+          "Claude JSON 응답 처리 분기마다 safeParse + fallback 경로 추가 및 대응 테스트 작성(clarification_needed, JSON 없음, JSON.parse 실패, 빈 steps, estimatedMinutes 범위 초과 등 엣지케이스)",
+          "BaseConsumer 확장 시 그룹명(planner-consumers)·스트림 접두(manager:to-planner)·스키마(ManagerToPlannerMessageSchema) 일치 확인",
+          "xreadgroup mock을 setImmediate macrotask 양보 패턴으로 작성하고 consumer.stop() 호출 타이밍을 조정해 OOM/무한루프 방지",
+          "독립 서비스이므로 테스트 전 xzawedShared(@xzawed/agent-streams) 사전 빌드",
+          "신규 agentType 추가 시 SYSTEM_PROMPT·StepSchema·types.ts·Manager 측 enum 동시 갱신 후 plan→manager→하위에이전트 디스패치 경로 영향 확인"
+        ],
+        "failurePatterns": [
+          "Step 스키마 4중 중복(types.ts·StepSchema·SYSTEM_PROMPT·Manager plan-task.ts)으로 한 곳만 수정해 enum/제약 불일치 발생 — 특히 SYSTEM_PROMPT의 agentType 목록은 타입 체크 대상이 아니라 누락되기 쉬움",
+          "dependencies 무결성 미검증: Step.dependencies가 존재하지 않는 step id를 참조하거나 순환 의존(cycle)을 형성해도 PlanResponseSchema 통과 → Manager가 데드락/오디스패치. DAG 검증 부재",
+          "JSON.parse() as Type 캐스트 사용 금지 위반 — 반드시 safeParse 경로 유지(CLAUDE.md 명시)",
+          "Redis 수신 메시지 safeParse 실패 시 xack 없이 skip하거나 예외로 프로세스 중단 → PEL 누수(try/finally xack 보장 규칙 위반)",
+          "xreadgroup mock을 즉시 resolve해 macrotask 큐 차단으로 stop() 미호출·OOM(블로킹 I/O mock 패턴 위반)",
+          "Claude가 SYSTEM_PROMPT를 무시하고 코드펜스(```json)·산문 혼합 응답을 반환해 indexOf('{')~lastIndexOf('}') 추출이 중첩 객체·배열에서 잘못 잘리는 케이스",
+          "WORKSPACE_ROOT 미주입/루트경로 주입 시 validateWorkspaceRoot 미통과 — 최근 커밋 b7576d6에서 Planner WORKSPACE_ROOT 미주입 P0 버그 실제 발생",
+          "estimatedMinutes 0초과·480 이하, steps 1~50개 제약을 SYSTEM_PROMPT가 안내하지 않아 검증 실패→fallback 단일 step으로 조용히 degrade"
+        ],
+        "trackA": [
+          {
+            "name": "/plan-schema-sync",
+            "kind": "command",
+            "purpose": "Step·agentType 스키마의 4개 정의처(types.ts Step, runner.ts StepSchema, runner.ts SYSTEM_PROMPT 내 enum 문자열, Manager plan-task.ts)를 비교해 enum값·필드·제약 불일치를 리포트. 특히 타입체크가 잡지 못하는 SYSTEM_PROMPT 하드코딩 agentType 누락을 감지",
+            "trigger": "Step/agentType/StepSchema 수정 작업 시 사용자가 호출",
+            "blocking": "n/a",
+            "value": 5,
+            "risk": 1,
+            "effort": 2
+          },
+          {
+            "name": "hook:plan-schema-drift-guard",
+            "kind": "hook",
+            "purpose": "runner.ts·types.ts·Manager plan-task.ts 편집 후 agentType enum 집합과 StepSchema 필드를 추출·대조해 SYSTEM_PROMPT 포함 4곳이 불일치하면 차단. post-edit 테스트 실행과 달리 cross-file 스키마 정합만 결정론적으로 강제",
+            "trigger": "PostToolUse, matcher: Edit|Write on xzawedPlanner/src/(types|claude/runner).ts 및 Manager plan-task.ts",
+            "blocking": "non-blocking",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "/plan-dag-check",
+            "kind": "command",
+            "purpose": "테스트 픽스처·생성 계획의 Step[]을 입력받아 dependencies가 모두 존재하는 step id를 참조하는지, 순환(cycle)이 없는지 위상정렬로 검증. PlanResponseSchema가 못 잡는 의미적 무결성 결함을 개발 중 조기 발견",
+            "trigger": "계획 분해 로직·테스트 작성 시 사용자가 호출",
+            "blocking": "n/a",
+            "value": 4,
+            "risk": 1,
+            "effort": 3
+          },
+          {
+            "name": "hook:claude-cast-guard",
+            "kind": "hook",
+            "purpose": "runner.ts에 'as PlanResponse'·'as Step'·'JSON.parse(...) as' 캐스트가 추가되면 차단(CLAUDE.md: safeParse 강제 규칙). mock-guard와 영역이 다름(mock 패턴이 아닌 unsafe 타입 캐스트 대상)",
+            "trigger": "PreToolUse, matcher: Edit|Write on xzawedPlanner/src/claude/runner.ts",
+            "blocking": "blocking",
+            "value": 3,
+            "risk": 2,
+            "effort": 2
+          }
+        ],
+        "trackB": [
+          {
+            "name": "plan-self-verify-skill",
+            "purpose": "계획 에이전트의 verify 단계 자가검증: 생성된 Step[]에 대해 (1)모든 dependencies가 존재 step 참조 (2)순환 의존 없음 (3)agentType이 실제 가용 에이전트(developer/designer/tester/builder/watcher/security)에 속함 (4)estimatedMinutes 합계 합리성을 검사하고 위반 시 1회 재생성. 핵심 루프 'take action→verify' 강화",
+            "applyPoint": "runner.generatePlan() PlanResponseSchema.safeParse 통과 직후, planner.handle()에서 producer.publish 전 검증 게이트",
+            "value": 5,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "clarification-decision-hook",
+            "purpose": "intent가 모호할 때 무리하게 fallback 단일 step으로 degrade하지 말고 clarification(info_request)을 선택하도록 강제하는 permissionDecision 훅. plan_complete 발행 전 intent 길이·context 충실도·생성 step 수가 임계 미만이면 defer해 clarification 경로로 유도. 조용한 1-step degrade(잘못된 계획) 방지",
+            "applyPoint": "planner.handle()에서 plan_complete vs info_request 분기 직전",
+            "value": 4,
+            "risk": 3,
+            "effort": 3
+          },
+          {
+            "name": "plan-prompt-constraint-injector",
+            "purpose": "SYSTEM_PROMPT에 estimatedMinutes(0~480)·steps(1~50)·dependencies 무결성·코드펜스 금지(순수 JSON만) 제약을 자동 주입해 검증 실패→fallback degrade 빈도를 줄이는 preload skill. agentType 목록을 단일 소스(StepSchema enum)에서 런타임 생성해 프롬프트-스키마 drift 제거",
+            "applyPoint": "ClaudeRunner 생성 시 SYSTEM_PROMPT 구성 단계",
+            "value": 4,
+            "risk": 2,
+            "effort": 2
+          },
+          {
+            "name": "manager-contract-readonly-subagent",
+            "purpose": "계획을 Manager로 발행하기 전, 가용 하위 에이전트 목록·각 에이전트가 수신 가능한 작업 유형(Manager 디스패치 계약)을 read-only(Read/Grep/Glob)로 조회해 생성 Step의 agentType·작업이 실제 디스패치 가능한지 교차검증하는 격리 subagent. 존재하지 않는 능력에 step 배정 방지",
+            "applyPoint": "planner.handle() 발행 직전 컨텍스트 수집 단계",
+            "value": 3,
+            "risk": 2,
+            "effort": 4
+          }
+        ]
+      },
+      {
+        "unit": "xzawedDeveloper",
+        "workSummary": "xzawedManager로부터 plan·projectPath를 받아 Claude로 FileChange[] JSON을 생성하고, workspaceRoot 경계 안에서만 파일을 생성·수정·삭제(.bak 리네임)하는 코드 생성 에이전트. 경로 검증(workspaceRoot 상한·상대경로 강제)과 LLM JSON 응답 파싱이 핵심 책임이다.",
+        "repetitiveTasks": [
+          "fileio.ts/runner.ts 변경 시 경로 탈출(절대경로·..·심볼릭링크) 방어가 3중(isFileChange parse-time, validatePath realpath, validateWorkspaceRoot)에서 모두 유지되는지 수동 점검",
+          "독립 서비스라 테스트 전 매번 ../xzawedShared 빌드(@xzawed/agent-streams) 선행",
+          "LLM JSON 파싱 경로(코드펜스 스트립·[]슬라이스·isFileChange 필터) 변경마다 runner.test.ts의 파싱 케이스 전수 회귀",
+          "applyChange의 임시파일(.tmp)·백업(.bak.{ts}) 명명 규칙과 cleanupOldBakFiles 정규식(/\\.bak\\.\\d+$/) 동기화 유지",
+          "Redis 수신 메시지 Zod 스키마(ManagerToDeveloperMessageSchema) 변경 시 Manager 측 develop-code.ts 발신부와 필드 정합성 확인",
+          "develop_request/abort/error 타입과 producer 발신 payload(artifacts/summary/content) 구조 일치 점검"
+        ],
+        "failurePatterns": [
+          "LLM 응답 파싱 실패 시 parseChanges가 조용히 [](빈배열) 반환 → 변경 0건인데 develop_complete로 성공 보고되는 침묵 실패(에러 로그·텔레메트리 부재)",
+          "경로 검증 우회: 새 코드 경로에서 path.resolve(workspaceRoot, filePath)·validateWorkspaceRoot 호출 누락 시 workspace 밖 쓰기 가능(보안 회귀)",
+          "블로킹 I/O(xreadgroup) mock을 즉시 resolve해 macrotask 차단·OOM 유발(setImmediate 미사용) — CLAUDE.md 명시 패턴",
+          "ioredis retryStrategy의 VITEST 가드 누락으로 테스트 이벤트 루프가 끝나지 않음",
+          "delete를 실제 unlink로 바꾸거나 .bak 명명 규칙을 변경해 cleanupOldBakFiles 정규식과 어긋나 백업 누적/미정리",
+          "handler try/finally xack 누락 시 핸들러 예외에서 PEL 누수",
+          "master 직접 커밋으로 SonarCloud New Code 기준 훼손"
+        ],
+        "trackA": [
+          {
+            "name": "/dev-path-guard-audit",
+            "kind": "command",
+            "purpose": "fileio.ts·runner.ts·developer.ts에서 경로 탈출 3중 방어(isFileChange 절대경로 거부, validatePath realpath+상대경로 검사, validateWorkspaceRoot, resolveWorkspaceRoot 사용)가 모두 존재하는지 정적 점검하고, 신규 fs.writeFile/rename 호출이 validatePath를 우회하지 않는지 리포트",
+            "trigger": "fileio·경로·workspaceRoot 관련 코드 수정 후 또는 PR 전 수동 호출",
+            "blocking": "n/a",
+            "value": 5,
+            "risk": 2,
+            "effort": 2
+          },
+          {
+            "name": "/dev-parse-fixtures",
+            "kind": "command",
+            "purpose": "runner.parseChanges에 대한 적대적 입력(코드펜스 변형, 텍스트 혼입 JSON, 부분 배열, 비배열, 절대경로 항목, content 누락)을 모아 회귀 케이스를 생성·실행해 '조용한 [] 반환'으로 인한 침묵 실패 영역을 가시화",
+            "trigger": "runner.ts 파싱 로직(extractJSON/parseChanges/isFileChange) 변경 시",
+            "blocking": "n/a",
+            "value": 4,
+            "risk": 1,
+            "effort": 3
+          },
+          {
+            "name": "hook:dev-shared-prebuild",
+            "kind": "hook",
+            "purpose": "xzawedDeveloper 테스트/빌드 Bash 실행 직전 ../xzawedShared dist 존재·최신 여부 확인, 누락 시 안내(또는 자동 빌드 권고)로 @xzawed/agent-streams 미빌드로 인한 테스트 실패 예방",
+            "trigger": "PreToolUse, matcher: Bash (pnpm test|pnpm build 명령, cwd가 xzawedDeveloper)",
+            "blocking": "non-blocking",
+            "value": 3,
+            "risk": 2,
+            "effort": 2
+          }
+        ],
+        "trackB": [
+          {
+            "name": "file-change-self-verify",
+            "purpose": "applyChange 적용 직후 각 artifact를 실제 read해 content 일치(create/modify)·.bak 존재(delete)를 검증하고, 불일치 또는 parseChanges가 0건인데 plan이 비어있지 않은 경우 develop_complete 대신 error/부분성공으로 보고 — '침묵 성공' 제거",
+            "applyPoint": "developer.ts handle() 루프의 applyFn 호출 직후 및 producer.publish 직전",
+            "value": 5,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "plan-aware-context-gather",
+            "purpose": "코드 생성 전 projectPath/workspaceRoot에서 수정 대상 인접 파일을 read-only(Read/Grep/Glob)로 표본 수집해 context에 주입, modify 시 기존 전체 내용을 모른 채 덮어쓰는 파괴적 전체 재작성을 줄임",
+            "applyPoint": "runner.generateChanges 호출 전 context 보강 단계(developer.ts)",
+            "value": 4,
+            "risk": 3,
+            "effort": 4
+          },
+          {
+            "name": "path-policy-deny-hook",
+            "purpose": "에이전트 파일 쓰기 액션에 대해 workspaceRoot 밖·절대경로·.. 포함 경로를 런타임 permissionDecision=deny로 결정론적 차단하는 훅(코드 검증과 독립된 2차 게이트)",
+            "applyPoint": "파일 적용 액션의 PreToolUse 상당 지점(applyChange 진입 전 정책 훅)",
+            "value": 4,
+            "risk": 2,
+            "effort": 2
+          },
+          {
+            "name": "empty-changeset-retry",
+            "purpose": "parseChanges가 [] 또는 비배열을 반환하면 1회 한정 '오직 JSON 배열만 반환' 보강 프롬프트로 재시도해 LLM 포맷 일탈로 인한 무변경 완료를 자동 복구",
+            "applyPoint": "runner.generateChanges 응답 파싱 직후(빈 결과 분기)",
+            "value": 3,
+            "risk": 2,
+            "effort": 2
+          }
+        ]
+      },
+      {
+        "unit": "xzawedDesigner",
+        "workSummary": "xzawedManager로부터 design_request를 Redis Streams로 수신해, Anthropic SDK로 intent를 재귀 ComponentSpec[] + UISpec(JSON)으로 변환·검증한 뒤 designer:to-manager 스트림으로 반환하는 UI 설계 에이전트. 파일 I/O 없이 LLM JSON 생성·파싱·Zod 검증·fallback이 핵심이다.",
+        "repetitiveTasks": [
+          "runner.ts SYSTEM_PROMPT의 JSON 예시, types.ts의 ComponentSpec/UISpec/DesignResponseSchema, Manager측 design-ui.ts의 componentSpecSchema/uiSpecSchema/outputSchema — 동일 계약을 3곳에서 수기 동기화",
+          "ComponentSpec 재귀 스키마 수정 시 z.lazy() + z.ZodType<ComponentSpec> 어노테이션 + children/cssClasses의 `| undefined`(exactOptionalPropertyTypes 호환) 패턴을 매번 재적용",
+          "parseResponse의 코드펜스 제거·{ }} 슬라이스·safeParse·fallback 분기에 대한 새 입력 케이스 테스트 추가(빈 배열/깨진 JSON/펜스/uiSpec 누락)",
+          "consumer/producer 테스트에서 xreadgroup mock으로 1회 메시지 주입 후 stop() 시키는 보일러플레이트 작성",
+          "xzawedShared 선빌드(pnpm build) 후 독립 서비스 테스트 실행",
+          "UISpec.type enum(mockup_viewer/form/progress_board) 추가 시 Manager·Designer 양측 enum 동기화"
+        ],
+        "failurePatterns": [
+          "parseResponse 실패 시 console.warn만 남기고 generic fallback({ name:'Component' })을 반환 — LLM 출력 품질 저하·프롬프트 회귀가 테스트 통과 상태로 은폐됨(silent degradation)",
+          "Designer↔Manager 계약(필드명·UISpec enum·required) 3중 정의 드리프트: 한쪽 스키마만 고치면 런타임에서 outputSchema default로 빈 컴포넌트가 조용히 통과",
+          "z.lazy() 재귀 스키마에서 z.ZodType<ComponentSpec> 어노테이션 누락 시 exactOptionalPropertyTypes 하에 tsc 컴파일 실패",
+          "CLAUDE.md 테스트 수치 드리프트(서비스 CLAUDE.md '26/26' vs 루트 '34/34')",
+          "블로킹 xreadgroup mock을 즉시 resolve해 macrotask 차단·OOM 유발(setImmediate 누락) — mock-guard.mjs가 일부 커버하나 신규 테스트에서 재발 가능",
+          "ManagerToDesignerMessage payload.intent의 max(4000)·context record 검증을 우회하는 신규 필드 추가 시 Zod safeParse 실패→xack skip으로 요청이 조용히 유실"
+        ],
+        "trackA": [
+          {
+            "name": "/designer-contract-sync",
+            "kind": "command",
+            "purpose": "Designer types.ts·runner.ts SYSTEM_PROMPT·Manager design-ui.ts 3곳의 ComponentSpec/UISpec 계약을 비교해 필드·UISpec enum·required 불일치를 리포트(읽기 전용 진단). 드리프트 위치를 정확히 지목해 수기 동기화 실수를 차단",
+            "trigger": "types.ts 또는 design-ui.ts 또는 SYSTEM_PROMPT 수정 후 사용자가 호출",
+            "blocking": "n/a",
+            "value": 5,
+            "risk": 1,
+            "effort": 3
+          },
+          {
+            "name": "hook:designer-contract-guard",
+            "kind": "hook",
+            "purpose": "types.ts/design-ui.ts 편집 시 양측 UISpec enum 값과 ComponentSpec 키 집합이 일치하는지 정규식 추출 후 비교, 불일치면 exit 2로 차단. 3중 계약 드리프트를 결정론적으로 방지",
+            "trigger": "PostToolUse, matcher: Edit/Write on xzawedDesigner/src/types.ts|xzawedDesigner/src/claude/runner.ts|xzawedManager/**/design-ui.ts",
+            "blocking": "blocking",
+            "value": 4,
+            "risk": 3,
+            "effort": 4
+          },
+          {
+            "name": "/designer-prompt-eval",
+            "kind": "command",
+            "purpose": "샘플 intent 세트(login form, dashboard 등)에 대해 runner.parseResponse를 fixture LLM 응답으로 돌려 fallback({name:'Component'}) 반환 여부를 카운트, silent degradation을 가시화. SYSTEM_PROMPT/parseResponse 변경 회귀 감지",
+            "trigger": "runner.ts 또는 SYSTEM_PROMPT 수정 후 사용자가 호출",
+            "blocking": "n/a",
+            "value": 4,
+            "risk": 1,
+            "effort": 3
+          },
+          {
+            "name": "hook:lazy-schema-annotation-guard",
+            "kind": "hook",
+            "purpose": "types.ts에 z.lazy( 추가/수정 시 동일 export에 `: z.ZodType<...>` 어노테이션과 optional 필드의 `| undefined`가 있는지 검사, 누락 시 exit 2. exactOptionalPropertyTypes tsc 실패를 편집 시점에 차단",
+            "trigger": "PostToolUse, matcher: Edit/Write on xzawedDesigner/src/types.ts",
+            "blocking": "blocking",
+            "value": 3,
+            "risk": 2,
+            "effort": 3
+          }
+        ],
+        "trackB": [
+          {
+            "name": "design-self-validate skill",
+            "purpose": "에이전트가 생성한 ComponentSpec[]을 반환 전 자가검증: DesignResponseSchema 통과 여부 + 각 props 값이 유효한 TS 타입 문자열인지 + children name 중복 없는지 점검. fallback로 떨어지기 전에 1회 재생성 유도해 generic Component 반환율 감소",
+            "applyPoint": "claude/runner.ts generateDesign — parseResponse 실패 또는 fallback 직전, 재시도 루프에 자가검증 단계 삽입",
+            "value": 5,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "design-system-conventions skill (preload)",
+            "purpose": "targetFramework·designSystem별 cssClasses 네이밍 규칙(tailwind utility vs shadcn vs material)과 표준 컴포넌트 prop 시그니처를 on-demand 지식으로 제공해, 임의 클래스명·일관성 없는 prop 타입 생성을 줄임",
+            "applyPoint": "designer.ts handle 진입 시 payload.designSystem에 맞는 규칙 skill을 preload하여 SYSTEM_PROMPT 보강",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "intent-context-gather hook",
+            "purpose": "design_request 처리 전 payload.context의 기존 컴포넌트/디자인토큰 정보를 정규화해 프롬프트에 주입(gather-context 단계 강화). context가 비면 Manager에 info_request 유도 신호 반환으로 빈약한 intent에서 fallback 남발 방지",
+            "applyPoint": "designer.ts handle 시작부 또는 Consumer onMessage 직전 PreToolUse 유사 훅",
+            "value": 3,
+            "risk": 3,
+            "effort": 3
+          },
+          {
+            "name": "uispec-type-router skill",
+            "purpose": "intent 의미(폼 입력/진행상황/목업)를 분석해 UISpec.type을 form/progress_board/mockup_viewer 중 적절히 선택하도록 라우팅 지식 제공 — 현재 대부분 mockup_viewer로 고정되는 편향 교정",
+            "applyPoint": "runner.ts SYSTEM_PROMPT 또는 parseResponse 후 uiSpec.type 보정 단계",
+            "value": 3,
+            "risk": 2,
+            "effort": 2
+          }
+        ]
+      },
+      {
+        "unit": "xzawedTester",
+        "workSummary": "xzawedManager로부터 프로젝트 경로·테스트 명령을 받아 spawn(shell:false)로 테스트를 실행하고, 출력을 파싱(passed/failed)한 뒤 실패 시 Claude로 TestFailure[]를 분석해 Redis Stream으로 반환하는 테스트 실행 에이전트. 핵심은 command allowlist·경로 검증·셸 메타문자 차단 등 명령 실행 보안 계층이다.",
+        "repetitiveTasks": [
+          "새 테스트 프레임워크/언어 지원 추가 시 detector.ts 3곳을 동시 수정: detectTestCommand의 의존성 매핑, tester.ts ALLOWED_PREFIXES, parseTestCounts 출력 정규식",
+          "parseTestCounts 정규식 유지보수 — Vitest/Jest/Cargo 출력 포맷별 패턴 추가·수정과 매칭 우선순위(Jest를 generic보다 먼저) 보장",
+          "명령 실행 보안 가드 수정 시 tester.ts(validateTestCommand)·detector.ts(buildCommandWithFiles)·executor.ts(validatePath/exec) 간 셸 메타문자 정규식·경로 정책 일관성 확인",
+          "executor.test.ts의 child_process·fs/promises mock 기반 SIGTERM/SIGKILL 타이머 테스트를 vi.useFakeTimers로 작성·갱신",
+          "xzawedShared 선빌드 후 pnpm test 실행 (validateWorkspaceRoot/resolveWorkspaceRoot/BaseConsumer 의존)",
+          "types.ts ManagerToTesterMessageSchema(Zod)와 Manager 측 run-tests.ts 페이로드 계약 동기화"
+        ],
+        "failurePatterns": [
+          "셸 메타문자 차단 정규식이 파일마다 분기됨 — tester.ts는 /[;&|`$><]/, detector.ts는 /[;&|`$><\\n\\r]/ 로 다름. 한쪽만 수정해 우회 경로 생김",
+          "ALLOWED_PREFIXES가 startsWith 기반이라 'pnpm test --reporter ...' 같은 추가 인자가 토큰별 검증 없이 통과 — allowlist 우회 위험",
+          "exec()가 command.trim().split(/\\s+/)로 단순 분리 — 공백 포함 경로/인용 인자가 깨지고, buildCommandWithFiles는 공백 경로를 아예 거부",
+          "detectTestCommand가 scripts.test를 신뢰하지 않고 의존성 기반 하드코딩 반환하는 규칙을 깜빡하고 scripts.test를 직접 쓰면 임의 명령 실행(RCE) 위험",
+          "블로킹 I/O mock 즉시 resolve로 macrotask 차단 → OOM (setImmediate 양보 필요, CLAUDE.md 명시)",
+          "fs.realpath mock 누락/순서 오류로 validatePath TOCTOU·심볼릭링크 테스트가 잘못 통과",
+          "테스트 출력 2000자 slice / parseTestCounts 정규식이 새 리포터 포맷에서 0/0 오판"
+        ],
+        "trackA": [
+          {
+            "name": "hook:tester-cmd-guard-consistency",
+            "kind": "hook",
+            "purpose": "tester.ts·detector.ts·executor.ts 중 명령 실행 보안 코드(ALLOWED_PREFIXES, 셸 메타문자 정규식 /[;&|`$><]/, validateTestCommand, buildCommandWithFiles, spawn 호출)를 편집하면, 세 파일의 메타문자 정규식·경로 정책 일관성과 spawn(shell:true)·scripts.test 직접 사용 같은 금지 패턴을 차단. CLAUDE.md 보안 원칙(spawn shell:false, allowlist, scripts.test 불신)을 결정론적으로 강제",
+            "trigger": "PreToolUse Edit/Write matcher: xzawedTester/src/(tester|detector|executor).ts",
+            "blocking": "blocking",
+            "value": 5,
+            "risk": 3,
+            "effort": 3
+          },
+          {
+            "name": "/tester-parse-check",
+            "kind": "command",
+            "purpose": "붙여넣은 테스트 러너 원본 출력(Vitest/Jest/Cargo/pytest 등)을 parseTestCounts에 통과시켜 passed/failed 추출 결과와 매칭된 정규식을 보여주고, 0/0 오판·Jest의 Test Suites 라인 오매칭 등을 진단. 새 프레임워크 지원 추가 전 회귀 검증",
+            "trigger": "개발자가 새 러너 출력 포맷 지원·parseTestCounts 정규식 수정 시 수동 호출",
+            "blocking": "n/a",
+            "value": 4,
+            "risk": 1,
+            "effort": 2
+          },
+          {
+            "name": "/tester-framework-add",
+            "kind": "command",
+            "purpose": "새 테스트 프레임워크/언어 추가 시 detectTestCommand 의존성 매핑·ALLOWED_PREFIXES·parseTestCounts 정규식·해당 detector.test.ts 케이스 4지점을 체크리스트로 안내·생성해 한 곳 누락(특히 allowlist 미추가로 'not allowed' 에러)을 방지",
+            "trigger": "새 프레임워크 지원 작업 시작 시 수동 호출",
+            "blocking": "n/a",
+            "value": 4,
+            "risk": 2,
+            "effort": 2
+          }
+        ],
+        "trackB": [
+          {
+            "name": "command-allowlist-defer-hook",
+            "purpose": "런타임 Tester 에이전트가 LLM 분석 결과로 후속 명령을 제안하더라도, 실제 spawn 직전 validateTestCommand+토큰별 allowlist를 PreToolUse 성격으로 재검증해 allowlist 외 명령·셸 메타문자를 deny. 코드 단의 startsWith 우회를 런타임 게이트로 보강",
+            "applyPoint": "tester.ts exec() 호출 직전 / executor.ts spawn 직전 검증 미들웨어",
+            "value": 5,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "failure-analysis-self-verify",
+            "purpose": "ClaudeRunner.analyzeFailures가 반환한 TestFailure[]를 자가검증: 각 file 경로가 실제 테스트 출력/workspace에 존재하는지, failed 카운트와 분석된 실패 개수가 일치하는지 확인 후 불일치 시 재분석. 핵심 루프 gather→action→verify의 verify 단계 강화",
+            "applyPoint": "tester.ts handle()에서 analyzeFailures 직후, producer.publish 이전",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "test-output-failure-summarizer",
+            "purpose": "2000자 slice 대신 실패 블록 우선 추출(스택트레이스·assertion diff 중심)로 압축하는 preload Skill을 Tester 에이전트에 부여해, 잘린 출력으로 인한 실패 누락·Claude 분석 컨텍스트 손실을 줄임",
+            "applyPoint": "runner.ts analyzeFailures 입력 구성 단계(output.slice(0,8000) 전처리)",
+            "value": 3,
+            "risk": 2,
+            "effort": 2
+          }
+        ]
+      },
+      {
+        "unit": "xzawedBuilder",
+        "workSummary": "xzawedManager로부터 빌드 요청(projectPath·target·선택적 command)을 받아 spawn(shell:false)로 빌드를 실행하고 stdout/stderr를 실시간 스트리밍하며, 실패 시 Claude로 빌드 로그를 분석해 BuildError[]를 반환하는 빌드 에이전트. command allowlist·셸 메타문자 차단·WORKSPACE_ROOT 경로 검증이 핵심 보안 책임이다.",
+        "repetitiveTasks": [
+          "builder.ts ALLOWED_PREFIXES 배열에 새 빌드 도구(예: bun, deno, esbuild) prefix 추가 + 단어경계(prefix+' ') 일치 로직·셸 메타문자 정규식 동시 점검",
+          "detector.ts detectAt()에 새 빌드 파일(예: build.gradle.kts, pom.xml) 감지 분기 추가 시 detectBuildInfo 상향탐색 루프와 하드코딩 command 매핑 동기화",
+          "builder.test.ts에서 validatePath.mockResolvedValueOnce를 projectPath→detected.buildRoot→pre-install 순서로 정확히 3회 체이닝하는 mock 셋업(순서 어긋나면 테스트 깨짐)",
+          "executor.test.ts에서 makeMockProc로 spawn child_process EventEmitter mock 구성 + setImmediate로 data/close 이벤트 발행 재현",
+          "신규 빌드 명령 추가 시 executor exec()가 spawn(bin,args,{shell:false})로 분해 실행 가능한지(공백 split 안전) 확인",
+          "xzawedShared 선빌드(pnpm build) 후 xzawedBuilder pnpm test 실행",
+          "pre-install 커맨드(pnpm install --frozen-lockfile / npm ci)에 --ignore-scripts 유지 확인",
+          "types.ts ManagerToBuilderMessageSchema(Zod)와 BuilderToManagerMessage 인터페이스를 Manager 측 build-project.ts와 동기 유지"
+        ],
+        "failurePatterns": [
+          "command allowlist 우회: 새 prefix를 단어경계(prefix===cmd || startsWith(prefix+' ')) 없이 추가하면 'pnpmbuild-arbitrary' 같은 prefix 연결 공격 허용 — 이미 회귀 테스트 존재(builder.test.ts:119)",
+          "셸 메타문자 정규식 /[;&|`$><]/ 누락 항목(예: 개행 \\n, 따옴표) — shell:false라도 detector/command 합성 시 인젝션 표면 잔존",
+          "validatePath 다중 호출(3회 defence-in-depth) 중 하나를 리팩터링에서 누락 → detector가 반환한 buildRoot나 pre-install cwd로의 디렉토리 traversal 재개통",
+          "detector.ts가 package.json scripts.build를 신뢰해 읽으면 보안 규칙 위반(하드코딩 의존성 기반 command만 허용) — CLAUDE.md 명시 금지사항",
+          "executor.test/builder.test에서 vi.mock('@xzawed/agent-streams') 스텁 누락 시 validateWorkspaceRoot 실제 호출로 테스트 환경 오류",
+          "exec mock에서 close 이벤트를 즉시(동기) 발행하면 타임아웃/SIGKILL 타이머 로직 검증 불가 — setImmediate macrotask 양보 필요(CLAUDE.md 블로킹 I/O mock 규칙과 동일 맥락)",
+          "pre-install 커맨드에서 --ignore-scripts 누락 시 빌드 대상 프로젝트의 악성 postinstall 스크립트 실행(공급망 위험)",
+          "stripPackageManagerField가 packageManager 필드 제거 시 임시파일 rename 패턴을 깨뜨리면 원자성 손실로 package.json 손상",
+          "xzawedShared 선빌드 누락 시 @xzawed/agent-streams import 해석 실패로 전체 빌드/테스트 깨짐"
+        ],
+        "trackA": [
+          {
+            "name": "/builder-allowlist-audit",
+            "kind": "command",
+            "purpose": "builder.ts ALLOWED_PREFIXES·셸 메타문자 정규식·detector.ts detectAt 하드코딩 command를 한꺼번에 추출해 표로 보여주고, 각 prefix가 단어경계 일치 로직으로 보호되는지·메타문자 정규식이 새 항목을 커버하는지·detector가 package.json scripts를 읽지 않는지 점검 가이드를 출력",
+            "trigger": "빌드 도구/감지 분기 추가·수정 작업 착수 시 사용자가 호출",
+            "blocking": "n/a",
+            "value": 4,
+            "risk": 1,
+            "effort": 2
+          },
+          {
+            "name": "hook:builder-detector-script-trust-guard",
+            "kind": "hook",
+            "purpose": "detector.ts 편집 시 package.json의 scripts.build를 읽어 command로 쓰는 패턴(예: pkg.scripts, readFile('package.json') 후 .scripts 접근)을 감지해 보안 규칙(하드코딩 의존성 기반 command만 허용) 위반을 차단",
+            "trigger": "PreToolUse, matcher: Edit/Write/MultiEdit on xzawedBuilder/src/detector.ts",
+            "blocking": "blocking",
+            "value": 4,
+            "risk": 2,
+            "effort": 2
+          },
+          {
+            "name": "hook:builder-ignore-scripts-guard",
+            "kind": "hook",
+            "purpose": "builder.ts/executor.ts 편집 시 pre-install 또는 install 계열 명령 문자열에 --ignore-scripts가 빠진 'pnpm install'/'npm ci'가 추가되면 공급망 위험으로 차단(Dockerfile S6505와 동일 취지의 런타임 install 버전)",
+            "trigger": "PreToolUse, matcher: Edit/Write on xzawedBuilder/src/builder.ts·executor.ts",
+            "blocking": "blocking",
+            "value": 3,
+            "risk": 2,
+            "effort": 2
+          },
+          {
+            "name": "/builder-exec-mock",
+            "kind": "command",
+            "purpose": "executor/builder 테스트 작성 시 makeMockProc(EventEmitter+setImmediate data/close)와 validatePath.mockResolvedValueOnce 3회 체이닝 순서(projectPath→detected.buildRoot→pre-install) 스캐폴드를 생성해 fragile mock 셋업 실수를 예방",
+            "trigger": "executor.test.ts·builder.test.ts 신규 케이스 작성 시 사용자가 호출",
+            "blocking": "n/a",
+            "value": 3,
+            "risk": 1,
+            "effort": 2
+          }
+        ],
+        "trackB": [
+          {
+            "name": "build-command-allowlist-skill",
+            "purpose": "런타임 빌드 에이전트가 command 결정 시 ALLOWED_PREFIXES·셸 메타문자 차단·단어경계 규칙을 일관 적용하도록 하는 on-demand 배경지식 스킬(가끔만 필요한 보안 규칙을 builder.ts 상수에서 분리해 참조)",
+            "applyPoint": "Builder.handle() command 검증 단계(validateBuildCommand 호출 직전 컨텍스트)",
+            "value": 3,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "build-failure-self-verify-hook",
+            "purpose": "분석 루프 종료 전 ClaudeRunner.analyzeBuildFailure가 반환한 BuildError[]의 file/line이 실제 빌드 로그 라인과 정합한지 자가검증(verify work 단계)하여 환각된 파일경로·suggestion 발행을 차단",
+            "applyPoint": "runner.analyzeBuildFailure 반환 후 producer.publish(build_complete) 직전",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "path-traversal-deny-hook",
+            "purpose": "빌드 에이전트가 spawn 실행하려는 cwd(buildRoot)와 모든 파일 I/O 경로가 resolveWorkspaceRoot 결과 하위인지 런타임 hook permissionDecision으로 deny 우선 강제 — validatePath 3중 호출의 결정론적 백스톱",
+            "applyPoint": "executor.exec spawn 직전 + stripPackageManagerField/runPreInstall의 fs 접근 경로",
+            "value": 5,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "build-timeout-stream-monitor",
+            "purpose": "장시간 빌드 시 build_progress 스트림 정체(무출력)를 감지해 SIGTERM→SIGKILL 유예(armKillFallback)와 별개로 조기 진단 메시지를 발행, 행(hang) 빌드를 빠르게 식별",
+            "applyPoint": "executor.exec OutputCollector.feed 무활동 타이머",
+            "value": 3,
+            "risk": 3,
+            "effort": 4
+          }
+        ]
+      },
+      {
+        "unit": "xzawedWatcher",
+        "workSummary": "xzawedManager로부터 watch_request를 받아 chokidar로 파일 변경을 감지하고 per-file 디바운스 후 watcher:to-manager 스트림으로 이벤트를 발행하는 파일 감시 에이전트. Claude API 미사용, 순수 FS 이벤트 처리이며 glob 절대경로·'..' 차단을 Zod와 런타임에서 이중으로 강제한다.",
+        "repetitiveTasks": [
+          "triggers glob 보안 규칙을 Zod refine(types.ts)과 watcher.ts 런타임 filter 두 곳에 동시 반영·동기화",
+          "chokidar 옵션(ignored, ignoreInitial, followSymlinks:false, persistent) 추가·변경 시 보안·동작 영향 검토",
+          "디바운스 타이머 생명주기(생성/clearTimeout/Map 정리)를 watcher.ts와 watcher-store.ts 양쪽에서 일관 유지",
+          "fire-and-forget publish 호출마다 .catch()로 publish 실패 로깅 추가",
+          "fake timers + advanceTimersByTimeAsync(debounceMs) 기반 디바운스 테스트 작성",
+          "vi.hoisted + vi.mock('chokidar') mock 인스턴스(on/close) 세팅",
+          "WORKSPACE_ROOT/MAX_WATCHERS/DEBOUNCE_MS 환경변수 추가 시 config.ts Zod와 CLAUDE.md 표 동기화",
+          "독립 서비스이므로 테스트 전 xzawedShared 선빌드(pnpm build)"
+        ],
+        "failurePatterns": [
+          "블로킹 I/O(XREADGROUP BLOCK) mock을 즉시 resolve해 macrotask 큐 차단 → OOM (setImmediate 양보 누락)",
+          "glob 보안 규칙을 Zod에만 추가하고 watcher.ts 런타임 filter는 누락(또는 그 반대)해 defense-in-depth 깨짐",
+          "chokidar cwd 옵션이 절대경로 항목에 적용되지 않는 점을 잊고 Zod 차단을 빼서 워크스페이스 외부 감시 허용",
+          "디바운스 타이머를 remove/stop 시 clearTimeout하지 않아 중지 후에도 file_changed 발행되는 누수",
+          "MAX_WATCHERS 용량 체크를 chokidar.watch 생성 이후에 두어 watcher 누수 race 발생",
+          "fire-and-forget publish에 .catch() 누락으로 unhandled rejection",
+          "followSymlinks:false / ignoreInitial:true 등 보안·소음 방지 기본값을 변경해 회귀",
+          "ioredis 테스트 환경 retryStrategy 미설정으로 이벤트 루프가 살아남아 테스트 hang"
+        ],
+        "trackA": [
+          {
+            "name": "hook:trigger-glob-dual-guard",
+            "kind": "hook",
+            "purpose": "types.ts의 Zod refine(절대경로·'..' 차단)와 watcher.ts의 safeTriggers 런타임 filter가 둘 다 존재하는지 검사. 한쪽만 수정해 defense-in-depth가 깨지면 차단. 이 서비스 고유의 이중 차단 불변식을 결정론적으로 보장.",
+            "trigger": "PostToolUse, matcher: Edit/Write on xzawedWatcher/src/(types|watcher).ts",
+            "blocking": "blocking",
+            "value": 5,
+            "risk": 2,
+            "effort": 2
+          },
+          {
+            "name": "hook:timer-leak-guard",
+            "kind": "hook",
+            "purpose": "watcher.ts/watcher-store.ts 편집 시 setTimeout 추가에 대응하는 clearTimeout과 timers.delete/clear가 동일 변경에 포함됐는지 휴리스틱 검사. 중지 후 이벤트 발행·타이머 누수 회귀를 사전 경고.",
+            "trigger": "PostToolUse, matcher: Edit on watcher.ts|watcher-store.ts",
+            "blocking": "non-blocking",
+            "value": 4,
+            "risk": 3,
+            "effort": 3
+          },
+          {
+            "name": "/watcher-chokidar-audit",
+            "kind": "command",
+            "purpose": "chokidar.watch 옵션(ignored node_modules/.git, ignoreInitial, followSymlinks:false, persistent, cwd) 및 cwd 절대경로 우회 리스크를 체크리스트로 점검. 옵션 변경 PR 전 보안·소음 회귀 방지 가이드 제공.",
+            "trigger": "watcher.ts의 chokidar 옵션 변경 후 PR 직전 수동 호출",
+            "blocking": "n/a",
+            "value": 4,
+            "risk": 1,
+            "effort": 2
+          },
+          {
+            "name": "/watcher-debounce-test",
+            "kind": "command",
+            "purpose": "이 서비스의 표준 디바운스 테스트 골격(vi.hoisted chokidar mock + useFakeTimers + advanceTimersByTimeAsync + getRegisteredHandler) 스캐폴드를 생성. 새 이벤트 타입/디바운스 케이스 추가 시 반복 보일러플레이트 제거.",
+            "trigger": "새 watcher 이벤트·디바운스 테스트 작성 시 수동 호출",
+            "blocking": "n/a",
+            "value": 3,
+            "risk": 1,
+            "effort": 2
+          }
+        ],
+        "trackB": [
+          {
+            "name": "watch-self-verify-hook",
+            "purpose": "watch_started 발행 후 chokidar ready 이벤트 또는 짧은 헬스 핑으로 감시가 실제 활성인지 자가검증하고, 실패 시 watch_started 대신 error 발행. 'take action → verify' 루프를 런타임에 적용해 Manager에 거짓 watch_started 보고 방지.",
+            "applyPoint": "watcher.ts handle()의 store.add 직후, watch_started publish 직전",
+            "value": 4,
+            "risk": 3,
+            "effort": 3
+          },
+          {
+            "name": "event-storm-throttle-skill",
+            "purpose": "대량 동시 파일 변경(예: git checkout, 빌드 산출물) 시 per-file 디바운스만으로는 발생하는 file_changed 폭주를 세션 단위 배치/상한으로 묶어 Manager·Redis 부하를 줄이는 적응형 throttle 메커니즘. 이 서비스 고유의 이벤트 스트리밍 부하 특성 대응.",
+            "applyPoint": "watcher.ts queueEvent의 publish 경로(세션 레벨 배칭 레이어 삽입)",
+            "value": 4,
+            "risk": 3,
+            "effort": 4
+          },
+          {
+            "name": "capacity-pressure-skill",
+            "purpose": "MAX_WATCHERS 근접 시 가장 오래된 유휴 감시 세션을 식별·정리하거나 Manager에 백프레셔를 알려 신규 watch_request 거부 대신 우아한 강등을 수행. 용량 초과 에러 빈발 대신 운영 안정성 확보.",
+            "applyPoint": "watcher.ts 용량 사전 체크 분기 및 WatcherStore",
+            "value": 3,
+            "risk": 3,
+            "effort": 3
+          }
+        ]
+      },
+      {
+        "unit": "xzawedSecurity",
+        "workSummary": "xzawedManager로부터 audit_request를 받아 OWASP 정적 규칙 스캔(S001-S022, 7개 규칙 파일), npm/pnpm audit 의존성 검사, Claude AI 분석을 Promise.allSettled로 병렬 실행하고 보안 점수·필터링된 이슈를 security:to-manager로 반환하는 보안 감사 에이전트.",
+        "repetitiveTasks": [
+          "새 OWASP 정적 규칙 추가 — 적절한 static-*.ts에 StaticRule 객체 작성 + 순차 ID(S0NN) 부여 + static.ts의 ALL_RULES 스프레드 합류 확인 + 탐지 테스트와 clean-code 오탐 방지 테스트 한 쌍 작성",
+          "정규식 패턴 오탐(false positive) 튜닝 — S009(origin:*), S021(req.user), S001(password 리터럴), S020(인증 누락 라우트) 등 광범위 패턴의 정상 코드 매칭 검증",
+          "CLAUDE.md 정적 규칙 표 동기화 — 현재 S001-S005만 문서화되어 있고 S006-S022(crypto/config/injection/traversal/xss/access)가 누락된 상태 갱신",
+          "deps.ts npm/pnpm audit 출력 파싱 유지보수 — audit가 취약점 발견 시 비정상 종료코드를 내므로 catch의 e.stdout도 파싱, severity 매핑(moderate→medium) 유지",
+          "분석기 독립성 보장 — security.ts의 Promise.allSettled 결과 처리에서 신규 분석기 추가 시 인덱스 기반 분기 갱신 및 전체 실패 가드 유지",
+          "xzawedShared 선빌드 후 테스트 실행(@xzawed/agent-streams 의존), 신규 규칙 ID 중복·누락 검증"
+        ],
+        "failurePatterns": [
+          "exactOptionalPropertyTypes로 인해 cwe 등 optional 필드를 객체 리터럴에 직접 넣으면 tsc 오류 — buildIssue처럼 `if (rule.cwe !== undefined) issue.cwe = rule.cwe` 조건부 할당 필수(static.ts:149, deps.ts:120)",
+          "신규 규칙 추가 시 static-*.ts에는 작성했으나 static.ts의 ALL_RULES 스프레드에 합류시키지 않아 규칙이 실제로 실행되지 않는 누락",
+          "정규식 오탐 — 패턴이 넓어 정상 코드를 취약점으로 잘못 보고하면 score가 부당히 깎임. 매 규칙마다 negative(clean-code) 테스트 없이 추가 시 회귀",
+          "deps 테스트 mock hoisting 오류 — vi.fn() 팩토리 내부 사용 후 vi.mocked(execFile)로 접근하지 않으면 hoisting 충돌(CLAUDE.md 명시)",
+          "npm/pnpm audit가 취약점 발견 시 nonzero exit → catch에서 e.stdout 파싱 누락 시 모든 결과 유실(d1cc293 회귀 이력)",
+          "validatePath TOCTOU — fs.realpath 후 검증 경계 우회 가능성(d1cc293에서 수정된 이력), 신규 파일 접근 코드에 validatePath 미적용",
+          "Claude runner 타임아웃 타이머 누수 — Promise.race 타이머를 finally의 clearTimeout으로 정리하지 않으면 메모리 누수(#176 Phase 3 수정 이력)",
+          "ID 충돌·비순차 — S001-S022 중 기존 ID 재사용 또는 건너뜀 시 issue.id 충돌·추적성 저하"
+        ],
+        "trackA": [
+          {
+            "name": "/security-rule-add",
+            "kind": "command",
+            "purpose": "새 OWASP 정적 규칙을 일관되게 추가하는 스캐폴딩: 다음 사용 가능한 S0NN ID 자동 산출, 카테고리에 맞는 static-*.ts에 StaticRule 객체 삽입, static.ts의 ALL_RULES 합류 확인, 탐지+clean-code 테스트 쌍 템플릿 생성, CLAUDE.md 규칙 표 행 추가까지 한 번에 안내",
+            "trigger": "개발자가 새 보안 탐지 규칙을 추가하려 할 때 호출",
+            "blocking": "n/a",
+            "value": 5,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "hook:static-rule-integrity",
+            "kind": "hook",
+            "purpose": "static-*.ts 또는 static.ts 편집 후 규칙 무결성 자동 검증: (1)모든 EXPORT된 *_RULES가 static.ts의 ALL_RULES에 합류되었는지, (2)규칙 ID(S0NN) 중복·gap 없는지, (3)각 규칙에 대응하는 *.test.ts 탐지 테스트 존재 여부를 검사. 위반 시 차단",
+            "trigger": "PostToolUse, matcher: Edit/Write on xzawedSecurity/src/analyzers/static*.ts (PostToolUse는 차단 불가이므로 stderr 경고+exit2 대신 비차단 경고)",
+            "blocking": "non-blocking",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "/security-rule-falsepositive",
+            "kind": "command",
+            "purpose": "규칙 정규식을 입력하면 services 모노레포의 실제 소스(특히 깨끗한 코드)에 대해 시범 스캔을 돌려 오탐 후보를 표본 추출. S009/S020/S021처럼 넓은 패턴의 false-positive율을 추가 전에 사전 점검",
+            "trigger": "새 규칙 정규식 작성 직후 또는 기존 규칙 튜닝 시 호출",
+            "blocking": "n/a",
+            "value": 4,
+            "risk": 1,
+            "effort": 3
+          },
+          {
+            "name": "hook:cwe-optional-guard",
+            "kind": "hook",
+            "purpose": "analyzers/deps.ts·static.ts 편집 시 optional 필드(cwe/line)를 객체 리터럴에 직접 할당하는 패턴을 감지하고 조건부 할당(`if (x !== undefined)`)으로 유도. exactOptionalPropertyTypes tsc 오류를 커밋 전 차단",
+            "trigger": "PreToolUse, matcher: Edit on xzawedSecurity/src/**/*.ts",
+            "blocking": "blocking",
+            "value": 3,
+            "risk": 3,
+            "effort": 2
+          }
+        ],
+        "trackB": [
+          {
+            "name": "static-then-claude self-verify",
+            "purpose": "ClaudeRunner의 분석 결과를 결정론적 정적 규칙 결과와 교차검증하는 자가검증 루프: Claude가 보고한 CL-* 이슈 중 정적 규칙으로 재현 불가능하고 신뢰도 낮은 항목은 신뢰도 태그를 낮춰 점수 왜곡 방지. gather(정적+deps)→action(claude)→verify(교차대조) 패턴",
+            "applyPoint": "security.ts handle() — Promise.allSettled 결과 병합 직후, calculateScore 이전 단계",
+            "value": 4,
+            "risk": 3,
+            "effort": 4
+          },
+          {
+            "name": "rule-pack preload skill",
+            "purpose": "감사 요청의 artifacts 확장자/프레임워크(React·Fastify·SQL 등)를 감지해 관련 규칙 카테고리 컨텍스트(traversal·xss·access-control)와 CWE 매핑 지식을 Claude runner 시작 시 preload, OWASP 분류 정확도와 suggestion 품질 향상",
+            "applyPoint": "claude/runner.ts analyzeArtifacts() — SYSTEM_PROMPT 구성 시 파일 유형별 컨텍스트 주입",
+            "value": 3,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "audit-bound permission hook",
+            "purpose": "deps 분석기가 실행하는 명령을 npm/pnpm `audit`로만 제한하는 런타임 permissionDecision 훅: validatePath를 통과한 projectPath 경계 내에서만 execFile 허용하고 audit 외 서브커맨드는 deny. 공급망 분석 중 임의 명령 실행 차단",
+            "applyPoint": "deps.ts runNpmAudit/runPnpmAudit의 execFileAsync 호출 전 — 에이전트 tool 권한 게이트",
+            "value": 4,
+            "risk": 2,
+            "effort": 3
+          },
+          {
+            "name": "severity-budget verifier",
+            "purpose": "calculateScore·filterBySeverity 출력이 요청 severity 임계값과 일관되는지(필터된 이슈가 모두 minSeverity 이상인지, 점수 공식 일치) 발행 직전 검증하는 verify 단계. 잘못된 점수·누락 이슈로 Manager 파이프라인 오판 방지",
+            "applyPoint": "security.ts producer.publish 직전 audit_complete payload 검증",
+            "value": 3,
+            "risk": 1,
+            "effort": 2
+          }
+        ]
+      }
+    ],
+    "review": {
+      "trackA_prioritized": [
+        {
+          "name": "/contract-drift-check",
+          "kind": "command",
+          "scope": "implement",
+          "appliesTo": [
+            "xzawedPlanner",
+            "xzawedDesigner",
+            "xzawedManager",
+            "xzawedOrchestrator"
+          ],
+          "purpose": "여러 서비스의 cross-file 계약 드리프트를 읽기전용 진단으로 통합 검증: (1)Planner Step/agentType 4정의처(types.ts·StepSchema·SYSTEM_PROMPT enum·Manager plan-task.ts), (2)Designer ComponentSpec/UISpec 3정의처(types.ts·SYSTEM_PROMPT·design-ui.ts), (3)Orchestrator IPC 3자 계약(preload·electron.d.ts·main). tsc가 못 잡는 SYSTEM_PROMPT 하드코딩 enum·IPC 채널 문자열 불일치를 지목.",
+          "value": 5,
+          "risk": 1,
+          "effort": 3,
+          "rationale": "원본 후보 /plan-schema-sync·/designer-contract-sync·/ipc-contract-check 3건은 모두 '3~4곳에 분산된 계약을 정규식 추출 후 대조'라는 동일 패턴 → 단일 서브커맨드로 병합. value 모두 5, risk 1. 읽기전용이라 부작용 없음. 기존 sonar-check/pr-ready는 빌드·중복·i18n만 보고 cross-file 의미 계약은 사각지대 → 명확한 비중복."
+        },
+        {
+          "name": "/dev-path-guard-audit",
+          "kind": "command",
+          "scope": "implement",
+          "appliesTo": [
+            "xzawedDeveloper",
+            "xzawedBuilder",
+            "xzawedTester"
+          ],
+          "purpose": "파일 I/O·명령 실행 서비스의 경로/명령 방어 불변식이 모두 존재하는지 읽기전용 정적 점검: validatePath realpath+상대경로, validateWorkspaceRoot/resolveWorkspaceRoot 사용, 신규 fs.writeFile/rename이 validatePath 우회 안하는지, spawn(shell:false)·ALLOWED_PREFIXES allowlist·셸 메타문자 정규식 일관성.",
+          "value": 5,
+          "risk": 1,
+          "effort": 2,
+          "rationale": "Developer /dev-path-guard-audit + Builder /builder-allowlist-audit + Tester 보안 점검 의도를 하나의 읽기전용 보안 감사 커맨드로 통합. CLAUDE.md 보안 아키텍처 원칙(경로 검증·명령 실행)을 직접 코드화. 기존 자산에 경로·spawn 보안 진단은 전무 → 비중복. 읽기전용·저노력."
+        },
+        {
+          "name": "/security-rule-add",
+          "kind": "command",
+          "scope": "implement",
+          "appliesTo": [
+            "xzawedSecurity"
+          ],
+          "purpose": "새 OWASP 정적 규칙 추가 스캐폴딩: 다음 S0NN ID 산출, 카테고리별 static-*.ts에 StaticRule 삽입, static.ts ALL_RULES 합류 확인, 탐지+clean-code 테스트 쌍 생성, CLAUDE.md 규칙표 행 추가까지 안내.",
+          "value": 5,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "Security 고유 4지점 누락(특히 ALL_RULES 미합류·ID gap)을 한 번에 방지. /security-rule-falsepositive를 보조 단계로 흡수 가능. 부작용(파일 생성)이 있어 SKILL frontmatter disable-model-invocation:true 권장. 기존 자산과 비중복. risk 2는 코드 생성 동반이나 안내 위주라 implement 가능."
+        },
+        {
+          "name": "/tester-parse-check",
+          "kind": "command",
+          "scope": "implement",
+          "appliesTo": [
+            "xzawedTester"
+          ],
+          "purpose": "테스트 러너 원본 출력(Vitest/Jest/Cargo/pytest)을 parseTestCounts에 통과시켜 추출 결과·매칭 정규식을 보여주고 0/0 오판·Jest Test Suites 오매칭을 진단. 새 프레임워크 지원 전 회귀 검증.",
+          "value": 4,
+          "risk": 1,
+          "effort": 2,
+          "rationale": "/tester-framework-add(4지점 체크리스트)를 흡수해 '정규식 진단+추가 가이드' 단일 커맨드화. 읽기전용 진단, 저위험. parseTestCounts 침묵 오판은 실제 회귀원. 기존 자산 무관."
+        },
+        {
+          "name": "hook:redis-xack-guard",
+          "kind": "hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedManager",
+            "xzawedShared"
+          ],
+          "purpose": "streams/*.ts·redis-agent-handler.ts·base-consumer.ts·session-dispatcher.ts 편집 시 handler(msg)/onMessage 호출이 try/finally 내 xack로 귀결되는지, catch에서 xack 없이 return하지 않는지 정적 점검. PEL 누수(CLAUDE.md 필수 규칙) 비차단 경고.",
+          "value": 5,
+          "risk": 2,
+          "effort": 4,
+          "rationale": "원본 hook:redis-xack-guard + /xack-invariant-check를 병합. value 5(라이브러리 최대 회귀원). 단 정확한 정적 분기 분석(continue/early return/예외 경로 모두 xack 귀결)은 정규식으로는 오탐·미탐이 크고 AST 분석 필요 → effort 4, propose. PostToolUse는 차단 불가이므로 비차단 경고로만 설계. 우선 /xack-invariant-check 커맨드로 시작 권장."
+        },
+        {
+          "name": "/manager-cpd-check",
+          "kind": "command",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedManager"
+          ],
+          "purpose": "7개 RedisAgentHandler 팩토리 등 manager CPD 단골 파일에 jscpd를 좁게 실행해 신규 중복 사전 탐지.",
+          "value": 3,
+          "risk": 1,
+          "effort": 2,
+          "rationale": "기존 /sonar-check·/pr-ready·pre-commit.mjs가 이미 jscpd 전체 실행(threshold 0). '좁게 실행'은 차별점 미약·누락 위험만 추가 → 중복으로 defer."
+        },
+        {
+          "name": "/runner-loop-review",
+          "kind": "command",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedManager"
+          ],
+          "purpose": "runner.ts 변경 시 stop_reason 분기·빈 toolResults 가드·MAX_ITERATIONS·CLAUDE_CALL_TIMEOUT·block.input 검증 누락 점검과 회귀 테스트 존재 확인.",
+          "value": 3,
+          "risk": 1,
+          "effort": 2,
+          "rationale": "단일 파일 한정 체크리스트로 범용성 낮음. 읽기전용 저위험이나 value 3 → 우선순위 낮아 propose."
+        },
+        {
+          "name": "/new-agent-tool",
+          "kind": "command",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedManager"
+          ],
+          "purpose": "새 하위 에이전트 RedisAgentHandler 팩토리(Input/Output 타입·inputSchema·zod outputSchema·createXHandler)+registry 등록+테스트 골격을 plan-task.ts 패턴으로 생성, 스트림 키 규칙 자동 주입.",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "파일 생성 부작용 → disable-model-invocation:true 필요. 스캐폴딩 가치는 있으나 빈도 낮고 CPD 일관성은 pre-commit jscpd가 이미 게이트. propose."
+        },
+        {
+          "name": "/i18n-parity-ui",
+          "kind": "command",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedOrchestrator"
+          ],
+          "purpose": "check-i18n.js가 누락한 ui.json(@xzawed/ui) ko/en/ja 파리티 포함 4개 namespace 전체 검증.",
+          "value": 3,
+          "risk": 1,
+          "effort": 1,
+          "rationale": "기존 scripts/check-i18n.js·/i18n-add 사각지대(ui.json) 보완이라 비중복이나, 별도 커맨드보다 check-i18n.js에 ui.json 경로를 추가하는 스크립트 패치가 더 적절 → 커맨드화는 propose."
+        },
+        {
+          "name": "/mcp-sec-audit",
+          "kind": "command",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedOrchestrator"
+          ],
+          "purpose": "mcp-process-manager·cli-runner·http-remote-runner·github-oauth-handler의 보안 불변식(ALLOWED_MCP_COMMANDS·BLOCKED_ARG_PATTERNS·URL scheme·openExternal startsWith·validateRemoteUrl) 체크리스트 검증.",
+          "value": 4,
+          "risk": 1,
+          "effort": 2,
+          "rationale": "/dev-path-guard-audit와 보안 감사 성격 유사하나 대상이 Electron main 특화라 별도 유지. 읽기전용 저위험이지만 /contract-drift-check·/dev-path-guard-audit 구현 후 효용 평가 위해 propose."
+        },
+        {
+          "name": "/dev-parse-fixtures",
+          "kind": "command",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedDeveloper"
+          ],
+          "purpose": "runner.parseChanges 적대적 입력(코드펜스 변형·텍스트 혼입·부분배열·절대경로·content 누락) 회귀 케이스 생성·실행로 '조용한 [] 반환' 가시화.",
+          "value": 4,
+          "risk": 1,
+          "effort": 3,
+          "rationale": "침묵 실패 가시화 가치 높음. 테스트 픽스처 생성 부작용 → propose. Designer /designer-prompt-eval과 동류."
+        },
+        {
+          "name": "/designer-prompt-eval",
+          "kind": "command",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedDesigner"
+          ],
+          "purpose": "샘플 intent에 fixture LLM 응답으로 parseResponse를 돌려 fallback({name:'Component'}) 반환율을 카운트, silent degradation 가시화.",
+          "value": 4,
+          "risk": 1,
+          "effort": 3,
+          "rationale": "/dev-parse-fixtures와 'fixture 기반 파서 degradation 측정' 공통 패턴. 읽기전용 진단이나 fixture 셋 구축 노력. propose."
+        },
+        {
+          "name": "/plan-dag-check",
+          "kind": "command",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedPlanner"
+          ],
+          "purpose": "Step[]의 dependencies가 존재 step id 참조하는지·순환 없는지 위상정렬 검증. PlanResponseSchema가 못 잡는 의미적 무결성 결함 조기 발견.",
+          "value": 4,
+          "risk": 1,
+          "effort": 3,
+          "rationale": "DAG 검증 로직 자체는 런타임 plan-self-verify-skill로 옮기는 게 더 가치(개발용 커맨드는 일회성). 정적 커맨드로는 propose, 런타임 자가검증 권장."
+        },
+        {
+          "name": "/security-rule-falsepositive",
+          "kind": "command",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedSecurity"
+          ],
+          "purpose": "규칙 정규식을 모노레포 실제 소스(특히 clean code)에 시범 스캔해 오탐 후보 표본 추출. 넓은 패턴(S009/S020/S021) false-positive율 사전 점검.",
+          "value": 4,
+          "risk": 1,
+          "effort": 3,
+          "rationale": "/security-rule-add의 보조 단계로 통합 가능. 단독으론 propose. 읽기전용·고가치이나 시범 스캔 인프라 필요."
+        },
+        {
+          "name": "/watcher-chokidar-audit",
+          "kind": "command",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedWatcher"
+          ],
+          "purpose": "chokidar.watch 옵션(ignored·ignoreInitial·followSymlinks:false·persistent·cwd) 및 cwd 절대경로 우회 리스크 체크리스트 점검.",
+          "value": 4,
+          "risk": 1,
+          "effort": 2,
+          "rationale": "단일 파일·단일 옵션셋 한정으로 빈도 낮음. 읽기전용 저위험이나 범용성 낮아 propose."
+        },
+        {
+          "name": "hook:trigger-glob-dual-guard",
+          "kind": "hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedWatcher"
+          ],
+          "purpose": "types.ts Zod refine(절대경로·'..' 차단)와 watcher.ts safeTriggers 런타임 filter가 둘 다 존재하는지 검사, 한쪽만 수정 시 경고.",
+          "value": 5,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "defense-in-depth 불변식 보장 가치 5. 단 원본은 blocking 표기했으나 PostToolUse는 차단 불가 → 비차단 경고로만 가능. 차단 필요 시 PreToolUse여야 하나 편집 전 결과 파일 미존재. /contract-drift-check에 항목 흡수 가능 → propose."
+        },
+        {
+          "name": "hook:hardcoded-i18n-guard",
+          "kind": "hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedOrchestrator"
+          ],
+          "purpose": "renderer .tsx 편집 시 JSX 텍스트·aria-label에 한글 리터럴이 직접 박히면 useTranslation 키 사용 권고(비차단).",
+          "value": 4,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "/i18n-add(추가)와 역할 분리(누락 탐지)라 비중복. 비차단 PostToolUse 적절. 단 한글 리터럴 정규식은 주석·로그·data-testid 등 오탐 여지 → propose."
+        },
+        {
+          "name": "hook:designer-contract-guard",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedDesigner"
+          ],
+          "purpose": "types.ts/design-ui.ts 편집 시 UISpec enum·ComponentSpec 키 집합 비교, 불일치 시 exit2 차단.",
+          "value": 4,
+          "risk": 3,
+          "effort": 4,
+          "rationale": "PostToolUse matcher인데 blocking(exit2) 선언 → 이벤트/차단성 부적합(PostToolUse는 차단 불가). 진단은 /contract-drift-check(읽기전용 커맨드)로 흡수 → hook defer."
+        },
+        {
+          "name": "hook:plan-schema-drift-guard",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedPlanner",
+            "xzawedManager"
+          ],
+          "purpose": "runner.ts·types.ts·plan-task.ts 편집 후 agentType enum·StepSchema 추출 대조, 불일치 시 경고.",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "/contract-drift-check 커맨드와 완전 중복(같은 4정의처 대조). 커맨드로 구현하므로 hook은 defer."
+        },
+        {
+          "name": "hook:tester-cmd-guard-consistency",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedTester"
+          ],
+          "purpose": "tester/detector/executor.ts 보안코드 편집 시 메타문자 정규식·경로정책 일관성·spawn(shell:true)·scripts.test 금지패턴 차단.",
+          "value": 5,
+          "risk": 3,
+          "effort": 3,
+          "rationale": "PreToolUse Edit matcher로 차단 의도는 타당하나 정적 일관성 비교(정규식 동등성)는 오탐 위험 크고 작업 봉쇄 위험. /dev-path-guard-audit 읽기전용 감사로 대체 → defer."
+        },
+        {
+          "name": "hook:builder-detector-script-trust-guard",
+          "kind": "hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedBuilder"
+          ],
+          "purpose": "detector.ts 편집 시 package.json scripts.build를 읽어 command로 쓰는 패턴(pkg.scripts·readFile('package.json') 후 .scripts) 감지해 차단.",
+          "value": 4,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "CLAUDE.md 'scripts 불신' 원칙의 결정론적 강제. PreToolUse new_string 정규식 스캔으로 저비용 구현 가능하나 오탐 여지 → 검증 후 implement 가능, 일단 propose."
+        },
+        {
+          "name": "hook:builder-ignore-scripts-guard",
+          "kind": "hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedBuilder"
+          ],
+          "purpose": "builder/executor.ts 편집 new_string에 --ignore-scripts 없는 'pnpm install'/'npm ci'가 추가되면 공급망 위험으로 차단.",
+          "value": 3,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "Dockerfile S6505 런타임 버전. PreToolUse new_string 정규식으로 저비용 구현 가능. hook:builder-detector-script-trust-guard와 함께 평가 → propose."
+        },
+        {
+          "name": "hook:claude-cast-guard",
+          "kind": "hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedPlanner"
+          ],
+          "purpose": "runner.ts에 'as PlanResponse'·'as Step'·'JSON.parse(...) as' 캐스트 추가 시 차단(safeParse 강제).",
+          "value": 3,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "mock-guard와 영역 다름(unsafe 캐스트). PreToolUse new_string 정규식 구현 가능. 단 정당한 캐스트 오탐 가능. value 3 → propose."
+        },
+        {
+          "name": "hook:lazy-schema-annotation-guard",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedDesigner"
+          ],
+          "purpose": "types.ts z.lazy( 추가 시 z.ZodType 어노테이션·optional |undefined 누락 검사, exit2.",
+          "value": 3,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "exactOptionalPropertyTypes tsc 오류는 post-edit.mjs 테스트·pre-commit 빌드 게이트가 이미 결정론적 검출 → 중복. defer."
+        },
+        {
+          "name": "hook:cwe-optional-guard",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedSecurity"
+          ],
+          "purpose": "deps.ts·static.ts에서 optional 필드(cwe/line) 직접 할당 패턴 감지, 조건부 할당 유도. tsc 오류 차단.",
+          "value": 3,
+          "risk": 3,
+          "effort": 2,
+          "rationale": "lazy-schema-guard와 동일 논리로 tsc/빌드 게이트가 이미 커버 → 중복. 오탐(정당한 할당)도 많음. defer."
+        },
+        {
+          "name": "hook:redis-mock-yield-guard",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedShared"
+          ],
+          "purpose": "테스트 파일 xreadgroup/xautoclaim mockResolvedValue 즉시-resolve를 setImmediate 미적용 시 차단.",
+          "value": 4,
+          "risk": 3,
+          "effort": 3,
+          "rationale": "기존 mock-guard.mjs가 정확히 xreadgroup mockResolvedValue(null/[]) 패턴을 이미 감지(비차단). xautoclaim 패턴은 mock-guard 정규식 1줄 추가로 충분 → 신규 차단 hook은 중복. defer(mock-guard 확장으로 대체)."
+        },
+        {
+          "name": "hook:shared-build-then-dependents",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedShared"
+          ],
+          "purpose": "xzawedShared/src 편집 후 pnpm build 실행해 dist 갱신·실패 알림.",
+          "value": 4,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "기존 post-edit.mjs가 xzawedShared 편집 시 'pnpm build && pnpm test'를 이미 실행 → 완전 중복. defer."
+        },
+        {
+          "name": "hook:dev-shared-prebuild",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedDeveloper"
+          ],
+          "purpose": "Developer 테스트/빌드 Bash 직전 ../xzawedShared dist 최신 확인, 누락 시 안내.",
+          "value": 3,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "post-edit.mjs가 shared 편집 시 빌드를 보장하고 CLAUDE.md에 선행 빌드 문서화됨. Bash마다 dist stat 검사는 소음大 → defer."
+        },
+        {
+          "name": "hook:consumer-signature-guard",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedShared"
+          ],
+          "purpose": "BaseConsumer/SessionDispatcher 생성자 시그니처 변경 시 39개 호출처 동기화 필요 경고.",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "생성자 시그니처 변경은 tsc(빌드 게이트)가 호출처 타입 오류로 결정론적 검출 → 가치 낮음. defer."
+        },
+        {
+          "name": "hook:stream-key-lint",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedManager"
+          ],
+          "purpose": "raw 스트림 키 template literal이 {src}:to-{dst}:{sessionId} 규칙에 맞는지·테스트 mock 키 불일치 경고.",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "template literal 동적 부분 파싱 오탐 크고 라우팅 실패는 redis-integration 통합테스트가 잡음. 우선순위 낮아 defer."
+        },
+        {
+          "name": "hook:timer-leak-guard",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedWatcher"
+          ],
+          "purpose": "watcher.ts 편집 setTimeout 추가 시 대응 clearTimeout·timers.delete 동반 여부 휴리스틱 검사.",
+          "value": 4,
+          "risk": 3,
+          "effort": 3,
+          "rationale": "휴리스틱 정규식 오탐·미탐 risk 3. 타이머 누수는 post-edit 자동실행 테스트가 더 신뢰성 있게 검출. defer."
+        },
+        {
+          "name": "hook:ipc-contract-guard",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedOrchestrator"
+          ],
+          "purpose": "preload/main/electron.d.ts 편집 시 채널 집합 차집합 계산해 불일치 경고.",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "/contract-drift-check 커맨드(IPC 3자 계약 포함)와 중복. 커맨드로 충분 → hook defer."
+        },
+        {
+          "name": "hook:static-rule-integrity",
+          "kind": "hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedSecurity"
+          ],
+          "purpose": "static-*.ts 편집 후 *_RULES의 ALL_RULES 합류·ID 중복gap·대응 테스트 존재 검사(비차단).",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "/security-rule-add 커맨드가 합류·ID·테스트 쌍을 추가 시점에 보장 → 역할 중복. defer."
+        },
+        {
+          "name": "/shared-release-check",
+          "kind": "command",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedShared"
+          ],
+          "purpose": "라이브러리 변경 PR 전 build·test·커버리지·ESM .js 확장자·생성자 호환성·7개 소비 서비스 빌드 점검.",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "기존 /pr-ready와 상당 중복(build/test/audit). '7개 소비 서비스 빌드'만 차별점이나 pr-ready에 라이브러리 분기 추가가 적절. defer."
+        },
+        {
+          "name": "/builder-exec-mock",
+          "kind": "command",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedBuilder"
+          ],
+          "purpose": "executor/builder 테스트 makeMockProc·validatePath.mockResolvedValueOnce 체이닝 스캐폴드 생성.",
+          "value": 3,
+          "risk": 1,
+          "effort": 2,
+          "rationale": "단일 서비스 테스트 보일러플레이트 생성. /watcher-debounce-test와 동류이나 가치 낮고 빈도 적음. defer."
+        },
+        {
+          "name": "/watcher-debounce-test",
+          "kind": "command",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedWatcher"
+          ],
+          "purpose": "표준 디바운스 테스트 골격(vi.hoisted chokidar mock+useFakeTimers+advanceTimersByTimeAsync) 스캐폴드 생성.",
+          "value": 3,
+          "risk": 1,
+          "effort": 2,
+          "rationale": "/builder-exec-mock와 'test scaffold' 공통 패턴. 가치 3·빈도 낮음 → defer."
+        }
+      ],
+      "trackB_prioritized": [
+        {
+          "name": "plan-prompt-constraint-injector",
+          "scope": "implement",
+          "appliesTo": [
+            "xzawedPlanner"
+          ],
+          "purpose": "SYSTEM_PROMPT에 estimatedMinutes(0~480)·steps(1~50)·dependencies 무결성·코드펜스 금지 제약을 자동 주입하고, agentType 목록을 StepSchema enum 단일 소스에서 런타임 생성해 프롬프트-스키마 drift를 제거.",
+          "value": 4,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "런타임이지만 아키텍처 변경 아님(프롬프트 구성을 enum 기반 생성으로 교체). drift 근본 원인을 코드 1곳에서 제거 → /contract-drift-check가 잡던 SYSTEM_PROMPT enum 불일치를 발생 자체로 차단. 저비용 implement 후보."
+        },
+        {
+          "name": "plan-self-verify-skill",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedPlanner"
+          ],
+          "purpose": "PlanResponseSchema 통과 직후 dependencies 존재 참조·순환 없음·agentType 가용성·estimatedMinutes 합리성 검사, 위반 시 1회 재생성. take action→verify 루프 강화.",
+          "value": 5,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "고가치 자가검증. 재생성 루프는 LLM 호출 추가·무한루프 방지 가드 필요(런타임 동작 변경) → propose. /plan-dag-check 정적 커맨드의 런타임 짝."
+        },
+        {
+          "name": "file-change-self-verify",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedDeveloper"
+          ],
+          "purpose": "applyChange 직후 artifact를 read해 content 일치·.bak 존재 검증, parseChanges 0건인데 plan 비어있지 않으면 develop_complete 대신 error/부분성공 보고. 침묵 성공 제거.",
+          "value": 5,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "Developer 침묵 성공 제거는 핵심 신뢰성 개선. 완료 메시지 의미 변경(계약 영향)이라 propose. agent-result-self-verify·build-failure-self-verify와 공통 verify 패턴."
+        },
+        {
+          "name": "design-self-validate-skill",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedDesigner"
+          ],
+          "purpose": "ComponentSpec[] 반환 전 DesignResponseSchema 통과·props TS타입 유효성·children name 중복 검사, fallback 전 1회 재생성으로 generic Component 반환율 감소.",
+          "value": 5,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "plan-self-verify·file-change-self-verify와 동일 'verify before publish' 패턴. 재생성 루프 런타임 변경 → propose."
+        },
+        {
+          "name": "runner-input-validator-hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedManager"
+          ],
+          "purpose": "tool-calling 루프 handler.execute 직전 block.input을 핸들러 inputSchema로 검증, 잘못된 인자를 tool_result(is_error)로 반환. CLAUDE.md '부분 구현' 갭 보완.",
+          "value": 5,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "명시된 미완성 갭 보완·고가치. 디스패치 경로 변경이라 회귀테스트 동반 필요 → propose."
+        },
+        {
+          "name": "command-allowlist-defer-hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedTester",
+            "xzawedBuilder"
+          ],
+          "purpose": "런타임 에이전트 제안 후속 명령을 spawn 직전 validateTestCommand/validateBuildCommand+토큰별 allowlist로 재검증해 allowlist 외·셸 메타문자 deny. startsWith 우회를 런타임 게이트로 보강.",
+          "value": 5,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "Tester command-allowlist-defer-hook + Builder path-traversal-deny-hook의 'spawn 직전 정책 게이트' 공통화. 보안 2차 백스톱 고가치. 실행 경로 미들웨어 삽입 → propose."
+        },
+        {
+          "name": "path-policy-deny-hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedDeveloper",
+            "xzawedBuilder"
+          ],
+          "purpose": "파일 쓰기/spawn cwd가 workspaceRoot 밖·절대경로·.. 포함이면 permissionDecision=deny 결정론 차단(코드 검증과 독립 2차 게이트).",
+          "value": 5,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "Developer path-policy-deny-hook + Builder path-traversal-deny-hook 병합. validatePath 3중 호출의 백스톱. 런타임 권한 게이트 도입 → propose."
+        },
+        {
+          "name": "audit-bound-permission-hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedSecurity"
+          ],
+          "purpose": "deps 분석기 execFile을 npm/pnpm audit로만 제한하고 projectPath 경계 내에서만 허용, audit 외 서브커맨드 deny.",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "공급망 분석 중 임의 명령 차단. command-allowlist-defer-hook과 동류 권한 게이트. propose."
+        },
+        {
+          "name": "manager-relay-schema-hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedOrchestrator",
+            "xzawedManager"
+          ],
+          "purpose": "producer publish 직전 메시지 payload를 Zod 강제 검증해 스키마 위반 시 전송 차단(deny). Redis 계약 불변식 결정론 보장.",
+          "value": 4,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "저비용(전송 직전 safeParse 추가)이나 producer 경로 변경·전 서비스 공통화 설계 필요 → propose(crossCutting 후보)."
+        },
+        {
+          "name": "workspace-root-runtime-assert",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedShared"
+          ],
+          "purpose": "resolveWorkspaceRoot 반환 직후 validateWorkspaceRoot를 강제 체이닝해 부팅 시점 게이트로 표준화, 4개 executor 제각각 호출을 라이브러리 차원 일원화.",
+          "value": 4,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "라이브러리 API 시그니처 변경(체이닝 강제)은 39개 호출처 영향 → 저비용처럼 보이나 파급 큼. propose."
+        },
+        {
+          "name": "agent-result-self-verify",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedManager"
+          ],
+          "purpose": "하위 에이전트 응답을 outputSchema 통과 후 task 의도 정합성(plan dependencies 실 step 참조·agentType 7종 내) 자가검증, 불일치 시 재요청.",
+          "value": 4,
+          "risk": 3,
+          "effort": 3,
+          "rationale": "재요청 루프는 세션 흐름·타임아웃과 얽혀 risk 3. propose."
+        },
+        {
+          "name": "session-hang-watchdog-hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedManager"
+          ],
+          "purpose": "waitForInfo 진입 세션이 타임아웃 내 응답·abort·delete 없으면 infoReject로 강제 종료해 영구 pending 방지.",
+          "value": 4,
+          "risk": 3,
+          "effort": 2,
+          "rationale": "세션 hang 안전망 가치. deadline 타이머·abort/delete 경로 정합 보장 필요(경합 risk 3). propose."
+        },
+        {
+          "name": "build-failure-self-verify-hook",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedBuilder"
+          ],
+          "purpose": "analyzeBuildFailure BuildError[]의 file/line이 실제 빌드 로그와 정합한지 verify, 환각 경로·suggestion 차단.",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "failure-analysis-self-verify(Tester)와 동일 '분석결과 환각 검증' 패턴. propose."
+        },
+        {
+          "name": "failure-analysis-self-verify",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedTester"
+          ],
+          "purpose": "analyzeFailures TestFailure[] file 경로 존재·failed 카운트 일치 검증 후 불일치 시 재분석.",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "build-failure-self-verify-hook와 병합 가능한 verify 패턴. propose."
+        },
+        {
+          "name": "intent-structurer-self-verify",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedOrchestrator"
+          ],
+          "purpose": "structureIntent 요약이 원문 핵심 의도 누락/왜곡 안했는지 자가검증 후 미달 시 1회 재요약.",
+          "value": 4,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "LLM 호출 추가·비용/지연 영향. self-verify 계열 공통. propose."
+        },
+        {
+          "name": "github-write-permission-gate",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedManager"
+          ],
+          "purpose": "github-ops/deploy-project 쓰기 액션을 permissionDecision ask/deny로 게이트, validateCommitPath를 deploy-project에도 적용하고 .github/workflows·절대경로·traversal deny.",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "부작용 작업 게이트는 보안 가치 높으나 사용자 승인 흐름·운영 자동화 충돌 검토 필요. propose."
+        },
+        {
+          "name": "empty-changeset-retry",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedDeveloper"
+          ],
+          "purpose": "parseChanges가 []/비배열 반환 시 1회 한정 'JSON 배열만' 보강 프롬프트 재시도로 무변경 완료 자동 복구.",
+          "value": 3,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "file-change-self-verify에 포함 가능한 하위 동작. 단독 propose."
+        },
+        {
+          "name": "design-system-conventions-skill",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedDesigner"
+          ],
+          "purpose": "targetFramework·designSystem별 cssClasses 네이밍 규칙·표준 prop 시그니처를 on-demand 지식으로 제공해 임의 클래스·불일치 prop 감소.",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "preload 지식 스킬은 user-invocable:false 배경지식으로 적합하나 디자인 규칙 큐레이션 노력. propose."
+        },
+        {
+          "name": "test-output-failure-summarizer",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedTester"
+          ],
+          "purpose": "2000자 slice 대신 실패 블록(스택·assertion diff) 우선 추출 전처리로 잘린 출력의 실패 누락 감소.",
+          "value": 3,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "출력 전처리 로직 변경. 가치 보통. propose."
+        },
+        {
+          "name": "rule-pack-preload-skill",
+          "scope": "propose",
+          "appliesTo": [
+            "xzawedSecurity"
+          ],
+          "purpose": "artifacts 확장자/프레임워크 감지해 관련 규칙 카테고리·CWE 매핑을 runner 시작 시 preload, OWASP 분류 정확도 향상.",
+          "value": 3,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "design-system-conventions와 동류 preload 지식. propose."
+        },
+        {
+          "name": "uispec-type-router-skill",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedDesigner"
+          ],
+          "purpose": "intent 의미 분석해 UISpec.type을 form/progress_board/mockup_viewer로 라우팅, mockup_viewer 고정 편향 교정.",
+          "value": 3,
+          "risk": 2,
+          "effort": 2,
+          "rationale": "design-self-validate-skill에 흡수 가능한 보정 단계. 단독 가치 낮아 defer."
+        },
+        {
+          "name": "clarification-decision-hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedPlanner"
+          ],
+          "purpose": "intent 모호 시 fallback 1-step degrade 대신 info_request 강제(permissionDecision defer).",
+          "value": 4,
+          "risk": 3,
+          "effort": 3,
+          "rationale": "임계 휴리스틱(길이·context·step 수) 오판 risk 3. 잘못된 clarification 남발로 UX 저하 가능. plan-self-verify 우선 → defer."
+        },
+        {
+          "name": "plan-aware-context-gather",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedDeveloper"
+          ],
+          "purpose": "코드 생성 전 인접 파일을 read-only로 표본 수집해 modify 시 파괴적 전체 재작성 감소.",
+          "value": 4,
+          "risk": 3,
+          "effort": 4,
+          "rationale": "컨텍스트 윈도·비용 영향 크고 파일 선택 휴리스틱 복잡. 아키텍처 변경 → defer."
+        },
+        {
+          "name": "intent-context-gather-hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedDesigner"
+          ],
+          "purpose": "design_request 전 context 기존 컴포넌트/토큰 정규화 주입, context 비면 info_request 유도.",
+          "value": 3,
+          "risk": 3,
+          "effort": 3,
+          "rationale": "clarification-decision-hook과 동류 모호성 분기 휴리스틱. risk 3 → defer."
+        },
+        {
+          "name": "poison-message-quarantine",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedShared"
+          ],
+          "purpose": "검증실패 메시지를 임계 초과 시 dead-letter 스트림으로 격리·요약 보고, 데이터 유실 없이 디버깅.",
+          "value": 4,
+          "risk": 3,
+          "effort": 3,
+          "rationale": "DLQ 도입은 운영 인프라 변경(스트림 추가·정리 정책). 7개 서비스 공통 라이브러리 영향. 아키텍처 변경 → defer."
+        },
+        {
+          "name": "pel-reclaim-self-verify",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedShared"
+          ],
+          "purpose": "claimPendingMessages 후 재처리 건수·잔여 PEL을 XPENDING으로 자가검증해 누수 조기 탐지.",
+          "value": 4,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "라이브러리 핫패스에 XPENDING 추가 호출(부하). 관측성 가치 있으나 핵심 루프 변경 → defer."
+        },
+        {
+          "name": "remote-runner-egress-guard",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedOrchestrator"
+          ],
+          "purpose": "remote 모드 fetch 직전 대상 호스트 allowlist 검증(deny>ask)으로 호스트 단위 SSRF 방어.",
+          "value": 3,
+          "risk": 3,
+          "effort": 3,
+          "rationale": "allowlist 운영·환경별 호스트 관리 필요. validateRemoteUrl(scheme)은 이미 존재. 증분 가치 대비 운영 부담 → defer."
+        },
+        {
+          "name": "mcp-spawn-policy-skill",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedOrchestrator"
+          ],
+          "purpose": "MCP 서버 추가 제안 시 ALLOWED_MCP_COMMANDS·BLOCKED_ARG/ENV 정책을 preload 지식 주입해 위험 제안 사전 차단.",
+          "value": 3,
+          "risk": 2,
+          "effort": 3,
+          "rationale": "런타임 코드(mcp-process-manager)가 이미 결정론 차단. preload 지식은 보조적. defer."
+        },
+        {
+          "name": "watcher-retrigger-debounce-skill",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedManager",
+            "xzawedWatcher"
+          ],
+          "purpose": "file_changed→task_request 재발행 시 동일 세션 연속 변경 디바운스·중복제거로 빌드/테스트 폭주 방지.",
+          "value": 3,
+          "risk": 3,
+          "effort": 3,
+          "rationale": "event-storm-throttle와 동류 부하제어. 디바운스 윈도 튜닝·세션 경합 risk 3. 아키텍처 변경 → defer."
+        },
+        {
+          "name": "event-storm-throttle-skill",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedWatcher"
+          ],
+          "purpose": "대량 동시 변경 시 세션 단위 배치/상한으로 file_changed 폭주를 묶어 Manager·Redis 부하 감소.",
+          "value": 4,
+          "risk": 3,
+          "effort": 4,
+          "rationale": "배칭 레이어 도입은 이벤트 의미·순서 보장 영향. 아키텍처 변경 → defer."
+        },
+        {
+          "name": "build-timeout-stream-monitor",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedBuilder"
+          ],
+          "purpose": "build_progress 무출력 정체 감지해 조기 진단 발행, hang 빌드 식별.",
+          "value": 3,
+          "risk": 3,
+          "effort": 4,
+          "rationale": "무활동 타이머·기존 SIGTERM/SIGKILL 유예와 상호작용 복잡. defer."
+        },
+        {
+          "name": "watch-self-verify-hook",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedWatcher"
+          ],
+          "purpose": "watch_started 발행 후 chokidar ready/헬스핑으로 실제 활성 자가검증, 실패 시 error 발행.",
+          "value": 4,
+          "risk": 3,
+          "effort": 3,
+          "rationale": "ready 이벤트 대기·타임아웃이 watch_started 지연 유발 가능. 동작 변경 risk 3 → defer."
+        },
+        {
+          "name": "capacity-pressure-skill",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedWatcher"
+          ],
+          "purpose": "MAX_WATCHERS 근접 시 유휴 세션 정리·Manager 백프레셔로 우아한 강등.",
+          "value": 3,
+          "risk": 3,
+          "effort": 3,
+          "rationale": "유휴 판정·강등 정책은 세션 수명주기 변경. adaptive-backpressure와 동류. defer."
+        },
+        {
+          "name": "adaptive-consumer-backpressure",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedShared"
+          ],
+          "purpose": "MAX_ACTIVE_CONSUMERS 고정 한도를 메모리/이벤트루프 지연 기반 동적 조절, 한도 도달 시 drop 대신 지연 큐 보류.",
+          "value": 3,
+          "risk": 3,
+          "effort": 4,
+          "rationale": "라이브러리 핵심 디스패처 동작 변경·지연 큐 인프라 필요. 아키텍처 변경 → defer."
+        },
+        {
+          "name": "schema-version-negotiation",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedShared"
+          ],
+          "purpose": "메시지 schemaVersion 필드로 소비측 불일치 시 drop 대신 호환 변환·명시 거부 기록.",
+          "value": 3,
+          "risk": 3,
+          "effort": 4,
+          "rationale": "전 서비스 메시지 계약에 버전 필드 도입은 대규모 마이그레이션. 현재 필요성 낮음. defer."
+        },
+        {
+          "name": "manager-contract-readonly-subagent",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedPlanner"
+          ],
+          "purpose": "발행 전 가용 에이전트·수신 작업유형을 read-only subagent로 조회해 Step agentType 디스패치 가능성 교차검증.",
+          "value": 3,
+          "risk": 2,
+          "effort": 4,
+          "rationale": "plan-self-verify의 agentType 가용성 검사로 대부분 커버. 별도 subagent는 과설계 → defer."
+        },
+        {
+          "name": "static-then-claude-self-verify",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedSecurity"
+          ],
+          "purpose": "Claude 분석 결과를 정적 규칙과 교차검증해 재현 불가·저신뢰 CL-* 항목 신뢰도 하향, 점수 왜곡 방지.",
+          "value": 4,
+          "risk": 3,
+          "effort": 4,
+          "rationale": "교차대조 로직·점수 공식 변경으로 회귀 위험 큼. 고가치이나 고노력·고위험 → defer(추후 propose 승격 가능)."
+        },
+        {
+          "name": "severity-budget-verifier",
+          "scope": "defer",
+          "appliesTo": [
+            "xzawedSecurity"
+          ],
+          "purpose": "calculateScore·filterBySeverity 출력이 minSeverity·점수 공식과 일관되는지 발행 직전 검증.",
+          "value": 3,
+          "risk": 1,
+          "effort": 2,
+          "rationale": "저위험·가치 보통이고 단위테스트로 충분히 커버 가능한 불변식 → 런타임 verify보다 테스트가 적합. defer."
+        }
+      ],
+      "crossCutting": [
+        "cross-file 계약 드리프트 진단(/contract-drift-check): Planner Step/agentType 4정의처 + Designer ComponentSpec/UISpec 3정의처 + Orchestrator IPC preload·electron.d.ts·main 3자 계약을 단일 읽기전용 커맨드로 통합. tsc가 못 잡는 SYSTEM_PROMPT 하드코딩 enum·IPC 채널 문자열 불일치 전담.",
+        "경로·명령 실행 보안 감사(/dev-path-guard-audit): Developer fileio·Builder allowlist·Tester command 보안 불변식(validatePath realpath, validateWorkspaceRoot/resolveWorkspaceRoot, spawn shell:false, ALLOWED_PREFIXES, 셸 메타문자 정규식, scripts 불신)을 단일 읽기전용 감사로 통합. CLAUDE.md 보안 아키텍처 원칙의 정적 점검판.",
+        "spawn-직전 명령/경로 권한 게이트(런타임): Tester command-allowlist-defer-hook + Builder/Developer path-policy-deny-hook + Security audit-bound-hook → 'execFile/spawn 직전 allowlist·workspaceRoot 경계 deny'라는 동일 PreToolUse 권한 게이트 패턴. 라이브러리 차원 공통 미들웨어로 propose.",
+        "publish-직전 자가검증 루프(런타임): Planner plan-self-verify + Developer file-change-self-verify + Designer design-self-validate + Tester failure-analysis-self-verify + Builder build-failure-self-verify + Manager agent-result-self-verify → 'outputSchema 통과 후 의미 정합성 검증, 불일치 시 1회 재생성/error 보고'라는 gather→act→verify 공통 패턴. 침묵 성공·환각 결과 제거.",
+        "producer publish-직전 Zod 강제 검증(manager-relay-schema-hook): Redis 메시지 계약 불변식을 전 서비스 producer에서 결정론적으로 보장하는 공통 게이트.",
+        "preload 배경지식 스킬(user-invocable:false): Designer design-system-conventions + Security rule-pack + Builder build-command-allowlist → 'targetFramework/artifacts 유형별 도메인 규칙을 runner 시작 시 preload'하는 on-demand 지식 패턴.",
+        "test scaffold 생성 커맨드: Builder /builder-exec-mock + Watcher /watcher-debounce-test → 서비스별 fragile mock 셋업 보일러플레이트 생성(저우선, defer 묶음)."
+      ],
+      "notes": "총평: 41건 트랙A는 (a)cross-file 계약 드리프트 진단, (b)경로/명령 보안 감사, (c)파서 회귀 가시화, (d)규칙/스캐폴드 생성의 4개 군으로 수렴한다. 40건 트랙B는 (a)publish-직전 자가검증, (b)spawn-직전 권한 게이트, (c)preload 지식, (d)부하/용량 제어로 수렴한다.\n\n이번 PR 구현(implement, 트랙A 4건 + 트랙B 1건 — 모두 안전·즉시가치):\n- /contract-drift-check (원본 3건 병합, value5/risk1, 읽기전용)\n- /dev-path-guard-audit (원본 3건 병합, value5/risk1, 읽기전용)\n- /security-rule-add (Security 규칙 추가 스캐폴딩 — disable-model-invocation:true 권장)\n- /tester-parse-check (parseTestCounts 진단, 읽기전용)\n- trackB plan-prompt-constraint-injector (프롬프트를 StepSchema enum 단일소스에서 생성 — drift 근본 제거, 아키텍처 변경 아님)\n\n핵심 리스크/심사 포인트:\n1. 다수 hook 후보가 PostToolUse + blocking(exit2)로 잘못 설계됨(designer-contract-guard, plan-schema-drift-guard, trigger-glob-dual-guard 등). PostToolUse는 차단 불가 — exit2는 stderr만 Claude에 전달하고 이미 일어난 편집을 되돌리지 못한다. 차단이 필요하면 PreToolUse(tool_input.new_string 검사)여야 한다. 이 부적합 hook들은 읽기전용 커맨드(/contract-drift-check)로 흡수하거나 비차단 경고로 강등해 propose/defer 처리.\n2. 빌드/tsc로 결정론 검출되는 항목은 hook 불필요: consumer-signature-guard, lazy-schema-annotation-guard, cwe-optional-guard는 pre-commit.mjs 빌드 게이트·post-edit.mjs 테스트가 이미 커버 → defer(중복).\n3. 기존 mock-guard.mjs가 xreadgroup mockResolvedValue(null/[])를 이미 감지 → redis-mock-yield-guard는 신규 hook이 아니라 mock-guard 정규식 1줄(xautoclaim) 추가로 대체.\n4. 기존 post-edit.mjs가 xzawedShared 편집 시 build+test를 실행 → shared-build-then-dependents·dev-shared-prebuild는 완전 중복 → defer.\n5. 트랙B는 지시대로 거의 전부 propose/defer. 유일 implement(plan-prompt-constraint-injector)는 프롬프트 구성을 enum 기반 생성으로 바꾸는 코드 1곳 변경이라 런타임 계약·메시지 흐름을 바꾸지 않는다. self-verify·권한 게이트 계열은 LLM 재호출·디스패치 경로 변경·세션 경합을 동반하므로 회귀테스트 없이 implement 금지.\n6. 부작용 워크플로(파일 생성: /security-rule-add, /new-agent-tool 등 스캐폴드류)는 SKILL frontmatter disable-model-invocation:true로 사용자 전용 지정 필수 — Claude가 멋대로 코드 생성·등록 못하게.\n7. /shared-release-check·/manager-cpd-check·/i18n-parity-ui는 각각 pr-ready·sonar-check·check-i18n.js와 상당 중복 → 신규 커맨드보다 기존 자산 확장(check-i18n.js에 ui.json 경로 추가, pr-ready에 라이브러리 분기 추가)이 옳다.\n8. crossCutting 6개 패턴(계약드리프트·경로감사·spawn권한게이트·publish자가검증·producer스키마검증·preload지식)은 서비스별 중복 구현 대신 라이브러리/공통 미들웨어 차원으로 통합해야 CPD·유지보수 비용을 줄인다."
+    },
+    "verification": {
+      "confirmed": [
+        "/contract-drift-check",
+        "/dev-path-guard-audit"
+      ],
+      "downgraded": [
+        {
+          "name": "/security-rule-add",
+          "survives": false,
+          "suggestedDowngrade": "to-defer",
+          "reason": "코드베이스 검증 결과 후보의 핵심 전제 일부는 사실이나 가치·빈도가 과대평가되어 즉시 구현 가치가 검증을 통과하지 못함. 강등(to-defer) 제안.\n\n[검증된 사실]\n- 4지점 삽입은 실재: 카테고리별 static-*.ts(6개 파일), static.ts의 ALL_RULES 집계, 탐지+clean-code 테스트 쌍(static-injection.test.ts 등에서 'detects'/'does not flag' 패턴 확인), CLAUDE.md 규칙표 행(S001~) 모두 존재. ID는 S001~S022 순차.\n\n[rationale의 결함 — survives:false 근거]\n1. 핵심 셀링포인트 'ALL_RULES 미합류 방지'가 과장됨. static.ts:72-80은 `...INJECTION_RULES` 식 spread 집계라, 기존 카테고리 파일에 규칙을 추가하면 자동 합류됨. 미합류 위험은 '새 카테고리 파일을 만들 때'만 발생하는데, 22개 규칙에 카테고리 파일은 6개뿐 — 극히 드문 이벤트. 매 규칙 추가마다 발생하는 위험이 아님.\n2. 'phantom 통합' 주장: rationale은 /security-rule-falsepositive를 '보조 단계로 흡수 가능'이라 했으나 .claude/commands에 해당 커맨드가 존재하지 않음(현존: pr-ready/sonar-check/e2e-electron/i18n-add). 존재하지 않는 자산 흡수는 가치가 아님.\n3. 빈도 부족: git log상 규칙 파일 변경은 단 4회 커밋(S006-S016, S017-S022 배치 추가). 규칙 추가는 '매번 필요'한 반복 워크플로가 아니라 분기당 1회 미만의 산발적 배치 작업. skill/command는 빈도 낮은 스캐폴딩에 과함 — 기존 패턴이 명확해 Claude가 CLAUDE.md+예시 파일만으로 충분히 수행 가능.\n4. effort 과소평가: 'S0NN 다음 번호 산출'은 ID gap 검증 로직, 카테고리→파일 매핑, CWE 채번, 테스트 쌍 생성을 안정적으로 유지해야 하며 규칙 스키마(StaticRule 필드, cwe optional) 변경 시 동반 유지보수 필요. effort 3은 낙관적.\n\n[중복성]\n기존 4개 command/4개 hook과 기능 중복은 없음(고유 도메인). 그러나 '비중복'이 곧 '필요'는 아님.\n\n[exit/이벤트 규약]\ncommand(부작용=파일생성)이므로 hook 아님 — exit2 논점 무관. frontmatter disable-model-invocation:true 권장은 부작용 워크플로 기준에 부합(정상). 규약 위반은 없음.\n\n[결론]\n안전성은 OK이나 '즉시·반복 가치'가 미달. 빈도가 낮고 핵심 위험이 과장되어 implement command로 만들 정당성 부족. to-defer로 강등하여 규칙 추가 빈도가 의미있게 늘거나 새 카테고리 신설이 잦아질 때 재검토 권장. 당장은 CLAUDE.md의 규칙 추가 절차 문서화(on-demand 지식)로 충분."
+        },
+        {
+          "name": "/tester-parse-check",
+          "survives": false,
+          "suggestedDowngrade": "to-defer",
+          "reason": "실질 중복 + 사용 빈도 미달로 탈락. (1) parseTestCounts의 모든 주장 실패 모드가 이미 detector.test.ts(108-139행)에 단위 테스트로 존재 — Jest \"Test Suites\" 오매칭(123-127행), 0/0 미인식(130-133행), vitest/jest/cargo 추출 케이스 모두 커버. 후보가 파는 \"회귀 검증\"은 pnpm test가 매번 자동 실행하는 바로 그것. (2) post-edit.mjs 훅(23행)이 xzawedTester 편집 시 테스트를 자동 실행하므로 parseTestCounts 회귀는 새 커맨드 없이 즉시 노출됨. (3) rationale가 흡수 대상으로 든 /tester-framework-add는 존재하지 않는 자산(실제 커맨드는 pr-ready/sonar-check/e2e-electron/i18n-add 4개뿐) — 통합 가치가 허구. (4) 단일 함수에 샘플 문자열을 먹이는 ad-hoc REPL로, 새 프레임워크 추가 시(드묾)에만 유용 → 기준상 \"가끔만 유용\"한 경우는 skill 과함. 새 프레임워크 저자는 이 repo의 TDD 패턴대로 it() 케이스를 추가하면 됨. (5) effort=2는 낙관적: \"매칭 정규식을 보여주는\" 진단을 구현하려면 parseTestCounts가 어느 분기가 매칭됐는지 노출하지 않으므로 프로덕션 코드 수정 또는 정규식 로직 중복이 필요 — 중복은 곧 drift, 잡으려던 버그를 스스로 유발. 읽기전용 저위험은 맞으나 즉시·반복 가치 없음. 새 프레임워크 지원 작업이 실제로 빈번해지면 그때 재고(defer)."
+        }
+      ],
+      "verdicts": [
+        {
+          "name": "/contract-drift-check",
+          "survives": true,
+          "suggestedDowngrade": "keep",
+          "reason": "실증 검증 결과 드리프트 표면이 실재하며 tsc·기존 자산의 명확한 사각지대다. Planner agentType 유니언은 최소 5곳에 비연결 복제: types.ts:7(TS 인터페이스), runner.ts:11(z.enum 별도 문자열배열), runner.ts:32/49(SYSTEM_PROMPT 프로즈), 그리고 다른 패키지인 Manager plan-task.ts:15,36(인터페이스+zod 재정의). tsc는 서로 다른 문자열배열·프로즈를 교차검증 불가. Designer ComponentSpec/UISpec(types.ts zod+interface)·Manager design-ui.ts·SYSTEM_PROMPT 동일 패턴 확인. Orchestrator IPC 채널 문자열은 preload/index.ts(ipcRenderer.invoke)와 main/index.ts(ipcMain.handle)에 비타입 리터럴로 중복 → tsc-blind 런타임 실패. 기존 자산 비중복 확인: sonar-check의 IPC 점검은 자격증명 노출(보안)만, 채널 드리프트 미검사; pr-ready/e2e-electron/i18n-add 무관. 읽기전용이라 부작용 0, risk~1 정당. 단 (1)effort 3은 낙관적 — 후보가 'preload.ts'·'StepSchema 파일' 등 실재하지 않는 구조를 전제(실제는 preload/index.ts, runner.ts 내 z.enum)하고, 3개 서로 다른 탐지전략(유니언추출·zod-enum추출·IPC문자열페어링)을 병합하므로 서비스별 프롬프트/파일레이아웃 변동에 취약한 정규식 유지보수 필요 → 실질 4~5. (2)value 5는 다소 과대 — 드리프트는 해당 계약파일 편집 시에만 발생하는 '가끔' 가치라 on-demand skill 모델에 적합(user-invocable:true, 읽기전용이라 disable-model-invocation 불요). 차단 훅으로의 강등은 부적절: 휴리스틱 정규식 기반 exit2는 의도적/작업중 편집을 오탐 차단하는 안티패턴이라 수동 진단 command가 정답. 안전하고 즉시 가치 있으나 effort/value 평가만 보정 필요."
+        },
+        {
+          "name": "/dev-path-guard-audit",
+          "survives": true,
+          "suggestedDowngrade": "keep",
+          "reason": "검증 결과 survives:true (keep), 단 value는 5보다 3~4가 정직함.\n\n[비중복 — 확인됨] 점검 대상 불변식이 실제 코드에 모두 존재한다: validatePath(realpath+상대경로 검사)는 xzawedDeveloper/src/fileio.ts:6, xzawedBuilder/src/executor.ts:13, xzawedTester/src/executor.ts에 실재; validateWorkspaceRoot/resolveWorkspaceRoot는 @xzawed/agent-streams(xzawedShared/src/workspace-guard.ts)에서 공급; spawn(shell:false)·ALLOWED_PREFIXES allowlist·셸 메타문자 정규식 /[;&|`$><]/ 은 builder.ts:14~30에 실재. 기존 프로젝트 자산 4커맨드(pr-ready·sonar-check·e2e-electron·i18n-add)와 4훅(pre-commit=tsc전용, post-edit=테스트실행, mock-guard=테스트mock패턴, branch-check=브랜치경고) 어느 것도 경로/명령주입 불변식을 점검하지 않음 → 비중복 주장 성립.\n\n[kind 선택 정당 — 핵심] 후보가 hook이 아니라 command를 택한 것이 정확하다. 이 행동은 '매번 예외없이' 일어나야 하는 것이 아니라 '가끔 보안 감사가 필요할 때' 온디맨드로 도는 것 → 차단 훅+exit2는 부적절하고, command/skill이 정확한 크기의 컨테이너다. 훅이 아니므로 exit코드·이벤트 규약 오용 위험 자체가 없음.\n\n[오탐/방해 위험 낮음] 읽기전용 advisory. 강제·차단 없음, 명시 호출 시에만 실행. fileio.ts의 정당한 atomic-write temp 경로(.tmp.${Date.now()}, line 58~61)처럼 'validatePath 우회처럼 보이지만 정당한' 케이스에서 오탐 가능성은 있으나, 비차단 보고형이라 비용은 Claude 읽기 시간뿐 작업 차단 없음. risk=1 타당.\n\n[effort 다소 낙관] effort=2는 약간 낙관적이다. 진짜 유용하려면 서비스별 불변식(정확한 메타문자 정규식, realpath+relative 패턴, fs.writeFile/rename의 정당한 예외 파일 목록)을 인코딩해야 해 유지보수 비용 존재 → 실질 2~3. 그러나 브리틀한 정규식 훅이 아니라 Claude를 알려진 파일로 안내하는 Markdown 커맨드이므로 수용 가능.\n\n[유일한 강등 압력] 하네스에 범용 /security-review 스킬이 이미 존재(현 브랜치 pending diff 보안검토). 부분 중복이나, 그것은 diff 스코프·범용이라 이 3개 서비스의 특정 불변식(ALLOWED_PREFIXES, 메타문자 정규식, realpath+relative)을 모름 → 타깃 커맨드가 추가 가치 제공. 따라서 강등 불필요하나 value는 5→3~4로 하향 권고.\n\n[권고 frontmatter] user-invocable:true, disable-model-invocation 불필요(부작용 없는 읽기전용), tools는 Read/Grep/Glob 최소권한."
+        },
+        {
+          "name": "/security-rule-add",
+          "survives": false,
+          "suggestedDowngrade": "to-defer",
+          "reason": "코드베이스 검증 결과 후보의 핵심 전제 일부는 사실이나 가치·빈도가 과대평가되어 즉시 구현 가치가 검증을 통과하지 못함. 강등(to-defer) 제안.\n\n[검증된 사실]\n- 4지점 삽입은 실재: 카테고리별 static-*.ts(6개 파일), static.ts의 ALL_RULES 집계, 탐지+clean-code 테스트 쌍(static-injection.test.ts 등에서 'detects'/'does not flag' 패턴 확인), CLAUDE.md 규칙표 행(S001~) 모두 존재. ID는 S001~S022 순차.\n\n[rationale의 결함 — survives:false 근거]\n1. 핵심 셀링포인트 'ALL_RULES 미합류 방지'가 과장됨. static.ts:72-80은 `...INJECTION_RULES` 식 spread 집계라, 기존 카테고리 파일에 규칙을 추가하면 자동 합류됨. 미합류 위험은 '새 카테고리 파일을 만들 때'만 발생하는데, 22개 규칙에 카테고리 파일은 6개뿐 — 극히 드문 이벤트. 매 규칙 추가마다 발생하는 위험이 아님.\n2. 'phantom 통합' 주장: rationale은 /security-rule-falsepositive를 '보조 단계로 흡수 가능'이라 했으나 .claude/commands에 해당 커맨드가 존재하지 않음(현존: pr-ready/sonar-check/e2e-electron/i18n-add). 존재하지 않는 자산 흡수는 가치가 아님.\n3. 빈도 부족: git log상 규칙 파일 변경은 단 4회 커밋(S006-S016, S017-S022 배치 추가). 규칙 추가는 '매번 필요'한 반복 워크플로가 아니라 분기당 1회 미만의 산발적 배치 작업. skill/command는 빈도 낮은 스캐폴딩에 과함 — 기존 패턴이 명확해 Claude가 CLAUDE.md+예시 파일만으로 충분히 수행 가능.\n4. effort 과소평가: 'S0NN 다음 번호 산출'은 ID gap 검증 로직, 카테고리→파일 매핑, CWE 채번, 테스트 쌍 생성을 안정적으로 유지해야 하며 규칙 스키마(StaticRule 필드, cwe optional) 변경 시 동반 유지보수 필요. effort 3은 낙관적.\n\n[중복성]\n기존 4개 command/4개 hook과 기능 중복은 없음(고유 도메인). 그러나 '비중복'이 곧 '필요'는 아님.\n\n[exit/이벤트 규약]\ncommand(부작용=파일생성)이므로 hook 아님 — exit2 논점 무관. frontmatter disable-model-invocation:true 권장은 부작용 워크플로 기준에 부합(정상). 규약 위반은 없음.\n\n[결론]\n안전성은 OK이나 '즉시·반복 가치'가 미달. 빈도가 낮고 핵심 위험이 과장되어 implement command로 만들 정당성 부족. to-defer로 강등하여 규칙 추가 빈도가 의미있게 늘거나 새 카테고리 신설이 잦아질 때 재검토 권장. 당장은 CLAUDE.md의 규칙 추가 절차 문서화(on-demand 지식)로 충분."
+        },
+        {
+          "name": "/tester-parse-check",
+          "survives": false,
+          "suggestedDowngrade": "to-defer",
+          "reason": "실질 중복 + 사용 빈도 미달로 탈락. (1) parseTestCounts의 모든 주장 실패 모드가 이미 detector.test.ts(108-139행)에 단위 테스트로 존재 — Jest \"Test Suites\" 오매칭(123-127행), 0/0 미인식(130-133행), vitest/jest/cargo 추출 케이스 모두 커버. 후보가 파는 \"회귀 검증\"은 pnpm test가 매번 자동 실행하는 바로 그것. (2) post-edit.mjs 훅(23행)이 xzawedTester 편집 시 테스트를 자동 실행하므로 parseTestCounts 회귀는 새 커맨드 없이 즉시 노출됨. (3) rationale가 흡수 대상으로 든 /tester-framework-add는 존재하지 않는 자산(실제 커맨드는 pr-ready/sonar-check/e2e-electron/i18n-add 4개뿐) — 통합 가치가 허구. (4) 단일 함수에 샘플 문자열을 먹이는 ad-hoc REPL로, 새 프레임워크 추가 시(드묾)에만 유용 → 기준상 \"가끔만 유용\"한 경우는 skill 과함. 새 프레임워크 저자는 이 repo의 TDD 패턴대로 it() 케이스를 추가하면 됨. (5) effort=2는 낙관적: \"매칭 정규식을 보여주는\" 진단을 구현하려면 parseTestCounts가 어느 분기가 매칭됐는지 노출하지 않으므로 프로덕션 코드 수정 또는 정규식 로직 중복이 필요 — 중복은 곧 drift, 잡으려던 버그를 스스로 유발. 읽기전용 저위험은 맞으나 즉시·반복 가치 없음. 새 프레임워크 지원 작업이 실제로 빈번해지면 그때 재고(defer)."
+        }
+      ]
+    },
+    "stats": {
+      "units": 10,
+      "trackACandidates": 41,
+      "trackBCandidates": 40,
+      "implementProposed": 4,
+      "implementConfirmed": 2
+    }
+  }
+}

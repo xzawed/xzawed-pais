@@ -11,6 +11,7 @@ const path = require('node:path')
 const ROOT = path.resolve(__dirname, '..')
 const APP_LOCALES = path.join(ROOT, 'xzawedOrchestrator/packages/app/src/renderer/src/locales')
 const SERVER_LOCALES = path.join(ROOT, 'xzawedOrchestrator/packages/server/src/locales')
+const UI_LOCALES = path.join(ROOT, 'xzawedOrchestrator/packages/ui/src/locales')
 
 function flatKeys(obj, prefix = '') {
   const keys = []
@@ -104,6 +105,14 @@ const CHECKS = [
       ko: path.join(SERVER_LOCALES, 'ko/server.json'),
       en: path.join(SERVER_LOCALES, 'en/server.json'),
       ja: path.join(SERVER_LOCALES, 'ja/server.json'),
+    },
+  },
+  {
+    label: 'ui/ui.json',
+    files: {
+      ko: path.join(UI_LOCALES, 'ko/ui.json'),
+      en: path.join(UI_LOCALES, 'en/ui.json'),
+      ja: path.join(UI_LOCALES, 'ja/ui.json'),
     },
   },
 ]
