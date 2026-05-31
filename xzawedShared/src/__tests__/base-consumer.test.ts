@@ -136,6 +136,28 @@ describe('BaseConsumer', () => {
       expect(pipelineInstance.exec).toHaveBeenCalled()
     })
 
+    it('pipeline 미지원 클라이언트는 개별 xack로 폴백한다', async () => {
+      // pipeline 메서드가 없는 클라이언트(ioredis 호환 mock 등) 시뮬레이션
+      const redis = makeRedis()
+      delete (redis as Record<string, unknown>)['pipeline']
+      const handler = vi.fn().mockResolvedValue(undefined)
+      const consumer = new BaseConsumer(redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep)
+
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) {
+          return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        }
+        consumer.stop()
+        return null
+      })
+
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledWith(validMsg)
+      // pipeline이 없으므로 redis.xack가 직접 호출됨
+      expect(redis.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
+    })
+
     it('핸들러가 예외를 던져도 xack를 실행한다', async () => {
       const redis = makeRedis()
       const handler = vi.fn().mockRejectedValue(new Error('handler error'))
