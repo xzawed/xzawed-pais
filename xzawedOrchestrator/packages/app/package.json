@@ -10,7 +10,9 @@
     "package": "electron-vite build && electron-builder",
     "test": "vitest run",
     "test:coverage": "vitest run --config vitest.coverage.config.ts --coverage",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:operational": "playwright test --config=playwright.operational.config.ts",
+    "test:operational:round-a": "playwright test --config=playwright.operational.config.ts e2e/operational/runner/round-a.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",

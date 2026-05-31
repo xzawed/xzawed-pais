@@ -68,6 +68,11 @@ async function registerAuthRoutes(
   })
 }
 
+async function registerAuthStub(app: FastifyInstance): Promise<void> {
+  // AUTH=none: stub /auth/me so clients receive { user: null } instead of 404
+  app.get('/auth/me', async (_req, reply) => reply.code(200).send({ user: null }))
+}
+
 export async function buildServer(config: Config, runnerOverride?: ClaudeRunner): Promise<FastifyInstance> {
   const app = Fastify({ logger: config.mode !== 'local', trustProxy: true })
   const dbPool = await setupDatabase(app, config)
@@ -117,6 +122,8 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   await app.register(healthRoutes)
   if (dbPool && config.userJwtSecret) {
     await registerAuthRoutes(app, dbPool, config)
+  } else {
+    await registerAuthStub(app)
   }
   const userAuthHook = (dbPool && config.userJwtSecret)
     ? makeUserAuthHook(config.userJwtSecret)
