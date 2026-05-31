@@ -10,7 +10,7 @@ xzawedManager로부터 UI/UX 설계 요청을 받아 ComponentSpec 구조로 컴
 ## 핵심 명령어
 
 ```bash
-pnpm install       # 의존성 설치 (xzawedShared 빌드 불필요 — WORKSPACE_ROOT 미사용)
+pnpm install       # 의존성 설치
 pnpm dev           # tsx watch 개발 모드
 pnpm test          # Vitest 전체 테스트
 pnpm test <파일>   # 단일 파일 테스트
@@ -22,7 +22,7 @@ pnpm build         # TypeScript 컴파일 → dist/
 ```
 src/
 ├── index.ts          # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
-├── config.ts         # 환경변수 검증 (Zod) — PORT=3004, WORKSPACE_ROOT 없음
+├── config.ts         # 환경변수 검증 (Zod) — PORT=3004, WORKSPACE_ROOT 필수
 ├── server.ts         # Fastify HTTP 서버 (/health, PORT=3004)
 ├── designer.ts       # UI 컴포넌트 스펙 생성 조율 로직
 ├── types.ts          # ComponentSpec (z.lazy 재귀 스키마), ManagerToDesignerMessageSchema
@@ -88,8 +88,7 @@ interface UISpec {
 | `REDIS_URL` | 선택 | `redis://localhost:6379` | Redis 연결 URL |
 | `PORT` | 선택 | `3004` | HTTP 서버 포트 |
 | `MODE` | 선택 | `local` | 실행 모드 |
-
-> `WORKSPACE_ROOT` 없음 — 파일시스템 접근 없음.
+| `WORKSPACE_ROOT` | 필수 | — | validateWorkspaceRoot() 검증 용. Docker: `/workspace` |
 
 ## 구현 참고사항
 
