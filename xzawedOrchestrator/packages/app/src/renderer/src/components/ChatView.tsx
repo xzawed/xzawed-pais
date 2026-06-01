@@ -11,13 +11,14 @@ import { PipelineStrip } from './chat/PipelineStrip.js'
 import { MessageInput } from './MessageInput.js'
 import { ProjectContextBar } from './ProjectContextBar.js'
 import { ScrollArea } from './ui/scroll-area.js'
+import { UiSpecPreview } from './chat/UiSpecPreview.js'
 import { parseAgentSteps } from '../lib/parseAgentSteps.js'
 import { postMessage, postUiAction, SessionWsClient } from '../lib/api.js'
 
 export function ChatView(): React.JSX.Element {
   const { t } = useTranslation('app')
   const {
-    sessionId, messages, streamingContent, streamingMsgId, isStreaming, isPending, pendingInfoRequest,
+    sessionId, messages, streamingContent, streamingMsgId, isStreaming, isPending, pendingInfoRequest, uiSpec,
   } = useChatStore()
   const { settings } = useAppStore()
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -230,6 +231,10 @@ export function ChatView(): React.JSX.Element {
               >
                 {pendingInfoRequest.approval?.summary ?? pendingInfoRequest.prompt}
               </p>
+
+              {pendingInfoRequest.approval?.stage === 'design_ui' && uiSpec && (
+                <UiSpecPreview spec={uiSpec} />
+              )}
 
               {pendingInfoRequest.approval ? (
                 <div data-testid="approval-actions" className="flex flex-col gap-2">
