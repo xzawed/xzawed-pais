@@ -68,4 +68,10 @@ describe('ClaudeRunner', () => {
     expect(errors).toHaveLength(1)
     expect(errors[0].suggestion).toContain('Claude 분석 실패')
   })
+
+  it('answerQuery는 Claude 텍스트 답변을 반환한다', async () => {
+    AnthropicMock.mockImplementation(() => makeClient('빌드 관점 답변') as any)
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
+    expect(await runner.answerQuery('이 의존성 충돌 해결법은?', {})).toBe('빌드 관점 답변')
+  })
 })

@@ -215,4 +215,19 @@ describe('ClaudeRunner', () => {
       expect(result.estimatedTime).toBe('1 hour')
     }
   })
+
+  it('agent_query 응답에서 AgentQuery를 반환한다', async () => {
+    const mockClient = makeClient('{"agent_query":true,"to":"developer","question":"가능?","kind":"active_request"}')
+    AnthropicMock.mockImplementation(() => mockClient as any)
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-test')
+    const result = await runner.generatePlan('intent', {}, 'normal')
+    expect(result).toBeInstanceOf(AgentQuery)
+  })
+
+  it('answerQuery는 Claude 텍스트 답변을 반환한다', async () => {
+    const mockClient = makeClient('기획 관점 답변')
+    AnthropicMock.mockImplementation(() => mockClient as any)
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-test')
+    expect(await runner.answerQuery('q', {})).toBe('기획 관점 답변')
+  })
 })
