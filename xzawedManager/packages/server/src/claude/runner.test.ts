@@ -68,6 +68,7 @@ let registry: ToolRegistry
 let mockProducer: { publish: ReturnType<typeof vi.fn> }
 let mockSessionStore: { waitForInfo: ReturnType<typeof vi.fn>; getGateConfig: ReturnType<typeof vi.fn> }
 let runner: ClaudeRunner
+let client: Anthropic
 let createFn: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
@@ -87,7 +88,7 @@ beforeEach(() => {
     messages: { create },
   }) as unknown as Anthropic)
 
-  const client = new AnthropicDefault()
+  client = new AnthropicDefault()
   createFn = (client as unknown as { messages: { create: ReturnType<typeof vi.fn> } }).messages.create
 
   runner = new ClaudeRunner(client, 'claude-test', registry)
@@ -618,6 +619,68 @@ describe('ClaudeRunner', () => {
 
       await expect(runP).rejects.toThrow(/aborted/i)
       expect(createFn).toHaveBeenCalledTimes(1) // 다음 단계(2번째 Claude 호출) 미실행
+    })
+  })
+
+  describe('도메인 지식 위키', () => {
+    function makeKnowledgeRepo() {
+      return {
+        recentByProject: vi.fn().mockResolvedValue([{ content: '기존 지식', sourceAgent: 'planner' }]),
+        insertMany: vi.fn().mockResolvedValue(undefined),
+      }
+    }
+    const userCtx = { userId: 'u1', projectId: 'proj-1', workspaceRoot: '/ws' }
+    function planAutoSession() {
+      const store = new SessionStore()
+      store.create('sess-1')
+      store.setGateDefaultMode('sess-1', 'auto')
+      return store
+    }
+    function planThenEndWithCtx() {
+      createFn
+        .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('t1', 'plan_task', { intent: 'x', context: {} })]))
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+    }
+
+    it('호출 전 최근 지식을 context.domainKnowledge로 주입한다', async () => {
+      const repo = makeKnowledgeRepo()
+      const store = planAutoSession()
+      const exec = vi.fn().mockResolvedValue({ steps: [], estimatedTime: '1h' })
+      registry.register({ name: 'plan_task', description: '', inputSchema: GATED_SCHEMA, execute: exec } as never)
+      planThenEndWithCtx()
+
+      const r = new ClaudeRunner(client, 'm', registry, repo as never)
+      await r.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore, userContext: userCtx } as Parameters<typeof r.run>[0])
+
+      expect(repo.recentByProject).toHaveBeenCalledWith('proj-1', expect.any(Number))
+      const passedInput = exec.mock.calls[0]?.[0] as { context: { domainKnowledge?: unknown[] } }
+      expect(passedInput.context.domainKnowledge).toEqual([{ content: '기존 지식', sourceAgent: 'planner' }])
+    })
+
+    it('게이트 통과 후 result.knowledge를 저장한다(sourceAgent=도구명)', async () => {
+      const repo = makeKnowledgeRepo()
+      const store = planAutoSession()
+      const exec = vi.fn().mockResolvedValue({ steps: [], estimatedTime: '1h', knowledge: ['결제는 Stripe'] })
+      registry.register({ name: 'plan_task', description: '', inputSchema: GATED_SCHEMA, execute: exec } as never)
+      planThenEndWithCtx()
+
+      const r = new ClaudeRunner(client, 'm', registry, repo as never)
+      await r.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore, userContext: userCtx } as Parameters<typeof r.run>[0])
+
+      expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [{ content: '결제는 Stripe', sourceAgent: 'plan_task' }])
+    })
+
+    it('repo가 없으면 주입·저장을 건너뛰고 기존 흐름을 유지한다', async () => {
+      const store = planAutoSession()
+      const exec = vi.fn().mockResolvedValue({ steps: [], estimatedTime: '1h', knowledge: ['x'] })
+      registry.register({ name: 'plan_task', description: '', inputSchema: GATED_SCHEMA, execute: exec } as never)
+      planThenEndWithCtx()
+
+      const r = new ClaudeRunner(client, 'm', registry) // repo 없음
+      await r.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore, userContext: userCtx } as Parameters<typeof r.run>[0])
+      expect(exec).toHaveBeenCalledTimes(1)
+      const passedInput = exec.mock.calls[0]?.[0] as { context?: { domainKnowledge?: unknown } }
+      expect(passedInput.context?.domainKnowledge).toBeUndefined()
     })
   })
 

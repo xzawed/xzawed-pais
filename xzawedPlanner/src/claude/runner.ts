@@ -17,6 +17,7 @@ const StepSchema = z.object({
 const PlanResponseSchema = z.object({
   steps: z.array(StepSchema).min(1).max(50),
   estimatedTime: z.string().optional(),
+  knowledge: z.array(z.string()).optional(),
 })
 
 const SYSTEM_PROMPT = `You are a software project planning agent. Given a development intent and context, break it down into concrete, actionable steps.
@@ -35,7 +36,8 @@ Format 1 — When the intent is clear:
       "estimatedMinutes": 30
     }
   ],
-  "estimatedTime": "2 hours"
+  "estimatedTime": "2 hours",
+  "knowledge": ["프로젝트 도메인 결정·제약·규칙을 한 줄씩 (예: '결제는 Stripe 사용', 'PII는 암호화 저장'). 없으면 생략."]
 }
 
 Format 2 — When clarification is needed:
@@ -90,7 +92,7 @@ export class ClaudeRunner {
     context: Record<string, unknown>,
     priority: 'normal' | 'high',
     clarificationContext?: string,
-  ): Promise<{ steps: Step[]; estimatedTime: string } | ClarificationNeeded | AgentQuery> {
+  ): Promise<{ steps: Step[]; estimatedTime: string; knowledge?: string[] } | ClarificationNeeded | AgentQuery> {
     const userContent = [
       `Intent: ${intent}`,
       `Priority: ${priority}`,
@@ -144,11 +146,12 @@ export class ClaudeRunner {
       console.warn('Plan response validation failed:', planResult.error.issues)
       return this.fallback(intent)
     }
-    const { steps } = planResult.data
+    const { steps, knowledge } = planResult.data
 
     return {
       steps,
       estimatedTime: String(planResult.data.estimatedTime ?? '1 hour'),
+      ...(knowledge && knowledge.length > 0 ? { knowledge } : {}),
     }
   }
 

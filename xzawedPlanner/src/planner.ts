@@ -38,6 +38,7 @@ export class Planner {
             payload: {
               steps: result.steps,
               estimatedTime: result.estimatedTime,
+              ...(result.knowledge ? { knowledge: result.knowledge } : {}),
               content: `계획 완료: ${result.steps.length}단계, 예상 소요 ${result.estimatedTime}`,
             },
           }),
