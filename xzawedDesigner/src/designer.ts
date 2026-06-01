@@ -1,7 +1,9 @@
-import { AgentQuery, runCollaborativeHandle, makeCollaborationContext } from '@xzawed/agent-streams'
+import { AgentQuery, createCollaborativeHandler } from '@xzawed/agent-streams'
 import type { ManagerToDesignerMessage, DesignerToManagerMessage } from './types.js'
 import type { Producer } from './streams/producer.js'
 import type { ClaudeRunner } from './claude/runner.js'
+
+type DesignerPayload = ManagerToDesignerMessage['payload']
 
 export class Designer {
   constructor(
@@ -10,18 +12,11 @@ export class Designer {
   ) {}
 
   async handle(message: ManagerToDesignerMessage): Promise<void> {
-    const { sessionId, payload } = message
-    const { base, publishQueryAnswer, publishError } = makeCollaborationContext<DesignerToManagerMessage>(
-      (m) => this.producer.publish(sessionId, m), sessionId, 'design_complete',
-    )
-
-    await runCollaborativeHandle({
-      isAbort: message.type === 'abort',
-      query: payload.query,
-      context: payload.context,
+    await createCollaborativeHandler<DesignerToManagerMessage, DesignerPayload>({
+      publish: (sid, m) => this.producer.publish(sid, m),
       answerQuery: (q, c) => this.runner.answerQuery(q, c),
-      publishQueryAnswer,
-      runMain: async () => {
+      completeType: 'design_complete',
+      runMain: async (payload, base) => {
         const result = await this.runner.generateDesign(
           payload.intent,
           payload.context,
@@ -31,7 +26,7 @@ export class Designer {
         )
         if (result instanceof AgentQuery) return result
         return {
-          publishResult: () => this.producer.publish(sessionId, {
+          publishResult: () => this.producer.publish(base.sessionId, {
             ...base,
             type: 'design_complete',
             payload: {
@@ -42,13 +37,11 @@ export class Designer {
           }),
         }
       },
-      publishAgentQuery: (aq) =>
-        this.producer.publish(sessionId, {
-          ...base,
-          type: 'agent_query',
-          payload: { content: aq.question, to: aq.to, question: aq.question, kind: aq.kind },
-        }),
-      publishError,
-    })
+      publishAgentQuery: (aq, base, sid) => this.producer.publish(sid, {
+        ...base,
+        type: 'agent_query',
+        payload: { content: aq.question, to: aq.to, question: aq.question, kind: aq.kind },
+      }),
+    })(message)
   }
 }

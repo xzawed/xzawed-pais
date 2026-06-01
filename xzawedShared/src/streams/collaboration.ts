@@ -88,3 +88,47 @@ export async function runCollaborativeHandle(opts: {
     await opts.publishError(errMessage(err))
   }
 }
+
+/** 협업 에이전트 handle을 만드는 데 필요한 에이전트별 의존성. */
+export interface CollaborativeAgentDeps<
+  TMsg extends CollabMessage,
+  TPayload extends { context: Record<string, unknown> },
+> {
+  publish: (sessionId: string, msg: TMsg) => Promise<void>
+  answerQuery: (query: string, context: Record<string, unknown>) => Promise<string>
+  completeType: string
+  runMain: (payload: TPayload, base: MessageBase) => Promise<MainOutcome>
+  /** AgentQuery 발생을 지원하는 에이전트만 제공. */
+  publishAgentQuery?: (aq: AgentQuery, base: MessageBase, sessionId: string) => Promise<void>
+}
+
+/**
+ * 협업 에이전트의 handle 함수를 만든다. 모든 협업 에이전트가 이 팩토리를 써서
+ * handle 골격(base 생성·query 모드·정상 경로·error)을 공유한다 — 중복 방지.
+ * 에이전트는 completeType과 runMain(고유 로직)만 다르다.
+ */
+export function createCollaborativeHandler<
+  TMsg extends CollabMessage,
+  TPayload extends { context: Record<string, unknown> },
+>(deps: CollaborativeAgentDeps<TMsg, TPayload>): (
+  message: { sessionId: string; type: string; payload: TPayload },
+) => Promise<void> {
+  return async (message) => {
+    const { sessionId, payload } = message
+    const { base, publishQueryAnswer, publishError } = makeCollaborationContext<TMsg>(
+      (m) => deps.publish(sessionId, m), sessionId, deps.completeType,
+    )
+    await runCollaborativeHandle({
+      isAbort: message.type === 'abort',
+      query: (payload as { query?: string }).query,
+      context: payload.context,
+      answerQuery: deps.answerQuery,
+      publishQueryAnswer,
+      runMain: () => deps.runMain(payload, base),
+      ...(deps.publishAgentQuery
+        ? { publishAgentQuery: (aq: AgentQuery) => deps.publishAgentQuery!(aq, base, sessionId) }
+        : {}),
+      publishError,
+    })
+  }
+}

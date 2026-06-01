@@ -1,6 +1,48 @@
 import { describe, it, expect, vi } from 'vitest'
 import { AgentQuery } from '../types/agent-query.js'
-import { runCollaborativeHandle, makeCollaborationContext } from '../streams/collaboration.js'
+import { runCollaborativeHandle, makeCollaborationContext, createCollaborativeHandler } from '../streams/collaboration.js'
+
+describe('createCollaborativeHandler', () => {
+  function setup(overrides: Record<string, unknown> = {}) {
+    const publish = vi.fn().mockResolvedValue(undefined)
+    const answerQuery = vi.fn().mockResolvedValue('답변')
+    const handler = createCollaborativeHandler<{ sessionId: string; messageId: string; timestamp: number; type: string; payload: Record<string, unknown> }, { query?: string; context: Record<string, unknown> }>({
+      publish,
+      answerQuery,
+      completeType: 'x_complete',
+      runMain: vi.fn().mockResolvedValue({ publishResult: vi.fn().mockResolvedValue(undefined) }),
+      ...overrides,
+    })
+    return { publish, answerQuery, handler }
+  }
+
+  it('query 모드면 answerQuery 답을 완료 타입으로 발행한다', async () => {
+    const { publish, answerQuery, handler } = setup()
+    await handler({ sessionId: 's1', type: 'x_request', payload: { query: 'q', context: {} } })
+    expect(answerQuery).toHaveBeenCalledWith('q', {})
+    expect(publish).toHaveBeenCalledWith('s1', expect.objectContaining({
+      type: 'x_complete', payload: { content: '답변' },
+    }))
+  })
+
+  it('runMain이 AgentQuery 반환 + publishAgentQuery 미제공 시 error 발행', async () => {
+    const { publish, handler } = setup({
+      runMain: vi.fn().mockResolvedValue(new AgentQuery('developer', 'q', 'active_request')),
+    })
+    await handler({ sessionId: 's1', type: 'x_request', payload: { context: {} } })
+    expect(publish).toHaveBeenCalledWith('s1', expect.objectContaining({ type: 'error' }))
+  })
+
+  it('publishAgentQuery 제공 시 AgentQuery를 라우팅한다', async () => {
+    const publishAgentQuery = vi.fn().mockResolvedValue(undefined)
+    const { handler } = setup({
+      runMain: vi.fn().mockResolvedValue(new AgentQuery('developer', 'q', 'active_request')),
+      publishAgentQuery,
+    })
+    await handler({ sessionId: 's1', type: 'x_request', payload: { context: {} } })
+    expect(publishAgentQuery).toHaveBeenCalled()
+  })
+})
 
 describe('makeCollaborationContext', () => {
   it('base와 완료/에러 발행 콜백을 만든다', async () => {
