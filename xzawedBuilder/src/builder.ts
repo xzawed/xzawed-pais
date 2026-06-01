@@ -7,9 +7,11 @@ import type { Producer } from './streams/producer.js'
 import type { ClaudeRunner } from './claude/runner.js'
 import type { ManagerToBuilderMessage, BuilderToManagerMessage } from './types.js'
 import type { Config } from './config.js'
-import { resolveWorkspaceRoot } from '@xzawed/agent-streams'
+import { resolveWorkspaceRoot, createCollaborativeHandler } from '@xzawed/agent-streams'
 
 export { resolveWorkspaceRoot }
+
+type BuilderPayload = ManagerToBuilderMessage['payload']
 
 const ALLOWED_PREFIXES = [
   'pnpm', 'npm', 'npx', 'yarn',
@@ -39,69 +41,60 @@ export class Builder {
   ) {}
 
   async handle(message: ManagerToBuilderMessage): Promise<void> {
-    if (message.type === 'abort') return
+    await createCollaborativeHandler<BuilderToManagerMessage, BuilderPayload>({
+      publish: (sid, m) => this.producer.publish(sid, m),
+      answerQuery: (q, c) => this.runner.answerQuery(q, c),
+      completeType: 'build_complete',
+      runMain: async (payload, base) => {
+        const sessionId = base.sessionId
+        const { projectPath, command } = payload
+        const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)
+        const validatedPath = await validatePath(projectPath, workspaceRoot)
 
-    const { sessionId, payload } = message
-    const { projectPath, command } = payload
-    const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)
+        let buildCmd: string
+        let buildRoot: string
+        if (command) {
+          validateBuildCommand(command)
+          buildCmd = command
+          buildRoot = validatedPath
+        } else {
+          const detected = await detectBuildInfo(validatedPath, workspaceRoot)
+          buildCmd = detected.command
+          buildRoot = await validatePath(detected.buildRoot, workspaceRoot)
+        }
 
-    try {
-      const validatedPath = await validatePath(projectPath, workspaceRoot)
+        await this.stripPackageManagerField(buildRoot)
+        await validatePath(buildRoot, workspaceRoot)
+        await this.runPreInstall(buildRoot, sessionId)
 
-      let buildCmd: string
-      let buildRoot: string
+        const { success, output, duration } = await exec(
+          buildCmd,
+          buildRoot,
+          async (chunk) => {
+            await this.producer.publish(sessionId, this.makeProgress(sessionId, chunk))
+          },
+          this.config.buildTimeoutMs,
+        )
 
-      if (command) {
-        validateBuildCommand(command)
-        buildCmd = command
-        buildRoot = validatedPath
-      } else {
-        const detected = await detectBuildInfo(validatedPath, workspaceRoot)
-        buildCmd = detected.command
-        // Validate the detected buildRoot to prevent directory-traversal via detector
-        buildRoot = await validatePath(detected.buildRoot, workspaceRoot)
-      }
+        const errors = success ? [] : await this.runner.analyzeBuildFailure(output)
+        const artifacts = success ? [buildRoot] : []
 
-      await this.stripPackageManagerField(buildRoot)
-      // Validate buildRoot again as the cwd before pre-install (defence-in-depth)
-      await validatePath(buildRoot, workspaceRoot)
-      await this.runPreInstall(buildRoot, sessionId)
-
-      const { success, output, duration } = await exec(
-        buildCmd,
-        buildRoot,
-        async (chunk) => {
-          await this.producer.publish(sessionId, this.makeProgress(sessionId, chunk))
-        },
-        this.config.buildTimeoutMs
-      )
-
-      const errors = success ? [] : await this.runner.analyzeBuildFailure(output)
-      const artifacts = success ? [buildRoot] : []
-
-      await this.producer.publish(sessionId, {
-        sessionId,
-        messageId: crypto.randomUUID(),
-        timestamp: Date.now(),
-        type: 'build_complete',
-        payload: {
-          success,
-          output,
-          duration,
-          errors,
-          artifacts,
-          content: success ? '빌드 완료' : `빌드 실패: ${errors.length}개 오류`,
-        },
-      })
-    } catch (e: unknown) {
-      await this.producer.publish(sessionId, {
-        sessionId,
-        messageId: crypto.randomUUID(),
-        timestamp: Date.now(),
-        type: 'error',
-        payload: { content: e instanceof Error ? e.message : String(e) },
-      })
-    }
+        return {
+          publishResult: () => this.producer.publish(sessionId, {
+            ...base,
+            type: 'build_complete',
+            payload: {
+              success,
+              output,
+              duration,
+              errors,
+              artifacts,
+              content: success ? '빌드 완료' : `빌드 실패: ${errors.length}개 오류`,
+            },
+          }),
+        }
+      },
+    })(message)
   }
 
   private async stripPackageManagerField(buildRoot: string): Promise<void> {

@@ -100,6 +100,6 @@ describe('Planner', () => {
     })
     await planner.handle(msg)
 
-    expect(runner.generatePlan).toHaveBeenCalledWith('결제 기능', { currency: 'KRW' }, 'high')
+    expect(runner.generatePlan).toHaveBeenCalledWith('결제 기능', { currency: 'KRW' }, 'high', undefined)
   })
 })

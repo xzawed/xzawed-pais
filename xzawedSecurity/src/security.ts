@@ -1,12 +1,14 @@
-import type { ManagerToSecurityMessage, SecurityIssue } from './types.js'
+import type { ManagerToSecurityMessage, SecurityToManagerMessage, SecurityIssue } from './types.js'
 import type { Producer } from './streams/producer.js'
 import type { ClaudeRunner } from './claude/runner.js'
 import { analyzeFiles } from './analyzers/static.js'
 import { auditDeps } from './analyzers/deps.js'
 import type { Config } from './config.js'
-import { resolveWorkspaceRoot } from '@xzawed/agent-streams'
+import { resolveWorkspaceRoot, createCollaborativeHandler } from '@xzawed/agent-streams'
 
 export { resolveWorkspaceRoot }
+
+type SecurityPayload = ManagerToSecurityMessage['payload']
 
 const SEVERITY_ORDER = ['low', 'medium', 'high', 'critical'] as const
 
@@ -38,57 +40,40 @@ export class Security {
   ) {}
 
   async handle(message: ManagerToSecurityMessage): Promise<void> {
-    const { sessionId, payload } = message
+    await createCollaborativeHandler<SecurityToManagerMessage, SecurityPayload>({
+      publish: (sid, m) => this.producer.publish(sid, m),
+      answerQuery: (q, c) => this.runner.answerQuery(q, c),
+      completeType: 'audit_complete',
+      runMain: async (payload, base) => {
+        const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)
 
-    if (message.type === 'abort') return
+        const results = await Promise.allSettled([
+          this.staticAnalyzeFn(payload.artifacts, workspaceRoot),
+          this.depsAuditFn(payload.projectPath, workspaceRoot),
+          this.runner.analyzeArtifacts(payload.artifacts, workspaceRoot),
+        ])
 
-    const base = {
-      sessionId,
-      messageId: crypto.randomUUID(),
-      timestamp: Date.now(),
-    }
+        if (results.every((r) => r.status === 'rejected')) {
+          throw new Error('모든 보안 분석기가 실패했습니다')
+        }
 
-    const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)
+        const staticIssues = results[0].status === 'fulfilled' ? results[0].value : ([] as SecurityIssue[])
+        const depsIssues   = results[1].status === 'fulfilled' ? results[1].value : ([] as SecurityIssue[])
+        const claudeIssues = results[2].status === 'fulfilled' ? results[2].value : ([] as SecurityIssue[])
 
-    try {
-      const results = await Promise.allSettled([
-        this.staticAnalyzeFn(payload.artifacts, workspaceRoot),
-        this.depsAuditFn(payload.projectPath, workspaceRoot),
-        this.runner.analyzeArtifacts(payload.artifacts, workspaceRoot),
-      ])
+        const allIssues = [...staticIssues, ...depsIssues, ...claudeIssues]
+        const score = calculateScore(allIssues)
+        const filtered = filterBySeverity(allIssues, payload.severity)
+        const summary = `총 ${allIssues.length}개 이슈 중 ${filtered.length}개가 ${payload.severity} 이상 보고, 보안 점수: ${score}/100`
 
-      if (results.every((r) => r.status === 'rejected')) {
-        throw new Error('모든 보안 분석기가 실패했습니다')
-      }
-
-      const staticIssues = results[0].status === 'fulfilled' ? results[0].value : ([] as SecurityIssue[])
-      const depsIssues   = results[1].status === 'fulfilled' ? results[1].value : ([] as SecurityIssue[])
-      const claudeIssues = results[2].status === 'fulfilled' ? results[2].value : ([] as SecurityIssue[])
-
-      const allIssues = [...staticIssues, ...depsIssues, ...claudeIssues]
-      const score = calculateScore(allIssues)
-      const filtered = filterBySeverity(allIssues, payload.severity)
-
-      const summary = `총 ${allIssues.length}개 이슈 중 ${filtered.length}개가 ${payload.severity} 이상 보고, 보안 점수: ${score}/100`
-
-      await this.producer.publish(sessionId, {
-        ...base,
-        type: 'audit_complete',
-        payload: {
-          issues: filtered,
-          score,
-          summary,
-          content: summary,
-        },
-      })
-    } catch (err: unknown) {
-      await this.producer.publish(sessionId, {
-        ...base,
-        type: 'error',
-        payload: {
-          content: err instanceof Error ? err.message : 'Unknown error',
-        },
-      })
-    }
+        return {
+          publishResult: () => this.producer.publish(base.sessionId, {
+            ...base,
+            type: 'audit_complete',
+            payload: { issues: filtered, score, summary, content: summary },
+          }),
+        }
+      },
+    })(message)
   }
 }

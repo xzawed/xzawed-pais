@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { z } from 'zod'
+import { collaborationPayloadFields } from '@xzawed/agent-streams'
 
 export interface SecurityIssue {
   id: string
@@ -48,6 +49,7 @@ export const ManagerToSecurityMessageSchema = z.object({
     severity: z.enum(['low', 'medium', 'high']),
     context: z.record(z.unknown()),
     userContext: UserContextSchema.optional(),
+    ...collaborationPayloadFields,
   }),
 })
 

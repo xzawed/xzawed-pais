@@ -1,12 +1,13 @@
-import type { ManagerToDeveloperMessage } from './types.js'
+import type { ManagerToDeveloperMessage, DeveloperToManagerMessage } from './types.js'
 import type { Producer } from './streams/producer.js'
 import type { ClaudeRunner } from './claude/runner.js'
 import { applyChange } from './fileio.js'
 import type { Config } from './config.js'
-import { resolveWorkspaceRoot, runCollaborativeHandle, makeCollaborationContext } from '@xzawed/agent-streams'
-import type { DeveloperToManagerMessage } from './types.js'
+import { resolveWorkspaceRoot, createCollaborativeHandler } from '@xzawed/agent-streams'
 
 export { resolveWorkspaceRoot }
+
+type DeveloperPayload = ManagerToDeveloperMessage['payload']
 
 export class Developer {
   constructor(
@@ -17,18 +18,11 @@ export class Developer {
   ) {}
 
   async handle(message: ManagerToDeveloperMessage): Promise<void> {
-    const { sessionId, payload } = message
-    const { base, publishQueryAnswer, publishError } = makeCollaborationContext<DeveloperToManagerMessage>(
-      (m) => this.producer.publish(sessionId, m), sessionId, 'develop_complete',
-    )
-
-    await runCollaborativeHandle({
-      isAbort: message.type === 'abort',
-      query: payload.query,
-      context: payload.context,
+    await createCollaborativeHandler<DeveloperToManagerMessage, DeveloperPayload>({
+      publish: (sid, m) => this.producer.publish(sid, m),
       answerQuery: (q, c) => this.runner.answerQuery(q, c),
-      publishQueryAnswer,
-      runMain: async () => {
+      completeType: 'develop_complete',
+      runMain: async (payload, base) => {
         const { changes, summary } = await this.runner.generateChanges(
           payload.plan ?? '',
           payload.projectPath ?? '.',
@@ -42,14 +36,13 @@ export class Developer {
           if (change.operation !== 'delete') artifacts.push(change.path)
         }
         return {
-          publishResult: () => this.producer.publish(sessionId, {
+          publishResult: () => this.producer.publish(base.sessionId, {
             ...base,
             type: 'develop_complete',
             payload: { artifacts, summary, content: `Applied ${changes.length} change(s)` },
           }),
         }
       },
-      publishError,
-    })
+    })(message)
   }
 }

@@ -107,6 +107,13 @@ describe('ClaudeRunner.parseIssues', () => {
   })
 })
 
+describe('ClaudeRunner.answerQuery', () => {
+  it('Claude 텍스트 답변을 반환한다', async () => {
+    mockCreate.mockResolvedValueOnce({ content: [{ type: 'text', text: '보안 관점 답변' }] })
+    expect(await runner.answerQuery('이 암호화 안전한가?', {})).toBe('보안 관점 답변')
+  })
+})
+
 describe('ClaudeRunner.analyzeArtifacts', () => {
   it('returns [] for empty file list', async () => {
     const result = await runner.analyzeArtifacts([], '/workspace')

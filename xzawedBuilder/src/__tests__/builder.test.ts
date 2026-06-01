@@ -23,7 +23,8 @@ vi.mock('node:fs/promises', () => ({
   },
 }))
 
-vi.mock('@xzawed/agent-streams', () => ({
+vi.mock('@xzawed/agent-streams', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@xzawed/agent-streams')>()),
   resolveWorkspaceRoot: vi.fn((_ctx: unknown, fallback: string) => fallback),
   validateWorkspaceRoot: vi.fn(),
 }))

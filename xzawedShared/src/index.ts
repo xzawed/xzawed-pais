@@ -6,5 +6,5 @@ export { AgentQuery, AgentQuerySchema, parseAgentQuery, collaborationPayloadFiel
 export type { AgentQueryKind, AgentQueryPayload } from './types/agent-query.js'
 export { answerViaClaude, callClaudeText, extractClaudeText, stripJsonFences } from './claude/answer-query.js'
 export type { ClaudeLike } from './claude/answer-query.js'
-export { runCollaborativeHandle, makeCollaborationContext } from './streams/collaboration.js'
-export type { MainOutcome, CollabMessage, MessageBase } from './streams/collaboration.js'
+export { runCollaborativeHandle, makeCollaborationContext, createCollaborativeHandler } from './streams/collaboration.js'
+export type { MainOutcome, CollabMessage, MessageBase, CollaborativeAgentDeps } from './streams/collaboration.js'

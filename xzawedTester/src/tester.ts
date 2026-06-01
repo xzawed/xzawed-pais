@@ -1,13 +1,15 @@
 import path from 'node:path'
-import type { ManagerToTesterMessage } from './types.js'
+import type { ManagerToTesterMessage, TesterToManagerMessage } from './types.js'
 import type { Producer } from './streams/producer.js'
 import type { ClaudeRunner } from './claude/runner.js'
 import { validatePath, exec } from './executor.js'
 import { detectTestCommand, buildCommandWithFiles, parseTestCounts } from './detector.js'
 import type { Config } from './config.js'
-import { resolveWorkspaceRoot } from '@xzawed/agent-streams'
+import { resolveWorkspaceRoot, createCollaborativeHandler } from '@xzawed/agent-streams'
 
 export { resolveWorkspaceRoot }
+
+type TesterPayload = ManagerToTesterMessage['payload']
 
 const ALLOWED_PREFIXES = [
   'pnpm', 'npm', 'npx', 'yarn', 'vitest', 'jest', 'mocha',
@@ -33,63 +35,51 @@ export class Tester {
   ) {}
 
   async handle(message: ManagerToTesterMessage): Promise<void> {
-    const { sessionId, payload } = message
+    await createCollaborativeHandler<TesterToManagerMessage, TesterPayload>({
+      publish: (sid, m) => this.producer.publish(sid, m),
+      answerQuery: (q, c) => this.runner.answerQuery(q, c),
+      completeType: 'test_complete',
+      runMain: async (payload, base) => {
+        const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)
+        const validatedPath = await validatePath(payload.projectPath, workspaceRoot)
 
-    if (message.type === 'abort') return
-
-    const base = {
-      sessionId,
-      messageId: crypto.randomUUID(),
-      timestamp: Date.now(),
-    }
-
-    const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)
-
-    try {
-      const validatedPath = await validatePath(payload.projectPath, workspaceRoot)
-
-      const validatedFiles: string[] = []
-      if (payload.testFiles && payload.testFiles.length > 0) {
-        for (const f of payload.testFiles) {
-          const absFile = path.resolve(workspaceRoot, f)  // 절대/상대 구분 없이 workspaceRoot 기준
-          const validFile = await validatePath(absFile, workspaceRoot)
-          validatedFiles.push(validFile)
+        const validatedFiles: string[] = []
+        if (payload.testFiles && payload.testFiles.length > 0) {
+          for (const f of payload.testFiles) {
+            const absFile = path.resolve(workspaceRoot, f)
+            const validFile = await validatePath(absFile, workspaceRoot)
+            validatedFiles.push(validFile)
+          }
         }
-      }
 
-      if (payload.testCommand) {
-        validateTestCommand(payload.testCommand)
-      }
-      const baseCmd = payload.testCommand ?? await detectTestCommand(validatedPath)
-      const finalCmd = buildCommandWithFiles(baseCmd, validatedFiles)
+        if (payload.testCommand) {
+          validateTestCommand(payload.testCommand)
+        }
+        const baseCmd = payload.testCommand ?? await detectTestCommand(validatedPath)
+        const finalCmd = buildCommandWithFiles(baseCmd, validatedFiles)
 
-      const startTime = Date.now()
-      const result = await exec(finalCmd, validatedPath, () => {}, this.config.testTimeoutMs)
-      const duration = Date.now() - startTime
+        const startTime = Date.now()
+        const result = await exec(finalCmd, validatedPath, () => {}, this.config.testTimeoutMs)
+        const duration = Date.now() - startTime
 
-      const { passed, failed } = parseTestCounts(result.output)
-      const failures = result.success ? [] : await this.runner.analyzeFailures(result.output)
+        const { passed, failed } = parseTestCounts(result.output)
+        const failures = result.success ? [] : await this.runner.analyzeFailures(result.output)
 
-      await this.producer.publish(sessionId, {
-        ...base,
-        type: 'test_complete',
-        payload: {
-          success: result.success,
-          passed,
-          failed,
-          failures,
-          duration,
-          content: result.output.slice(0, 2000),
-        },
-      })
-    } catch (err: unknown) {
-      await this.producer.publish(sessionId, {
-        ...base,
-        type: 'error',
-        payload: {
-          content: err instanceof Error ? err.message : 'Unknown error',
-        },
-      })
-    }
+        return {
+          publishResult: () => this.producer.publish(base.sessionId, {
+            ...base,
+            type: 'test_complete',
+            payload: {
+              success: result.success,
+              passed,
+              failed,
+              failures,
+              duration,
+              content: result.output.slice(0, 2000),
+            },
+          }),
+        }
+      },
+    })(message)
   }
 }

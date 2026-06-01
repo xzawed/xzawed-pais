@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
+import { AgentQuery, parseAgentQuery, answerViaClaude, callClaudeText } from '@xzawed/agent-streams'
 import type { Step, UISpec } from '../types.js'
 
 const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
@@ -46,9 +47,18 @@ Format 2 — When clarification is needed:
   ]
 }
 
-agentType values: "developer" | "designer" | "tester" | "builder" | "watcher" | "security"
+Format 3 — When you need another expert agent's input to plan correctly:
+{
+  "agent_query": true,
+  "to": "developer",
+  "question": "Is a real-time WebSocket layer feasible within scope?",
+  "kind": "active_request"
+}
+
+agentType / "to" values: "developer" | "designer" | "tester" | "builder" | "watcher" | "security"
 Set dependencies as array of step ids that must complete first.
-Only ask for clarification when truly essential information is missing.`
+Only ask the user for clarification (Format 2) when truly essential information is missing.
+Use Format 3 only when another expert's input genuinely affects the plan. When an answer from another agent is provided, incorporate it and return Format 1.`
 
 export class ClarificationNeeded {
   constructor(
@@ -64,82 +74,81 @@ export class ClaudeRunner {
     this.client = new Anthropic({ apiKey })
   }
 
+  /** 다른 에이전트의 질의(query)에 기획 관점에서 답한다. */
+  async answerQuery(query: string, context: Record<string, unknown>): Promise<string> {
+    return answerViaClaude(
+      this.client,
+      this.model,
+      'You are a software planning expert. Answer the question concisely from a planning/scoping perspective. Plain text, no JSON.',
+      query,
+      context,
+    )
+  }
+
   async generatePlan(
     intent: string,
     context: Record<string, unknown>,
-    priority: 'normal' | 'high'
-  ): Promise<{ steps: Step[]; estimatedTime: string } | ClarificationNeeded> {
-    let timerId: ReturnType<typeof setTimeout> | undefined
+    priority: 'normal' | 'high',
+    clarificationContext?: string,
+  ): Promise<{ steps: Step[]; estimatedTime: string } | ClarificationNeeded | AgentQuery> {
+    const userContent = [
+      `Intent: ${intent}`,
+      `Priority: ${priority}`,
+      `Context: ${JSON.stringify(context, null, 2)}`,
+      clarificationContext ? `Answer from another agent: ${clarificationContext}` : '',
+    ].filter(Boolean).join('\n')
+
+    const text = await callClaudeText(this.client, this.model, 2048, SYSTEM_PROMPT, userContent, API_TIMEOUT_MS)
+
+    const start = text.indexOf('{')
+    const end = text.lastIndexOf('}')
+    if (start === -1 || end === -1) return this.fallback(intent)
+
+    let parsed: Record<string, unknown>
     try {
-      const response = await Promise.race([
-        this.client.messages.create({
-          model: this.model,
-          max_tokens: 2048,
-          system: SYSTEM_PROMPT,
-          messages: [{
-            role: 'user',
-            content: `Intent: ${intent}\nPriority: ${priority}\nContext: ${JSON.stringify(context, null, 2)}`,
-          }],
-        }),
-        new Promise<never>((_, reject) => {
-          timerId = setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
-        }),
-      ])
+      const raw: unknown = JSON.parse(text.slice(start, end + 1))
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return this.fallback(intent)
+      parsed = raw as Record<string, unknown>
+    } catch {
+      return this.fallback(intent)
+    }
 
-      const text = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('')
+    const agentQuery = parseAgentQuery(parsed)
+    if (agentQuery) return agentQuery
 
-      const start = text.indexOf('{')
-      const end = text.lastIndexOf('}')
-      if (start === -1 || end === -1) return this.fallback(intent)
+    if (parsed.clarification_needed === true) {
+      const ClarificationFieldSchema = z.object({
+        id: z.string(),
+        label: z.string(),
+        type: z.enum(['text', 'select', 'textarea']),
+        options: z.array(z.string()).optional(),
+        required: z.boolean().optional(),
+      })
+      const fieldsResult = z.array(ClarificationFieldSchema).safeParse(parsed.fields)
+      const validatedFields: UISpec['fields'] = fieldsResult.success
+        ? fieldsResult.data.map(f => {
+            const field: UISpec['fields'][number] = { id: f.id, label: f.label, type: f.type }
+            if (f.options !== undefined) field.options = f.options
+            if (f.required !== undefined) field.required = f.required
+            return field
+          })
+        : []
+      return new ClarificationNeeded(
+        String(parsed.question ?? 'Could you provide more details?'),
+        validatedFields
+      )
+    }
 
-      let parsed: Record<string, unknown>
-      try {
-        const raw: unknown = JSON.parse(text.slice(start, end + 1))
-        if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return this.fallback(intent)
-        parsed = raw as Record<string, unknown>
-      } catch {
-        return this.fallback(intent)
-      }
+    const planResult = PlanResponseSchema.safeParse(parsed)
+    if (!planResult.success) {
+      console.warn('Plan response validation failed:', planResult.error.issues)
+      return this.fallback(intent)
+    }
+    const { steps } = planResult.data
 
-      if (parsed.clarification_needed === true) {
-        const ClarificationFieldSchema = z.object({
-          id: z.string(),
-          label: z.string(),
-          type: z.enum(['text', 'select', 'textarea']),
-          options: z.array(z.string()).optional(),
-          required: z.boolean().optional(),
-        })
-        const fieldsResult = z.array(ClarificationFieldSchema).safeParse(parsed.fields)
-        const validatedFields: UISpec['fields'] = fieldsResult.success
-          ? fieldsResult.data.map(f => {
-              const field: UISpec['fields'][number] = { id: f.id, label: f.label, type: f.type }
-              if (f.options !== undefined) field.options = f.options
-              if (f.required !== undefined) field.required = f.required
-              return field
-            })
-          : []
-        return new ClarificationNeeded(
-          String(parsed.question ?? 'Could you provide more details?'),
-          validatedFields
-        )
-      }
-
-      const planResult = PlanResponseSchema.safeParse(parsed)
-      if (!planResult.success) {
-        console.warn('Plan response validation failed:', planResult.error.issues)
-        return this.fallback(intent)
-      }
-      const { steps } = planResult.data
-
-      return {
-        steps,
-        estimatedTime: String(planResult.data.estimatedTime ?? '1 hour'),
-      }
-    } finally {
-      clearTimeout(timerId)
+    return {
+      steps,
+      estimatedTime: String(planResult.data.estimatedTime ?? '1 hour'),
     }
   }
 

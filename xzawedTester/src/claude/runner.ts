@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { answerViaClaude } from '@xzawed/agent-streams'
 import type { TestFailure } from '../types.js'
 
 const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
@@ -20,6 +21,17 @@ export class ClaudeRunner {
 
   constructor(apiKey: string, private readonly model: string) {
     this.client = new Anthropic({ apiKey })
+  }
+
+  /** 다른 에이전트의 질의(query)에 테스트 관점에서 답한다. */
+  async answerQuery(query: string, context: Record<string, unknown>): Promise<string> {
+    return answerViaClaude(
+      this.client,
+      this.model,
+      'You are a software testing expert. Answer the question concisely from a testing/quality perspective. Plain text, no JSON.',
+      query,
+      context,
+    )
   }
 
   async analyzeFailures(output: string): Promise<TestFailure[]> {

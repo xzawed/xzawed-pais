@@ -68,3 +68,10 @@ describe('ClaudeRunner.analyzeFailures', () => {
     expect(result).toEqual([])
   })
 })
+
+describe('ClaudeRunner.answerQuery', () => {
+  it('Claude 텍스트 답변을 반환한다', async () => {
+    mockCreate.mockResolvedValueOnce({ content: [{ type: 'text', text: '테스트 관점 답변' }] })
+    expect(await runner.answerQuery('재고 표시 가능?', { x: 1 })).toBe('테스트 관점 답변')
+  })
+})
