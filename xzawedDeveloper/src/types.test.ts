@@ -51,11 +51,12 @@ describe('ManagerToDeveloperMessageSchema', () => {
     expect(result.success).toBe(true)
   })
 
-  it('필수 필드 누락 시 파싱 실패한다', () => {
-    const { plan: _plan, ...withoutPlan } = base.payload
+  it('필수 필드(context) 누락 시 파싱 실패한다', () => {
+    // plan/projectPath는 query 모드 지원으로 optional이 됨. context는 여전히 필수.
+    const { context: _context, ...withoutContext } = base.payload
     const result = ManagerToDeveloperMessageSchema.safeParse({
       ...base,
-      payload: withoutPlan,
+      payload: withoutContext,
     })
     expect(result.success).toBe(false)
   })

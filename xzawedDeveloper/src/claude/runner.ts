@@ -31,6 +31,7 @@ export class ClaudeRunner {
     plan: string,
     projectPath: string,
     context: Record<string, unknown>,
+    clarificationContext?: string,
   ): Promise<{ changes: FileChange[]; summary: string }> {
     let timerId: ReturnType<typeof setTimeout> | undefined
     let response: Awaited<ReturnType<typeof this.client.messages.create>>
@@ -42,7 +43,12 @@ export class ClaudeRunner {
           system: SYSTEM_PROMPT,
           messages: [{
             role: 'user',
-            content: `Project path: ${projectPath}\nContext: ${JSON.stringify(context, null, 2)}\n\nPlan:\n${plan}`,
+            content: [
+              `Project path: ${projectPath}`,
+              `Context: ${JSON.stringify(context, null, 2)}`,
+              clarificationContext ? `Answer from another agent: ${clarificationContext}` : '',
+              `\nPlan:\n${plan}`,
+            ].filter(Boolean).join('\n'),
           }],
         }),
         new Promise<never>((_, reject) => {
@@ -61,6 +67,23 @@ export class ClaudeRunner {
     const changes = this.parseChanges(text)
     const summary = `Implemented ${changes.length} file change(s) for: ${plan.slice(0, 100)}`
     return { changes, summary }
+  }
+
+  /** 다른 에이전트의 질의(query)에 개발 관점에서 답한다. */
+  async answerQuery(query: string, context: Record<string, unknown>): Promise<string> {
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 1024,
+      system: 'You are an expert software developer. Answer the question concisely from an implementation feasibility perspective. Plain text, no JSON.',
+      messages: [{
+        role: 'user',
+        content: `Question: ${query}\n\nContext: ${JSON.stringify(context, null, 2)}`,
+      }],
+    })
+    return response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('')
   }
 
   parseChanges(text: string): FileChange[] {

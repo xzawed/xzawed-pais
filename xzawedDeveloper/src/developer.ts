@@ -26,11 +26,31 @@ export class Developer {
       timestamp: Date.now(),
     }
 
+    // 질의 응답 모드: 다른 에이전트가 던진 query에 답한다
+    if (payload.query !== undefined) {
+      try {
+        const answer = await this.runner.answerQuery(payload.query, payload.context)
+        await this.producer.publish(sessionId, {
+          ...base,
+          type: 'develop_complete',
+          payload: { content: answer },
+        })
+      } catch (err: unknown) {
+        await this.producer.publish(sessionId, {
+          ...base,
+          type: 'error',
+          payload: { content: err instanceof Error ? err.message : 'Unknown error' },
+        })
+      }
+      return
+    }
+
     try {
       const { changes, summary } = await this.runner.generateChanges(
-        payload.plan,
-        payload.projectPath,
+        payload.plan ?? '',
+        payload.projectPath ?? '.',
         payload.context,
+        payload.clarificationContext,
       )
 
       const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)

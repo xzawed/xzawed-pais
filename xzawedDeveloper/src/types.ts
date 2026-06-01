@@ -31,10 +31,15 @@ export const ManagerToDeveloperMessageSchema = z.object({
   timestamp: z.number(),
   type: z.enum(['develop_request', 'abort']),
   payload: z.object({
-    plan: z.string(),
-    projectPath: z.string(),
+    // 개발 요청 시 사용 (query 모드에서는 없음)
+    plan: z.string().optional(),
+    projectPath: z.string().optional(),
     context: z.record(z.unknown()),
     userContext: UserContextSchema.optional(),
+    // 협업: 다른 에이전트 답(clarificationContext) 또는 질의 답변 모드(query)
+    clarificationContext: z.string().optional(),
+    query: z.string().optional(),
+    queryKind: z.enum(['active_request', 'cross_check']).optional(),
   }),
 })
 
