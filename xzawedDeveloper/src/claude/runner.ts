@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import path from 'node:path'
+import { answerViaClaude } from '@xzawed/agent-streams'
 import type { FileChange } from '../types.js'
 
 const API_TIMEOUT_MS = Number(process.env['DEVELOPER_CLAUDE_TIMEOUT_MS'] ?? '120000')
@@ -71,19 +72,13 @@ export class ClaudeRunner {
 
   /** 다른 에이전트의 질의(query)에 개발 관점에서 답한다. */
   async answerQuery(query: string, context: Record<string, unknown>): Promise<string> {
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: 1024,
-      system: 'You are an expert software developer. Answer the question concisely from an implementation feasibility perspective. Plain text, no JSON.',
-      messages: [{
-        role: 'user',
-        content: `Question: ${query}\n\nContext: ${JSON.stringify(context, null, 2)}`,
-      }],
-    })
-    return response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
+    return answerViaClaude(
+      this.client,
+      this.model,
+      'You are an expert software developer. Answer the question concisely from an implementation feasibility perspective. Plain text, no JSON.',
+      query,
+      context,
+    )
   }
 
   parseChanges(text: string): FileChange[] {

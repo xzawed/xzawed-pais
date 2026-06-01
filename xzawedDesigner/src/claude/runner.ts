@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
-import { AgentQuery, parseAgentQuery } from '@xzawed/agent-streams'
+import { AgentQuery, parseAgentQuery, answerViaClaude } from '@xzawed/agent-streams'
 import { ComponentSpecSchema, UISpecSchema } from '../types.js'
 import type { ComponentSpec, UISpec } from '../types.js'
 
@@ -116,19 +116,13 @@ export class ClaudeRunner {
 
   /** 다른 에이전트의 질의(query)에 디자인 관점에서 답한다. */
   async answerQuery(query: string, context: Record<string, unknown>): Promise<string> {
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: 1024,
-      system: 'You are a UI/UX design expert. Answer the question concisely from a design perspective. Plain text, no JSON.',
-      messages: [{
-        role: 'user',
-        content: `Question: ${query}\n\nContext: ${JSON.stringify(context, null, 2)}`,
-      }],
-    })
-    return response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
+    return answerViaClaude(
+      this.client,
+      this.model,
+      'You are a UI/UX design expert. Answer the question concisely from a design perspective. Plain text, no JSON.',
+      query,
+      context,
+    )
   }
 
   parseResponse(text: string, intent: string): { components: ComponentSpec[]; uiSpec: UISpec } | AgentQuery {

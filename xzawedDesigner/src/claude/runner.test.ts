@@ -120,4 +120,21 @@ describe('ClaudeRunner.generateDesign', () => {
     expect(result.components).toHaveLength(1)
     expect(result.components[0]?.name).toBe('Button')
   })
+
+  it('clarificationContext를 프롬프트에 포함한다', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: '{"components":[{"name":"A","description":"b","props":{}}],"uiSpec":{"type":"mockup_viewer"}}' }],
+    })
+    await runner.generateDesign('intent', {}, 'react', 'tailwind', '개발자 답: 5초 폴링')
+    const sentContent = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(sentContent).toContain('Answer from another agent: 개발자 답: 5초 폴링')
+  })
+})
+
+describe('ClaudeRunner.answerQuery', () => {
+  it('Claude 응답 텍스트를 반환한다', async () => {
+    mockCreate.mockResolvedValueOnce({ content: [{ type: 'text', text: '디자인 관점 답변' }] })
+    const answer = await runner.answerQuery('재고 표시 가능?', { x: 1 })
+    expect(answer).toBe('디자인 관점 답변')
+  })
 })
