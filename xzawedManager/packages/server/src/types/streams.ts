@@ -27,6 +27,13 @@ export interface AbortMessage extends BaseMessage {
 
 export type OrchestratorToManagerMessage = TaskRequestMessage | InfoResponseMessage | AbortMessage
 
+/** 승인 게이트 요청 메타 — info_request payload에 실어 Orchestrator UI가 승인/수정/중단을 렌더한다. */
+export interface ApprovalRequest {
+  stage: string
+  summary: string
+  mode: 'manual'
+}
+
 export interface ManagerToOrchestratorMessage {
   sessionId: string
   messageId: string
@@ -36,6 +43,7 @@ export interface ManagerToOrchestratorMessage {
     agentId: string
     content: string
     uiSpec?: UISpec
+    approval?: ApprovalRequest
   }
 }
 

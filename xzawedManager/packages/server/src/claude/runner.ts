@@ -4,8 +4,9 @@ import type { StreamProducer } from '../streams/producer.js'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { UserContext } from '../types/user-context.js'
 import type { ManagerToOrchestratorMessage, UISpec } from '../types/streams.js'
-import { ClarificationNeededError, AgentQueryError } from '../tools/errors.js'
+import { ClarificationNeededError, AgentQueryError, GateAbortError } from '../tools/errors.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
+import { isGatedTool, effectiveMode, summarizeOutput, parseDecision } from '../gates/approval-gate.js'
 
 /** MANAGER_MAX_ITERATIONS 환경변수를 파싱하고 유효성을 검증한다. 유효하지 않으면 Error를 throw한다. */
 export function parseMaxIterations(raw: string | undefined): number {
@@ -18,6 +19,7 @@ export function parseMaxIterations(raw: string | undefined): number {
 
 const MAX_ITERATIONS = parseMaxIterations(process.env['MANAGER_MAX_ITERATIONS'])
 const MAX_TOKENS = Number(process.env['MANAGER_MAX_TOKENS'] ?? '16384')
+const MAX_GATE_REVISES = Number(process.env['MANAGER_MAX_GATE_REVISES'] ?? '5')
 const CLAUDE_CALL_TIMEOUT_MS = Number(process.env['MANAGER_CLAUDE_TIMEOUT_MS'] ?? '120000')
 
 const REQUEST_INFO_TOOL: Anthropic.Tool = {
@@ -87,6 +89,7 @@ export class ClaudeRunner {
     block: Anthropic.ToolUseBlock,
     sessionId: string,
     producer: StreamProducer,
+    sessionStore: SessionStore,
     userContext?: UserContext,
   ): Promise<Anthropic.ToolResultBlockParam> {
     const handler = this.registry.get(block.name)
@@ -94,9 +97,16 @@ export class ClaudeRunner {
 
     await this.publishStatus(producer, sessionId, `Starting ${block.name}...`)
     // ClarificationNeededError는 catch하지 않고 processToolUseBlocks로 전파
-    const result = await handler.execute(block.input, sessionId, userContext)
+    let result = await handler.execute(block.input, sessionId, userContext)
 
-    // design_ui 완료 시 uiSpec을 포함한 상태 업데이트 발행
+    // 코드로 강제하는 승인 게이트 — 에이전트 디스패치 도구에만 적용
+    if (isGatedTool(block.name)) {
+      result = await this.applyApprovalGate(
+        handler, block, result, sessionId, producer, sessionStore, userContext,
+      )
+    }
+
+    // design_ui 완료 시 uiSpec을 포함한 상태 업데이트 발행 (게이트 통과한 최종 result 기준)
     if (block.name === 'design_ui') {
       const designResult = result as Record<string, unknown>
       if (designResult['uiSpec'] !== undefined) {
@@ -111,22 +121,65 @@ export class ClaudeRunner {
             uiSpec: designResult['uiSpec'] as UISpec,
           },
         })
-        const resultStr = JSON.stringify(result)
-        return {
-          type: 'tool_result',
-          tool_use_id: block.id,
-          content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
-        }
+        return this.toToolResult(block.id, result)
       }
     }
 
     await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
+    return this.toToolResult(block.id, result)
+  }
 
+  /** tool_result 블록 생성 (4000자 상한). */
+  private toToolResult(toolUseId: string, result: unknown): Anthropic.ToolResultBlockParam {
     const resultStr = JSON.stringify(result)
     return {
       type: 'tool_result',
-      tool_use_id: block.id,
+      tool_use_id: toolUseId,
       content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
+    }
+  }
+
+  /**
+   * 승인 게이트 루프. manual이면 info_request(approval) 발행 후 사용자 응답까지 대기.
+   * approve → result 반환 / revise → 피드백으로 재실행 후 재게이트 / abort → GateAbortError.
+   * 재실행은 MAX_GATE_REVISES회 상한(무한 루프 방지).
+   */
+  private async applyApprovalGate(
+    handler: { execute: (i: unknown, s: string, u?: UserContext) => Promise<unknown> },
+    block: Anthropic.ToolUseBlock,
+    initialResult: unknown,
+    sessionId: string,
+    producer: StreamProducer,
+    sessionStore: SessionStore,
+    userContext?: UserContext,
+  ): Promise<unknown> {
+    let result = initialResult
+    let revises = 0
+    for (;;) {
+      if (effectiveMode(sessionStore.getGateConfig(sessionId), block.name) === 'auto') return result
+
+      await producer.publish({
+        sessionId,
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now(),
+        type: 'info_request',
+        payload: {
+          agentId: 'manager',
+          content: `'${block.name}' 단계 결과를 검토하고 승인/수정/중단을 선택하세요.`,
+          approval: { stage: block.name, summary: summarizeOutput(block.name, result), mode: 'manual' },
+        },
+      })
+      const decision = parseDecision(await sessionStore.waitForInfo(sessionId))
+
+      if (decision.kind === 'approve') return result
+      if (decision.kind === 'abort') {
+        sessionStore.abort(sessionId)
+        throw new GateAbortError(block.name)
+      }
+      // revise
+      if (++revises > MAX_GATE_REVISES) return result
+      const augmented = { ...(block.input as Record<string, unknown>), clarificationContext: decision.feedback }
+      result = await handler.execute(augmented, sessionId, userContext)
     }
   }
 
@@ -175,8 +228,9 @@ export class ClaudeRunner {
         toolResults.push(await this.handleRequestInfoTool(block, sessionId, producer, sessionStore))
       } else {
         try {
-          toolResults.push(await this.handleAgentTool(block, sessionId, producer, userContext))
+          toolResults.push(await this.handleAgentTool(block, sessionId, producer, sessionStore, userContext))
         } catch (err) {
+          if (err instanceof GateAbortError) throw err // 루프를 빠져나가 세션 종료
           if (err instanceof ClarificationNeededError) {
             // 하위 에이전트의 명확화 요청을 사용자에게 중계
             const basePayload = { agentId: 'manager', content: err.content }

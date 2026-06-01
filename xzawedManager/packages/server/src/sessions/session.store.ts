@@ -1,4 +1,5 @@
 import type { SessionRepo } from '../db/session.repo.js'
+import { DEFAULT_GATE_CONFIG, type GateConfig, type GateMode } from '../gates/approval-gate.js'
 
 export type SessionState = 'idle' | 'running' | 'waiting_info'
 
@@ -7,6 +8,7 @@ export interface SessionEntry {
   abortController: AbortController
   infoResolve: ((value: string) => void) | null
   infoReject: ((reason: Error) => void) | null
+  gateConfig: GateConfig
 }
 
 const dbErr = (op: string, id: string) => (err: unknown) =>
@@ -19,7 +21,13 @@ export class SessionStore {
 
   create(sessionId: string): void {
     if (this.sessions.has(sessionId)) throw new Error(`Session ${sessionId} already exists`)
-    this.sessions.set(sessionId, { state: 'idle', abortController: new AbortController(), infoResolve: null, infoReject: null })
+    this.sessions.set(sessionId, {
+      state: 'idle',
+      abortController: new AbortController(),
+      infoResolve: null,
+      infoReject: null,
+      gateConfig: { defaultMode: DEFAULT_GATE_CONFIG.defaultMode, overrides: {} },
+    })
     void this.repo?.insert(sessionId).catch(dbErr('insert', sessionId))
   }
 
@@ -66,6 +74,20 @@ export class SessionStore {
 
   getAbortSignal(sessionId: string): AbortSignal | undefined {
     return this.sessions.get(sessionId)?.abortController.signal
+  }
+
+  getGateConfig(sessionId: string): GateConfig {
+    return this.sessions.get(sessionId)?.gateConfig ?? DEFAULT_GATE_CONFIG
+  }
+
+  setGateOverride(sessionId: string, stage: string, mode: GateMode): void {
+    const s = this.sessions.get(sessionId)
+    if (s) s.gateConfig.overrides[stage] = mode
+  }
+
+  setGateDefaultMode(sessionId: string, mode: GateMode): void {
+    const s = this.sessions.get(sessionId)
+    if (s) s.gateConfig.defaultMode = mode
   }
 
   delete(sessionId: string): void {

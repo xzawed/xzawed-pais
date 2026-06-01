@@ -284,6 +284,7 @@ describe('ClaudeRunner — ClarificationNeededError / design_ui 통합', () => {
     registry.register(makeHandler('design_ui', execute))
     const { runner, sessionStore, producer } = makeRunner(registry)
     sessionStore.create('sess-design-ui')
+    sessionStore.setGateDefaultMode('sess-design-ui', 'auto') // 승인 게이트 비대상 흐름 검증
 
     await runner.run({
       sessionId: 'sess-design-ui',
@@ -320,6 +321,7 @@ describe('ClaudeRunner — ClarificationNeededError / design_ui 통합', () => {
     registry.register(makeHandler('design_ui', execute))
     const { runner, sessionStore, producer } = makeRunner(registry)
     sessionStore.create('sess-design-no-uispec')
+    sessionStore.setGateDefaultMode('sess-design-no-uispec', 'auto') // 승인 게이트 비대상 흐름 검증
 
     await runner.run({
       sessionId: 'sess-design-no-uispec',
