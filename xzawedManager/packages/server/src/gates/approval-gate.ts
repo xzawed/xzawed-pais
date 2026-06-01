@@ -7,17 +7,24 @@ export interface GateConfig {
 
 export const DEFAULT_GATE_CONFIG: GateConfig = { defaultMode: 'manual', overrides: {} }
 
-/** 게이트 대상 = 에이전트 디스패치 도구. 보조/배포 도구는 제외. */
+/** 게이트 대상 = 에이전트 디스패치 도구. 보조 도구(register/switch/github_ops)는 제외. */
 export const GATED_TOOLS: ReadonlySet<string> = new Set([
   'plan_task', 'design_ui', 'develop_code',
   'run_tests', 'build_project', 'watch_changes', 'security_audit',
 ])
 
+/**
+ * 배포 도구 — 되돌리기 어려운 외부 작업이라 **항상 manual** 승인(auto override 무시).
+ * 비전의 'GitHub 배포 → ⛔ 승인' 게이트(A3).
+ */
+export const DEPLOY_TOOLS: ReadonlySet<string> = new Set(['deploy_project'])
+
 export function isGatedTool(toolName: string): boolean {
-  return GATED_TOOLS.has(toolName)
+  return GATED_TOOLS.has(toolName) || DEPLOY_TOOLS.has(toolName)
 }
 
 export function effectiveMode(config: GateConfig, stage: string): GateMode {
+  if (DEPLOY_TOOLS.has(stage)) return 'manual' // 배포는 항상 수동 승인
   return config.overrides[stage] ?? config.defaultMode
 }
 
