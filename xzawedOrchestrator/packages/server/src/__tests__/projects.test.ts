@@ -140,6 +140,7 @@ const hasDb = DATABASE_URL !== ''
 const BASE_CONFIG = {
   port: 0,
   redisUrl: 'redis://127.0.0.1:6380',
+  managerUrl: 'http://localhost:3001',
   claudeMode: 'cli' as const,
   mode: 'local' as const,
   auth: 'none' as const,

@@ -9,6 +9,7 @@ import { DynamicPanel } from './DynamicPanel.js'
 import { GitHubPanel } from './GitHubPanel.js'
 import { McpPanel } from './McpPanel.js'
 import { PluginPanel } from './PluginPanel.js'
+import { WikiPanel } from './WikiPanel.js'
 
 const SIDEBAR_MIN = 150
 const SIDEBAR_MAX = 420
@@ -83,6 +84,7 @@ export function ChatLayout(): React.JSX.Element {
         {activePanel === 'github'  && <GitHubPanel />}
         {activePanel === 'mcp'     && <McpPanel />}
         {activePanel === 'plugins' && <PluginPanel />}
+        {activePanel === 'wiki'    && <WikiPanel />}
       </div>
       {activePanel === 'chat' && (
         <>

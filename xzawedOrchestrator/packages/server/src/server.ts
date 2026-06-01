@@ -17,6 +17,7 @@ import { createRunner } from './claude/runner.factory.js'
 import { StreamProducer } from './streams/producer.js'
 import { StreamConsumer } from './streams/consumer.js'
 import { healthRoutes } from './api/health.route.js'
+import { knowledgeRoutes } from './api/knowledge.route.js'
 import { sessionsRoutes } from './api/sessions.route.js'
 import { sessionWsRoutes } from './ws/session.ws.js'
 import { authRoutes } from './api/auth.route.js'
@@ -120,6 +121,7 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
 
   await app.register(websocket)
   await app.register(healthRoutes)
+  await app.register(knowledgeRoutes, { managerUrl: config.managerUrl })
   if (dbPool && config.userJwtSecret) {
     await registerAuthRoutes(app, dbPool, config)
   } else {

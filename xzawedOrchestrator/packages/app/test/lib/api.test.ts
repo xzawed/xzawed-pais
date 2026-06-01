@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { postUiAction } from '../../src/renderer/src/lib/api.js'
+import { postUiAction, getKnowledge } from '../../src/renderer/src/lib/api.js'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -32,5 +32,27 @@ describe('postUiAction', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(postUiAction('ftp://evil', 'sess-1', 'x')).rejects.toThrow(/http or https/)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('getKnowledge', () => {
+  it('items 배열을 반환한다', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ items: [{ content: 'a', sourceAgent: 'planner', createdAt: 't' }] }),
+    }))
+    expect(await getKnowledge('http://localhost:3000', 'p1')).toEqual([
+      { content: 'a', sourceAgent: 'planner', createdAt: 't' },
+    ])
+  })
+
+  it('non-ok 응답이면 빈 배열', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }))
+    expect(await getKnowledge('http://localhost:3000', 'p1')).toEqual([])
+  })
+
+  it('items가 배열이 아니면 빈 배열', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) }))
+    expect(await getKnowledge('http://localhost:3000', 'p1')).toEqual([])
   })
 })

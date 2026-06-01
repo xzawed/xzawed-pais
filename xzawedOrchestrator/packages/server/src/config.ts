@@ -8,6 +8,7 @@ const EnvSchema = z.object({
   CLAUDE_MODEL:               z.string().default('claude-sonnet-4-6'),
   ANTHROPIC_API_KEY:          z.string().optional(),
   REDIS_URL:                  z.string().default('redis://localhost:6379'),
+  MANAGER_URL:                z.string().default('http://localhost:3001'),
   SERVICE_JWT_SECRET:         z.string().optional(),
   USER_JWT_SECRET:            z.string().optional(),
   REMOTE_CLI_URL:             z.string().url().optional(),
@@ -56,6 +57,7 @@ export interface Config {
   remoteUser?: string
   remoteKeyPath?: string
   redisUrl: string
+  managerUrl: string
   databaseUrl?: string
   userJwtSecret?: string
   serveWeb: boolean
@@ -82,6 +84,7 @@ export function loadConfig(): Config {
     remoteUser:       env.REMOTE_USER,
     remoteKeyPath:    env.REMOTE_KEY_PATH,
     redisUrl:         env.REDIS_URL,
+    managerUrl:       env.MANAGER_URL,
     databaseUrl:      env.DATABASE_URL,
     userJwtSecret:    env.USER_JWT_SECRET,
     serveWeb:         env.SERVE_WEB === 'true',

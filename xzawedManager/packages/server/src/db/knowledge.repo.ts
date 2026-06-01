@@ -3,6 +3,7 @@ import type { Pool } from 'pg'
 export interface KnowledgeEntry {
   content: string
   sourceAgent: string
+  createdAt?: string
 }
 
 /** 프로젝트 단위 도메인 지식(domain_knowledge) 저장소. SessionRepo와 동일 패턴. */
@@ -20,13 +21,14 @@ export class KnowledgeRepo {
 
   async recentByProject(projectId: string, limit: number): Promise<KnowledgeEntry[]> {
     const res = await this.pool.query(
-      `SELECT content, source_agent FROM domain_knowledge
+      `SELECT content, source_agent, created_at FROM domain_knowledge
        WHERE project_id = $1 ORDER BY created_at DESC LIMIT $2`,
       [projectId, limit],
     )
-    return (res.rows as { content: string; source_agent: string }[]).map((r) => ({
+    return (res.rows as { content: string; source_agent: string; created_at: unknown }[]).map((r) => ({
       content: r.content,
       sourceAgent: r.source_agent,
+      createdAt: String(r.created_at),
     }))
   }
 }

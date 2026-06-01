@@ -27,7 +27,7 @@ export interface PluginInfo {
   enabled: boolean
 }
 
-export type ActivePanel = 'chat' | 'github' | 'mcp' | 'plugins'
+export type ActivePanel = 'chat' | 'github' | 'mcp' | 'plugins' | 'wiki'
 export type SidebarMode = 'compact' | 'expanded' | 'auto'
 
 interface IntegrationsState {

@@ -25,17 +25,17 @@ describe('KnowledgeRepo', () => {
     expect(pool.query.mock.calls[1][1]).toEqual(['p1', 'PII는 암호화', 'planner'])
   })
 
-  it('recentByProject는 created_at DESC LIMIT로 조회해 매핑한다', async () => {
+  it('recentByProject는 created_at DESC LIMIT로 조회해 createdAt 포함 매핑한다', async () => {
     const pool = mockPool([
-      { content: 'a', source_agent: 'planner' },
-      { content: 'b', source_agent: 'developer' },
+      { content: 'a', source_agent: 'planner', created_at: '2026-06-02T00:00:00Z' },
+      { content: 'b', source_agent: 'developer', created_at: '2026-06-01T00:00:00Z' },
     ])
     const out = await new KnowledgeRepo(pool).recentByProject('p1', 20)
     expect(pool.query.mock.calls[0][0]).toMatch(/ORDER BY created_at DESC/i)
     expect(pool.query.mock.calls[0][1]).toEqual(['p1', 20])
     expect(out).toEqual([
-      { content: 'a', sourceAgent: 'planner' },
-      { content: 'b', sourceAgent: 'developer' },
+      { content: 'a', sourceAgent: 'planner', createdAt: '2026-06-02T00:00:00Z' },
+      { content: 'b', sourceAgent: 'developer', createdAt: '2026-06-01T00:00:00Z' },
     ])
   })
 })
