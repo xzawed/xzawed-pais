@@ -14,8 +14,8 @@ import { ClaudeRunner } from './runner.js'
 
 /** generateDesign/parseResponse 결과를 디자인 형태로 좁힌다(AgentQuery면 실패). */
 function asDesign(
-  r: { components: ComponentSpec[]; uiSpec: UISpec } | AgentQuery,
-): { components: ComponentSpec[]; uiSpec: UISpec } {
+  r: { components: ComponentSpec[]; uiSpec: UISpec; knowledge?: string[] } | AgentQuery,
+): { components: ComponentSpec[]; uiSpec: UISpec; knowledge?: string[] } {
   if (r instanceof AgentQuery) throw new Error('expected design result, got AgentQuery')
   return r
 }
@@ -37,6 +37,25 @@ describe('ClaudeRunner.parseResponse', () => {
     expect(result.components).toHaveLength(1)
     expect(result.components[0]?.name).toBe('LoginForm')
     expect(result.uiSpec.type).toBe('mockup_viewer')
+  })
+
+  it('응답의 knowledge 배열을 도메인 지식으로 반환한다', () => {
+    const json = JSON.stringify({
+      components: [{ name: 'LoginForm', description: 'login', props: {} }],
+      uiSpec: { type: 'mockup_viewer', title: 'Login' },
+      knowledge: ['폼은 모바일 우선', '접근성 WCAG AA 준수'],
+    })
+    const result = asDesign(runner.parseResponse(json, 'login'))
+    expect(result.knowledge).toEqual(['폼은 모바일 우선', '접근성 WCAG AA 준수'])
+  })
+
+  it('knowledge가 없으면 결과에 knowledge 키가 없다', () => {
+    const json = JSON.stringify({
+      components: [{ name: 'Btn', description: 'x', props: {} }],
+      uiSpec: { type: 'mockup_viewer' },
+    })
+    const result = asDesign(runner.parseResponse(json, 'btn'))
+    expect(result.knowledge).toBeUndefined()
   })
 
   it('strips ```json code fences', () => {

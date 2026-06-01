@@ -32,6 +32,7 @@ export class Designer {
             payload: {
               components: result.components,
               uiSpec: result.uiSpec,
+              ...(result.knowledge ? { knowledge: result.knowledge } : {}),
               content: `Generated ${result.components.length} component(s) for: ${payload.intent.slice(0, 80)}`,
             },
           }),
