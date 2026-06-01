@@ -29,27 +29,30 @@ export function effectiveMode(config: GateConfig, stage: string): GateMode {
 }
 
 export type GateDecision =
-  | { kind: 'approve' }
+  | { kind: 'approve'; rememberAuto: boolean }
   | { kind: 'revise'; feedback: string }
   | { kind: 'abort' }
 
-/** info_response.answer(JSON)에서 승인 결정을 해석한다. 파싱 불가·미지 값은 approve로 fail-open. */
+/**
+ * info_response.answer(JSON)에서 승인 결정을 해석한다. 파싱 불가·미지 값은 approve로 fail-open.
+ * approve에 `rememberAuto: true`면 해당 단계를 이후 자동 승인(override=auto)으로 전환한다.
+ */
 export function parseDecision(answer: string): GateDecision {
   let parsed: unknown
   try {
     parsed = JSON.parse(answer)
   } catch {
-    return { kind: 'approve' }
+    return { kind: 'approve', rememberAuto: false }
   }
-  if (typeof parsed !== 'object' || parsed === null) return { kind: 'approve' }
-  const decision = (parsed as Record<string, unknown>)['decision']
-  if (decision === 'approve') return { kind: 'approve' }
+  if (typeof parsed !== 'object' || parsed === null) return { kind: 'approve', rememberAuto: false }
+  const obj = parsed as Record<string, unknown>
+  const decision = obj['decision']
   if (decision === 'abort') return { kind: 'abort' }
   if (decision === 'revise') {
-    const fb = (parsed as Record<string, unknown>)['feedback']
+    const fb = obj['feedback']
     return { kind: 'revise', feedback: typeof fb === 'string' ? fb : '' }
   }
-  return { kind: 'approve' }
+  return { kind: 'approve', rememberAuto: obj['rememberAuto'] === true }
 }
 
 const SUMMARY_MAX = 2000

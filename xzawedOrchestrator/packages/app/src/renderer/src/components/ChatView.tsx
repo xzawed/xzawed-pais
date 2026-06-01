@@ -23,6 +23,7 @@ export function ChatView(): React.JSX.Element {
   const bottomRef = useRef<HTMLDivElement>(null)
   const wsClientRef = useRef<SessionWsClient | null>(null)
   const [infoResponseValue, setInfoResponseValue] = useState('')
+  const [rememberAuto, setRememberAuto] = useState(false)
   const { projectId } = useParams<{ projectId?: string }>()
   const navigate = useNavigate()
   const projects = useProjectsStore((s) => s.projects)
@@ -114,6 +115,7 @@ export function ChatView(): React.JSX.Element {
     })
     store.setPendingInfoRequest(null)
     setInfoResponseValue('')
+    setRememberAuto(false)
   }
 
   function handleInfoResponseSend(): void {
@@ -136,7 +138,11 @@ export function ChatView(): React.JSX.Element {
       sendUiAction(JSON.stringify({ decision, feedback }), `${t('approval.revise')}: ${feedback}`)
       return
     }
-    sendUiAction(JSON.stringify({ decision }), t(`approval.${decision}`))
+    if (decision === 'approve') {
+      sendUiAction(JSON.stringify({ decision, rememberAuto }), t('approval.approve'))
+      return
+    }
+    sendUiAction(JSON.stringify({ decision }), t('approval.abort'))
   }
 
   const streamingMessage = useMemo<Message | null>(
@@ -259,6 +265,16 @@ export function ChatView(): React.JSX.Element {
                       {t('approval.abort')}
                     </button>
                   </div>
+                  <label className="flex items-center gap-1.5 text-[11px] text-fg-muted select-none">
+                    <input
+                      data-testid="approval-remember-auto"
+                      type="checkbox"
+                      checked={rememberAuto}
+                      onChange={(e) => setRememberAuto(e.target.checked)}
+                      className="accent-accent"
+                    />
+                    {t('approval.remember_auto')}
+                  </label>
                 </div>
               ) : (
                 <div className="flex items-end gap-2">
