@@ -6,3 +6,5 @@ export { AgentQuery, AgentQuerySchema, parseAgentQuery } from './types/agent-que
 export type { AgentQueryKind, AgentQueryPayload } from './types/agent-query.js'
 export { answerViaClaude } from './claude/answer-query.js'
 export type { ClaudeLike } from './claude/answer-query.js'
+export { runCollaborativeHandle } from './streams/collaboration.js'
+export type { MainOutcome } from './streams/collaboration.js'

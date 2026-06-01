@@ -1,4 +1,4 @@
-import { AgentQuery } from '@xzawed/agent-streams'
+import { AgentQuery, runCollaborativeHandle } from '@xzawed/agent-streams'
 import type { ManagerToDesignerMessage } from './types.js'
 import type { Producer } from './streams/producer.js'
 import type { ClaudeRunner } from './claude/runner.js'
@@ -11,75 +11,44 @@ export class Designer {
 
   async handle(message: ManagerToDesignerMessage): Promise<void> {
     const { sessionId, payload } = message
+    const base = { sessionId, messageId: crypto.randomUUID(), timestamp: Date.now() }
 
-    if (message.type === 'abort') return
-
-    const base = {
-      sessionId,
-      messageId: crypto.randomUUID(),
-      timestamp: Date.now(),
-    }
-
-    // 질의 응답 모드: 다른 에이전트가 던진 query에 답한다
-    if (payload.query !== undefined) {
-      try {
-        const answer = await this.runner.answerQuery(payload.query, payload.context)
-        await this.producer.publish(sessionId, {
-          ...base,
-          type: 'design_complete',
-          payload: { content: answer },
-        })
-      } catch (err: unknown) {
-        await this.producer.publish(sessionId, {
-          ...base,
-          type: 'error',
-          payload: { content: err instanceof Error ? err.message : 'Unknown error' },
-        })
-      }
-      return
-    }
-
-    try {
-      const result = await this.runner.generateDesign(
-        payload.intent,
-        payload.context,
-        payload.targetFramework ?? 'react',
-        payload.designSystem ?? 'tailwind',
-        payload.clarificationContext,
-      )
-
-      // 다른 에이전트에게 질의가 필요하면 agent_query 발행
-      if (result instanceof AgentQuery) {
-        await this.producer.publish(sessionId, {
+    await runCollaborativeHandle({
+      isAbort: message.type === 'abort',
+      query: payload.query,
+      context: payload.context,
+      answerQuery: (q, c) => this.runner.answerQuery(q, c),
+      publishQueryAnswer: (content) =>
+        this.producer.publish(sessionId, { ...base, type: 'design_complete', payload: { content } }),
+      runMain: async () => {
+        const result = await this.runner.generateDesign(
+          payload.intent,
+          payload.context,
+          payload.targetFramework ?? 'react',
+          payload.designSystem ?? 'tailwind',
+          payload.clarificationContext,
+        )
+        if (result instanceof AgentQuery) return result
+        return {
+          publishResult: () => this.producer.publish(sessionId, {
+            ...base,
+            type: 'design_complete',
+            payload: {
+              components: result.components,
+              uiSpec: result.uiSpec,
+              content: `Generated ${result.components.length} component(s) for: ${payload.intent.slice(0, 80)}`,
+            },
+          }),
+        }
+      },
+      publishAgentQuery: (aq) =>
+        this.producer.publish(sessionId, {
           ...base,
           type: 'agent_query',
-          payload: {
-            content: result.question,
-            to: result.to,
-            question: result.question,
-            kind: result.kind,
-          },
-        })
-        return
-      }
-
-      await this.producer.publish(sessionId, {
-        ...base,
-        type: 'design_complete',
-        payload: {
-          components: result.components,
-          uiSpec: result.uiSpec,
-          content: `Generated ${result.components.length} component(s) for: ${payload.intent.slice(0, 80)}`,
-        },
-      })
-    } catch (err: unknown) {
-      await this.producer.publish(sessionId, {
-        ...base,
-        type: 'error',
-        payload: {
-          content: err instanceof Error ? err.message : 'Unknown error',
-        },
-      })
-    }
+          payload: { content: aq.question, to: aq.to, question: aq.question, kind: aq.kind },
+        }),
+      publishError: (content) =>
+        this.producer.publish(sessionId, { ...base, type: 'error', payload: { content } }),
+    })
   }
 }
