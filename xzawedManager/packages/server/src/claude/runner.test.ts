@@ -4,9 +4,9 @@ import type Anthropic from '@anthropic-ai/sdk'
 vi.mock('@anthropic-ai/sdk', () => {
   const create = vi.fn()
   return {
-    default: vi.fn().mockImplementation(() => ({
+    default: vi.fn().mockImplementation(function () { return ({
       messages: { create },
-    })),
+    }) }),
     __create: create,
   }
 })
@@ -84,9 +84,9 @@ beforeEach(() => {
 
   // Construct a fresh Anthropic mock instance
   const create = vi.fn()
-  AnthropicMock.mockImplementation(() => ({
-    messages: { create },
-  }) as unknown as Anthropic)
+  AnthropicMock.mockImplementation(function () {
+    return ({ messages: { create } }) as unknown as Anthropic
+  })
 
   client = new AnthropicDefault()
   createFn = (client as unknown as { messages: { create: ReturnType<typeof vi.fn> } }).messages.create

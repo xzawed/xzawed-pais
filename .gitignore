@@ -66,3 +66,4 @@ docs/superpowers/plans/
 
 # 로컬 테스트/개발 전용 HTML 파일
 test-dashboard.html
+.vitest-attachments/

@@ -83,7 +83,7 @@ describe('SSHRemoteRunner', () => {
 
   it('yields error on SSH connection failure', async () => {
     const inst = makeClientInstance({ connectError: new Error('Connection refused') })
-    MockClient.mockImplementation(() => inst as unknown as InstanceType<typeof Client>)
+    MockClient.mockImplementation(function () { return inst as unknown as InstanceType<typeof Client> })
 
     const runner = new SSHRemoteRunner('host', 'user', '/key')
     const results: object[] = []
@@ -94,7 +94,7 @@ describe('SSHRemoteRunner', () => {
 
   it('yields error when exec fails', async () => {
     const inst = makeClientInstance({ execError: new Error('exec failed') })
-    MockClient.mockImplementation(() => inst as unknown as InstanceType<typeof Client>)
+    MockClient.mockImplementation(function () { return inst as unknown as InstanceType<typeof Client> })
 
     const runner = new SSHRemoteRunner('host', 'user', '/key')
     const results: object[] = []
@@ -110,7 +110,7 @@ describe('SSHRemoteRunner', () => {
     })
     const stream = makeStream([jsonLine])
     const inst = makeClientInstance({ execStream: stream })
-    MockClient.mockImplementation(() => inst as unknown as InstanceType<typeof Client>)
+    MockClient.mockImplementation(function () { return inst as unknown as InstanceType<typeof Client> })
 
     const runner = new SSHRemoteRunner('host', 'user', '/key')
     const results: object[] = []
@@ -123,7 +123,7 @@ describe('SSHRemoteRunner', () => {
   it('yields error chunk when remote process exits non-zero', async () => {
     const stream = makeStream([], 1)
     const inst = makeClientInstance({ execStream: stream })
-    MockClient.mockImplementation(() => inst as unknown as InstanceType<typeof Client>)
+    MockClient.mockImplementation(function () { return inst as unknown as InstanceType<typeof Client> })
 
     const runner = new SSHRemoteRunner('host', 'user', '/key')
     const results: object[] = []

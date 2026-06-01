@@ -17,28 +17,28 @@ vi.mock('../db/pool.js', () => ({
 }))
 
 vi.mock('../projects/project-gateway.js', () => ({
-  ProjectGatewayConsumer: vi.fn().mockImplementation(() => ({
+  ProjectGatewayConsumer: vi.fn().mockImplementation(function () { return ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
-  })),
+  }) }),
 }))
 
 vi.mock('../auth/user.repo.js', () => ({
-  UserRepo: vi.fn().mockImplementation(() => ({
+  UserRepo: vi.fn().mockImplementation(function () { return ({
     findByEmail: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockResolvedValue({ id: 'u1', email: 'a@b.com', displayName: null, passwordHash: 'h', createdAt: new Date() }),
     findById: vi.fn().mockResolvedValue(null),
-  })),
+  }) }),
   toPublic: vi.fn((u) => u),
 }))
 
 vi.mock('../auth/refresh.repo.js', () => ({
-  RefreshRepo: vi.fn().mockImplementation(() => ({
+  RefreshRepo: vi.fn().mockImplementation(function () { return ({
     create: vi.fn().mockResolvedValue(undefined),
     findValid: vi.fn().mockResolvedValue(null),
     revoke: vi.fn().mockResolvedValue(undefined),
     revokeAllForUser: vi.fn().mockResolvedValue(undefined),
-  })),
+  }) }),
 }))
 
 vi.mock('../auth/password.js', () => ({

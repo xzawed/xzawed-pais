@@ -6,10 +6,10 @@ import { issueAccessToken, verifyAccessToken, issueRefreshToken } from '../auth/
 import { buildServer } from '../server.js'
 
 vi.mock('../projects/project-gateway.js', () => ({
-  ProjectGatewayConsumer: vi.fn().mockImplementation(() => ({
+  ProjectGatewayConsumer: vi.fn().mockImplementation(function () { return ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
-  })),
+  }) }),
 }))
 
 const SECRET = 'test-secret-key-that-is-long-enough-32ch'

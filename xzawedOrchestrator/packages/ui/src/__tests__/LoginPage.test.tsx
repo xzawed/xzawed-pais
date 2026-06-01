@@ -7,10 +7,10 @@ afterEach(cleanup)
 const mockLogin = vi.fn().mockResolvedValue(undefined)
 
 vi.mock('../stores/auth.store.js', () => ({
-  useAuthStore: vi.fn(() => ({
+  useAuthStore: vi.fn(function () { return ({
     login: mockLogin,
     isLoading: false,
-  })),
+  }) }),
 }))
 
 const defaultProps = {

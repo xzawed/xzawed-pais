@@ -10,7 +10,7 @@ const postUiAction = vi.fn(() => Promise.resolve())
 vi.mock('../lib/api.js', () => ({
   postMessage: vi.fn(),
   postUiAction: (...args: unknown[]) => postUiAction(...args),
-  SessionWsClient: vi.fn(() => ({ connect: vi.fn(() => () => {}), send: vi.fn() })),
+  SessionWsClient: vi.fn(function () { return ({ connect: vi.fn(() => () => {}), send: vi.fn() }) }),
 }))
 
 describe('ChatView', () => {

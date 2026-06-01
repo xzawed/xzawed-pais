@@ -38,7 +38,7 @@ vi.mock('../lib/api.js', () => ({
   checkHealth: vi.fn().mockResolvedValue(true),
   createSession: vi.fn().mockResolvedValue({ sessionId: 'test-session' }),
   postMessage: vi.fn(),
-  SessionWsClient: vi.fn(() => ({ connect: vi.fn(() => () => {}) })),
+  SessionWsClient: vi.fn(function () { return ({ connect: vi.fn(() => () => {}) }) }),
 }))
 
 // @xzawed/ui 페이지 컴포넌트만 stub — useAuthStore는 실제 모듈 사용

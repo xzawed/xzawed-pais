@@ -5,23 +5,23 @@ const mockStart = vi.fn().mockResolvedValue(undefined)
 const mockStop = vi.fn()
 
 vi.mock('../../src/streams/consumer.js', () => ({
-  StreamConsumer: vi.fn().mockImplementation(() => ({
+  StreamConsumer: vi.fn().mockImplementation(function () { return ({
     start: mockStart,
     stop: mockStop,
-  })),
+  }) }),
 }))
 
 // Mock StreamProducer before any import of server.ts
 const mockPublish = vi.fn().mockResolvedValue('mock-stream-id')
 const mockPublishSessionGateway = vi.fn().mockResolvedValue(undefined)
 vi.mock('../../src/streams/producer.js', () => ({
-  StreamProducer: vi.fn().mockImplementation(() => ({ publish: mockPublish, publishSessionGateway: mockPublishSessionGateway })),
+  StreamProducer: vi.fn().mockImplementation(function () { return ({ publish: mockPublish, publishSessionGateway: mockPublishSessionGateway }) }),
 }))
 
 // Mock runner factory to return a controllable stub
 const mockSend = vi.fn()
 vi.mock('../../src/claude/runner.factory.js', () => ({
-  createRunner: vi.fn().mockImplementation(() => ({ send: mockSend })),
+  createRunner: vi.fn().mockImplementation(function () { return ({ send: mockSend }) }),
 }))
 
 describe('Sessions API', () => {

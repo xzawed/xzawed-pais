@@ -38,12 +38,12 @@ const LOCAL_PROJECT_ROW = {
 }
 
 vi.mock('../projects/workspace.service.js', () => ({
-  WorkspaceService: vi.fn().mockImplementation(() => ({
+  WorkspaceService: vi.fn().mockImplementation(function () { return ({
     validateLocalPath: vi.fn().mockResolvedValue(undefined),
     clonePath: vi.fn().mockReturnValue('/home/.xzawed/workspaces/proj-1'),
     cloneRepo: vi.fn().mockResolvedValue(undefined),
     pullRepo: vi.fn().mockResolvedValue(undefined),
-  })),
+  }) }),
 }))
 
 function makePool(rows: Record<string, unknown>[] = [GITHUB_PROJECT_ROW]) {

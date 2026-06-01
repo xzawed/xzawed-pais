@@ -11,9 +11,9 @@ const { mockFindByIdAndUser } = vi.hoisted(() => {
 })
 
 vi.mock('../../projects/project.repo.js', () => ({
-  ProjectRepo: vi.fn().mockImplementation(() => ({
+  ProjectRepo: vi.fn().mockImplementation(function () { return ({
     findByIdAndUser: mockFindByIdAndUser,
-  })),
+  }) }),
 }))
 
 import { publishTaskToManager } from '../sessions.route.js'
