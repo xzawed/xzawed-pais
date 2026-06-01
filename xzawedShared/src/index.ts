@@ -8,3 +8,4 @@ export { answerViaClaude, callClaudeText, extractClaudeText, stripJsonFences } f
 export type { ClaudeLike } from './claude/answer-query.js'
 export { runCollaborativeHandle, makeCollaborationContext, createCollaborativeHandler } from './streams/collaboration.js'
 export type { MainOutcome, CollabMessage, MessageBase, CollaborativeAgentDeps } from './streams/collaboration.js'
+export { formatDomainKnowledge } from './prompt/domain-knowledge.js'

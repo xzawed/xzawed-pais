@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
-import { AgentQuery, parseAgentQuery, answerViaClaude, callClaudeText } from '@xzawed/agent-streams'
+import { AgentQuery, parseAgentQuery, answerViaClaude, callClaudeText, formatDomainKnowledge } from '@xzawed/agent-streams'
 import type { Step, UISpec } from '../types.js'
 
 const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
@@ -21,6 +21,8 @@ const PlanResponseSchema = z.object({
 })
 
 const SYSTEM_PROMPT = `You are a software project planning agent. Given a development intent and context, break it down into concrete, actionable steps.
+
+If the prompt includes a "이전 프로젝트 도메인 지식" section, you MUST respect and build upon those prior decisions and constraints.
 
 Return ONLY valid JSON in one of these formats:
 
@@ -94,6 +96,7 @@ export class ClaudeRunner {
     clarificationContext?: string,
   ): Promise<{ steps: Step[]; estimatedTime: string; knowledge?: string[] } | ClarificationNeeded | AgentQuery> {
     const userContent = [
+      formatDomainKnowledge(context),
       `Intent: ${intent}`,
       `Priority: ${priority}`,
       `Context: ${JSON.stringify(context, null, 2)}`,

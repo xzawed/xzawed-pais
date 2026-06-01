@@ -1,11 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk'
 import path from 'node:path'
-import { answerViaClaude, callClaudeText, stripJsonFences } from '@xzawed/agent-streams'
+import { answerViaClaude, callClaudeText, stripJsonFences, formatDomainKnowledge } from '@xzawed/agent-streams'
 import type { FileChange } from '../types.js'
 
 const API_TIMEOUT_MS = Number(process.env['DEVELOPER_CLAUDE_TIMEOUT_MS'] ?? '120000')
 
 const SYSTEM_PROMPT = `You are an expert software developer. Given a development plan and project context, implement the required code changes.
+
+If the prompt includes a "이전 프로젝트 도메인 지식" section, you MUST respect and build upon those prior decisions and constraints.
 
 Return ONLY a JSON object with this exact structure:
 {
@@ -39,6 +41,7 @@ export class ClaudeRunner {
     clarificationContext?: string,
   ): Promise<{ changes: FileChange[]; summary: string; knowledge?: string[] }> {
     const userContent = [
+      formatDomainKnowledge(context),
       `Project path: ${projectPath}`,
       `Context: ${JSON.stringify(context, null, 2)}`,
       clarificationContext ? `Answer from another agent: ${clarificationContext}` : '',

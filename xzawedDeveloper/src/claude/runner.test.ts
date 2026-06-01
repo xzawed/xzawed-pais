@@ -143,6 +143,16 @@ describe('ClaudeRunner.generateChanges', () => {
     const sentContent = mockCreate.mock.calls[0][0].messages[0].content as string
     expect(sentContent).toContain('Answer from another agent: 디자이너 답: 5초 폴링')
   })
+
+  it('주입된 domainKnowledge를 LLM 프롬프트에 포함한다', async () => {
+    mockResponse('[]')
+    await runner.generateChanges('plan', '/app', {
+      domainKnowledge: [{ content: '인증은 JWT 사용', sourceAgent: 'develop_code' }],
+    })
+    const sentContent = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(sentContent).toContain('이전 프로젝트 도메인 지식')
+    expect(sentContent).toContain('인증은 JWT 사용')
+  })
 })
 
 describe('ClaudeRunner.answerQuery', () => {
