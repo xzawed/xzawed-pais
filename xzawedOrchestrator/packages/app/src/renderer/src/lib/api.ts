@@ -14,7 +14,13 @@ export type WsMessage =
   | { type: 'agent_status'; agentId: string; content: string }
   | { type: 'agent_done'; agentId: string; content: string }
   | { type: 'agent_error'; agentId: string; content: string }
-  | { type: 'agent_info_request'; agentId: string; content: string; uiSpec?: unknown }
+  | {
+      type: 'agent_info_request'
+      agentId: string
+      content: string
+      uiSpec?: unknown
+      approval?: { stage: string; summary: string; mode: 'manual' }
+    }
 
 export interface CreateSessionResponse {
   sessionId: string
@@ -53,6 +59,24 @@ export async function postMessage(
   })
   if (!res.ok) throw new Error(`postMessage failed: ${res.status}`)
   return res.json() as Promise<PostMessageResponse>
+}
+
+/**
+ * 사용자의 UI 액션(승인 게이트 결정·명확화 응답)을 서버로 전송한다.
+ * 서버는 이를 Manager에 `info_response{answer: action}`으로 발행한다(WS 수신 핸들러 없음 → HTTP 경로 사용).
+ */
+export async function postUiAction(
+  baseUrl: string,
+  sessionId: string,
+  action: string
+): Promise<void> {
+  validateBaseUrl(baseUrl)
+  const res = await fetch(`${baseUrl}/sessions/${sessionId}/ui-actions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  })
+  if (!res.ok) throw new Error(`postUiAction failed: ${res.status}`)
 }
 
 export async function checkHealth(baseUrl: string): Promise<boolean> {

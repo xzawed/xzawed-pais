@@ -12,7 +12,7 @@ import { MessageInput } from './MessageInput.js'
 import { ProjectContextBar } from './ProjectContextBar.js'
 import { ScrollArea } from './ui/scroll-area.js'
 import { parseAgentSteps } from '../lib/parseAgentSteps.js'
-import { postMessage, SessionWsClient } from '../lib/api.js'
+import { postMessage, postUiAction, SessionWsClient } from '../lib/api.js'
 
 export function ChatView(): React.JSX.Element {
   const { t } = useTranslation('app')
@@ -73,7 +73,11 @@ export function ChatView(): React.JSX.Element {
           timestamp: Date.now(),
         })
       } else if (msg.type === 'agent_info_request') {
-        store.setPendingInfoRequest({ agentId: msg.agentId, prompt: msg.content })
+        store.setPendingInfoRequest({
+          agentId: msg.agentId,
+          prompt: msg.content,
+          ...(msg.approval !== undefined ? { approval: msg.approval } : {}),
+        })
       }
     }, () => {
       useChatStore.getState().cancelStream()
@@ -98,14 +102,24 @@ export function ChatView(): React.JSX.Element {
     }
   }
 
-  function handleInfoResponseSend(): void {
-    const trimmed = infoResponseValue.trim()
-    if (!trimmed || !sessionId) return
+  function sendUiAction(action: string, echo: string): void {
+    if (!sessionId) return
     const store = useChatStore.getState()
-    store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'user', content: trimmed, timestamp: Date.now() })
-    wsClientRef.current?.send({ type: 'info_response', content: trimmed })
+    store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'user', content: echo, timestamp: Date.now() })
+    void postUiAction(settings.serverUrl, sessionId, action).catch((err: unknown) => {
+      store.addMessage({
+        id: crypto.randomUUID(), sessionId, role: 'assistant',
+        content: `[Error] ${err instanceof Error ? err.message : String(err)}`, timestamp: Date.now(),
+      })
+    })
     store.setPendingInfoRequest(null)
     setInfoResponseValue('')
+  }
+
+  function handleInfoResponseSend(): void {
+    const trimmed = infoResponseValue.trim()
+    if (!trimmed) return
+    sendUiAction(trimmed, trimmed)
   }
 
   function handleInfoResponseKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
@@ -113,6 +127,16 @@ export function ChatView(): React.JSX.Element {
       e.preventDefault()
       handleInfoResponseSend()
     }
+  }
+
+  function handleApprovalDecision(decision: 'approve' | 'revise' | 'abort'): void {
+    if (decision === 'revise') {
+      const feedback = infoResponseValue.trim()
+      if (!feedback) return
+      sendUiAction(JSON.stringify({ decision, feedback }), `${t('approval.revise')}: ${feedback}`)
+      return
+    }
+    sendUiAction(JSON.stringify({ decision }), t(`approval.${decision}`))
   }
 
   const streamingMessage = useMemo<Message | null>(
@@ -189,34 +213,74 @@ export function ChatView(): React.JSX.Element {
               <div className="flex items-center gap-2">
                 <span className="h-1.5 w-1.5 rounded-full bg-warn flex-shrink-0" />
                 <span className="text-[11px] font-medium text-fg-dim">
-                  Agent ({pendingInfoRequest.agentId}) is requesting additional input
+                  {pendingInfoRequest.approval
+                    ? t('approval.title', { stage: pendingInfoRequest.approval.stage })
+                    : `Agent (${pendingInfoRequest.agentId}) is requesting additional input`}
                 </span>
               </div>
               <p
                 data-testid="agent-info-request-prompt"
-                className="text-[12px] text-fg px-2 py-1.5 rounded bg-surface-raised border border-border"
+                className="text-[12px] text-fg px-2 py-1.5 rounded bg-surface-raised border border-border whitespace-pre-wrap"
               >
-                {pendingInfoRequest.prompt}
+                {pendingInfoRequest.approval?.summary ?? pendingInfoRequest.prompt}
               </p>
-              <div className="flex items-end gap-2">
-                <textarea
-                  data-testid="agent-info-response-input"
-                  value={infoResponseValue}
-                  onChange={(e) => setInfoResponseValue(e.target.value)}
-                  onKeyDown={handleInfoResponseKeyDown}
-                  placeholder="Type your response..."
-                  rows={2}
-                  className="flex-1 resize-none rounded border border-border bg-bg px-2 py-1.5 text-[12px] text-fg placeholder:text-fg-ghost outline-none focus:border-accent transition-colors"
-                />
-                <button
-                  data-testid="agent-info-response-send"
-                  onClick={handleInfoResponseSend}
-                  disabled={!infoResponseValue.trim()}
-                  className="h-8 px-3 rounded text-[11px] bg-accent text-white disabled:opacity-30 transition-colors flex-shrink-0"
-                >
-                  Send
-                </button>
-              </div>
+
+              {pendingInfoRequest.approval ? (
+                <div data-testid="approval-actions" className="flex flex-col gap-2">
+                  <textarea
+                    data-testid="approval-feedback-input"
+                    value={infoResponseValue}
+                    onChange={(e) => setInfoResponseValue(e.target.value)}
+                    placeholder={t('approval.feedback_placeholder')}
+                    rows={2}
+                    className="resize-none rounded border border-border bg-bg px-2 py-1.5 text-[12px] text-fg placeholder:text-fg-ghost outline-none focus:border-accent transition-colors"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      data-testid="approval-approve"
+                      onClick={() => handleApprovalDecision('approve')}
+                      className="h-8 px-3 rounded text-[11px] bg-ok text-white transition-colors"
+                    >
+                      {t('approval.approve')}
+                    </button>
+                    <button
+                      data-testid="approval-revise"
+                      onClick={() => handleApprovalDecision('revise')}
+                      disabled={!infoResponseValue.trim()}
+                      className="h-8 px-3 rounded text-[11px] bg-accent text-white disabled:opacity-30 transition-colors"
+                    >
+                      {t('approval.revise')}
+                    </button>
+                    <button
+                      data-testid="approval-abort"
+                      onClick={() => handleApprovalDecision('abort')}
+                      className="h-8 px-3 rounded text-[11px] bg-danger text-white transition-colors ml-auto"
+                    >
+                      {t('approval.abort')}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-end gap-2">
+                  <textarea
+                    data-testid="agent-info-response-input"
+                    value={infoResponseValue}
+                    onChange={(e) => setInfoResponseValue(e.target.value)}
+                    onKeyDown={handleInfoResponseKeyDown}
+                    placeholder="Type your response..."
+                    rows={2}
+                    className="flex-1 resize-none rounded border border-border bg-bg px-2 py-1.5 text-[12px] text-fg placeholder:text-fg-ghost outline-none focus:border-accent transition-colors"
+                  />
+                  <button
+                    data-testid="agent-info-response-send"
+                    onClick={handleInfoResponseSend}
+                    disabled={!infoResponseValue.trim()}
+                    className="h-8 px-3 rounded text-[11px] bg-accent text-white disabled:opacity-30 transition-colors flex-shrink-0"
+                  >
+                    Send
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

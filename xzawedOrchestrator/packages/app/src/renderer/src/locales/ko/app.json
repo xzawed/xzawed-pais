@@ -51,5 +51,12 @@
     "placeholder": "명령어 검색...",
     "new_session": "새 세션",
     "settings": "설정"
+  },
+  "approval": {
+    "title": "\"{{stage}}\" 단계 결과를 검토하세요",
+    "approve": "승인",
+    "revise": "수정요청",
+    "abort": "중단",
+    "feedback_placeholder": "수정 요청 시 피드백을 입력하세요"
   }
 }

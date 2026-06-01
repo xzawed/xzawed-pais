@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 import type { Message, UISpec } from '@xzawed/shared'
 
+/** 사용자 입력 대기 요청. approval이 있으면 승인 게이트(승인/수정/중단), 없으면 명확화(자유 텍스트). */
+export interface PendingInfoRequest {
+  agentId: string
+  prompt: string
+  approval?: { stage: string; summary: string; mode: 'manual' }
+}
+
 interface ChatState {
   sessionId: string | null
   messages: Message[]
@@ -13,7 +20,7 @@ interface ChatState {
   tokenCount: number
   elapsedMs: number
   modifiedFiles: string[]
-  pendingInfoRequest: { agentId: string; prompt: string } | null
+  pendingInfoRequest: PendingInfoRequest | null
   initSession: (sessionId: string) => void
   addMessage: (msg: Message) => void
   setPending: (v: boolean) => void
@@ -26,7 +33,7 @@ interface ChatState {
   setTokenCount: (n: number) => void
   setElapsedMs: (ms: number) => void
   addModifiedFile: (path: string) => void
-  setPendingInfoRequest: (req: { agentId: string; prompt: string } | null) => void
+  setPendingInfoRequest: (req: PendingInfoRequest | null) => void
   reset: () => void
 }
 
@@ -42,7 +49,7 @@ const initialState = {
   tokenCount: 0,
   elapsedMs: 0,
   modifiedFiles: [] as string[],
-  pendingInfoRequest: null as { agentId: string; prompt: string } | null,
+  pendingInfoRequest: null as PendingInfoRequest | null,
 }
 
 export const useChatStore = create<ChatState>((set) => ({

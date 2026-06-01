@@ -51,5 +51,12 @@
     "placeholder": "Search commands...",
     "new_session": "New Session",
     "settings": "Settings"
+  },
+  "approval": {
+    "title": "Review the result of the \"{{stage}}\" step",
+    "approve": "Approve",
+    "revise": "Request changes",
+    "abort": "Abort",
+    "feedback_placeholder": "Enter feedback for requested changes"
   }
 }
