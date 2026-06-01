@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
+import { AgentQuery, parseAgentQuery } from '@xzawed/agent-streams'
 import { ComponentSpecSchema, UISpecSchema } from '../types.js'
 import type { ComponentSpec, UISpec } from '../types.js'
 
@@ -44,7 +45,21 @@ Rules:
 - Return ONLY the JSON object, no text before or after
 - props values are TypeScript type strings
 - children is optional; omit if the component has no sub-components
-- cssClasses uses the target design system conventions`
+- cssClasses uses the target design system conventions
+
+COLLABORATION — instead of components, you MAY return one of these to talk to another agent:
+
+Format 2 — active request (you need another expert's input to design correctly):
+{ "agent_query": true, "to": "developer", "question": "Can you implement a real-time inventory display?", "kind": "active_request" }
+
+Format 3 — cross-check (ALWAYS verify your understanding of the received intent with the originating agent before designing):
+{ "agent_query": true, "to": "planner", "question": "I understood the goal as X with constraints Y — is that correct?", "kind": "cross_check" }
+
+Collaboration rules:
+- "to" is one of: planner, developer, tester, builder, watcher, security
+- ALWAYS cross-check (Format 3) your understanding before producing components, unless an answer was already provided to you
+- Use active request (Format 2) only when you genuinely need another expert's input
+- When an answer from another agent is provided in the prompt, incorporate it and return Format 1 (components)`
 
 export class ClaudeRunner {
   private readonly client: Anthropic
@@ -58,7 +73,8 @@ export class ClaudeRunner {
     context: Record<string, unknown>,
     targetFramework: string,
     designSystem: string,
-  ): Promise<{ components: ComponentSpec[]; uiSpec: UISpec }> {
+    clarificationContext?: string,
+  ): Promise<{ components: ComponentSpec[]; uiSpec: UISpec } | AgentQuery> {
     let timerId: ReturnType<typeof setTimeout> | undefined
 
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -80,7 +96,8 @@ export class ClaudeRunner {
               `Framework: ${targetFramework}`,
               `Design System: ${designSystem}`,
               `Context: ${JSON.stringify(context, null, 2)}`,
-            ].join('\n'),
+              clarificationContext ? `Answer from another agent: ${clarificationContext}` : '',
+            ].filter(Boolean).join('\n'),
           }],
         }),
         timeoutPromise,
@@ -97,7 +114,24 @@ export class ClaudeRunner {
     }
   }
 
-  parseResponse(text: string, intent: string): { components: ComponentSpec[]; uiSpec: UISpec } {
+  /** 다른 에이전트의 질의(query)에 디자인 관점에서 답한다. */
+  async answerQuery(query: string, context: Record<string, unknown>): Promise<string> {
+    const response = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 1024,
+      system: 'You are a UI/UX design expert. Answer the question concisely from a design perspective. Plain text, no JSON.',
+      messages: [{
+        role: 'user',
+        content: `Question: ${query}\n\nContext: ${JSON.stringify(context, null, 2)}`,
+      }],
+    })
+    return response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('')
+  }
+
+  parseResponse(text: string, intent: string): { components: ComponentSpec[]; uiSpec: UISpec } | AgentQuery {
     let cleaned = extractJSON(text)
 
     const start = cleaned.indexOf('{')
@@ -106,6 +140,9 @@ export class ClaudeRunner {
 
     try {
       const raw: unknown = JSON.parse(cleaned.slice(start, end + 1))
+      const agentQuery = parseAgentQuery(raw as Record<string, unknown>)
+      if (agentQuery) return agentQuery
+
       const result = DesignResponseSchema.safeParse(raw)
       if (!result.success) {
         console.warn('[Designer] response validation failed:', result.error.issues)

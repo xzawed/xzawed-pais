@@ -33,11 +33,15 @@ export interface DesignerToManagerMessage {
   sessionId: string
   messageId: string
   timestamp: number
-  type: 'design_complete' | 'error'
+  type: 'design_complete' | 'error' | 'agent_query'
   payload: {
     components?: ComponentSpec[]
     uiSpec?: UISpec
     content: string
+    // agent_query 발신 시 사용 (다른 에이전트에게 질의)
+    to?: string
+    question?: string
+    kind?: 'active_request' | 'cross_check'
   }
 }
 
@@ -59,6 +63,10 @@ export const ManagerToDesignerMessageSchema = z.object({
     targetFramework: z.string().optional(),
     designSystem: z.string().optional(),
     userContext: UserContextSchema.optional(),
+    // 협업: 다른 에이전트 질의 응답(clarificationContext) 또는 질의 답변 모드(query)
+    clarificationContext: z.string().optional(),
+    query: z.string().optional(),
+    queryKind: z.enum(['active_request', 'cross_check']).optional(),
   }),
 })
 
