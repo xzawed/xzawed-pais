@@ -129,6 +129,33 @@ describe('ChatView', () => {
     )
   })
 
+  test('shows UISpec demo preview for design_ui approval', () => {
+    useChatStore.setState({
+      sessionId: 'sess-demo',
+      uiSpec: { type: 'mockup_viewer', title: 'Dashboard', content: '[ Demo Mockup ]' },
+      pendingInfoRequest: {
+        agentId: 'manager', prompt: 'review',
+        approval: { stage: 'design_ui', summary: '대시보드 설계', mode: 'manual' },
+      },
+    })
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
+    expect(screen.getByTestId('uispec-preview')).toBeInTheDocument()
+    expect(screen.getByText(/Demo Mockup/)).toBeInTheDocument()
+  })
+
+  test('does not show demo preview for non-design approval', () => {
+    useChatStore.setState({
+      sessionId: 'sess-nodemo',
+      uiSpec: { type: 'mockup_viewer', title: 'stale', content: 'old' },
+      pendingInfoRequest: {
+        agentId: 'manager', prompt: 'review',
+        approval: { stage: 'build_project', summary: '빌드 결과', mode: 'manual' },
+      },
+    })
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
+    expect(screen.queryByTestId('uispec-preview')).not.toBeInTheDocument()
+  })
+
   test('abort sends abort decision', () => {
     postUiAction.mockClear()
     useChatStore.setState({
