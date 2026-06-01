@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { collaborationPayloadFields } from '@xzawed/agent-streams'
 
 export interface TestFailure {
   file: string
@@ -40,6 +41,7 @@ export const ManagerToTesterMessageSchema = z.object({
     testFiles: z.array(z.string()).optional(),
     context: z.record(z.unknown()),
     userContext: UserContextSchema.optional(),
+    ...collaborationPayloadFields,
   }),
 })
 

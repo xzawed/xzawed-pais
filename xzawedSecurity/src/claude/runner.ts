@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { answerViaClaude } from '@xzawed/agent-streams'
 import type { SecurityIssue } from '../types.js'
 import { validatePath } from '../executor.js'
 
@@ -23,6 +24,17 @@ export class ClaudeRunner {
 
   constructor(apiKey: string, private readonly model: string) {
     this.client = new Anthropic({ apiKey })
+  }
+
+  /** 다른 에이전트의 질의(query)에 보안 관점에서 답한다. */
+  async answerQuery(query: string, context: Record<string, unknown>): Promise<string> {
+    return answerViaClaude(
+      this.client,
+      this.model,
+      'You are a security expert (OWASP Top 10). Answer the question concisely from a security perspective. Plain text, no JSON.',
+      query,
+      context,
+    )
   }
 
   async analyzeArtifacts(filePaths: string[], workspaceRoot: string): Promise<SecurityIssue[]> {

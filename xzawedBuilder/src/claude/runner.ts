@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
+import { answerViaClaude } from '@xzawed/agent-streams'
 import type { BuildError } from '../types.js'
 
 const BuildErrorSchema = z.object({
@@ -18,6 +19,17 @@ export class ClaudeRunner {
 
   constructor(apiKey: string, private readonly model: string) {
     this.client = new Anthropic({ apiKey })
+  }
+
+  /** 다른 에이전트의 질의(query)에 빌드 관점에서 답한다. */
+  async answerQuery(query: string, context: Record<string, unknown>): Promise<string> {
+    return answerViaClaude(
+      this.client,
+      this.model,
+      'You are a build/toolchain expert. Answer the question concisely from a build perspective. Plain text, no JSON.',
+      query,
+      context,
+    )
   }
 
   async analyzeBuildFailure(output: string): Promise<BuildError[]> {
