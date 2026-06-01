@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { collaborationPayloadFields } from '@xzawed/agent-streams'
 
 export const UISpecSchema = z.object({
   type: z.enum(['mockup_viewer', 'form', 'progress_board']),
@@ -33,11 +34,15 @@ export interface DesignerToManagerMessage {
   sessionId: string
   messageId: string
   timestamp: number
-  type: 'design_complete' | 'error'
+  type: 'design_complete' | 'error' | 'agent_query'
   payload: {
     components?: ComponentSpec[]
     uiSpec?: UISpec
     content: string
+    // agent_query 발신 시 사용 (다른 에이전트에게 질의)
+    to?: string
+    question?: string
+    kind?: 'active_request' | 'cross_check'
   }
 }
 
@@ -59,6 +64,8 @@ export const ManagerToDesignerMessageSchema = z.object({
     targetFramework: z.string().optional(),
     designSystem: z.string().optional(),
     userContext: UserContextSchema.optional(),
+    // 협업 공통 입력 필드(clarificationContext·query·queryKind)
+    ...collaborationPayloadFields,
   }),
 })
 

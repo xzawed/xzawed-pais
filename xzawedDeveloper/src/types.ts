@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { collaborationPayloadFields } from '@xzawed/agent-streams'
 
 export interface FileChange {
   path: string
@@ -31,10 +32,13 @@ export const ManagerToDeveloperMessageSchema = z.object({
   timestamp: z.number(),
   type: z.enum(['develop_request', 'abort']),
   payload: z.object({
-    plan: z.string(),
-    projectPath: z.string(),
+    // 개발 요청 시 사용 (query 모드에서는 없음)
+    plan: z.string().optional(),
+    projectPath: z.string().optional(),
     context: z.record(z.unknown()),
     userContext: UserContextSchema.optional(),
+    // 협업 공통 입력 필드(clarificationContext·query·queryKind)
+    ...collaborationPayloadFields,
   }),
 })
 

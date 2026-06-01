@@ -1,4 +1,5 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
+import { AgentQuery } from '@xzawed/agent-streams'
 import { Designer } from './designer.js'
 import type { ManagerToDesignerMessage } from './types.js'
 
@@ -6,7 +7,8 @@ const mockPublish = vi.fn().mockResolvedValue(undefined)
 const mockProducer = { publish: mockPublish }
 
 const mockGenerateDesign = vi.fn()
-const mockRunner = { generateDesign: mockGenerateDesign }
+const mockAnswerQuery = vi.fn()
+const mockRunner = { generateDesign: mockGenerateDesign, answerQuery: mockAnswerQuery }
 
 const defaultDesignResult = {
   components: [{ name: 'LoginForm', description: 'form', props: {} }],
@@ -73,7 +75,7 @@ describe('Designer.handle', () => {
     mockGenerateDesign.mockResolvedValueOnce(defaultDesignResult)
     await designer.handle(makeRequest({ targetFramework: 'vue', designSystem: 'material' }))
     expect(mockGenerateDesign).toHaveBeenCalledWith(
-      'login form', {}, 'vue', 'material'
+      'login form', {}, 'vue', 'material', undefined
     )
   })
 
@@ -81,8 +83,31 @@ describe('Designer.handle', () => {
     mockGenerateDesign.mockResolvedValueOnce(defaultDesignResult)
     await designer.handle(makeRequest())
     expect(mockGenerateDesign).toHaveBeenCalledWith(
-      'login form', {}, 'react', 'tailwind'
+      'login form', {}, 'react', 'tailwind', undefined
     )
+  })
+
+  it('AgentQuery 반환 시 agent_query를 발행한다', async () => {
+    mockGenerateDesign.mockResolvedValueOnce(
+      new AgentQuery('developer', '재고 표시 가능?', 'active_request'),
+    )
+    await designer.handle(makeRequest())
+    expect(mockPublish).toHaveBeenCalledWith('sess-1', expect.objectContaining({
+      type: 'agent_query',
+      payload: expect.objectContaining({
+        to: 'developer', question: '재고 표시 가능?', kind: 'active_request',
+      }),
+    }))
+  })
+
+  it('query 입력 시 answerQuery로 답하고 design_complete를 발행한다', async () => {
+    mockAnswerQuery.mockResolvedValueOnce('가능합니다, 5초 폴링 권장')
+    await designer.handle(makeRequest({ query: '재고 표시 가능?' }))
+    expect(mockAnswerQuery).toHaveBeenCalledWith('재고 표시 가능?', {})
+    expect(mockPublish).toHaveBeenCalledWith('sess-1', expect.objectContaining({
+      type: 'design_complete',
+      payload: expect.objectContaining({ content: '가능합니다, 5초 폴링 권장' }),
+    }))
   })
 
   it('design_complete content mentions component count', async () => {

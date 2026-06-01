@@ -6,7 +6,8 @@ const mockPublish = vi.fn().mockResolvedValue(undefined)
 const mockProducer = { publish: mockPublish }
 
 const mockGenerateChanges = vi.fn()
-const mockRunner = { generateChanges: mockGenerateChanges }
+const mockAnswerQuery = vi.fn()
+const mockRunner = { generateChanges: mockGenerateChanges, answerQuery: mockAnswerQuery }
 
 const mockApplyFn = vi.fn().mockResolvedValue(undefined)
 
@@ -44,6 +45,26 @@ beforeEach(() => {
 })
 
 describe('Developer.handle', () => {
+  it('query 입력 시 answerQuery로 답하고 develop_complete를 발행한다', async () => {
+    mockAnswerQuery.mockResolvedValueOnce('가능합니다, 5초 폴링으로 구현하세요')
+    await developer.handle(makeRequest({ query: '재고 표시 가능?', queryKind: 'active_request' }))
+
+    expect(mockAnswerQuery).toHaveBeenCalledWith('재고 표시 가능?', {})
+    expect(mockGenerateChanges).not.toHaveBeenCalled()
+    expect(mockPublish).toHaveBeenCalledWith('sess-1', expect.objectContaining({
+      type: 'develop_complete',
+      payload: expect.objectContaining({ content: '가능합니다, 5초 폴링으로 구현하세요' }),
+    }))
+  })
+
+  it('clarificationContext를 generateChanges에 전달한다', async () => {
+    mockGenerateChanges.mockResolvedValueOnce({ changes: [], summary: 's' })
+    await developer.handle(makeRequest({ clarificationContext: '디자이너 답: 5초 폴링' }))
+    expect(mockGenerateChanges).toHaveBeenCalledWith(
+      'add auth middleware', '/workspace/myapp', {}, '디자이너 답: 5초 폴링',
+    )
+  })
+
   it('publishes develop_complete with artifacts and summary', async () => {
     mockGenerateChanges.mockResolvedValueOnce({
       changes: [

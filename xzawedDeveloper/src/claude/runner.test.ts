@@ -110,4 +110,19 @@ describe('ClaudeRunner.generateChanges', () => {
     expect(summary).toContain('x'.repeat(100))
     expect(summary.length).toBeLessThan(longPlan.length + 50)
   })
+
+  it('clarificationContext를 프롬프트에 포함한다', async () => {
+    mockResponse('[]')
+    await runner.generateChanges('plan', '/app', {}, '디자이너 답: 5초 폴링')
+    const sentContent = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(sentContent).toContain('Answer from another agent: 디자이너 답: 5초 폴링')
+  })
+})
+
+describe('ClaudeRunner.answerQuery', () => {
+  it('Claude 응답 텍스트를 반환한다', async () => {
+    mockResponse('개발 관점 답변: 가능합니다')
+    const answer = await runner.answerQuery('재고 표시 가능?', { x: 1 })
+    expect(answer).toBe('개발 관점 답변: 가능합니다')
+  })
 })
