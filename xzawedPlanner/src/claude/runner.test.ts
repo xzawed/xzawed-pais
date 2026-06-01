@@ -65,6 +65,38 @@ describe('ClaudeRunner', () => {
     }
   })
 
+  it('응답의 knowledge 배열을 도메인 지식으로 반환한다', async () => {
+    const withKnowledge = JSON.stringify({
+      steps: [{
+        id: 'step-1', title: '결제 연동', description: 'Stripe 결제',
+        agentType: 'developer', dependencies: [], estimatedMinutes: 30,
+      }],
+      estimatedTime: '30 minutes',
+      knowledge: ['결제는 Stripe 사용', 'PII는 암호화 저장'],
+    })
+    const mockClient = makeClient(withKnowledge)
+    AnthropicMock.mockImplementation(() => mockClient as any)
+
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
+    const result = await runner.generatePlan('결제 기능', {}, 'normal')
+
+    if (!(result instanceof ClarificationNeeded) && !(result instanceof AgentQuery)) {
+      expect(result.knowledge).toEqual(['결제는 Stripe 사용', 'PII는 암호화 저장'])
+    }
+  })
+
+  it('knowledge가 없으면 결과에 knowledge 키가 없다', async () => {
+    const mockClient = makeClient(stepsResponse)
+    AnthropicMock.mockImplementation(() => mockClient as any)
+
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
+    const result = await runner.generatePlan('로그인', {}, 'normal')
+
+    if (!(result instanceof ClarificationNeeded) && !(result instanceof AgentQuery)) {
+      expect(result.knowledge).toBeUndefined()
+    }
+  })
+
   it('clarification_needed 응답에서 ClarificationNeeded를 반환한다', async () => {
     const mockClient = makeClient(clarificationResponse)
     AnthropicMock.mockImplementation(() => mockClient as any)

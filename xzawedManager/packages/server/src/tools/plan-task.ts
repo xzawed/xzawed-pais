@@ -17,7 +17,7 @@ export interface Step {
   estimatedMinutes: number
 }
 
-interface PlanTaskOutput { steps: Step[]; estimatedTime: string }
+interface PlanTaskOutput { steps: Step[]; estimatedTime: string; knowledge?: string[] }
 
 const inputSchema = {
   type: 'object' as const,
@@ -41,6 +41,7 @@ const stepSchema = z.object({
 const outputSchema = z.object({
   steps: z.array(stepSchema).default([]),
   estimatedTime: z.string().default('unknown'),
+  knowledge: z.array(z.string()).optional(),
 })
 
 export function createPlanTaskHandler(redisUrl: string): ToolHandler<PlanTaskInput, PlanTaskOutput> {

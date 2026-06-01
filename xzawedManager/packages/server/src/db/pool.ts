@@ -16,8 +16,11 @@ export function getPool(): Pool | null {
 
 export async function runMigrations(p: Pool): Promise<void> {
   const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), 'migrations')
-  const sql = await readFile(join(migrationsDir, '001_sessions.sql'), 'utf-8')
-  await p.query(sql)
+  const files = ['001_sessions.sql', '002_domain_knowledge.sql']
+  for (const file of files) {
+    const sql = await readFile(join(migrationsDir, file), 'utf-8')
+    await p.query(sql)
+  }
 }
 
 export async function closePool(): Promise<void> {

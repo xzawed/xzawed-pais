@@ -7,6 +7,7 @@ import type { ManagerToOrchestratorMessage, UISpec } from '../types/streams.js'
 import { ClarificationNeededError, AgentQueryError, GateAbortError } from '../tools/errors.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
 import { isGatedTool, effectiveMode, summarizeOutput, parseDecision } from '../gates/approval-gate.js'
+import type { KnowledgeRepo } from '../db/knowledge.repo.js'
 
 /** MANAGER_MAX_ITERATIONS 환경변수를 파싱하고 유효성을 검증한다. 유효하지 않으면 Error를 throw한다. */
 export function parseMaxIterations(raw: string | undefined): number {
@@ -20,6 +21,7 @@ export function parseMaxIterations(raw: string | undefined): number {
 const MAX_ITERATIONS = parseMaxIterations(process.env['MANAGER_MAX_ITERATIONS'])
 const MAX_TOKENS = Number(process.env['MANAGER_MAX_TOKENS'] ?? '16384')
 const MAX_GATE_REVISES = Number(process.env['MANAGER_MAX_GATE_REVISES'] ?? '5')
+const WIKI_INJECT_LIMIT = Number(process.env['MANAGER_WIKI_INJECT_LIMIT'] ?? '20')
 const CLAUDE_CALL_TIMEOUT_MS = Number(process.env['MANAGER_CLAUDE_TIMEOUT_MS'] ?? '120000')
 
 const REQUEST_INFO_TOOL: Anthropic.Tool = {
@@ -49,6 +51,7 @@ export class ClaudeRunner {
     private readonly client: Anthropic,
     private readonly model: string,
     private readonly registry: ToolRegistry,
+    private readonly knowledgeRepo?: KnowledgeRepo,
   ) {}
 
   private async publishStatus(
@@ -96,8 +99,10 @@ export class ClaudeRunner {
     if (!handler) throw new Error(`Unknown tool: ${block.name}`)
 
     await this.publishStatus(producer, sessionId, `Starting ${block.name}...`)
+    // 위키 주입: 호출 전 프로젝트 최근 지식을 context.domainKnowledge로 주입
+    const input = await this.injectDomainKnowledge(block.input, userContext)
     // ClarificationNeededError는 catch하지 않고 processToolUseBlocks로 전파
-    let result = await handler.execute(block.input, sessionId, userContext)
+    let result = await handler.execute(input, sessionId, userContext)
 
     // 코드로 강제하는 승인 게이트 — 에이전트 디스패치 도구에만 적용
     if (isGatedTool(block.name)) {
@@ -105,6 +110,9 @@ export class ClaudeRunner {
         handler, block, result, sessionId, producer, sessionStore, userContext,
       )
     }
+
+    // 위키 저장: 게이트 통과한 결과의 knowledge를 프로젝트 위키에 누적
+    await this.storeDomainKnowledge(block.name, result, userContext)
 
     // design_ui 완료 시 uiSpec을 포함한 상태 업데이트 발행 (게이트 통과한 최종 result 기준)
     if (block.name === 'design_ui') {
@@ -127,6 +135,37 @@ export class ClaudeRunner {
 
     await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
     return this.toToolResult(block.id, result)
+  }
+
+  /** 프로젝트 최근 지식을 도구 입력의 context.domainKnowledge로 주입한다(repo·projectId 없으면 원본 반환). */
+  private async injectDomainKnowledge(rawInput: unknown, userContext?: UserContext): Promise<unknown> {
+    if (!this.knowledgeRepo || !userContext?.projectId) return rawInput
+    try {
+      const entries = await this.knowledgeRepo.recentByProject(userContext.projectId, WIKI_INJECT_LIMIT)
+      if (entries.length === 0) return rawInput
+      const obj = (typeof rawInput === 'object' && rawInput !== null) ? rawInput as Record<string, unknown> : {}
+      const ctx = (typeof obj['context'] === 'object' && obj['context'] !== null) ? obj['context'] as Record<string, unknown> : {}
+      return { ...obj, context: { ...ctx, domainKnowledge: entries } }
+    } catch (err) {
+      console.warn('[runner] 위키 주입 실패 — 작업 계속:', err)
+      return rawInput
+    }
+  }
+
+  /** 게이트 통과한 결과의 knowledge[]를 프로젝트 위키에 저장한다(sourceAgent=도구명). */
+  private async storeDomainKnowledge(stage: string, result: unknown, userContext?: UserContext): Promise<void> {
+    if (!this.knowledgeRepo || !userContext?.projectId) return
+    const raw = (typeof result === 'object' && result !== null) ? (result as Record<string, unknown>)['knowledge'] : undefined
+    if (!Array.isArray(raw)) return
+    const entries = raw
+      .filter((k): k is string => typeof k === 'string')
+      .map((content) => ({ content, sourceAgent: stage }))
+    if (entries.length === 0) return
+    try {
+      await this.knowledgeRepo.insertMany(userContext.projectId, entries)
+    } catch (err) {
+      console.warn('[runner] 위키 저장 실패 — 작업 계속:', err)
+    }
   }
 
   /** tool_result 블록 생성 (4000자 상한). */

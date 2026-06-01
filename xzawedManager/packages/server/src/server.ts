@@ -8,6 +8,7 @@ import { StreamProducer } from './streams/producer.js'
 import { StreamConsumer } from './streams/consumer.js'
 import { SessionStore } from './sessions/session.store.js'
 import { SessionRepo } from './db/session.repo.js'
+import { KnowledgeRepo } from './db/knowledge.repo.js'
 import { createPool, runMigrations, closePool } from './db/pool.js'
 import { ToolRegistry } from './tools/registry.js'
 import { ClaudeRunner } from './claude/runner.js'
@@ -46,10 +47,12 @@ export async function buildServer(
   }
 
   let sessionRepo: SessionRepo | undefined
+  let knowledgeRepo: KnowledgeRepo | undefined
   if (config.DATABASE_URL) {
     const pool = createPool(config.DATABASE_URL)
     await runMigrations(pool)
     sessionRepo = new SessionRepo(pool)
+    knowledgeRepo = new KnowledgeRepo(pool)
   }
 
   const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY, maxRetries: 3 })
@@ -74,7 +77,7 @@ export async function buildServer(
   registry.register(createRegisterProjectHandler(config.REDIS_URL))
   registry.register(createSwitchProjectHandler(config.REDIS_URL))
 
-  const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry)
+  const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry, knowledgeRepo)
   const producer = new StreamProducer(config.REDIS_URL)
   const sessionStore = new SessionStore(sessionRepo)
   const activeConsumers = new Map<string, StreamConsumer>()
