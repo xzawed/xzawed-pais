@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import path from 'node:path'
-import { answerViaClaude } from '@xzawed/agent-streams'
+import { answerViaClaude, callClaudeText } from '@xzawed/agent-streams'
 import type { FileChange } from '../types.js'
 
 const API_TIMEOUT_MS = Number(process.env['DEVELOPER_CLAUDE_TIMEOUT_MS'] ?? '120000')
@@ -34,37 +34,14 @@ export class ClaudeRunner {
     context: Record<string, unknown>,
     clarificationContext?: string,
   ): Promise<{ changes: FileChange[]; summary: string }> {
-    let timerId: ReturnType<typeof setTimeout> | undefined
-    let response: Awaited<ReturnType<typeof this.client.messages.create>>
-    try {
-      response = await Promise.race([
-        this.client.messages.create({
-          model: this.model,
-          max_tokens: 8192,
-          system: SYSTEM_PROMPT,
-          messages: [{
-            role: 'user',
-            content: [
-              `Project path: ${projectPath}`,
-              `Context: ${JSON.stringify(context, null, 2)}`,
-              clarificationContext ? `Answer from another agent: ${clarificationContext}` : '',
-              `\nPlan:\n${plan}`,
-            ].filter(Boolean).join('\n'),
-          }],
-        }),
-        new Promise<never>((_, reject) => {
-          timerId = setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
-        }),
-      ])
-    } finally {
-      clearTimeout(timerId)
-    }
+    const userContent = [
+      `Project path: ${projectPath}`,
+      `Context: ${JSON.stringify(context, null, 2)}`,
+      clarificationContext ? `Answer from another agent: ${clarificationContext}` : '',
+      `\nPlan:\n${plan}`,
+    ].filter(Boolean).join('\n')
 
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
-
+    const text = await callClaudeText(this.client, this.model, 8192, SYSTEM_PROMPT, userContent, API_TIMEOUT_MS)
     const changes = this.parseChanges(text)
     const summary = `Implemented ${changes.length} file change(s) for: ${plan.slice(0, 100)}`
     return { changes, summary }

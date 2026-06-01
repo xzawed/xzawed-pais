@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
-import { AgentQuery, parseAgentQuery, answerViaClaude } from '@xzawed/agent-streams'
+import { AgentQuery, parseAgentQuery, answerViaClaude, callClaudeText } from '@xzawed/agent-streams'
 import { ComponentSpecSchema, UISpecSchema } from '../types.js'
 import type { ComponentSpec, UISpec } from '../types.js'
 
@@ -75,43 +75,16 @@ export class ClaudeRunner {
     designSystem: string,
     clarificationContext?: string,
   ): Promise<{ components: ComponentSpec[]; uiSpec: UISpec } | AgentQuery> {
-    let timerId: ReturnType<typeof setTimeout> | undefined
+    const userContent = [
+      `Intent: ${intent}`,
+      `Framework: ${targetFramework}`,
+      `Design System: ${designSystem}`,
+      `Context: ${JSON.stringify(context, null, 2)}`,
+      clarificationContext ? `Answer from another agent: ${clarificationContext}` : '',
+    ].filter(Boolean).join('\n')
 
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timerId = setTimeout(() => reject(new Error('Claude API timeout')), API_TIMEOUT_MS)
-    })
-    // prevent unhandled rejection when the API call wins the race
-    timeoutPromise.catch(() => {})
-
-    try {
-      const response = await Promise.race([
-        this.client.messages.create({
-          model: this.model,
-          max_tokens: 4096,
-          system: SYSTEM_PROMPT,
-          messages: [{
-            role: 'user',
-            content: [
-              `Intent: ${intent}`,
-              `Framework: ${targetFramework}`,
-              `Design System: ${designSystem}`,
-              `Context: ${JSON.stringify(context, null, 2)}`,
-              clarificationContext ? `Answer from another agent: ${clarificationContext}` : '',
-            ].filter(Boolean).join('\n'),
-          }],
-        }),
-        timeoutPromise,
-      ])
-
-      const text = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('')
-
-      return this.parseResponse(text, intent)
-    } finally {
-      clearTimeout(timerId)
-    }
+    const text = await callClaudeText(this.client, this.model, 4096, SYSTEM_PROMPT, userContent, API_TIMEOUT_MS)
+    return this.parseResponse(text, intent)
   }
 
   /** 다른 에이전트의 질의(query)에 디자인 관점에서 답한다. */
