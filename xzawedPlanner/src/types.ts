@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { collaborationPayloadFields } from '@xzawed/agent-streams'
 
 export interface Step {
   id: string
@@ -24,12 +25,15 @@ export interface PlannerToManagerMessage {
   sessionId: string
   messageId: string
   timestamp: number
-  type: 'plan_complete' | 'info_request' | 'error'
+  type: 'plan_complete' | 'info_request' | 'error' | 'agent_query'
   payload: {
     steps?: Step[]
     estimatedTime?: string
     content: string
     uiSpec?: UISpec
+    to?: string
+    question?: string
+    kind?: 'active_request' | 'cross_check'
   }
 }
 
@@ -50,6 +54,7 @@ export const ManagerToPlannerMessageSchema = z.object({
     context: z.record(z.unknown()),
     priority: z.enum(['normal', 'high']),
     userContext: UserContextSchema.optional(),
+    ...collaborationPayloadFields,
   }),
 })
 

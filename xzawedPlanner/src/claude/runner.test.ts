@@ -3,6 +3,7 @@ import { vi, describe, it, expect } from 'vitest'
 vi.mock('@anthropic-ai/sdk')
 
 import { ClaudeRunner, ClarificationNeeded } from './runner.js'
+import { AgentQuery } from '@xzawed/agent-streams'
 import Anthropic from '@anthropic-ai/sdk'
 
 const AnthropicMock = vi.mocked(Anthropic)
@@ -56,7 +57,7 @@ describe('ClaudeRunner', () => {
     const result = await runner.generatePlan('로그인 페이지 만들기', {}, 'normal')
 
     expect(result).not.toBeInstanceOf(ClarificationNeeded)
-    if (!(result instanceof ClarificationNeeded)) {
+    if (!(result instanceof ClarificationNeeded) && !(result instanceof AgentQuery)) {
       expect(result.steps).toHaveLength(2)
       expect(result.steps[0].id).toBe('step-1')
       expect(result.steps[1].agentType).toBe('designer')
@@ -95,7 +96,7 @@ describe('ClaudeRunner', () => {
     const result = await runner.generatePlan('API 서버 구축', {}, 'normal')
 
     expect(result).not.toBeInstanceOf(ClarificationNeeded)
-    if (!(result instanceof ClarificationNeeded)) {
+    if (!(result instanceof ClarificationNeeded) && !(result instanceof AgentQuery)) {
       expect(result.steps).toHaveLength(1)
       expect(result.estimatedTime).toBe('1 hour')
     }
@@ -109,7 +110,7 @@ describe('ClaudeRunner', () => {
     const result = await runner.generatePlan('테스트', {}, 'normal')
 
     expect(result).not.toBeInstanceOf(ClarificationNeeded)
-    if (!(result instanceof ClarificationNeeded)) {
+    if (!(result instanceof ClarificationNeeded) && !(result instanceof AgentQuery)) {
       expect(result.steps).toHaveLength(1)
     }
   })
@@ -123,7 +124,7 @@ describe('ClaudeRunner', () => {
     const result = await runner.generatePlan('테스트', {}, 'normal')
 
     expect(result).not.toBeInstanceOf(ClarificationNeeded)
-    if (!(result instanceof ClarificationNeeded)) {
+    if (!(result instanceof ClarificationNeeded) && !(result instanceof AgentQuery)) {
       expect(result.steps).toHaveLength(1)
       expect(result.estimatedTime).toBe('1 hour')
     }
@@ -156,7 +157,7 @@ describe('ClaudeRunner', () => {
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan(longIntent, {}, 'normal')
 
-    if (!(result instanceof ClarificationNeeded)) {
+    if (!(result instanceof ClarificationNeeded) && !(result instanceof AgentQuery)) {
       expect(result.steps[0].title.length).toBeLessThanOrEqual(60)
     }
   })
@@ -171,7 +172,7 @@ describe('ClaudeRunner', () => {
 
     spy.mockRestore()
     expect(result).not.toBeInstanceOf(ClarificationNeeded)
-    if (!(result instanceof ClarificationNeeded)) {
+    if (!(result instanceof ClarificationNeeded) && !(result instanceof AgentQuery)) {
       expect(result.steps).toHaveLength(1)
       expect(result.estimatedTime).toBe('1 hour')
     }
@@ -210,7 +211,7 @@ describe('ClaudeRunner', () => {
     const result = await runner.generatePlan('테스트', {}, 'normal')
 
     expect(result).not.toBeInstanceOf(ClarificationNeeded)
-    if (!(result instanceof ClarificationNeeded)) {
+    if (!(result instanceof ClarificationNeeded) && !(result instanceof AgentQuery)) {
       expect(result.estimatedTime).toBe('1 hour')
     }
   })
