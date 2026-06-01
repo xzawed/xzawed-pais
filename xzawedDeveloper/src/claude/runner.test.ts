@@ -23,6 +23,32 @@ beforeEach(() => {
   runner = new ClaudeRunner('sk-test', 'claude-test')
 })
 
+describe('ClaudeRunner.parseResponse', () => {
+  it('객체 형식 {changes, knowledge}를 파싱한다', () => {
+    const input = JSON.stringify({
+      changes: [{ path: 'src/a.ts', operation: 'create', content: 'x' }],
+      knowledge: ['인증은 JWT 사용', 'DB는 repository 패턴'],
+    })
+    const { changes, knowledge } = runner.parseResponse(input)
+    expect(changes).toHaveLength(1)
+    expect(knowledge).toEqual(['인증은 JWT 사용', 'DB는 repository 패턴'])
+  })
+
+  it('객체 형식에 knowledge가 없으면 knowledge 키가 없다', () => {
+    const input = JSON.stringify({ changes: [{ path: 'src/a.ts', operation: 'delete' }] })
+    const result = runner.parseResponse(input)
+    expect(result.changes).toHaveLength(1)
+    expect(result.knowledge).toBeUndefined()
+  })
+
+  it('레거시 배열 형식도 계속 지원한다(하위호환)', () => {
+    const input = JSON.stringify([{ path: 'src/a.ts', operation: 'create', content: 'x' }])
+    const { changes, knowledge } = runner.parseResponse(input)
+    expect(changes).toHaveLength(1)
+    expect(knowledge).toBeUndefined()
+  })
+})
+
 describe('ClaudeRunner.parseChanges', () => {
   it('parses valid JSON array', () => {
     const input = JSON.stringify([

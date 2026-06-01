@@ -15,6 +15,7 @@ export interface DeveloperToManagerMessage {
   payload: {
     artifacts?: string[]
     summary?: string
+    knowledge?: string[]
     content: string
   }
 }
