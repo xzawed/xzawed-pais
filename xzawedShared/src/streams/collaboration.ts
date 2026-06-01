@@ -39,8 +39,8 @@ export function makeCollaborationContext<TMsg extends CollabMessage>(
   const base: MessageBase = { sessionId, messageId: crypto.randomUUID(), timestamp: Date.now() }
   return {
     base,
-    publishQueryAnswer: (content) => publish({ ...base, type: completeType, payload: { content } } as TMsg),
-    publishError: (content) => publish({ ...base, type: 'error', payload: { content } } as TMsg),
+    publishQueryAnswer: (content) => publish({ ...base, type: completeType, payload: { content } } as unknown as TMsg),
+    publishError: (content) => publish({ ...base, type: 'error', payload: { content } } as unknown as TMsg),
   }
 }
 
