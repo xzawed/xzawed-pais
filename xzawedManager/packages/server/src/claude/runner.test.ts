@@ -558,6 +558,32 @@ describe('ClaudeRunner', () => {
       expect(exec).toHaveBeenCalledTimes(1)
     })
 
+    it('approve + rememberAuto: 같은 단계가 이후 자동 통과한다', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn().mockResolvedValue({ content: '계획' })
+      registerPlan(exec)
+      // plan_task 두 번 호출 후 end_turn
+      createFn
+        .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('t1', 'plan_task', { intent: 'x' })]))
+        .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('t2', 'plan_task', { intent: 'y' })]))
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      // 1번째 호출: 게이트 대기 → rememberAuto로 승인
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve', rememberAuto: true }))
+      await runP
+
+      // override가 auto로 설정됨 → 2번째 호출은 게이트 없이 통과(approval 1회만 발행)
+      expect(store.getGateConfig('sess-1').overrides['plan_task']).toBe('auto')
+      const approvals = mockProducer.publish.mock.calls
+        .map((c) => c[0] as { payload?: { approval?: unknown } })
+        .filter((m) => m.payload?.approval)
+      expect(approvals).toHaveLength(1)
+      expect(exec).toHaveBeenCalledTimes(2)
+    })
+
     it('revise: 피드백으로 같은 도구를 재실행한 뒤 다시 게이트로 온다', async () => {
       const store = new SessionStore()
       store.create('sess-1')

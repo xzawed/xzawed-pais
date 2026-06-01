@@ -51,7 +51,11 @@ describe('effectiveMode', () => {
 
 describe('parseDecision', () => {
   it('approve JSON', () => {
-    expect(parseDecision('{"decision":"approve"}')).toEqual({ kind: 'approve' })
+    expect(parseDecision('{"decision":"approve"}')).toEqual({ kind: 'approve', rememberAuto: false })
+  })
+  it('approve + rememberAuto', () => {
+    expect(parseDecision('{"decision":"approve","rememberAuto":true}'))
+      .toEqual({ kind: 'approve', rememberAuto: true })
   })
   it('revise + feedback', () => {
     expect(parseDecision('{"decision":"revise","feedback":"색상 변경"}'))
@@ -61,10 +65,10 @@ describe('parseDecision', () => {
     expect(parseDecision('{"decision":"abort"}')).toEqual({ kind: 'abort' })
   })
   it('파싱 불가 문자열은 approve로 fail-open', () => {
-    expect(parseDecision('그냥 진행')).toEqual({ kind: 'approve' })
+    expect(parseDecision('그냥 진행')).toEqual({ kind: 'approve', rememberAuto: false })
   })
   it('알 수 없는 decision은 approve', () => {
-    expect(parseDecision('{"decision":"xxx"}')).toEqual({ kind: 'approve' })
+    expect(parseDecision('{"decision":"xxx"}')).toEqual({ kind: 'approve', rememberAuto: false })
   })
   it('revise인데 feedback 없으면 빈 문자열', () => {
     expect(parseDecision('{"decision":"revise"}')).toEqual({ kind: 'revise', feedback: '' })

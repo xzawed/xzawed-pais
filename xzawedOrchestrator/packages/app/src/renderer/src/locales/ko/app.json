@@ -57,6 +57,7 @@
     "approve": "승인",
     "revise": "수정요청",
     "abort": "중단",
-    "feedback_placeholder": "수정 요청 시 피드백을 입력하세요"
+    "feedback_placeholder": "수정 요청 시 피드백을 입력하세요",
+    "remember_auto": "이 단계 앞으로 자동 승인"
   }
 }

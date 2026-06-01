@@ -85,10 +85,27 @@ describe('ChatView', () => {
     render(<MemoryRouter><ChatView /></MemoryRouter>)
     fireEvent.click(screen.getByTestId('approval-approve'))
     expect(postUiAction).toHaveBeenCalledWith(
-      expect.any(String), 'sess-approve', JSON.stringify({ decision: 'approve' }),
+      expect.any(String), 'sess-approve', JSON.stringify({ decision: 'approve', rememberAuto: false }),
     )
     // 승인 후 대기 요청이 사라진다
     expect(useChatStore.getState().pendingInfoRequest).toBeNull()
+  })
+
+  test('approve with remember-auto checkbox sends rememberAuto:true', () => {
+    postUiAction.mockClear()
+    useChatStore.setState({
+      sessionId: 'sess-auto',
+      pendingInfoRequest: {
+        agentId: 'manager', prompt: 'review',
+        approval: { stage: 'plan_task', summary: 's', mode: 'manual' },
+      },
+    })
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
+    fireEvent.click(screen.getByTestId('approval-remember-auto'))
+    fireEvent.click(screen.getByTestId('approval-approve'))
+    expect(postUiAction).toHaveBeenCalledWith(
+      expect.any(String), 'sess-auto', JSON.stringify({ decision: 'approve', rememberAuto: true }),
+    )
   })
 
   test('revise requires feedback and sends it', () => {

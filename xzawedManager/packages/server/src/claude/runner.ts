@@ -171,7 +171,11 @@ export class ClaudeRunner {
       })
       const decision = parseDecision(await sessionStore.waitForInfo(sessionId))
 
-      if (decision.kind === 'approve') return result
+      if (decision.kind === 'approve') {
+        // '이 단계 앞으로 자동' 선택 시 이후 동일 단계는 게이트 없이 통과(배포는 항상 manual이라 무영향)
+        if (decision.rememberAuto) sessionStore.setGateOverride(sessionId, block.name, 'auto')
+        return result
+      }
       if (decision.kind === 'abort') {
         sessionStore.abort(sessionId)
         throw new GateAbortError(block.name)

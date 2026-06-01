@@ -57,6 +57,7 @@
     "approve": "Approve",
     "revise": "Request changes",
     "abort": "Abort",
-    "feedback_placeholder": "Enter feedback for requested changes"
+    "feedback_placeholder": "Enter feedback for requested changes",
+    "remember_auto": "Auto-approve this step from now on"
   }
 }

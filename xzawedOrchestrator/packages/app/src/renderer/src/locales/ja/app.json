@@ -57,6 +57,7 @@
     "approve": "承認",
     "revise": "修正依頼",
     "abort": "中断",
-    "feedback_placeholder": "修正依頼のフィードバックを入力してください"
+    "feedback_placeholder": "修正依頼のフィードバックを入力してください",
+    "remember_auto": "このステップを今後自動承認"
   }
 }
