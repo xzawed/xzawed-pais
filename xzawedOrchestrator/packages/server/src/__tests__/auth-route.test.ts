@@ -19,11 +19,11 @@ const { mockVerifyPassword, mockHashPassword } = vi.hoisted(() => ({
 }))
 
 vi.mock('../auth/user.repo.js', () => ({
-  UserRepo: vi.fn().mockImplementation(() => ({
+  UserRepo: vi.fn().mockImplementation(function () { return ({
     findByEmail: mockFindByEmail,
     findById: mockFindById,
     create: mockCreate,
-  })),
+  }) }),
   toPublic: vi.fn((u) => ({ id: u.id, email: u.email, displayName: u.displayName })),
 }))
 
@@ -35,14 +35,14 @@ const mockRefreshCountByUser = vi.fn<() => Promise<number>>().mockResolvedValue(
 const mockRefreshRevokeOldestByUser = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
 
 vi.mock('../auth/refresh.repo.js', () => ({
-  RefreshRepo: vi.fn().mockImplementation(() => ({
+  RefreshRepo: vi.fn().mockImplementation(function () { return ({
     create: mockRefreshCreate,
     findValid: mockRefreshFindValid,
     revokeAllForUser: mockRefreshRevokeAllForUser,
     revokeByToken: mockRefreshRevokeByToken,
     countByUser: mockRefreshCountByUser,
     revokeOldestByUser: mockRefreshRevokeOldestByUser,
-  })),
+  }) }),
 }))
 
 vi.mock('../auth/password.js', () => ({
@@ -68,10 +68,10 @@ vi.mock('../db/pool.js', () => ({
 }))
 
 vi.mock('../projects/project-gateway.js', () => ({
-  ProjectGatewayConsumer: vi.fn().mockImplementation(() => ({
+  ProjectGatewayConsumer: vi.fn().mockImplementation(function () { return ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
-  })),
+  }) }),
 }))
 
 import { buildServer } from '../server.js'

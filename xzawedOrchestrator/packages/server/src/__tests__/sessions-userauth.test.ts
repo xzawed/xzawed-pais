@@ -4,10 +4,10 @@ import Fastify from 'fastify'
 import type { FastifyInstance } from 'fastify'
 
 vi.mock('../streams/consumer.js', () => ({
-  StreamConsumer: vi.fn().mockImplementation(() => ({
+  StreamConsumer: vi.fn().mockImplementation(function () { return ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
-  })),
+  }) }),
 }))
 
 import { sessionsRoutes, resolveSessionWorkspaceRoot } from '../api/sessions.route.js'

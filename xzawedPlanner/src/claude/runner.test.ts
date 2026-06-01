@@ -51,7 +51,7 @@ const clarificationResponse = JSON.stringify({
 describe('ClaudeRunner', () => {
   it('정상 응답에서 Step[] 배열을 반환한다', async () => {
     const mockClient = makeClient(stepsResponse)
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan('로그인 페이지 만들기', {}, 'normal')
@@ -75,7 +75,7 @@ describe('ClaudeRunner', () => {
       knowledge: ['결제는 Stripe 사용', 'PII는 암호화 저장'],
     })
     const mockClient = makeClient(withKnowledge)
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan('결제 기능', {}, 'normal')
@@ -87,7 +87,7 @@ describe('ClaudeRunner', () => {
 
   it('knowledge가 없으면 결과에 knowledge 키가 없다', async () => {
     const mockClient = makeClient(stepsResponse)
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan('로그인', {}, 'normal')
@@ -99,7 +99,7 @@ describe('ClaudeRunner', () => {
 
   it('주입된 domainKnowledge를 LLM 프롬프트에 포함한다', async () => {
     const mockClient = makeClient(stepsResponse)
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     await runner.generatePlan('intent', {
       domainKnowledge: [{ content: '결제는 Stripe 사용', sourceAgent: 'plan_task' }],
@@ -111,7 +111,7 @@ describe('ClaudeRunner', () => {
 
   it('clarification_needed 응답에서 ClarificationNeeded를 반환한다', async () => {
     const mockClient = makeClient(clarificationResponse)
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan('앱 만들기', {}, 'high')
@@ -126,7 +126,7 @@ describe('ClaudeRunner', () => {
 
   it('SDK 오류 시 에러를 던진다 (API 오류는 fallback 없이 전파)', async () => {
     const mockClient = { messages: { create: vi.fn().mockRejectedValue(new Error('API error')) } }
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     await expect(runner.generatePlan('인증 미들웨어 추가', {}, 'normal')).rejects.toThrow('API error')
@@ -134,7 +134,7 @@ describe('ClaudeRunner', () => {
 
   it('JSON이 없는 응답에서 fallback Step을 반환한다', async () => {
     const mockClient = makeClient('계획을 세울 수 없습니다.')
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan('API 서버 구축', {}, 'normal')
@@ -148,7 +148,7 @@ describe('ClaudeRunner', () => {
 
   it('빈 steps 배열 응답에서 fallback을 반환한다', async () => {
     const mockClient = makeClient(JSON.stringify({ steps: [], estimatedTime: '0 minutes' }))
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan('테스트', {}, 'normal')
@@ -162,7 +162,7 @@ describe('ClaudeRunner', () => {
   it('JSON.parse 실패 시 fallback Step을 반환한다', async () => {
     // Has { and } but invalid JSON — triggers the catch block (lines 104-105)
     const mockClient = makeClient('{invalid json here}')
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan('테스트', {}, 'normal')
@@ -181,7 +181,7 @@ describe('ClaudeRunner', () => {
       question: '어떤 것이 필요하신가요?',
       fields: 'not-an-array',
     }))
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan('앱 만들기', {}, 'normal')
@@ -196,7 +196,7 @@ describe('ClaudeRunner', () => {
   it('JSON이 없는 응답에서 fallback 제목은 60자를 초과하지 않는다', async () => {
     const longIntent = 'A'.repeat(80)
     const mockClient = makeClient('계획을 세울 수 없습니다.')
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan(longIntent, {}, 'normal')
@@ -207,9 +207,9 @@ describe('ClaudeRunner', () => {
   })
 
   it('JSON.parse가 null을 반환하면 fallback Step을 반환한다', async () => {
-    const spy = vi.spyOn(JSON, 'parse').mockImplementationOnce(() => null)
+    const spy = vi.spyOn(JSON, 'parse').mockImplementationOnce(function () { return null })
     const mockClient = makeClient('{"placeholder": true}')
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan('테스트', {}, 'normal')
@@ -227,7 +227,7 @@ describe('ClaudeRunner', () => {
       clarification_needed: true,
       fields: [{ id: 'f1', label: 'Label', type: 'text' }],
     }))
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan('앱 만들기', {}, 'normal')
@@ -249,7 +249,7 @@ describe('ClaudeRunner', () => {
         estimatedMinutes: 30,
       }],
     }))
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const result = await runner.generatePlan('테스트', {}, 'normal')
@@ -262,7 +262,7 @@ describe('ClaudeRunner', () => {
 
   it('agent_query 응답에서 AgentQuery를 반환한다', async () => {
     const mockClient = makeClient('{"agent_query":true,"to":"developer","question":"가능?","kind":"active_request"}')
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
     const runner = new ClaudeRunner('sk-ant-test', 'claude-test')
     const result = await runner.generatePlan('intent', {}, 'normal')
     expect(result).toBeInstanceOf(AgentQuery)
@@ -270,7 +270,7 @@ describe('ClaudeRunner', () => {
 
   it('answerQuery는 Claude 텍스트 답변을 반환한다', async () => {
     const mockClient = makeClient('기획 관점 답변')
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
     const runner = new ClaudeRunner('sk-ant-test', 'claude-test')
     expect(await runner.answerQuery('q', {})).toBe('기획 관점 답변')
   })

@@ -29,7 +29,7 @@ describe('SetupStore', () => {
 
   it('saveSetupConfig writes JSON to userData path', () => {
     const writeSpy = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {})
-    vi.spyOn(fs, 'mkdirSync').mockImplementation(() => undefined)
+    vi.spyOn(fs, 'mkdirSync').mockImplementation(function () { return undefined })
     setupStore.saveSetupConfig({ claudeMode: 'cli', completedAt: '2026-01-01T00:00:00Z' })
     expect(writeSpy).toHaveBeenCalledWith(
       expect.stringContaining('setup-complete.json'),

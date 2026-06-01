@@ -3,17 +3,17 @@ import WebSocket from 'ws'
 import type { FastifyInstance } from 'fastify'
 
 vi.mock('../streams/consumer.js', () => ({
-  StreamConsumer: vi.fn().mockImplementation(() => ({
+  StreamConsumer: vi.fn().mockImplementation(function () { return ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
-  })),
+  }) }),
 }))
 
 vi.mock('../streams/producer.js', () => ({
-  StreamProducer: vi.fn().mockImplementation(() => ({
+  StreamProducer: vi.fn().mockImplementation(function () { return ({
     publish: vi.fn().mockRejectedValue(new Error('no redis in test')),
     publishSessionGateway: vi.fn().mockRejectedValue(new Error('no redis in test')),
-  })),
+  }) }),
 }))
 
 import { buildServer } from '../server.js'

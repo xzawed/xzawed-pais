@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createGithubOpsHandler } from './github-ops.js'
 
 vi.mock('@octokit/rest', () => ({
-  Octokit: vi.fn().mockImplementation(() => ({
+  Octokit: vi.fn().mockImplementation(function () { return ({
     rest: {
       repos: {
         createForAuthenticatedUser: vi.fn().mockResolvedValue({
@@ -32,7 +32,7 @@ vi.mock('@octokit/rest', () => ({
         }),
       },
     },
-  })),
+  }) }),
 }))
 
 describe('github-ops handler', () => {

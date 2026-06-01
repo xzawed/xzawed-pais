@@ -12,20 +12,20 @@ const mockClonePath = vi.fn()
 const mockCloneRepo = vi.fn()
 
 vi.mock('../../projects/project.repo.js', () => ({
-  ProjectRepo: vi.fn().mockImplementation(() => ({
+  ProjectRepo: vi.fn().mockImplementation(function () { return ({
     create: mockCreate,
     updateWorkspace: mockUpdateWorkspace,
     findByIdAndUser: mockFindByIdAndUser,
     findByUser: mockFindByUser,
-  })),
+  }) }),
 }))
 
 vi.mock('../../projects/workspace.service.js', () => ({
-  WorkspaceService: vi.fn().mockImplementation(() => ({
+  WorkspaceService: vi.fn().mockImplementation(function () { return ({
     validateLocalPath: mockValidateLocalPath,
     clonePath: mockClonePath,
     cloneRepo: mockCloneRepo,
-  })),
+  }) }),
 }))
 
 function makeStore(overrides: Partial<SessionStore> = {}): SessionStore {

@@ -6,10 +6,10 @@ import { ProjectRepo } from '../projects/project.repo.js'
 import { buildServer } from '../server.js'
 
 vi.mock('../projects/project-gateway.js', () => ({
-  ProjectGatewayConsumer: vi.fn().mockImplementation(() => ({
+  ProjectGatewayConsumer: vi.fn().mockImplementation(function () { return ({
     start: vi.fn().mockResolvedValue(undefined),
     stop: vi.fn(),
-  })),
+  }) }),
 }))
 
 function makePool(rows: Record<string, unknown>[]) {

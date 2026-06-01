@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { spawn } from 'node:child_process'
 
 vi.mock('node:child_process', () => ({
-  spawn: vi.fn(() => ({
+  spawn: vi.fn(function () { return ({
     pid: 1234,
     on: vi.fn(),
     once: vi.fn((_event: string, cb: () => void) => { cb() }),
     kill: vi.fn(),
     stdout: { on: vi.fn() },
     stderr: { on: vi.fn() },
-  })),
+  }) }),
 }))
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(() => false),

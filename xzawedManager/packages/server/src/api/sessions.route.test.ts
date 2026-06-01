@@ -35,12 +35,12 @@ afterEach(() => {
 describe('sessionsRoute — abort 처리', () => {
   it('"Session aborted" 에러 시 error 메시지를 발행하지 않는다', async () => {
     const capturedHandlers: MsgHandler[] = []
-    vi.mocked(StreamConsumer).mockImplementation(() => ({
+    vi.mocked(StreamConsumer).mockImplementation(function () { return ({
       start: vi.fn().mockImplementation(async (_sid: string, handler: MsgHandler) => {
         capturedHandlers.push(handler)
       }),
       stop: vi.fn(),
-    }) as unknown as StreamConsumer)
+    }) as unknown as StreamConsumer })
 
     const mockRun = vi.fn().mockRejectedValue(new Error('Session aborted'))
     const mockPublish = vi.fn().mockResolvedValue(undefined)
@@ -68,12 +68,12 @@ describe('sessionsRoute — abort 처리', () => {
 
   it('"Session aborted" 외 에러는 error 타입 메시지를 발행한다', async () => {
     const capturedHandlers: MsgHandler[] = []
-    vi.mocked(StreamConsumer).mockImplementation(() => ({
+    vi.mocked(StreamConsumer).mockImplementation(function () { return ({
       start: vi.fn().mockImplementation(async (_sid: string, handler: MsgHandler) => {
         capturedHandlers.push(handler)
       }),
       stop: vi.fn(),
-    }) as unknown as StreamConsumer)
+    }) as unknown as StreamConsumer })
 
     const mockRun = vi.fn().mockRejectedValue(new Error('Something went wrong'))
     const mockPublish = vi.fn().mockResolvedValue(undefined)

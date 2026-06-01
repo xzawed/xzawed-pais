@@ -17,7 +17,7 @@ function makeRedis(overrides: Record<string, unknown> = {}) {
     const ops: Array<() => Promise<unknown>> = []
     const p = {
       xack: vi.fn().mockImplementation(() => { ops.push(() => Promise.resolve(1)); return p }),
-      exec: vi.fn().mockImplementation(() => Promise.resolve(ops.map(() => [null, 1]))),
+      exec: vi.fn().mockImplementation(function () { return Promise.resolve(ops.map(() => [null, 1])) }),
     }
     return p
   }

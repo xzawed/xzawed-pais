@@ -36,9 +36,9 @@ describe('assertProjectOwner', () => {
 
   beforeEach(() => {
     mockFindByIdAndUser = vi.fn()
-    vi.mocked(ProjectRepo).mockImplementation(() => ({
+    vi.mocked(ProjectRepo).mockImplementation(function () { return ({
       findByIdAndUser: mockFindByIdAndUser,
-    }) as unknown as ProjectRepo)
+    }) as unknown as ProjectRepo })
   })
 
   it('소유자가 일치하는 프로젝트를 반환한다', async () => {

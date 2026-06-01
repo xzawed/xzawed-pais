@@ -14,7 +14,7 @@ vi.mock('electron', () => ({
     on: vi.fn(),
     whenReady: vi.fn(() => Promise.resolve()),
   },
-  BrowserWindow: vi.fn(() => ({
+  BrowserWindow: vi.fn(function () { return ({
     once: vi.fn(),
     on: vi.fn(),
     loadURL: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock('electron', () => ({
     webContents: { send: vi.fn() },
     hide: vi.fn(),
     show: vi.fn(),
-  })),
+  }) }),
   ipcMain: { handle: vi.fn(), removeHandler: vi.fn() },
   safeStorage: mockSafeStorage,
   shell: { openExternal: vi.fn() },

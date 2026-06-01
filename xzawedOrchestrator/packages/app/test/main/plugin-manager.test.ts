@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { readdirSync } from 'node:fs'
 
 vi.mock('node:child_process', () => ({
-  spawnSync: vi.fn(() => ({ status: 0 })),
+  spawnSync: vi.fn(function () { return ({ status: 0 }) }),
 }))
 let disabledStore: string[] = []
 
@@ -52,8 +52,8 @@ describe('PluginManager', () => {
   })
 
   it('readdirSync가 . 와 .. 를 반환해도 필터링한다', async () => {
-    vi.mocked(readdirSync).mockImplementationOnce(() => ['.', '..', 'claude-plugins-official'] as unknown as ReturnType<typeof readdirSync>)
-    vi.mocked(readdirSync).mockImplementationOnce(() => ['.', '..', 'superpowers'] as unknown as ReturnType<typeof readdirSync>)
+    vi.mocked(readdirSync).mockImplementationOnce(function () { return ['.', '..', 'claude-plugins-official'] as unknown as ReturnType<typeof readdirSync> })
+    vi.mocked(readdirSync).mockImplementationOnce(function () { return ['.', '..', 'superpowers'] as unknown as ReturnType<typeof readdirSync> })
     const plugins = await manager.list()
     const ids = plugins.map((p) => p.id)
     expect(ids).not.toContain('.')

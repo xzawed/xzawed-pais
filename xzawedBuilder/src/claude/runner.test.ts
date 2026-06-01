@@ -22,7 +22,7 @@ describe('ClaudeRunner', () => {
     const mockClient = makeClient(
       '[{"file":"src/index.ts","line":10,"message":"Type error","suggestion":"타입을 명시하세요"}]'
     )
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const errors = await runner.analyzeBuildFailure('error TS2345: ...')
@@ -36,7 +36,7 @@ describe('ClaudeRunner', () => {
 
   it('SDK 오류 시 fallback BuildError를 반환한다', async () => {
     const mockClient = { messages: { create: vi.fn().mockRejectedValue(new Error('API error')) } }
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const errors = await runner.analyzeBuildFailure('build failed')
@@ -48,7 +48,7 @@ describe('ClaudeRunner', () => {
 
   it('JSON이 없는 응답에서 fallback을 반환한다', async () => {
     const mockClient = makeClient('분석할 수 없는 응답입니다.')
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const errors = await runner.analyzeBuildFailure('build output')
@@ -60,7 +60,7 @@ describe('ClaudeRunner', () => {
   it('JSON은 있지만 Zod 스키마 검증 실패 시 fallback을 반환한다', async () => {
     // suggestion 필드 누락 → BuildErrorSchema 검증 실패 → fallback
     const mockClient = makeClient('[{"file":"src/a.ts","message":"오류","notSuggestion":"잘못된 필드"}]')
-    AnthropicMock.mockImplementation(() => mockClient as any)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
 
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     const errors = await runner.analyzeBuildFailure('build failed')
@@ -70,7 +70,7 @@ describe('ClaudeRunner', () => {
   })
 
   it('answerQuery는 Claude 텍스트 답변을 반환한다', async () => {
-    AnthropicMock.mockImplementation(() => makeClient('빌드 관점 답변') as any)
+    AnthropicMock.mockImplementation(function () { return makeClient('빌드 관점 답변') as any })
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     expect(await runner.answerQuery('이 의존성 충돌 해결법은?', {})).toBe('빌드 관점 답변')
   })

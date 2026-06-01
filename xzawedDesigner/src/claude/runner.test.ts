@@ -5,9 +5,7 @@ import type { ComponentSpec, UISpec } from '../types.js'
 const mockCreate = vi.fn()
 
 vi.mock('@anthropic-ai/sdk', () => ({
-  default: vi.fn().mockImplementation(() => ({
-    messages: { create: mockCreate },
-  })),
+  default: vi.fn().mockImplementation(function () { return { messages: { create: mockCreate } } }),
 }))
 
 import { ClaudeRunner } from './runner.js'

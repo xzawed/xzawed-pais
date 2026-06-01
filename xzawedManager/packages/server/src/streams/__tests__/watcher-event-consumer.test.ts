@@ -203,7 +203,7 @@ describe('WatcherEventConsumer', () => {
 
   it('일반 xreadgroup 에러는 로깅 후 재시도 대기 경로로 진입한다', async () => {
     const sessionId = 'generic-err-session'
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(function () { return undefined })
 
     const mockRedis = makeRedis([])
     let calls = 0

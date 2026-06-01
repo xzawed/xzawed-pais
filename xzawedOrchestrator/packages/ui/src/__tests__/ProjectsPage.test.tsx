@@ -10,21 +10,21 @@ const mockCreateProject = vi.fn()
 const mockUpdateWorkspace = vi.fn().mockResolvedValue(undefined)
 
 vi.mock('../stores/auth.store.js', () => ({
-  useAuthStore: vi.fn(() => ({
+  useAuthStore: vi.fn(function () { return ({
     user: { id: 'u1', email: 'test@example.com' },
     accessToken: 'token123',
     logout: mockLogout,
-  })),
+  }) }),
 }))
 
 vi.mock('../stores/projects.store.js', () => ({
-  useProjectsStore: vi.fn(() => ({
+  useProjectsStore: vi.fn(function () { return ({
     projects: [],
     isLoading: false,
     fetchProjects: mockFetchProjects,
     createProject: mockCreateProject,
     updateWorkspace: mockUpdateWorkspace,
-  })),
+  }) }),
 }))
 
 const defaultProps = {
