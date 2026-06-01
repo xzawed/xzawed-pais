@@ -15,6 +15,18 @@ import AnthropicDefault from '@anthropic-ai/sdk'
 import { ClaudeRunner, parseMaxIterations } from './runner.js'
 import { ToolRegistry } from '../tools/registry.js'
 import { AgentQueryError } from '../tools/errors.js'
+import { SessionStore } from '../sessions/session.store.js'
+
+/** 조건이 참이 될 때까지 macrotask로 양보하며 폴링한다. */
+async function waitFor(pred: () => boolean, ms = 2000): Promise<void> {
+  const start = Date.now()
+  while (!pred()) {
+    if (Date.now() - start > ms) throw new Error('waitFor timeout')
+    await new Promise((r) => setImmediate(r))
+  }
+}
+
+const GATED_SCHEMA = { type: 'object' as const, properties: {}, required: [] }
 
 const AnthropicMock = vi.mocked(AnthropicDefault)
 
@@ -54,7 +66,7 @@ function makeToolUseBlock(
 
 let registry: ToolRegistry
 let mockProducer: { publish: ReturnType<typeof vi.fn> }
-let mockSessionStore: { waitForInfo: ReturnType<typeof vi.fn> }
+let mockSessionStore: { waitForInfo: ReturnType<typeof vi.fn>; getGateConfig: ReturnType<typeof vi.fn> }
 let runner: ClaudeRunner
 let createFn: ReturnType<typeof vi.fn>
 
@@ -63,7 +75,11 @@ beforeEach(() => {
 
   registry = new ToolRegistry()
   mockProducer = { publish: vi.fn().mockResolvedValue(undefined) }
-  mockSessionStore = { waitForInfo: vi.fn() }
+  // 게이트 비대상 동작을 보존하기 위해 기본 auto(게이트 우회). 게이트 검증 테스트는 실제 SessionStore 사용.
+  mockSessionStore = {
+    waitForInfo: vi.fn(),
+    getGateConfig: vi.fn().mockReturnValue({ defaultMode: 'auto', overrides: {} }),
+  }
 
   // Construct a fresh Anthropic mock instance
   const create = vi.fn()
@@ -475,6 +491,89 @@ describe('ClaudeRunner', () => {
 
       const systemPrompt = createFn.mock.calls[0][0].system as string
       expect(systemPrompt).toContain('/my-workspace')
+    })
+  })
+
+  describe('승인 게이트', () => {
+    function registerPlan(execute: ReturnType<typeof vi.fn>): void {
+      registry.register({ name: 'plan_task', description: '', inputSchema: GATED_SCHEMA, execute } as never)
+    }
+    function planThenEnd(): void {
+      createFn
+        .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('t1', 'plan_task', { intent: 'x' })]))
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+    }
+    function findApproval(): unknown {
+      return mockProducer.publish.mock.calls
+        .map((c) => c[0] as { payload?: { approval?: unknown } })
+        .find((m) => m.payload?.approval)?.payload?.approval
+    }
+
+    it('manual: 승인 전까지 다음 단계로 진행하지 않고, 승인 시 결과를 반환한다', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn().mockResolvedValue({ content: '계획 산출' })
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      // 승인 대기 중 — 다음 Claude 호출(2번째)이 아직 일어나지 않아야 한다
+      expect(createFn).toHaveBeenCalledTimes(1)
+      expect(findApproval()).toMatchObject({ stage: 'plan_task', mode: 'manual' })
+
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve' }))
+      await runP
+      expect(exec).toHaveBeenCalledTimes(1) // 재실행 없음
+    })
+
+    it('auto override: 게이트 없이 즉시 통과한다(approval 미발행)', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      store.setGateOverride('sess-1', 'plan_task', 'auto')
+      const exec = vi.fn().mockResolvedValue({ content: '계획' })
+      registerPlan(exec)
+      planThenEnd()
+
+      await runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      expect(findApproval()).toBeUndefined()
+      expect(exec).toHaveBeenCalledTimes(1)
+    })
+
+    it('revise: 피드백으로 같은 도구를 재실행한 뒤 다시 게이트로 온다', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn()
+        .mockResolvedValueOnce({ content: '초안' })
+        .mockResolvedValueOnce({ content: '수정본' })
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'revise', feedback: '더 자세히' }))
+      await waitFor(() => exec.mock.calls.length === 2)
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve' }))
+      await runP
+
+      expect(exec).toHaveBeenCalledTimes(2)
+      expect(exec.mock.calls[1]?.[0]).toMatchObject({ clarificationContext: '더 자세히' })
+    })
+
+    it('abort: 세션이 종료되고 후속 단계가 실행되지 않는다', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn().mockResolvedValue({ content: '계획' })
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'abort' }))
+
+      await expect(runP).rejects.toThrow(/aborted/i)
+      expect(createFn).toHaveBeenCalledTimes(1) // 다음 단계(2번째 Claude 호출) 미실행
     })
   })
 

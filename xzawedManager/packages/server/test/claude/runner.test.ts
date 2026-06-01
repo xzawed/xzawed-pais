@@ -93,6 +93,7 @@ describe('ClaudeRunner', () => {
     registry.register(makeFakeHandler(mockToolExecute))
     const { runner, sessionStore, producer } = makeRunner(registry)
     sessionStore.create('sess-1')
+    sessionStore.setGateDefaultMode('sess-1', 'auto') // 승인 게이트 비대상 흐름 검증
 
     const result = await runner.run({
       sessionId: 'sess-1',
@@ -146,6 +147,7 @@ describe('ClaudeRunner', () => {
     registry.register(makeFakeHandler())
     const { runner, sessionStore, producer } = makeRunner(registry)
     sessionStore.create('sess-loop')
+    sessionStore.setGateDefaultMode('sess-loop', 'auto') // 승인 게이트 비대상 흐름 검증
 
     await expect(runner.run({
       sessionId: 'sess-loop',

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { SessionStore } from './session.store.js'
+import { DEFAULT_GATE_CONFIG } from '../gates/approval-gate.js'
 
 describe('SessionStore', () => {
   let store: SessionStore
@@ -194,6 +195,34 @@ describe('SessionStore', () => {
       await expect(p).rejects.toThrowError('Session aborted')
       // state remains idle (not running) because resolveInfo was no-op
       expect(store.get('s1')?.state).toBe('idle')
+    })
+  })
+
+  // ─── gateConfig ──────────────────────────────────────────────────────────
+
+  describe('gateConfig', () => {
+    it('생성 시 기본 게이트 설정(manual)', () => {
+      store.create('s1')
+      expect(store.getGateConfig('s1')).toEqual(DEFAULT_GATE_CONFIG)
+    })
+    it('없는 세션은 기본 설정 반환', () => {
+      expect(store.getGateConfig('nope')).toEqual(DEFAULT_GATE_CONFIG)
+    })
+    it('단계별 override 설정', () => {
+      store.create('s1')
+      store.setGateOverride('s1', 'plan_task', 'auto')
+      expect(store.getGateConfig('s1').overrides['plan_task']).toBe('auto')
+    })
+    it('전역 기본 모드 설정', () => {
+      store.create('s1')
+      store.setGateDefaultMode('s1', 'auto')
+      expect(store.getGateConfig('s1').defaultMode).toBe('auto')
+    })
+    it('한 세션의 override가 다른 세션에 누설되지 않는다', () => {
+      store.create('s1')
+      store.create('s2')
+      store.setGateOverride('s1', 'plan_task', 'auto')
+      expect(store.getGateConfig('s2').overrides['plan_task']).toBeUndefined()
     })
   })
 })
