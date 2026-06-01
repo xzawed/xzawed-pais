@@ -38,6 +38,7 @@ export interface DesignerToManagerMessage {
   payload: {
     components?: ComponentSpec[]
     uiSpec?: UISpec
+    knowledge?: string[]
     content: string
     // agent_query 발신 시 사용 (다른 에이전트에게 질의)
     to?: string

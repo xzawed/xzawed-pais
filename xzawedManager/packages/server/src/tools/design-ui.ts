@@ -27,6 +27,7 @@ interface DesignUiOutput {
   components: ComponentSpec[]
   uiSpec: UISpec
   content: string
+  knowledge?: string[]
 }
 
 const inputSchema = {
@@ -61,6 +62,7 @@ const outputSchema = z.object({
   components: z.array(componentSpecSchema).default([]),
   uiSpec: uiSpecSchema.default({ type: 'mockup_viewer' }),
   content: z.string().default(''),
+  knowledge: z.array(z.string()).optional(),
 })
 
 export function createDesignUiHandler(redisUrl: string): ToolHandler<DesignUiInput, DesignUiOutput> {

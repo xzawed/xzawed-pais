@@ -7,6 +7,7 @@ import type { ComponentSpec, UISpec } from '../types.js'
 const DesignResponseSchema = z.object({
   components: z.array(ComponentSpecSchema).min(1),
   uiSpec: UISpecSchema.optional(),
+  knowledge: z.array(z.string()).optional(),
 })
 
 const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
@@ -38,7 +39,8 @@ Return ONLY valid JSON in this exact structure:
     "type": "mockup_viewer",
     "title": "Login Page",
     "content": "Single-page login with email/password inputs"
-  }
+  },
+  "knowledge": ["UI/UX 도메인 결정·제약을 한 줄씩 (예: '폼은 모바일 우선', '접근성 WCAG AA 준수'). 없으면 생략."]
 }
 
 Rules:
@@ -74,7 +76,7 @@ export class ClaudeRunner {
     targetFramework: string,
     designSystem: string,
     clarificationContext?: string,
-  ): Promise<{ components: ComponentSpec[]; uiSpec: UISpec } | AgentQuery> {
+  ): Promise<{ components: ComponentSpec[]; uiSpec: UISpec; knowledge?: string[] } | AgentQuery> {
     const userContent = [
       `Intent: ${intent}`,
       `Framework: ${targetFramework}`,
@@ -98,7 +100,7 @@ export class ClaudeRunner {
     )
   }
 
-  parseResponse(text: string, intent: string): { components: ComponentSpec[]; uiSpec: UISpec } | AgentQuery {
+  parseResponse(text: string, intent: string): { components: ComponentSpec[]; uiSpec: UISpec; knowledge?: string[] } | AgentQuery {
     const cleaned = stripJsonFences(text)
 
     const start = cleaned.indexOf('{')
@@ -116,7 +118,7 @@ export class ClaudeRunner {
         return this.fallback(intent)
       }
 
-      const { components, uiSpec } = result.data
+      const { components, uiSpec, knowledge } = result.data
       return {
         components,
         uiSpec: uiSpec ?? {
@@ -124,6 +126,7 @@ export class ClaudeRunner {
           title: intent.slice(0, 60),
           content: intent,
         },
+        ...(knowledge && knowledge.length > 0 ? { knowledge } : {}),
       }
     } catch {
       return this.fallback(intent)
