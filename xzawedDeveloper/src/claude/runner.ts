@@ -7,19 +7,23 @@ const API_TIMEOUT_MS = Number(process.env['DEVELOPER_CLAUDE_TIMEOUT_MS'] ?? '120
 
 const SYSTEM_PROMPT = `You are an expert software developer. Given a development plan and project context, implement the required code changes.
 
-Return ONLY a JSON array of file changes with this exact structure:
-[
-  {"path": "src/new-file.ts", "operation": "create", "content": "// file content here"},
-  {"path": "src/existing.ts", "operation": "modify", "content": "// updated full content"},
-  {"path": "src/old.ts", "operation": "delete"}
-]
+Return ONLY a JSON object with this exact structure:
+{
+  "changes": [
+    {"path": "src/new-file.ts", "operation": "create", "content": "// file content here"},
+    {"path": "src/existing.ts", "operation": "modify", "content": "// updated full content"},
+    {"path": "src/old.ts", "operation": "delete"}
+  ],
+  "knowledge": ["구현 도메인 결정·제약을 한 줄씩 (예: '인증은 JWT 사용', 'DB 접근은 repository 패턴'). 없으면 생략."]
+}
 
 Rules:
-- Return ONLY the JSON array, no explanatory text before or after
+- Return ONLY the JSON object, no explanatory text before or after
 - Use relative file paths from the project root (e.g., 'src/index.ts', not '/absolute/path/src/index.ts')
 - For delete operations, omit the content field
 - Include complete file contents for create and modify (not partial diffs)
-- Apply ALL changes described in the plan`
+- Apply ALL changes described in the plan
+- "knowledge" is optional; include durable implementation decisions/constraints worth remembering across the project`
 
 export class ClaudeRunner {
   private readonly client: Anthropic
@@ -33,7 +37,7 @@ export class ClaudeRunner {
     projectPath: string,
     context: Record<string, unknown>,
     clarificationContext?: string,
-  ): Promise<{ changes: FileChange[]; summary: string }> {
+  ): Promise<{ changes: FileChange[]; summary: string; knowledge?: string[] }> {
     const userContent = [
       `Project path: ${projectPath}`,
       `Context: ${JSON.stringify(context, null, 2)}`,
@@ -42,9 +46,9 @@ export class ClaudeRunner {
     ].filter(Boolean).join('\n')
 
     const text = await callClaudeText(this.client, this.model, 8192, SYSTEM_PROMPT, userContent, API_TIMEOUT_MS)
-    const changes = this.parseChanges(text)
+    const { changes, knowledge } = this.parseResponse(text)
     const summary = `Implemented ${changes.length} file change(s) for: ${plan.slice(0, 100)}`
-    return { changes, summary }
+    return { changes, summary, ...(knowledge && knowledge.length > 0 ? { knowledge } : {}) }
   }
 
   /** 다른 에이전트의 질의(query)에 개발 관점에서 답한다. */
@@ -58,20 +62,46 @@ export class ClaudeRunner {
     )
   }
 
-  parseChanges(text: string): FileChange[] {
+  /**
+   * Claude 응답을 파싱한다. 객체 형식 {changes, knowledge}를 우선 시도하고,
+   * 실패하면 레거시 배열 형식([...])으로 폴백한다(하위호환).
+   */
+  parseResponse(text: string): { changes: FileChange[]; knowledge?: string[] } {
     const cleaned = stripJsonFences(text)
 
-    const start = cleaned.indexOf('[')
-    const end = cleaned.lastIndexOf(']')
-    if (start === -1 || end === -1 || end <= start) return []
-
-    try {
-      const parsed: unknown = JSON.parse(cleaned.slice(start, end + 1))
-      if (!Array.isArray(parsed)) return []
-      return parsed.filter(isFileChange)
-    } catch {
-      return []
+    // 객체 형식: { "changes": [...], "knowledge": [...] }
+    const os = cleaned.indexOf('{')
+    const oe = cleaned.lastIndexOf('}')
+    if (os !== -1 && oe > os) {
+      try {
+        const parsed: unknown = JSON.parse(cleaned.slice(os, oe + 1))
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          const obj = parsed as Record<string, unknown>
+          if (Array.isArray(obj['changes'])) {
+            const changes = (obj['changes'] as unknown[]).filter(isFileChange)
+            const knowledge = Array.isArray(obj['knowledge'])
+              ? (obj['knowledge'] as unknown[]).filter((k): k is string => typeof k === 'string')
+              : []
+            return knowledge.length > 0 ? { changes, knowledge } : { changes }
+          }
+        }
+      } catch { /* 객체 파싱 실패 → 배열 폴백 */ }
     }
+
+    // 레거시 배열 형식: [ {...}, ... ]
+    const as = cleaned.indexOf('[')
+    const ae = cleaned.lastIndexOf(']')
+    if (as !== -1 && ae > as) {
+      try {
+        const parsed: unknown = JSON.parse(cleaned.slice(as, ae + 1))
+        if (Array.isArray(parsed)) return { changes: parsed.filter(isFileChange) }
+      } catch { /* noop */ }
+    }
+    return { changes: [] }
+  }
+
+  parseChanges(text: string): FileChange[] {
+    return this.parseResponse(text).changes
   }
 }
 

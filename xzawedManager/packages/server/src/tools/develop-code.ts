@@ -12,6 +12,7 @@ interface DevelopCodeOutput {
   artifacts: string[]
   summary: string
   content: string
+  knowledge?: string[]
 }
 
 const inputSchema = {
@@ -28,6 +29,7 @@ const outputSchema = z.object({
   artifacts: z.array(z.string()).default([]),
   summary: z.string().default(''),
   content: z.string().default(''),
+  knowledge: z.array(z.string()).optional(),
 })
 
 export function createDevelopCodeHandler(redisUrl: string): ToolHandler<DevelopCodeInput, DevelopCodeOutput> {

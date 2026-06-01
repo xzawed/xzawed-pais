@@ -23,7 +23,7 @@ export class Developer {
       answerQuery: (q, c) => this.runner.answerQuery(q, c),
       completeType: 'develop_complete',
       runMain: async (payload, base) => {
-        const { changes, summary } = await this.runner.generateChanges(
+        const { changes, summary, knowledge } = await this.runner.generateChanges(
           payload.plan ?? '',
           payload.projectPath ?? '.',
           payload.context,
@@ -39,7 +39,12 @@ export class Developer {
           publishResult: () => this.producer.publish(base.sessionId, {
             ...base,
             type: 'develop_complete',
-            payload: { artifacts, summary, content: `Applied ${changes.length} change(s)` },
+            payload: {
+              artifacts,
+              summary,
+              ...(knowledge ? { knowledge } : {}),
+              content: `Applied ${changes.length} change(s)`,
+            },
           }),
         }
       },
