@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
-import { AgentQuery, parseAgentQuery, answerViaClaude, callClaudeText, stripJsonFences } from '@xzawed/agent-streams'
+import { AgentQuery, parseAgentQuery, answerViaClaude, callClaudeText, stripJsonFences, formatDomainKnowledge } from '@xzawed/agent-streams'
 import { ComponentSpecSchema, UISpecSchema } from '../types.js'
 import type { ComponentSpec, UISpec } from '../types.js'
 
@@ -13,6 +13,8 @@ const DesignResponseSchema = z.object({
 const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
 
 const SYSTEM_PROMPT = `You are a UI/UX design agent. Given a design intent and context, produce component specifications.
+
+If the prompt includes a "이전 프로젝트 도메인 지식" section, you MUST respect and build upon those prior decisions and constraints.
 
 Return ONLY valid JSON in this exact structure:
 {
@@ -78,6 +80,7 @@ export class ClaudeRunner {
     clarificationContext?: string,
   ): Promise<{ components: ComponentSpec[]; uiSpec: UISpec; knowledge?: string[] } | AgentQuery> {
     const userContent = [
+      formatDomainKnowledge(context),
       `Intent: ${intent}`,
       `Framework: ${targetFramework}`,
       `Design System: ${designSystem}`,

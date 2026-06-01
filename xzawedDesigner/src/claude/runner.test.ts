@@ -120,6 +120,18 @@ describe('ClaudeRunner.generateDesign', () => {
     expect(result.uiSpec.title).toBe('Card UI')
   })
 
+  it('주입된 domainKnowledge를 LLM 프롬프트에 포함한다', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify({ components: [{ name: 'X', description: 'd', props: {} }], uiSpec: { type: 'mockup_viewer' } }) }],
+    })
+    await runner.generateDesign('intent', {
+      domainKnowledge: [{ content: '폼은 모바일 우선', sourceAgent: 'design_ui' }],
+    }, 'react', 'tailwind')
+    const content = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(content).toContain('이전 프로젝트 도메인 지식')
+    expect(content).toContain('폼은 모바일 우선')
+  })
+
   it('API 오류 시 에러를 던진다', async () => {
     mockCreate.mockRejectedValueOnce(new Error('Network error'))
     await expect(runner.generateDesign('버튼 컴포넌트', {}, 'react', 'tailwind')).rejects.toThrow('Network error')

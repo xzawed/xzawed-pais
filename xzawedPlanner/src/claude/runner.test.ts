@@ -97,6 +97,18 @@ describe('ClaudeRunner', () => {
     }
   })
 
+  it('주입된 domainKnowledge를 LLM 프롬프트에 포함한다', async () => {
+    const mockClient = makeClient(stepsResponse)
+    AnthropicMock.mockImplementation(() => mockClient as any)
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
+    await runner.generatePlan('intent', {
+      domainKnowledge: [{ content: '결제는 Stripe 사용', sourceAgent: 'plan_task' }],
+    }, 'normal')
+    const content = mockClient.messages.create.mock.calls[0][0].messages[0].content as string
+    expect(content).toContain('이전 프로젝트 도메인 지식')
+    expect(content).toContain('결제는 Stripe 사용')
+  })
+
   it('clarification_needed 응답에서 ClarificationNeeded를 반환한다', async () => {
     const mockClient = makeClient(clarificationResponse)
     AnthropicMock.mockImplementation(() => mockClient as any)
