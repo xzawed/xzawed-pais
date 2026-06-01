@@ -3,7 +3,8 @@ import type { Producer } from './streams/producer.js'
 import type { ClaudeRunner } from './claude/runner.js'
 import { applyChange } from './fileio.js'
 import type { Config } from './config.js'
-import { resolveWorkspaceRoot, runCollaborativeHandle } from '@xzawed/agent-streams'
+import { resolveWorkspaceRoot, runCollaborativeHandle, makeCollaborationContext } from '@xzawed/agent-streams'
+import type { DeveloperToManagerMessage } from './types.js'
 
 export { resolveWorkspaceRoot }
 
@@ -17,15 +18,16 @@ export class Developer {
 
   async handle(message: ManagerToDeveloperMessage): Promise<void> {
     const { sessionId, payload } = message
-    const base = { sessionId, messageId: crypto.randomUUID(), timestamp: Date.now() }
+    const { base, publishQueryAnswer, publishError } = makeCollaborationContext<DeveloperToManagerMessage>(
+      (m) => this.producer.publish(sessionId, m), sessionId, 'develop_complete',
+    )
 
     await runCollaborativeHandle({
       isAbort: message.type === 'abort',
       query: payload.query,
       context: payload.context,
       answerQuery: (q, c) => this.runner.answerQuery(q, c),
-      publishQueryAnswer: (content) =>
-        this.producer.publish(sessionId, { ...base, type: 'develop_complete', payload: { content } }),
+      publishQueryAnswer,
       runMain: async () => {
         const { changes, summary } = await this.runner.generateChanges(
           payload.plan ?? '',
@@ -47,8 +49,7 @@ export class Developer {
           }),
         }
       },
-      publishError: (content) =>
-        this.producer.publish(sessionId, { ...base, type: 'error', payload: { content } }),
+      publishError,
     })
   }
 }

@@ -1,5 +1,5 @@
-import { AgentQuery, runCollaborativeHandle } from '@xzawed/agent-streams'
-import type { ManagerToDesignerMessage } from './types.js'
+import { AgentQuery, runCollaborativeHandle, makeCollaborationContext } from '@xzawed/agent-streams'
+import type { ManagerToDesignerMessage, DesignerToManagerMessage } from './types.js'
 import type { Producer } from './streams/producer.js'
 import type { ClaudeRunner } from './claude/runner.js'
 
@@ -11,15 +11,16 @@ export class Designer {
 
   async handle(message: ManagerToDesignerMessage): Promise<void> {
     const { sessionId, payload } = message
-    const base = { sessionId, messageId: crypto.randomUUID(), timestamp: Date.now() }
+    const { base, publishQueryAnswer, publishError } = makeCollaborationContext<DesignerToManagerMessage>(
+      (m) => this.producer.publish(sessionId, m), sessionId, 'design_complete',
+    )
 
     await runCollaborativeHandle({
       isAbort: message.type === 'abort',
       query: payload.query,
       context: payload.context,
       answerQuery: (q, c) => this.runner.answerQuery(q, c),
-      publishQueryAnswer: (content) =>
-        this.producer.publish(sessionId, { ...base, type: 'design_complete', payload: { content } }),
+      publishQueryAnswer,
       runMain: async () => {
         const result = await this.runner.generateDesign(
           payload.intent,
@@ -47,8 +48,7 @@ export class Designer {
           type: 'agent_query',
           payload: { content: aq.question, to: aq.to, question: aq.question, kind: aq.kind },
         }),
-      publishError: (content) =>
-        this.producer.publish(sessionId, { ...base, type: 'error', payload: { content } }),
+      publishError,
     })
   }
 }

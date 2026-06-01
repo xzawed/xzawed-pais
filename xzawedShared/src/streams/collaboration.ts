@@ -3,8 +3,45 @@ import { AgentQuery } from '../types/agent-query.js'
 /** runMain의 결과: 다른 에이전트 질의(AgentQuery) 또는 정상 산출물(publish 콜백). */
 export type MainOutcome = AgentQuery | { readonly publishResult: () => Promise<void> }
 
+/** 모든 {agent}:to-manager 메시지의 공통 형태. */
+export interface CollabMessage {
+  sessionId: string
+  messageId: string
+  timestamp: number
+  type: string
+  payload: Record<string, unknown>
+}
+
+/** handle 1회의 메시지 base(sessionId·messageId·timestamp). */
+export interface MessageBase {
+  sessionId: string
+  messageId: string
+  timestamp: number
+}
+
 function errMessage(err: unknown): string {
   return err instanceof Error ? err.message : 'Unknown error'
+}
+
+/**
+ * 협업 handle의 공통 컨텍스트를 만든다: 메시지 base + 완료/에러 발행 콜백.
+ * 7개 에이전트가 동일 boilerplate(base 생성·publishQueryAnswer·publishError)를 재사용한다.
+ */
+export function makeCollaborationContext<TMsg extends CollabMessage>(
+  publish: (msg: TMsg) => Promise<void>,
+  sessionId: string,
+  completeType: string,
+): {
+  base: MessageBase
+  publishQueryAnswer: (content: string) => Promise<void>
+  publishError: (content: string) => Promise<void>
+} {
+  const base: MessageBase = { sessionId, messageId: crypto.randomUUID(), timestamp: Date.now() }
+  return {
+    base,
+    publishQueryAnswer: (content) => publish({ ...base, type: completeType, payload: { content } } as TMsg),
+    publishError: (content) => publish({ ...base, type: 'error', payload: { content } } as TMsg),
+  }
 }
 
 /**

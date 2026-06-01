@@ -1,6 +1,27 @@
 import { describe, it, expect, vi } from 'vitest'
 import { AgentQuery } from '../types/agent-query.js'
-import { runCollaborativeHandle } from '../streams/collaboration.js'
+import { runCollaborativeHandle, makeCollaborationContext } from '../streams/collaboration.js'
+
+describe('makeCollaborationContext', () => {
+  it('base와 완료/에러 발행 콜백을 만든다', async () => {
+    const publish = vi.fn().mockResolvedValue(undefined)
+    const { base, publishQueryAnswer, publishError } =
+      makeCollaborationContext(publish, 'sess-1', 'design_complete')
+
+    expect(base.sessionId).toBe('sess-1')
+    expect(typeof base.messageId).toBe('string')
+
+    await publishQueryAnswer('답변')
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'sess-1', type: 'design_complete', payload: { content: '답변' },
+    }))
+
+    await publishError('오류')
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error', payload: { content: '오류' },
+    }))
+  })
+})
 
 function deps(overrides: Partial<Parameters<typeof runCollaborativeHandle>[0]> = {}) {
   return {
