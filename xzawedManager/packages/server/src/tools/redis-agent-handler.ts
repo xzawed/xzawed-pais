@@ -3,7 +3,7 @@ import type { AnthropicInputSchema, ToolHandler } from './handler.interface.js'
 import type { UserContext } from '../types/user-context.js'
 import { getRedisClient } from '../streams/redis.client.js'
 import type { Redis } from 'ioredis'
-import { ClarificationNeededError } from './errors.js'
+import { ClarificationNeededError, AgentQueryError } from './errors.js'
 
 const DEFAULT_TIMEOUT_MS = 120_000
 const BLOCK_STEP_MS = 5_000
@@ -96,6 +96,13 @@ export class RedisAgentHandler<TInput, TOutput>
       throw new ClarificationNeededError(
         String(msg.payload['content'] ?? 'details required'),
         msg.payload['uiSpec'],
+      )
+    }
+    if (msg.type === 'agent_query') {
+      throw new AgentQueryError(
+        String(msg.payload['to'] ?? ''),
+        String(msg.payload['question'] ?? ''),
+        msg.payload['kind'] === 'cross_check' ? 'cross_check' : 'active_request',
       )
     }
     if (msg.type === this.completeType) {
