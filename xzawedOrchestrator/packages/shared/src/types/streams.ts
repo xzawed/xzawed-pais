@@ -38,6 +38,13 @@ export type OrchestratorToManagerMessage =
       payload: Record<string, never>
     }
 
+/** 승인 게이트 요청 메타 — info_request에 실려 단계 결과 검토·승인/수정/중단을 UI에 표시한다. */
+export interface ApprovalRequest {
+  stage: string
+  summary: string
+  mode: 'manual'
+}
+
 export interface ManagerToOrchestratorMessage {
   sessionId: string
   messageId: string
@@ -47,5 +54,6 @@ export interface ManagerToOrchestratorMessage {
     agentId: string
     content: string
     uiSpec?: UISpec
+    approval?: ApprovalRequest
   }
 }

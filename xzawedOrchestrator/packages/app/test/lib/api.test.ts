@@ -1,0 +1,36 @@
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { postUiAction } from '../../src/renderer/src/lib/api.js'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+describe('postUiAction', () => {
+  it('POSTs the action to /sessions/:id/ui-actions', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await postUiAction('http://localhost:3000', 'sess-1', '{"decision":"approve"}')
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/sessions/sess-1/ui-actions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: '{"decision":"approve"}' }),
+      }),
+    )
+  })
+
+  it('throws when the response is not ok', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 } as Response))
+    await expect(postUiAction('http://localhost:3000', 'sess-1', 'x')).rejects.toThrow(/500/)
+  })
+
+  it('rejects a non-http base url before fetching', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(postUiAction('ftp://evil', 'sess-1', 'x')).rejects.toThrow(/http or https/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})

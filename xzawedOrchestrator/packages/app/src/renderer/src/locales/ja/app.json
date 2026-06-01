@@ -51,5 +51,12 @@
     "placeholder": "コマンドを検索...",
     "new_session": "新しいセッション",
     "settings": "設定"
+  },
+  "approval": {
+    "title": "\"{{stage}}\" ステップの結果を確認してください",
+    "approve": "承認",
+    "revise": "修正依頼",
+    "abort": "中断",
+    "feedback_placeholder": "修正依頼のフィードバックを入力してください"
   }
 }

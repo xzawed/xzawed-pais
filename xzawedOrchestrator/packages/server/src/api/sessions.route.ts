@@ -206,6 +206,7 @@ export function handleConsumerMessage(
         agentId: msg.payload.agentId,
         content: msg.payload.content,
         ...(msg.payload.uiSpec !== undefined ? { uiSpec: msg.payload.uiSpec } : {}),
+        ...(msg.payload.approval !== undefined ? { approval: msg.payload.approval } : {}),
       }))
       break
   }

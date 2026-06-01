@@ -14,6 +14,11 @@ const ManagerToOrchestratorMessageSchema = z.object({
     agentId: z.string(),
     content: z.string(),
     uiSpec: z.unknown().optional(),
+    approval: z.object({
+      stage: z.string(),
+      summary: z.string(),
+      mode: z.literal('manual'),
+    }).optional(),
   }),
 })
 
