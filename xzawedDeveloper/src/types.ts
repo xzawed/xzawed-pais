@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { collaborationPayloadFields } from '@xzawed/agent-streams'
 
 export interface FileChange {
   path: string
@@ -36,10 +37,8 @@ export const ManagerToDeveloperMessageSchema = z.object({
     projectPath: z.string().optional(),
     context: z.record(z.unknown()),
     userContext: UserContextSchema.optional(),
-    // 협업: 다른 에이전트 답(clarificationContext) 또는 질의 답변 모드(query)
-    clarificationContext: z.string().optional(),
-    query: z.string().optional(),
-    queryKind: z.enum(['active_request', 'cross_check']).optional(),
+    // 협업 공통 입력 필드(clarificationContext·query·queryKind)
+    ...collaborationPayloadFields,
   }),
 })
 

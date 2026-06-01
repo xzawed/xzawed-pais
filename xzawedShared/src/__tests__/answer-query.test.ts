@@ -1,5 +1,26 @@
 import { describe, it, expect, vi } from 'vitest'
-import { answerViaClaude } from '../claude/answer-query.js'
+import { answerViaClaude, stripJsonFences, extractClaudeText } from '../claude/answer-query.js'
+
+describe('stripJsonFences', () => {
+  it('```json 펜스를 제거한다', () => {
+    expect(stripJsonFences('```json\n{"a":1}\n```')).toBe('{"a":1}')
+  })
+  it('``` 펜스를 제거한다', () => {
+    expect(stripJsonFences('```\n[1,2]\n```')).toBe('[1,2]')
+  })
+  it('개행 없는 펜스도 처리한다', () => {
+    expect(stripJsonFences('```{"a":1}```')).toBe('{"a":1}')
+  })
+  it('펜스가 없으면 trim만 한다', () => {
+    expect(stripJsonFences('  {"a":1}  ')).toBe('{"a":1}')
+  })
+})
+
+describe('extractClaudeText', () => {
+  it('text 블록만 모은다', () => {
+    expect(extractClaudeText([{ type: 'text', text: 'a' }, { type: 'tool_use' }, { type: 'text', text: 'b' }])).toBe('ab')
+  })
+})
 
 describe('answerViaClaude', () => {
   it('system 프롬프트와 질의를 Claude에 전달하고 텍스트를 합쳐 반환한다', async () => {

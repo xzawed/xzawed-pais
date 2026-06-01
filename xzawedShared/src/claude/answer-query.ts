@@ -15,6 +15,19 @@ export function extractClaudeText(content: ReadonlyArray<{ type: string; text?: 
   return content.filter((b) => b.type === 'text').map((b) => b.text ?? '').join('')
 }
 
+/** Claude가 응답을 감싸는 ```/```json 코드 펜스를 제거한다. */
+export function stripJsonFences(text: string): string {
+  let cleaned = text.trim()
+  if (cleaned.startsWith('```')) {
+    const firstNewline = cleaned.indexOf('\n')
+    cleaned = firstNewline === -1 ? cleaned.slice(3) : cleaned.slice(firstNewline + 1)
+  }
+  if (cleaned.endsWith('```')) {
+    cleaned = cleaned.slice(0, cleaned.lastIndexOf('```')).trim()
+  }
+  return cleaned
+}
+
 /**
  * Claude를 호출해 텍스트를 반환하는 공통 로직(타임아웃 race + 텍스트 추출).
  * 여러 에이전트의 generate 계열·answerQuery가 재사용해 중복을 방지한다.

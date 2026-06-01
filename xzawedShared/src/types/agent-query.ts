@@ -11,6 +11,17 @@ export type AgentQueryKind = 'active_request' | 'cross_check'
 export type AgentQueryPayload = z.infer<typeof AgentQuerySchema>
 
 /**
+ * 협업 에이전트가 수신 메시지 payload에 공통으로 갖는 입력 필드.
+ * 각 에이전트의 ManagerTo{Agent}MessageSchema payload에 spread해 중복을 방지한다.
+ * clarificationContext: 다른 에이전트의 답, query/queryKind: 질의 답변 모드.
+ */
+export const collaborationPayloadFields = {
+  clarificationContext: z.string().optional(),
+  query: z.string().optional(),
+  queryKind: z.enum(['active_request', 'cross_check']).optional(),
+} as const
+
+/**
  * 에이전트가 다른 에이전트에게 질의할 때 runner가 반환하는 클래스.
  * handle()에서 instanceof로 분기해 agent_query 메시지로 발행한다.
  * (Planner의 ClarificationNeeded 패턴을 일반화한 것)

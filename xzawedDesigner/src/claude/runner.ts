@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
-import { AgentQuery, parseAgentQuery, answerViaClaude, callClaudeText } from '@xzawed/agent-streams'
+import { AgentQuery, parseAgentQuery, answerViaClaude, callClaudeText, stripJsonFences } from '@xzawed/agent-streams'
 import { ComponentSpecSchema, UISpecSchema } from '../types.js'
 import type { ComponentSpec, UISpec } from '../types.js'
 
@@ -99,7 +99,7 @@ export class ClaudeRunner {
   }
 
   parseResponse(text: string, intent: string): { components: ComponentSpec[]; uiSpec: UISpec } | AgentQuery {
-    let cleaned = extractJSON(text)
+    const cleaned = stripJsonFences(text)
 
     const start = cleaned.indexOf('{')
     const end = cleaned.lastIndexOf('}')
@@ -146,14 +146,3 @@ export class ClaudeRunner {
   }
 }
 
-function extractJSON(text: string): string {
-  let cleaned = text.trim()
-  if (cleaned.startsWith('```')) {
-    const firstNewline = cleaned.indexOf('\n')
-    cleaned = firstNewline !== -1 ? cleaned.slice(firstNewline + 1) : cleaned.slice(3)
-  }
-  if (cleaned.endsWith('```')) {
-    cleaned = cleaned.slice(0, cleaned.lastIndexOf('```')).trim()
-  }
-  return cleaned
-}
