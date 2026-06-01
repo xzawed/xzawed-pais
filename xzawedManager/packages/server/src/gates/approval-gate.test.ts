@@ -9,14 +9,27 @@ describe('isGatedTool', () => {
     expect(isGatedTool('plan_task')).toBe(true)
     expect(isGatedTool('security_audit')).toBe(true)
   })
+  it('배포 도구도 게이트 대상', () => {
+    expect(isGatedTool('deploy_project')).toBe(true)
+  })
   it('보조 도구는 비대상', () => {
     expect(isGatedTool('register_project')).toBe(false)
     expect(isGatedTool('github_ops')).toBe(false)
-    expect(isGatedTool('deploy_project')).toBe(false)
     expect(isGatedTool('request_info')).toBe(false)
   })
-  it('GATED_TOOLS는 7개', () => {
+  it('GATED_TOOLS는 7개(배포 제외)', () => {
     expect(GATED_TOOLS.size).toBe(7)
+  })
+})
+
+describe('배포 게이트(항상 manual)', () => {
+  it('defaultMode가 auto여도 배포는 manual', () => {
+    const cfg = { defaultMode: 'auto' as const, overrides: {} }
+    expect(effectiveMode(cfg, 'deploy_project')).toBe('manual')
+  })
+  it('override로 auto를 줘도 배포는 manual', () => {
+    const cfg = { defaultMode: 'manual' as const, overrides: { deploy_project: 'auto' as const } }
+    expect(effectiveMode(cfg, 'deploy_project')).toBe('manual')
   })
 })
 

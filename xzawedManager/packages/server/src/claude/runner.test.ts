@@ -527,6 +527,24 @@ describe('ClaudeRunner', () => {
       expect(exec).toHaveBeenCalledTimes(1) // 재실행 없음
     })
 
+    it('배포(deploy_project)는 세션이 auto여도 항상 승인 게이트를 거친다', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      store.setGateDefaultMode('sess-1', 'auto') // 전역 auto여도 배포는 manual
+      const exec = vi.fn().mockResolvedValue({ content: '배포 준비됨' })
+      registry.register({ name: 'deploy_project', description: '', inputSchema: GATED_SCHEMA, execute: exec } as never)
+      createFn
+        .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('d1', 'deploy_project', { repo: 'x' })]))
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      expect(findApproval()).toMatchObject({ stage: 'deploy_project', mode: 'manual' })
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve' }))
+      await runP
+      expect(exec).toHaveBeenCalledTimes(1)
+    })
+
     it('auto override: 게이트 없이 즉시 통과한다(approval 미발행)', async () => {
       const store = new SessionStore()
       store.create('sess-1')
