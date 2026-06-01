@@ -59,18 +59,19 @@ export class Security {
 
         const staticIssues = results[0].status === 'fulfilled' ? results[0].value : ([] as SecurityIssue[])
         const depsIssues   = results[1].status === 'fulfilled' ? results[1].value : ([] as SecurityIssue[])
-        const claudeIssues = results[2].status === 'fulfilled' ? results[2].value : ([] as SecurityIssue[])
+        const claudeResult = results[2].status === 'fulfilled' ? results[2].value : { issues: [] as SecurityIssue[] }
 
-        const allIssues = [...staticIssues, ...depsIssues, ...claudeIssues]
+        const allIssues = [...staticIssues, ...depsIssues, ...claudeResult.issues]
         const score = calculateScore(allIssues)
         const filtered = filterBySeverity(allIssues, payload.severity)
         const summary = `총 ${allIssues.length}개 이슈 중 ${filtered.length}개가 ${payload.severity} 이상 보고, 보안 점수: ${score}/100`
+        const knowledge = claudeResult.knowledge
 
         return {
           publishResult: () => this.producer.publish(base.sessionId, {
             ...base,
             type: 'audit_complete',
-            payload: { issues: filtered, score, summary, content: summary },
+            payload: { issues: filtered, score, summary, ...(knowledge ? { knowledge } : {}), content: summary },
           }),
         }
       },

@@ -8,16 +8,19 @@ import { validatePath } from '../executor.js'
 const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
 
 const SYSTEM_PROMPT = `You are a security code auditor specializing in OWASP Top 10 vulnerabilities.
-Analyze the provided code files and return a JSON array of security issues found.
+Analyze the provided code files and return security issues found.
 
-Return ONLY a valid JSON array:
-[{"id":"CL-001","severity":"high","category":"injection","file":"path/to/file.ts","line":42,"description":"SQL injection via string concatenation","suggestion":"Use parameterized queries","cwe":"CWE-89"}]
+Return ONLY a valid JSON object:
+{
+  "issues": [{"id":"CL-001","severity":"high","category":"injection","file":"path/to/file.ts","line":42,"description":"SQL injection via string concatenation","suggestion":"Use parameterized queries","cwe":"CWE-89"}],
+  "knowledge": ["프로젝트에 적용할 보안 도메인 규칙·제약을 한 줄씩 (예: '모든 외부 입력은 검증', '비밀번호는 argon2id 해시'). 없으면 생략."]
+}
 
 Severity levels: "critical", "high", "medium", "low"
 Categories: "injection", "xss", "auth", "exposure", "config", "crypto", "dependency"
-Fields "line" and "cwe" are optional.
-If no issues found, return an empty array: []
-Return ONLY the JSON array, no other text.`
+Fields "line" and "cwe" are optional. If no issues found, return "issues": [].
+"knowledge" is optional; include durable security rules worth remembering across the project.
+Return ONLY the JSON object, no other text.`
 
 export class ClaudeRunner {
   private readonly client: Anthropic
@@ -37,8 +40,11 @@ export class ClaudeRunner {
     )
   }
 
-  async analyzeArtifacts(filePaths: string[], workspaceRoot: string): Promise<SecurityIssue[]> {
-    if (filePaths.length === 0) return []
+  async analyzeArtifacts(
+    filePaths: string[],
+    workspaceRoot: string,
+  ): Promise<{ issues: SecurityIssue[]; knowledge?: string[] }> {
+    if (filePaths.length === 0) return { issues: [] }
 
     const fileContents: string[] = []
     for (const filePath of filePaths) {
@@ -51,7 +57,7 @@ export class ClaudeRunner {
       }
     }
 
-    if (fileContents.length === 0) return []
+    if (fileContents.length === 0) return { issues: [] }
 
     let timerId: ReturnType<typeof setTimeout> | undefined
     try {
@@ -72,15 +78,19 @@ export class ClaudeRunner {
         .map((b) => b.text)
         .join('')
 
-      return this.parseIssues(text)
+      return this.parseResult(text)
     } catch {
-      return []
+      return { issues: [] }
     } finally {
       clearTimeout(timerId)
     }
   }
 
-  parseIssues(text: string): SecurityIssue[] {
+  /**
+   * Claude 응답을 파싱한다. 객체 형식 {issues, knowledge}를 우선 시도하고,
+   * 실패하면 레거시 배열 형식([...])으로 폴백한다(하위호환).
+   */
+  parseResult(text: string): { issues: SecurityIssue[]; knowledge?: string[] } {
     let cleaned = text.trim()
 
     if (cleaned.startsWith('```')) {
@@ -91,17 +101,41 @@ export class ClaudeRunner {
       cleaned = cleaned.slice(0, cleaned.lastIndexOf('```')).trim()
     }
 
+    // 객체 형식: { "issues": [...], "knowledge": [...] }
+    const os = cleaned.indexOf('{')
+    const oe = cleaned.lastIndexOf('}')
+    if (os !== -1 && oe > os) {
+      try {
+        const parsed: unknown = JSON.parse(cleaned.slice(os, oe + 1))
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          const obj = parsed as Record<string, unknown>
+          if (Array.isArray(obj['issues'])) {
+            const issues = (obj['issues'] as unknown[]).filter(isSecurityIssue)
+            const knowledge = Array.isArray(obj['knowledge'])
+              ? (obj['knowledge'] as unknown[]).filter((k): k is string => typeof k === 'string')
+              : []
+            return knowledge.length > 0 ? { issues, knowledge } : { issues }
+          }
+        }
+      } catch { /* 객체 파싱 실패 → 배열 폴백 */ }
+    }
+
+    // 레거시 배열 형식: [ {...}, ... ]
     const start = cleaned.indexOf('[')
     const end = cleaned.lastIndexOf(']')
-    if (start === -1 || end === -1 || end <= start) return []
+    if (start === -1 || end === -1 || end <= start) return { issues: [] }
 
     try {
       const parsed: unknown = JSON.parse(cleaned.slice(start, end + 1))
-      if (!Array.isArray(parsed)) return []
-      return parsed.filter(isSecurityIssue)
+      if (!Array.isArray(parsed)) return { issues: [] }
+      return { issues: parsed.filter(isSecurityIssue) }
     } catch {
-      return []
+      return { issues: [] }
     }
+  }
+
+  parseIssues(text: string): SecurityIssue[] {
+    return this.parseResult(text).issues
   }
 }
 
