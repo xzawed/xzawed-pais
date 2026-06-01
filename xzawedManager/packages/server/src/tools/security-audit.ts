@@ -25,6 +25,7 @@ interface SecurityAuditOutput {
   score: number
   summary: string
   content: string
+  knowledge?: string[]
 }
 
 const inputSchema = {
@@ -54,6 +55,7 @@ const outputSchema = z.object({
   score: z.number().default(100),
   summary: z.string().default(''),
   content: z.string().default(''),
+  knowledge: z.array(z.string()).optional(),
 })
 
 export function createSecurityAuditHandler(redisUrl: string): ToolHandler<SecurityAuditInput, SecurityAuditOutput> {

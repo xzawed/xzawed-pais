@@ -22,6 +22,7 @@ export interface SecurityToManagerMessage {
     issues?: SecurityIssue[]
     score?: number
     summary?: string
+    knowledge?: string[]
     content: string
   }
 }

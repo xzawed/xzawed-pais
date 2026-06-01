@@ -3,7 +3,7 @@ import { Security, calculateScore, filterBySeverity } from './security.js'
 import type { ManagerToSecurityMessage, SecurityIssue } from './types.js'
 
 const mockPublish = vi.fn().mockResolvedValue(undefined)
-const mockAnalyzeArtifacts = vi.fn().mockResolvedValue([])
+const mockAnalyzeArtifacts = vi.fn().mockResolvedValue({ issues: [] })
 const mockStaticAnalyze = vi.fn().mockResolvedValue([])
 const mockDepsAudit = vi.fn().mockResolvedValue([])
 
@@ -39,7 +39,7 @@ let security: Security
 beforeEach(() => {
   vi.clearAllMocks()
   mockPublish.mockResolvedValue(undefined)
-  mockAnalyzeArtifacts.mockResolvedValue([])
+  mockAnalyzeArtifacts.mockResolvedValue({ issues: [] })
   mockStaticAnalyze.mockResolvedValue([])
   mockDepsAudit.mockResolvedValue([])
   security = new Security(
@@ -147,13 +147,14 @@ describe('Security.handle', () => {
 
     mockStaticAnalyze.mockResolvedValueOnce([staticIssue])
     mockDepsAudit.mockResolvedValueOnce([depsIssue])
-    mockAnalyzeArtifacts.mockResolvedValueOnce([claudeIssue])
+    mockAnalyzeArtifacts.mockResolvedValueOnce({ issues: [claudeIssue], knowledge: ['외부 입력은 검증'] })
 
     await security.handle(makeRequest({ severity: 'low' }))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const msg = mockPublish.mock.calls[0]?.[1] as any
     expect(msg).toBeDefined()
     expect(msg.payload.issues).toHaveLength(3)
+    expect(msg.payload.knowledge).toEqual(['외부 입력은 검증'])
   })
 
   it('filters reported issues by severity but scores all', async () => {
