@@ -7,3 +7,14 @@ export class ClarificationNeededError extends Error {
     this.name = 'ClarificationNeededError'
   }
 }
+
+export class AgentQueryError extends Error {
+  constructor(
+    public readonly to: string,
+    public readonly question: string,
+    public readonly kind: 'active_request' | 'cross_check' = 'active_request',
+  ) {
+    super(`Agent query to ${to}: ${question}`)
+    this.name = 'AgentQueryError'
+  }
+}

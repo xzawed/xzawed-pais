@@ -5,7 +5,7 @@ vi.mock('../streams/redis.client.js', () => ({ getRedisClient: vi.fn() }))
 import { getRedisClient } from '../streams/redis.client.js'
 import { z } from 'zod'
 import { RedisAgentHandler } from './redis-agent-handler.js'
-import { ClarificationNeededError } from './errors.js'
+import { ClarificationNeededError, AgentQueryError } from './errors.js'
 
 const getRedisClientMock = vi.mocked(getRedisClient)
 
@@ -75,6 +75,17 @@ describe('RedisAgentHandler', () => {
     const err = await handler.execute({}, 'sess-1').catch(e => e)
     expect(err).toBeInstanceOf(ClarificationNeededError)
     expect(err.content).toBe('프레임워크를 선택해 주세요')
+  })
+
+  it('agent_query 수신 시 AgentQueryError를 던진다', async () => {
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('agent_query', { to: 'developer', question: '재고 표시 가능?', kind: 'active_request' })
+    )
+    const err = await handler.execute({}, 'sess-1').catch(e => e)
+    expect(err).toBeInstanceOf(AgentQueryError)
+    expect(err.to).toBe('developer')
+    expect(err.question).toBe('재고 표시 가능?')
+    expect(err.kind).toBe('active_request')
   })
 
   it('build_progress를 무시하고 build_complete를 기다린다', async () => {

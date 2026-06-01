@@ -4,7 +4,8 @@ import type { StreamProducer } from '../streams/producer.js'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { UserContext } from '../types/user-context.js'
 import type { ManagerToOrchestratorMessage, UISpec } from '../types/streams.js'
-import { ClarificationNeededError } from '../tools/errors.js'
+import { ClarificationNeededError, AgentQueryError } from '../tools/errors.js'
+import { resolveAgentTool } from '../tools/agent-tool-map.js'
 
 /** MANAGER_MAX_ITERATIONS 환경변수를 파싱하고 유효성을 검증한다. 유효하지 않으면 Error를 throw한다. */
 export function parseMaxIterations(raw: string | undefined): number {
@@ -129,6 +130,37 @@ export class ClaudeRunner {
     }
   }
 
+  /** 도구를 추가 context와 함께 재실행하고 tool_result 블록을 만든다. */
+  private async reExecuteWithContext(
+    block: Anthropic.ToolUseBlock,
+    extraContext: Record<string, unknown>,
+    sessionId: string,
+    producer: StreamProducer,
+    userContext?: UserContext,
+  ): Promise<Anthropic.ToolResultBlockParam> {
+    const handler = this.registry.get(block.name)
+    if (!handler) throw new Error(`Unknown tool: ${block.name}`)
+    try {
+      const augmented = { ...(block.input as Record<string, unknown>), ...extraContext }
+      const result = await handler.execute(augmented, sessionId, userContext)
+      await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
+      const resultStr = JSON.stringify(result)
+      return {
+        type: 'tool_result',
+        tool_use_id: block.id,
+        content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
+      }
+    } catch (retryErr) {
+      const msg = retryErr instanceof Error ? retryErr.message : String(retryErr)
+      return {
+        type: 'tool_result',
+        tool_use_id: block.id,
+        content: `Tool execution failed after re-execution: ${msg}`,
+        is_error: true,
+      }
+    }
+  }
+
   private async processToolUseBlocks(
     blocks: Anthropic.ContentBlock[],
     sessionId: string,
@@ -160,30 +192,45 @@ export class ClaudeRunner {
             await producer.publish(infoRequestMsg)
             const answer = await sessionStore.waitForInfo(sessionId)
             // 명확화 응답을 포함하여 에이전트 재실행
-            const handler = this.registry.get(block.name)
-            if (!handler) throw new Error(`Unknown tool: ${block.name}`)
-            try {
-              const augmented = {
-                ...(block.input as Record<string, unknown>),
-                clarificationContext: answer,
-              }
-              const result = await handler.execute(augmented, sessionId, userContext)
-              await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
-              const resultStr = JSON.stringify(result)
+            toolResults.push(
+              await this.reExecuteWithContext(
+                block, { clarificationContext: answer }, sessionId, producer, userContext,
+              ),
+            )
+          } else if (err instanceof AgentQueryError) {
+            // 에이전트가 다른 에이전트에게 질의 → 대상 에이전트로 라우팅 후 응답으로 재실행
+            const targetTool = resolveAgentTool(err.to)
+            const targetHandler = targetTool ? this.registry.get(targetTool) : undefined
+            if (!targetHandler) {
               toolResults.push({
                 type: 'tool_result',
                 tool_use_id: block.id,
-                content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
-              })
-            } catch (retryErr) {
-              const msg = retryErr instanceof Error ? retryErr.message : String(retryErr)
-              toolResults.push({
-                type: 'tool_result',
-                tool_use_id: block.id,
-                content: `Tool execution failed after clarification: ${msg}`,
+                content: `Unknown query target agent: ${err.to}`,
                 is_error: true,
               })
+              continue
             }
+            let queryAnswer: unknown
+            try {
+              queryAnswer = await targetHandler.execute(
+                { query: err.question, queryKind: err.kind }, sessionId, userContext,
+              )
+            } catch (qErr) {
+              const m = qErr instanceof Error ? qErr.message : String(qErr)
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: `Query to ${err.to} failed: ${m}`,
+                is_error: true,
+              })
+              continue
+            }
+            toolResults.push(
+              await this.reExecuteWithContext(
+                block, { clarificationContext: JSON.stringify(queryAnswer) },
+                sessionId, producer, userContext,
+              ),
+            )
           } else {
             const message = err instanceof Error ? err.message : String(err)
             toolResults.push({

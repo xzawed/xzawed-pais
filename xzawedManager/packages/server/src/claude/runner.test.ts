@@ -14,6 +14,7 @@ vi.mock('@anthropic-ai/sdk', () => {
 import AnthropicDefault from '@anthropic-ai/sdk'
 import { ClaudeRunner, parseMaxIterations } from './runner.js'
 import { ToolRegistry } from '../tools/registry.js'
+import { AgentQueryError } from '../tools/errors.js'
 
 const AnthropicMock = vi.mocked(AnthropicDefault)
 
@@ -315,6 +316,68 @@ describe('ClaudeRunner', () => {
         expect.objectContaining({ type: 'info_request' }),
       )
       expect(mockSessionStore.waitForInfo).toHaveBeenCalledWith('sess-1')
+    })
+  })
+
+  describe('에이전트 간 질의(AgentQuery)', () => {
+    it('AgentQueryError 발생 시 대상 에이전트를 호출하고 원 에이전트를 재실행한다', async () => {
+      const designExec = vi.fn()
+        .mockRejectedValueOnce(new AgentQueryError('developer', '재고 표시 가능?', 'active_request'))
+        .mockResolvedValueOnce({ content: '디자인 완료' })
+      const developExec = vi.fn().mockResolvedValue({ answer: '가능, 5초 폴링' })
+
+      registry.register({
+        name: 'design_ui', description: '', inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: designExec,
+      } as never)
+      registry.register({
+        name: 'develop_code', description: '', inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: developExec,
+      } as never)
+
+      createFn
+        .mockResolvedValueOnce(
+          makeMessage('tool_use', [makeToolUseBlock('tu-aq', 'design_ui', { spec: 'cart' })]),
+        )
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('완료')]))
+
+      await runner.run(baseRunOptions())
+
+      // 대상(developer)에게 질문이 전달됨
+      expect(developExec).toHaveBeenCalledWith(
+        expect.objectContaining({ query: '재고 표시 가능?', queryKind: 'active_request' }),
+        'sess-1',
+        undefined,
+      )
+      // 원 에이전트(design_ui)가 개발자 답을 context로 재실행됨
+      expect(designExec).toHaveBeenCalledTimes(2)
+      expect(designExec.mock.calls[1][0]).toMatchObject({
+        clarificationContext: expect.stringContaining('가능'),
+      })
+    })
+
+    it('알 수 없는 대상 에이전트면 is_error 결과를 반환한다', async () => {
+      const designExec = vi.fn()
+        .mockRejectedValueOnce(new AgentQueryError('nobody', '?', 'active_request'))
+
+      registry.register({
+        name: 'design_ui', description: '', inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: designExec,
+      } as never)
+
+      createFn
+        .mockResolvedValueOnce(
+          makeMessage('tool_use', [makeToolUseBlock('tu-aq2', 'design_ui', {})]),
+        )
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('종료')]))
+
+      await runner.run(baseRunOptions())
+
+      const secondCallMessages = createFn.mock.calls[1][0].messages as Anthropic.MessageParam[]
+      const toolResultMsg = secondCallMessages[secondCallMessages.length - 1]
+      const content = toolResultMsg.content as Array<Anthropic.ToolResultBlockParam & { is_error?: boolean }>
+      expect(content[0].is_error).toBe(true)
+      expect(content[0].content).toContain('Unknown query target agent: nobody')
     })
   })
 
