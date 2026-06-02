@@ -67,6 +67,14 @@
     "source": "出典",
     "search_placeholder": "知識を検索…",
     "all_sources": "すべての出典",
-    "all_categories": "すべての分類"
+    "all_categories": "すべての分類",
+    "edit": "編集",
+    "delete": "削除",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "delete_confirm": "この項目を削除しますか？",
+    "category_none": "未分類",
+    "save_failed": "保存に失敗しました",
+    "delete_failed": "削除に失敗しました"
   }
 }
