@@ -6,7 +6,7 @@ import type { UserContext } from '../types/user-context.js'
 import type { ManagerToOrchestratorMessage, UISpec } from '../types/streams.js'
 import { ClarificationNeededError, AgentQueryError, GateAbortError } from '../tools/errors.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
-import { isGatedTool, effectiveMode, summarizeOutput, parseDecision } from '../gates/approval-gate.js'
+import { isGatedTool, effectiveMode, summarizeOutput, parseDecision, isKnowledgeBearingStage } from '../gates/approval-gate.js'
 import type { KnowledgeRepo } from '../db/knowledge.repo.js'
 
 /** MANAGER_MAX_ITERATIONS 환경변수를 파싱하고 유효성을 검증한다. 유효하지 않으면 Error를 throw한다. */
@@ -186,6 +186,22 @@ export class ClaudeRunner {
     }
   }
 
+  /**
+   * PO가 게이트 승인 시 '위키에 저장'을 선택하면 승인된 결정 요약을 위키에 누적한다.
+   * 지식성 단계(plan_task·design_ui·develop_code·security_audit)에서만 저장하며,
+   * repo·projectId 없으면 skip하고 저장 실패해도 승인 흐름을 차단하지 않는다.
+   */
+  private async saveApprovedDecision(stage: string, summary: string, userContext?: UserContext): Promise<void> {
+    if (!this.knowledgeRepo || !userContext?.projectId || !isKnowledgeBearingStage(stage)) return
+    try {
+      await this.knowledgeRepo.insertMany(userContext.projectId, [
+        { content: summary, sourceAgent: 'approval-gate', category: 'decision' },
+      ])
+    } catch (err) {
+      console.warn('[runner] 승인 결정 위키 저장 실패 — 작업 계속:', err)
+    }
+  }
+
   /** tool_result 블록 생성 (4000자 상한). */
   private toToolResult(toolUseId: string, result: unknown): Anthropic.ToolResultBlockParam {
     const resultStr = JSON.stringify(result)
@@ -215,6 +231,7 @@ export class ClaudeRunner {
     for (;;) {
       if (effectiveMode(sessionStore.getGateConfig(sessionId), block.name) === 'auto') return result
 
+      const summary = summarizeOutput(block.name, result)
       await producer.publish({
         sessionId,
         messageId: crypto.randomUUID(),
@@ -223,7 +240,7 @@ export class ClaudeRunner {
         payload: {
           agentId: 'manager',
           content: `'${block.name}' 단계 결과를 검토하고 승인/수정/중단을 선택하세요.`,
-          approval: { stage: block.name, summary: summarizeOutput(block.name, result), mode: 'manual' },
+          approval: { stage: block.name, summary, mode: 'manual' },
         },
       })
       const decision = parseDecision(await sessionStore.waitForInfo(sessionId))
@@ -231,6 +248,8 @@ export class ClaudeRunner {
       if (decision.kind === 'approve') {
         // '이 단계 앞으로 자동' 선택 시 이후 동일 단계는 게이트 없이 통과(배포는 항상 manual이라 무영향)
         if (decision.rememberAuto) sessionStore.setGateOverride(sessionId, block.name, 'auto')
+        // PO가 '위키에 저장' 선택 시 승인된 결정 요약을 도메인 위키에 누적(지식성 단계 한정·비차단)
+        if (decision.saveToWiki) await this.saveApprovedDecision(block.name, summary, userContext)
         return result
       }
       if (decision.kind === 'abort') {

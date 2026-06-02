@@ -701,6 +701,63 @@ describe('ClaudeRunner', () => {
       const passedInput = exec.mock.calls[0]?.[0] as { context?: { domainKnowledge?: unknown } }
       expect(passedInput.context?.domainKnowledge).toBeUndefined()
     })
+
+    // 수동 게이트(plan_task)로 승인 후 주어진 answer로 resolveInfo. exec 결과엔 knowledge 없음(게이트 저장만 검증)
+    async function runManualGateApprove(
+      repo: ReturnType<typeof makeKnowledgeRepo>, stage: string, execResult: unknown, answer: object,
+      ctx: Record<string, unknown> = userCtx,
+    ): Promise<void> {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn().mockResolvedValue(execResult)
+      registry.register({ name: stage, description: '', inputSchema: GATED_SCHEMA, execute: exec } as never)
+      createFn
+        .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('t1', stage, { intent: 'x', context: {} })]))
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+      const r = new ClaudeRunner(client, 'm', registry, repo as never)
+      const runP = r.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore, userContext: ctx } as Parameters<typeof r.run>[0])
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', JSON.stringify(answer))
+      await runP
+    }
+
+    it('승인 시 saveToWiki=true면 지식성 단계 결정 요약을 위키에 저장한다', async () => {
+      const repo = makeKnowledgeRepo()
+      await runManualGateApprove(repo, 'plan_task', { content: '결제는 Stripe로 결정', steps: [] }, { decision: 'approve', saveToWiki: true })
+      expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [
+        { content: '결제는 Stripe로 결정', sourceAgent: 'approval-gate', category: 'decision' },
+      ])
+    })
+
+    it('승인 시 saveToWiki 없으면 게이트 결정을 저장하지 않는다', async () => {
+      const repo = makeKnowledgeRepo()
+      await runManualGateApprove(repo, 'plan_task', { content: '계획', steps: [] }, { decision: 'approve' })
+      expect(repo.insertMany).not.toHaveBeenCalled()
+    })
+
+    it('비지식성 단계(run_tests)는 saveToWiki=true여도 저장하지 않는다', async () => {
+      const repo = makeKnowledgeRepo()
+      await runManualGateApprove(repo, 'run_tests', { content: '테스트 통과' }, { decision: 'approve', saveToWiki: true })
+      expect(repo.insertMany).not.toHaveBeenCalled()
+    })
+
+    it('projectId 없으면 saveToWiki=true여도 저장하지 않는다', async () => {
+      const repo = makeKnowledgeRepo()
+      await runManualGateApprove(
+        repo, 'plan_task', { content: '계획', steps: [] }, { decision: 'approve', saveToWiki: true },
+        { userId: 'u1', workspaceRoot: '/ws' }, // projectId 없음
+      )
+      expect(repo.insertMany).not.toHaveBeenCalled()
+    })
+
+    it('게이트 저장 실패는 승인 흐름을 차단하지 않는다', async () => {
+      const repo = makeKnowledgeRepo()
+      repo.insertMany.mockRejectedValue(new Error('db down'))
+      await expect(
+        runManualGateApprove(repo, 'plan_task', { content: '계획', steps: [] }, { decision: 'approve', saveToWiki: true }),
+      ).resolves.toBeUndefined()
+      expect(repo.insertMany).toHaveBeenCalled()
+    })
   })
 
   describe('publishStatus 실패 격리', () => {
