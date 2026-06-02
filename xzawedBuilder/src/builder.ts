@@ -78,6 +78,7 @@ export class Builder {
 
         const errors = success ? [] : await this.runner.analyzeBuildFailure(output)
         const artifacts = success ? [buildRoot] : []
+        const knowledge = await this.runner.extractKnowledge(output)
 
         return {
           publishResult: () => this.producer.publish(sessionId, {
@@ -89,6 +90,7 @@ export class Builder {
               duration,
               errors,
               artifacts,
+              ...(knowledge.length > 0 ? { knowledge } : {}),
               content: success ? '빌드 완료' : `빌드 실패: ${errors.length}개 오류`,
             },
           }),

@@ -67,6 +67,20 @@ describe('ClaudeRunner.analyzeFailures', () => {
   })
 })
 
+describe('ClaudeRunner.extractKnowledge', () => {
+  it('Claude가 반환한 durable 지식을 파싱한다', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ type: 'text', text: JSON.stringify({ knowledge: ['테스트는 Vitest로 작성'] }) }],
+    })
+    expect(await runner.extractKnowledge('test output')).toEqual(['테스트는 Vitest로 작성'])
+  })
+
+  it('SDK가 throw하면 []를 반환한다', async () => {
+    mockCreate.mockRejectedValueOnce(new Error('timeout'))
+    expect(await runner.extractKnowledge('output')).toEqual([])
+  })
+})
+
 describe('ClaudeRunner.answerQuery', () => {
   it('Claude 텍스트 답변을 반환한다', async () => {
     mockCreate.mockResolvedValueOnce({ content: [{ type: 'text', text: '테스트 관점 답변' }] })

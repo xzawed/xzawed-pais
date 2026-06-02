@@ -1,7 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
-import { answerViaClaude } from '@xzawed/agent-streams'
+import { answerViaClaude, extractKnowledgeViaClaude } from '@xzawed/agent-streams'
 import type { BuildError } from '../types.js'
+
+const API_TIMEOUT_MS = Number(process.env['CLAUDE_TIMEOUT_MS'] ?? '120000')
 
 const BuildErrorSchema = z.object({
   file: z.string().optional(),
@@ -13,6 +15,19 @@ const BuildErrorSchema = z.object({
 const SYSTEM_PROMPT = `You are a build error analyzer. Given a build log, extract errors as a JSON array.
 Return ONLY valid JSON array: [{"file":"path","line":42,"message":"error text","suggestion":"fix suggestion"}]
 Omit file and line if not present. Always include message and suggestion.`
+
+const KNOWLEDGE_PROMPT = `You extract DURABLE domain knowledge from a build run for a project's long-term wiki.
+
+Return ONLY a JSON object:
+{"knowledge": ["one durable build decision per line"]}
+
+Capture ONLY lasting decisions worth remembering across the whole project, such as:
+- Build tool / toolchain choices (e.g. "빌드는 Turborepo로 모노레포 오케스트레이션")
+- Build configuration decisions (e.g. "TypeScript strict 모드, dist/로 컴파일")
+- Artifact / output conventions (e.g. "산출물은 dist/index.js 단일 엔트리")
+
+Do NOT emit transient run state — never "build succeeded", "build failed", error counts, durations, or one-off error details.
+If there is nothing durable, return {"knowledge": []}.`
 
 export class ClaudeRunner {
   private readonly client: Anthropic
@@ -61,5 +76,13 @@ export class ClaudeRunner {
       message: output.slice(0, 500),
       suggestion: 'Claude 분석 실패 — 빌드 로그를 직접 확인하세요',
     }]
+  }
+
+  /**
+   * 빌드 로그에서 지속적(durable) 빌드 도메인 지식만 추출한다.
+   * 일시 상태(성공/실패·오류 카운트)는 제외하며, 지식이 없거나 호출 실패 시 빈 배열을 반환한다.
+   */
+  async extractKnowledge(output: string): Promise<string[]> {
+    return extractKnowledgeViaClaude(this.client, this.model, KNOWLEDGE_PROMPT, output, API_TIMEOUT_MS)
   }
 }

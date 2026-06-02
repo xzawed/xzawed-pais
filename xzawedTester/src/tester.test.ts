@@ -27,6 +27,7 @@ const mockParse = vi.mocked(parseTestCounts)
 
 const mockPublish = vi.fn().mockResolvedValue(undefined)
 const mockAnalyzeFailures = vi.fn().mockResolvedValue([])
+const mockExtractKnowledge = vi.fn().mockResolvedValue([])
 
 const config = {
   anthropicApiKey: 'sk-test',
@@ -59,8 +60,13 @@ beforeEach(() => {
   mockParse.mockReturnValue({ passed: 10, failed: 0 })
   mockPublish.mockResolvedValue(undefined)
   mockAnalyzeFailures.mockResolvedValue([])
+  mockExtractKnowledge.mockResolvedValue([])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tester = new Tester({ publish: mockPublish } as any, { analyzeFailures: mockAnalyzeFailures } as any, config)
+  tester = new Tester(
+    { publish: mockPublish } as any,
+    { analyzeFailures: mockAnalyzeFailures, extractKnowledge: mockExtractKnowledge } as any,
+    config,
+  )
 })
 
 describe('Tester.handle', () => {
@@ -70,6 +76,22 @@ describe('Tester.handle', () => {
       type: 'test_complete',
       payload: expect.objectContaining({ success: true }),
     }))
+  })
+
+  it('includes knowledge in test_complete payload when durable knowledge exists', async () => {
+    mockExtractKnowledge.mockResolvedValueOnce(['테스트는 Vitest로 작성, 프로세스 격리'])
+    await tester.handle(makeRequest())
+    expect(mockExtractKnowledge).toHaveBeenCalledWith('10 passed')
+    expect(mockPublish).toHaveBeenCalledWith('sess-1', expect.objectContaining({
+      type: 'test_complete',
+      payload: expect.objectContaining({ knowledge: ['테스트는 Vitest로 작성, 프로세스 격리'] }),
+    }))
+  })
+
+  it('omits knowledge key when no durable knowledge', async () => {
+    await tester.handle(makeRequest())
+    const call = mockPublish.mock.calls.find(([, m]) => m.type === 'test_complete')
+    expect(call?.[1].payload).not.toHaveProperty('knowledge')
   })
 
   it('returns immediately on abort', async () => {

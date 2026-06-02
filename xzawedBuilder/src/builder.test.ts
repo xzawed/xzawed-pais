@@ -34,13 +34,16 @@ const buildRequest = (override?: Partial<ManagerToBuilderMessage['payload']>): M
 
 describe('Builder', () => {
   let producer: { publish: ReturnType<typeof vi.fn> }
-  let runner: { analyzeBuildFailure: ReturnType<typeof vi.fn> }
+  let runner: { analyzeBuildFailure: ReturnType<typeof vi.fn>; extractKnowledge: ReturnType<typeof vi.fn> }
   let builder: Builder
 
   beforeEach(() => {
     vi.resetAllMocks()
     producer = { publish: vi.fn().mockResolvedValue(undefined) }
-    runner = { analyzeBuildFailure: vi.fn().mockResolvedValue([]) }
+    runner = {
+      analyzeBuildFailure: vi.fn().mockResolvedValue([]),
+      extractKnowledge: vi.fn().mockResolvedValue([]),
+    }
     builder = new Builder(producer as any, runner as any, mockConfig)
 
     executorMock.validatePath.mockResolvedValue('/workspace/project')
@@ -67,6 +70,21 @@ describe('Builder', () => {
     expect(completeMsg).toBeDefined()
     expect(completeMsg!.payload.success).toBe(true)
     expect(completeMsg!.payload.errors).toHaveLength(0)
+  })
+
+  it('durable 지식이 있으면 build_complete payload에 knowledge를 포함한다', async () => {
+    runner.extractKnowledge.mockResolvedValue(['빌드는 Turborepo로 오케스트레이션'])
+    await builder.handle(buildRequest())
+    expect(runner.extractKnowledge).toHaveBeenCalledWith('Build OK')
+    const completeMsg = getCompleteMsg()
+    expect(completeMsg!.payload.knowledge).toEqual(['빌드는 Turborepo로 오케스트레이션'])
+  })
+
+  it('durable 지식이 없으면 knowledge 키를 생략한다', async () => {
+    runner.extractKnowledge.mockResolvedValue([])
+    await builder.handle(buildRequest())
+    const completeMsg = getCompleteMsg()
+    expect(completeMsg!.payload).not.toHaveProperty('knowledge')
   })
 
   it('실패 빌드 시 Claude를 호출하고 build_complete(success:false)를 발행한다', async () => {
