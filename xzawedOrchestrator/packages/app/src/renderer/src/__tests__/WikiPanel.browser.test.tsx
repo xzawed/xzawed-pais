@@ -57,7 +57,7 @@ describe('WikiPanel', () => {
     await waitFor(() => expect(screen.getByTestId('wiki-search')).toBeInTheDocument())
     fireEvent.change(screen.getByTestId('wiki-search'), { target: { value: 'stripe' } })
     await waitFor(() =>
-      expect(getKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 'stripe', undefined),
+      expect(getKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 'stripe', undefined, undefined),
     )
   })
 
@@ -67,7 +67,17 @@ describe('WikiPanel', () => {
     await waitFor(() => expect(screen.getByTestId('wiki-source-filter')).toBeInTheDocument())
     fireEvent.change(screen.getByTestId('wiki-source-filter'), { target: { value: 'security_audit' } })
     await waitFor(() =>
-      expect(getKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', undefined, 'security_audit'),
+      expect(getKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', undefined, 'security_audit', undefined),
+    )
+  })
+
+  test('분류 필터 선택 시 category와 함께 재조회한다', async () => {
+    getKnowledge.mockResolvedValue([])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-category-filter')).toBeInTheDocument())
+    fireEvent.change(screen.getByTestId('wiki-category-filter'), { target: { value: 'decision' } })
+    await waitFor(() =>
+      expect(getKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', undefined, undefined, 'decision'),
     )
   })
 })

@@ -65,6 +65,7 @@
     "empty": "No domain knowledge accumulated yet",
     "source": "source",
     "search_placeholder": "Search knowledge…",
-    "all_sources": "All sources"
+    "all_sources": "All sources",
+    "all_categories": "All categories"
   }
 }

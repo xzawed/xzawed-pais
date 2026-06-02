@@ -12,6 +12,7 @@ export function WikiPanel(): React.JSX.Element {
   const [items, setItems] = useState<KnowledgeItem[]>([])
   const [query, setQuery] = useState('')
   const [source, setSource] = useState('')
+  const [category, setCategory] = useState('')
 
   useEffect(() => {
     if (!projectId) {
@@ -20,13 +21,13 @@ export function WikiPanel(): React.JSX.Element {
     }
     let active = true
     const q = query.trim()
-    void getKnowledge(settings.serverUrl, projectId, q || undefined, source || undefined).then((r) => {
+    void getKnowledge(settings.serverUrl, projectId, q || undefined, source || undefined, category || undefined).then((r) => {
       if (active) setItems(r)
     })
     return () => {
       active = false
     }
-  }, [projectId, settings.serverUrl, query, source])
+  }, [projectId, settings.serverUrl, query, source, category])
 
   return (
     <div
@@ -57,6 +58,18 @@ export function WikiPanel(): React.JSX.Element {
           <option value="design_ui">design_ui</option>
           <option value="develop_code">develop_code</option>
           <option value="security_audit">security_audit</option>
+        </select>
+        <select
+          data-testid="wiki-category-filter"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          className="w-full rounded border border-border bg-bg px-2 py-1 text-[12px] text-fg outline-none focus:border-accent transition-colors"
+        >
+          <option value="">{t('wiki.all_categories')}</option>
+          <option value="decision">decision</option>
+          <option value="constraint">constraint</option>
+          <option value="rule">rule</option>
+          <option value="tech">tech</option>
         </select>
       </div>
       <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
