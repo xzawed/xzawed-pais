@@ -29,7 +29,7 @@ export interface PlannerToManagerMessage {
   payload: {
     steps?: Step[]
     estimatedTime?: string
-    knowledge?: string[]
+    knowledge?: (string | { content: string; category?: string })[]
     content: string
     uiSpec?: UISpec
     to?: string

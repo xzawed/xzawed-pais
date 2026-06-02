@@ -13,16 +13,17 @@ describe('KnowledgeRepo', () => {
     expect(pool.query).not.toHaveBeenCalled()
   })
 
-  it('insertMany는 각 항목을 project_id·content·source_agent로 INSERT한다', async () => {
+  it('insertMany는 각 항목을 project_id·content·source_agent·category로 INSERT한다', async () => {
     const pool = mockPool()
     const entries: KnowledgeEntry[] = [
-      { content: '결제는 Stripe 사용', sourceAgent: 'planner' },
+      { content: '결제는 Stripe 사용', sourceAgent: 'planner', category: 'decision' },
       { content: 'PII는 암호화', sourceAgent: 'planner' },
     ]
     await new KnowledgeRepo(pool).insertMany('p1', entries)
     expect(pool.query).toHaveBeenCalledTimes(2)
-    expect(pool.query.mock.calls[0][1]).toEqual(['p1', '결제는 Stripe 사용', 'planner'])
-    expect(pool.query.mock.calls[1][1]).toEqual(['p1', 'PII는 암호화', 'planner'])
+    expect(pool.query.mock.calls[0][1]).toEqual(['p1', '결제는 Stripe 사용', 'planner', 'decision'])
+    // category 없으면 null로 저장
+    expect(pool.query.mock.calls[1][1]).toEqual(['p1', 'PII는 암호화', 'planner', null])
   })
 
   it('recentByProject에 query가 있으면 content ILIKE 필터를 추가한다', async () => {
@@ -71,5 +72,16 @@ describe('KnowledgeRepo', () => {
       { content: 'a', sourceAgent: 'planner', createdAt: '2026-06-02T00:00:00Z' },
       { content: 'b', sourceAgent: 'developer', createdAt: '2026-06-01T00:00:00Z' },
     ])
+  })
+
+  it('recentByProject는 category가 있으면 매핑하고 없으면 생략한다', async () => {
+    const pool = mockPool([
+      { content: 'a', source_agent: 'planner', category: 'decision', created_at: 't' },
+      { content: 'b', source_agent: 'planner', category: null, created_at: 't' },
+    ])
+    const out = await new KnowledgeRepo(pool).recentByProject('p1', 20)
+    expect(pool.query.mock.calls[0][0]).toMatch(/SELECT content, source_agent, category/i)
+    expect(out[0]).toEqual({ content: 'a', sourceAgent: 'planner', category: 'decision', createdAt: 't' })
+    expect(out[1]).toEqual({ content: 'b', sourceAgent: 'planner', createdAt: 't' })
   })
 })

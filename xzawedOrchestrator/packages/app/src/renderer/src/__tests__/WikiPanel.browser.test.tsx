@@ -30,6 +30,20 @@ describe('WikiPanel', () => {
     expect(screen.getByTestId('wiki-item')).toHaveTextContent('plan_task')
   })
 
+  test('category가 있으면 분류 배지를 표시한다', async () => {
+    getKnowledge.mockResolvedValue([{ content: '결제는 Stripe', sourceAgent: 'plan_task', category: 'decision', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item-category')).toBeInTheDocument())
+    expect(screen.getByTestId('wiki-item-category')).toHaveTextContent('decision')
+  })
+
+  test('category가 없으면 분류 배지를 표시하지 않는다', async () => {
+    getKnowledge.mockResolvedValue([{ content: 'x', sourceAgent: 'plan_task', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item')).toBeInTheDocument())
+    expect(screen.queryByTestId('wiki-item-category')).not.toBeInTheDocument()
+  })
+
   test('빈 상태 안내를 표시하고 항목이 없다', async () => {
     getKnowledge.mockResolvedValue([])
     renderAt('p1')

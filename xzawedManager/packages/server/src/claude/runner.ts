@@ -24,6 +24,23 @@ const MAX_GATE_REVISES = Number(process.env['MANAGER_MAX_GATE_REVISES'] ?? '5')
 const WIKI_INJECT_LIMIT = Number(process.env['MANAGER_WIKI_INJECT_LIMIT'] ?? '20')
 const CLAUDE_CALL_TIMEOUT_MS = Number(process.env['MANAGER_CLAUDE_TIMEOUT_MS'] ?? '120000')
 
+/** knowledge 원소(문자열 또는 {content, category})를 저장용 엔트리로 정규화한다. 유효하지 않으면 null. */
+function toKnowledgeEntry(
+  raw: unknown,
+  sourceAgent: string,
+): { content: string; sourceAgent: string; category?: string } | null {
+  if (typeof raw === 'string') return { content: raw, sourceAgent }
+  if (typeof raw === 'object' && raw !== null) {
+    const o = raw as Record<string, unknown>
+    if (typeof o['content'] === 'string') {
+      return typeof o['category'] === 'string'
+        ? { content: o['content'], sourceAgent, category: o['category'] }
+        : { content: o['content'], sourceAgent }
+    }
+  }
+  return null
+}
+
 const REQUEST_INFO_TOOL: Anthropic.Tool = {
   name: 'request_info',
   description: 'Ask the user for additional information needed to complete the task',
@@ -157,9 +174,10 @@ export class ClaudeRunner {
     if (!this.knowledgeRepo || !userContext?.projectId) return
     const raw = (typeof result === 'object' && result !== null) ? (result as Record<string, unknown>)['knowledge'] : undefined
     if (!Array.isArray(raw)) return
+    // knowledge 항목은 문자열(미분류) 또는 { content, category } 객체 모두 허용(하위호환)
     const entries = raw
-      .filter((k): k is string => typeof k === 'string')
-      .map((content) => ({ content, sourceAgent: stage }))
+      .map((k) => toKnowledgeEntry(k, stage))
+      .filter((e): e is { content: string; sourceAgent: string; category?: string } => e !== null)
     if (entries.length === 0) return
     try {
       await this.knowledgeRepo.insertMany(userContext.projectId, entries)

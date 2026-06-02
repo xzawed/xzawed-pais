@@ -14,10 +14,15 @@ const StepSchema = z.object({
   estimatedMinutes: z.number().positive().max(480),
 })
 
+const KnowledgeItemSchema = z.union([
+  z.string(),
+  z.object({ content: z.string(), category: z.string().optional() }),
+])
+
 const PlanResponseSchema = z.object({
   steps: z.array(StepSchema).min(1).max(50),
   estimatedTime: z.string().optional(),
-  knowledge: z.array(z.string()).optional(),
+  knowledge: z.array(KnowledgeItemSchema).optional(),
 })
 
 const SYSTEM_PROMPT = `You are a software project planning agent. Given a development intent and context, break it down into concrete, actionable steps.
@@ -39,8 +44,9 @@ Format 1 — When the intent is clear:
     }
   ],
   "estimatedTime": "2 hours",
-  "knowledge": ["프로젝트 도메인 결정·제약·규칙을 한 줄씩 (예: '결제는 Stripe 사용', 'PII는 암호화 저장'). 없으면 생략."]
+  "knowledge": [{"content": "결제는 Stripe 사용", "category": "decision"}, {"content": "PII는 암호화 저장", "category": "constraint"}]
 }
+"knowledge"는 선택. 각 항목은 프로젝트 도메인 결정·제약·규칙 1개이며 category는 "decision" | "constraint" | "rule" | "tech" 중 하나(분류가 모호하면 생략 가능).
 
 Format 2 — When clarification is needed:
 {
@@ -94,7 +100,7 @@ export class ClaudeRunner {
     context: Record<string, unknown>,
     priority: 'normal' | 'high',
     clarificationContext?: string,
-  ): Promise<{ steps: Step[]; estimatedTime: string; knowledge?: string[] } | ClarificationNeeded | AgentQuery> {
+  ): Promise<{ steps: Step[]; estimatedTime: string; knowledge?: (string | { content: string; category?: string })[] } | ClarificationNeeded | AgentQuery> {
     const userContent = [
       formatDomainKnowledge(context),
       `Intent: ${intent}`,
@@ -150,11 +156,19 @@ export class ClaudeRunner {
       return this.fallback(intent)
     }
     const { steps, knowledge } = planResult.data
+    // exactOptionalPropertyTypes: category 미정의 시 키 자체를 생략해 정규화
+    const normalized = knowledge?.map((k) =>
+      typeof k === 'string'
+        ? k
+        : k.category !== undefined
+          ? { content: k.content, category: k.category }
+          : { content: k.content },
+    )
 
     return {
       steps,
       estimatedTime: String(planResult.data.estimatedTime ?? '1 hour'),
-      ...(knowledge && knowledge.length > 0 ? { knowledge } : {}),
+      ...(normalized && normalized.length > 0 ? { knowledge: normalized } : {}),
     }
   }
 

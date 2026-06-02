@@ -82,6 +82,7 @@ export async function postUiAction(
 export interface KnowledgeItem {
   content: string
   sourceAgent: string
+  category?: string
   createdAt: string
 }
 
