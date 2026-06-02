@@ -758,6 +758,17 @@ describe('ClaudeRunner', () => {
       ).resolves.toBeUndefined()
       expect(repo.insertMany).toHaveBeenCalled()
     })
+
+    it('승인 시 PO가 편집한 wikiSummary가 있으면 자동 요약 대신 그 내용을 저장한다', async () => {
+      const repo = makeKnowledgeRepo()
+      await runManualGateApprove(
+        repo, 'plan_task', { content: '원본 자동 요약' },
+        { decision: 'approve', saveToWiki: true, wikiSummary: 'PO가 편집한 결정 요약' },
+      )
+      expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [
+        { content: 'PO가 편집한 결정 요약', sourceAgent: 'approval-gate', category: 'decision' },
+      ])
+    })
   })
 
   describe('publishStatus 실패 격리', () => {

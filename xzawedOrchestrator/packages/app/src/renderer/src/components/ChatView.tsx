@@ -29,6 +29,7 @@ export function ChatView(): React.JSX.Element {
   const [infoResponseValue, setInfoResponseValue] = useState('')
   const [rememberAuto, setRememberAuto] = useState(false)
   const [saveToWiki, setSaveToWiki] = useState(false)
+  const [wikiSummary, setWikiSummary] = useState('')
   const { projectId } = useParams<{ projectId?: string }>()
   const navigate = useNavigate()
   const projects = useProjectsStore((s) => s.projects)
@@ -122,6 +123,7 @@ export function ChatView(): React.JSX.Element {
     setInfoResponseValue('')
     setRememberAuto(false)
     setSaveToWiki(false)
+    setWikiSummary('')
   }
 
   function handleInfoResponseSend(): void {
@@ -145,7 +147,13 @@ export function ChatView(): React.JSX.Element {
       return
     }
     if (decision === 'approve') {
-      sendUiAction(JSON.stringify({ decision, rememberAuto, saveToWiki }), t('approval.approve'))
+      // PO가 저장 전 요약을 실제로 편집했을 때만 wikiSummary를 실어 보낸다(미편집 시 Manager가 자동 요약 사용).
+      const original = pendingInfoRequest?.approval?.summary ?? ''
+      const edited = saveToWiki && wikiSummary.trim() !== '' && wikiSummary !== original
+      sendUiAction(
+        JSON.stringify({ decision, rememberAuto, saveToWiki, ...(edited ? { wikiSummary } : {}) }),
+        t('approval.approve'),
+      )
       return
     }
     sendUiAction(JSON.stringify({ decision }), t('approval.abort'))
@@ -286,16 +294,34 @@ export function ChatView(): React.JSX.Element {
                     {t('approval.remember_auto')}
                   </label>
                   {KNOWLEDGE_BEARING_STAGES.has(pendingInfoRequest.approval.stage) && (
-                    <label className="flex items-center gap-1.5 text-[11px] text-fg-muted select-none">
-                      <input
-                        data-testid="approval-save-wiki"
-                        type="checkbox"
-                        checked={saveToWiki}
-                        onChange={(e) => setSaveToWiki(e.target.checked)}
-                        className="accent-accent"
-                      />
-                      {t('approval.save_to_wiki')}
-                    </label>
+                    <>
+                      <label className="flex items-center gap-1.5 text-[11px] text-fg-muted select-none">
+                        <input
+                          data-testid="approval-save-wiki"
+                          type="checkbox"
+                          checked={saveToWiki}
+                          onChange={(e) => {
+                            const checked = e.target.checked
+                            setSaveToWiki(checked)
+                            // 체크 시 자동 요약을 편집 필드에 prefill — PO가 저장 전 다듬을 수 있게 한다
+                            if (checked) setWikiSummary(pendingInfoRequest.approval?.summary ?? '')
+                          }}
+                          className="accent-accent"
+                        />
+                        {t('approval.save_to_wiki')}
+                      </label>
+                      {saveToWiki && (
+                        <textarea
+                          data-testid="approval-wiki-summary"
+                          value={wikiSummary}
+                          onChange={(e) => setWikiSummary(e.target.value)}
+                          aria-label={t('approval.wiki_summary')}
+                          placeholder={t('approval.wiki_summary')}
+                          rows={3}
+                          className="resize-none rounded border border-border bg-bg px-2 py-1.5 text-[12px] text-fg placeholder:text-fg-ghost outline-none focus:border-accent transition-colors"
+                        />
+                      )}
+                    </>
                   )}
                 </div>
               ) : (

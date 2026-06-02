@@ -59,7 +59,8 @@
     "abort": "中断",
     "feedback_placeholder": "修正依頼のフィードバックを入力してください",
     "remember_auto": "このステップを今後自動承認",
-    "save_to_wiki": "この決定をWikiに保存"
+    "save_to_wiki": "この決定をWikiに保存",
+    "wiki_summary": "Wikiに保存する要約（編集可能）"
   },
   "wiki": {
     "title": "プロジェクトWiki",

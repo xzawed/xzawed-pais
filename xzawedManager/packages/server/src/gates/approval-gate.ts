@@ -41,14 +41,23 @@ export function effectiveMode(config: GateConfig, stage: string): GateMode {
 }
 
 export type GateDecision =
-  | { kind: 'approve'; rememberAuto: boolean; saveToWiki: boolean }
+  | { kind: 'approve'; rememberAuto: boolean; saveToWiki: boolean; wikiSummary?: string }
   | { kind: 'revise'; feedback: string }
   | { kind: 'abort' }
+
+const SUMMARY_MAX = 2000
+
+/** 요약 텍스트를 위키 저장 상한(2000자)으로 자른다(초과 시 말미에 truncated 표시). */
+function clampSummary(text: string): string {
+  return text.length > SUMMARY_MAX ? text.slice(0, SUMMARY_MAX) + '...[truncated]' : text
+}
 
 /**
  * info_response.answer(JSON)에서 승인 결정을 해석한다. 파싱 불가·미지 값은 approve로 fail-open.
  * approve에 `rememberAuto: true`면 해당 단계를 이후 자동 승인(override=auto)으로 전환한다.
  * approve에 `saveToWiki: true`면 승인된 결정 요약을 도메인 위키에 저장한다(누락 시 false).
+ * approve에 `wikiSummary`(비어있지 않은 문자열)가 있으면 PO가 저장 전 편집한 요약으로 채택한다
+ * (누락·비문자열·공백뿐이면 생략 → runner가 자동 요약으로 폴백).
  */
 export function parseDecision(answer: string): GateDecision {
   let parsed: unknown
@@ -65,12 +74,17 @@ export function parseDecision(answer: string): GateDecision {
     const fb = obj['feedback']
     return { kind: 'revise', feedback: typeof fb === 'string' ? fb : '' }
   }
-  return { kind: 'approve', rememberAuto: obj['rememberAuto'] === true, saveToWiki: obj['saveToWiki'] === true }
+  const ws = obj['wikiSummary']
+  const wikiSummary = typeof ws === 'string' && ws.trim() !== '' ? clampSummary(ws) : undefined
+  return {
+    kind: 'approve',
+    rememberAuto: obj['rememberAuto'] === true,
+    saveToWiki: obj['saveToWiki'] === true,
+    ...(wikiSummary !== undefined ? { wikiSummary } : {}),
+  }
 }
 
-const SUMMARY_MAX = 2000
-
-/** 사용자가 승인 판단에 쓸 산출물 요약(텍스트). content 우선, 없으면 전체 직렬화. 상세 렌더는 PR2. */
+/** 사용자가 승인 판단에 쓸 산출물 요약(텍스트). content 우선, 없으면 전체 직렬화(2000자 상한). */
 export function summarizeOutput(_stage: string, result: unknown): string {
   let text: string
   if (
@@ -81,5 +95,5 @@ export function summarizeOutput(_stage: string, result: unknown): string {
   } else {
     text = JSON.stringify(result) ?? ''
   }
-  return text.length > SUMMARY_MAX ? text.slice(0, SUMMARY_MAX) + '...[truncated]' : text
+  return clampSummary(text)
 }

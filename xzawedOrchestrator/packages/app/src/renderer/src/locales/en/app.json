@@ -59,7 +59,8 @@
     "abort": "Abort",
     "feedback_placeholder": "Enter feedback for requested changes",
     "remember_auto": "Auto-approve this step from now on",
-    "save_to_wiki": "Save this decision to the wiki"
+    "save_to_wiki": "Save this decision to the wiki",
+    "wiki_summary": "Summary to save to the wiki (editable)"
   },
   "wiki": {
     "title": "Project Wiki",

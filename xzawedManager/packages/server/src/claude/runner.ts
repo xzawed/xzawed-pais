@@ -248,8 +248,11 @@ export class ClaudeRunner {
       if (decision.kind === 'approve') {
         // '이 단계 앞으로 자동' 선택 시 이후 동일 단계는 게이트 없이 통과(배포는 항상 manual이라 무영향)
         if (decision.rememberAuto) sessionStore.setGateOverride(sessionId, block.name, 'auto')
-        // PO가 '위키에 저장' 선택 시 승인된 결정 요약을 도메인 위키에 누적(지식성 단계 한정·비차단)
-        if (decision.saveToWiki) await this.saveApprovedDecision(block.name, summary, userContext)
+        // PO가 '위키에 저장' 선택 시 승인된 결정 요약을 도메인 위키에 누적(지식성 단계 한정·비차단).
+        // PO가 저장 전 요약을 편집했으면 그 내용(wikiSummary)을 우선, 없으면 자동 요약을 저장.
+        if (decision.saveToWiki) {
+          await this.saveApprovedDecision(block.name, decision.wikiSummary ?? summary, userContext)
+        }
         return result
       }
       if (decision.kind === 'abort') {
