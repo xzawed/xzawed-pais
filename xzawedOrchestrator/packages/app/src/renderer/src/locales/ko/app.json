@@ -65,6 +65,7 @@
     "empty": "아직 누적된 도메인 지식이 없습니다",
     "source": "출처",
     "search_placeholder": "지식 검색…",
-    "all_sources": "모든 출처"
+    "all_sources": "모든 출처",
+    "all_categories": "모든 분류"
   }
 }

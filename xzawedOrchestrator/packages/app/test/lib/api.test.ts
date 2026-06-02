@@ -71,4 +71,12 @@ describe('getKnowledge', () => {
     const calledUrl = fetchMock.mock.calls[0][0] as URL
     expect(calledUrl.searchParams.get('source')).toBe('plan_task')
   })
+
+  it('category가 있으면 category 파라미터를 붙인다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ items: [] }) })
+    vi.stubGlobal('fetch', fetchMock)
+    await getKnowledge('http://localhost:3000', 'p1', undefined, undefined, 'decision')
+    const calledUrl = fetchMock.mock.calls[0][0] as URL
+    expect(calledUrl.searchParams.get('category')).toBe('decision')
+  })
 })
