@@ -79,6 +79,8 @@ services:
       REDIS_URL: redis://redis:6379
       PORT: "3001"
       CLAUDE_MODE: ${CLAUDE_MODE:-api}
+      # 세션·도메인 지식(위키) 영속화 — postgres 공유 DB(테이블명 충돌 없음). 미설정 시 인메모리.
+      DATABASE_URL: postgres://xzawed:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/xzawed_orchestrator
     volumes:
       - workspace:/workspace
     depends_on:
