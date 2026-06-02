@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
+import { toast } from 'sonner'
 import { deleteKnowledge, getKnowledge, updateKnowledge, type KnowledgeItem } from '../lib/api.js'
 import { useAppStore } from '../store/app.store.js'
 
@@ -22,6 +23,8 @@ export function WikiPanel(): React.JSX.Element {
   const [editCategory, setEditCategory] = useState('')
   // 삭제 확인 상태: 확인 영역을 노출 중인 항목 id
   const [confirmingId, setConfirmingId] = useState<number | null>(null)
+  // 변이(편집·삭제) 성공 후 refetch를 useEffect의 active-signal 경로로 강제(stale 결과 clobber 방지)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   /** 현재 필터 기준으로 지식 목록을 조회한다(편집·삭제 후 refetch 단일 재사용). */
   const fetchKnowledge = useCallback(
@@ -41,7 +44,7 @@ export function WikiPanel(): React.JSX.Element {
         if (!signal || signal.active) setItems(r)
       })
     },
-    [projectId, settings.serverUrl, query, source, category],
+    [projectId, settings.serverUrl, query, source, category, refreshKey],
   )
 
   useEffect(() => {
@@ -68,22 +71,35 @@ export function WikiPanel(): React.JSX.Element {
 
   async function saveEdit(id: number): Promise<void> {
     if (!projectId) return
-    await updateKnowledge(
-      settings.serverUrl,
-      projectId,
-      id,
-      editContent,
-      editCategory === '' ? null : editCategory,
-    )
-    cancelEdit()
-    await fetchKnowledge()
+    const content = editContent.trim()
+    if (!content) return // 서버 §2.3 가드 선반영: 빈 content는 확정 400이므로 클라이언트에서 차단
+    try {
+      await updateKnowledge(
+        settings.serverUrl,
+        projectId,
+        id,
+        content,
+        editCategory === '' ? null : editCategory,
+      )
+      cancelEdit()
+      setRefreshKey((n) => n + 1) // refetch는 useEffect의 가드 경로로(직접 호출 시 stale clobber 위험)
+    } catch (err) {
+      // 실패 시 편집 폼 유지(재시도 가능) + 사용자 피드백. 무음 unhandled rejection 방지
+      toast.error(t('wiki.save_failed'))
+      console.error('[WikiPanel] 편집 저장 실패:', err)
+    }
   }
 
   async function confirmDelete(id: number): Promise<void> {
     if (!projectId) return
-    await deleteKnowledge(settings.serverUrl, projectId, id)
-    setConfirmingId(null)
-    await fetchKnowledge()
+    try {
+      await deleteKnowledge(settings.serverUrl, projectId, id)
+      setConfirmingId(null)
+      setRefreshKey((n) => n + 1)
+    } catch (err) {
+      toast.error(t('wiki.delete_failed'))
+      console.error('[WikiPanel] 삭제 실패:', err)
+    }
   }
 
   return (
@@ -167,7 +183,8 @@ export function WikiPanel(): React.JSX.Element {
                       data-testid="wiki-edit-save"
                       type="button"
                       onClick={() => void saveEdit(it.id)}
-                      className="rounded bg-accent px-2 py-0.5 text-[11px] text-bg hover:opacity-90 transition-opacity"
+                      disabled={!editContent.trim()}
+                      className="rounded bg-accent px-2 py-0.5 text-[11px] text-bg hover:opacity-90 disabled:opacity-30 transition-opacity"
                     >
                       {t('wiki.save')}
                     </button>

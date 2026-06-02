@@ -73,6 +73,8 @@
     "save": "保存",
     "cancel": "キャンセル",
     "delete_confirm": "この項目を削除しますか？",
-    "category_none": "未分類"
+    "category_none": "未分類",
+    "save_failed": "保存に失敗しました",
+    "delete_failed": "削除に失敗しました"
   }
 }

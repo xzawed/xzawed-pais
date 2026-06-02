@@ -73,6 +73,8 @@
     "save": "Save",
     "cancel": "Cancel",
     "delete_confirm": "Delete this item?",
-    "category_none": "Uncategorized"
+    "category_none": "Uncategorized",
+    "save_failed": "Failed to save",
+    "delete_failed": "Failed to delete"
   }
 }

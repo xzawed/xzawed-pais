@@ -169,4 +169,40 @@ describe('WikiPanel', () => {
     await waitFor(() => expect(screen.queryByTestId('wiki-delete-confirm')).not.toBeInTheDocument())
     expect(deleteKnowledge).not.toHaveBeenCalled()
   })
+
+  test('편집 content를 비우면 저장 버튼이 비활성화되고 updateKnowledge를 호출하지 않는다', async () => {
+    getKnowledge.mockResolvedValue([{ id: 3, content: '원본', sourceAgent: 'plan_task', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item-edit')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('wiki-item-edit'))
+    fireEvent.change(screen.getByTestId('wiki-edit-content'), { target: { value: '   ' } })
+    expect(screen.getByTestId('wiki-edit-save')).toBeDisabled()
+    fireEvent.click(screen.getByTestId('wiki-edit-save'))
+    expect(updateKnowledge).not.toHaveBeenCalled()
+  })
+
+  test('저장 실패 시 편집 폼이 유지된다(무음 unhandled rejection 방지)', async () => {
+    getKnowledge.mockResolvedValue([{ id: 8, content: '원본', sourceAgent: 'plan_task', createdAt: 't' }])
+    updateKnowledge.mockRejectedValue(new Error('500'))
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item-edit')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('wiki-item-edit'))
+    fireEvent.change(screen.getByTestId('wiki-edit-content'), { target: { value: '수정' } })
+    fireEvent.click(screen.getByTestId('wiki-edit-save'))
+    await waitFor(() => expect(updateKnowledge).toHaveBeenCalled())
+    // 실패 → 폼 유지(cancelEdit 미도달), 재시도 가능
+    expect(screen.getByTestId('wiki-edit-content')).toBeInTheDocument()
+  })
+
+  test('삭제 실패 시 확인 영역이 유지된다(무음 unhandled rejection 방지)', async () => {
+    getKnowledge.mockResolvedValue([{ id: 9, content: 'x', sourceAgent: 'plan_task', createdAt: 't' }])
+    deleteKnowledge.mockRejectedValue(new Error('502'))
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item-delete')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('wiki-item-delete'))
+    fireEvent.click(screen.getByTestId('wiki-delete-confirm'))
+    await waitFor(() => expect(deleteKnowledge).toHaveBeenCalled())
+    // 실패 → 확인 영역 유지(setConfirmingId(null) 미도달)
+    expect(screen.getByTestId('wiki-delete-confirm')).toBeInTheDocument()
+  })
 })

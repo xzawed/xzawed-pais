@@ -73,6 +73,8 @@
     "save": "저장",
     "cancel": "취소",
     "delete_confirm": "이 항목을 삭제할까요?",
-    "category_none": "미분류"
+    "category_none": "미분류",
+    "save_failed": "저장에 실패했습니다",
+    "delete_failed": "삭제에 실패했습니다"
   }
 }
