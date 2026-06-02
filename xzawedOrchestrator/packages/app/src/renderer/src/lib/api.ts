@@ -80,6 +80,7 @@ export async function postUiAction(
 }
 
 export interface KnowledgeItem {
+  id: number
   content: string
   sourceAgent: string
   category?: string
@@ -106,6 +107,42 @@ export async function getKnowledge(
   if (!res.ok) return []
   const data = await res.json() as { items?: KnowledgeItem[] }
   return Array.isArray(data.items) ? data.items : []
+}
+
+/**
+ * 도메인 지식 항목을 수정한다(Orchestrator → Manager 프록시, PATCH).
+ * category가 null이면 분류 해제. non-ok면 throw.
+ */
+export async function updateKnowledge(
+  baseUrl: string,
+  projectId: string,
+  id: number,
+  content: string,
+  category: string | null,
+): Promise<void> {
+  validateBaseUrl(baseUrl)
+  const res = await fetch(`${baseUrl}/projects/${projectId}/knowledge/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, category }),
+  })
+  if (!res.ok) throw new Error(`updateKnowledge failed: ${res.status}`)
+}
+
+/**
+ * 도메인 지식 항목을 삭제한다(Orchestrator → Manager 프록시, DELETE).
+ * non-ok면 throw.
+ */
+export async function deleteKnowledge(
+  baseUrl: string,
+  projectId: string,
+  id: number,
+): Promise<void> {
+  validateBaseUrl(baseUrl)
+  const res = await fetch(`${baseUrl}/projects/${projectId}/knowledge/${id}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error(`deleteKnowledge failed: ${res.status}`)
 }
 
 export async function checkHealth(baseUrl: string): Promise<boolean> {

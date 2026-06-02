@@ -4,7 +4,13 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
 const getKnowledge = vi.fn()
-vi.mock('../lib/api.js', () => ({ getKnowledge: (...a: unknown[]) => getKnowledge(...a) }))
+const updateKnowledge = vi.fn()
+const deleteKnowledge = vi.fn()
+vi.mock('../lib/api.js', () => ({
+  getKnowledge: (...a: unknown[]) => getKnowledge(...a),
+  updateKnowledge: (...a: unknown[]) => updateKnowledge(...a),
+  deleteKnowledge: (...a: unknown[]) => deleteKnowledge(...a),
+}))
 
 import { WikiPanel } from '../components/WikiPanel.js'
 
@@ -18,11 +24,15 @@ function renderAt(projectId: string) {
   )
 }
 
-beforeEach(() => getKnowledge.mockReset())
+beforeEach(() => {
+  getKnowledge.mockReset()
+  updateKnowledge.mockReset().mockResolvedValue(undefined)
+  deleteKnowledge.mockReset().mockResolvedValue(undefined)
+})
 
 describe('WikiPanel', () => {
   test('지식 항목을 렌더한다', async () => {
-    getKnowledge.mockResolvedValue([{ content: '결제는 Stripe', sourceAgent: 'plan_task', createdAt: 't' }])
+    getKnowledge.mockResolvedValue([{ id: 1, content: '결제는 Stripe', sourceAgent: 'plan_task', createdAt: 't' }])
     renderAt('p1')
     await waitFor(() => expect(screen.getByTestId('wiki-item')).toBeInTheDocument())
     // plan_task는 출처 필터 옵션에도 있으므로 항목 내부로 한정해 검증
@@ -31,14 +41,14 @@ describe('WikiPanel', () => {
   })
 
   test('category가 있으면 분류 배지를 표시한다', async () => {
-    getKnowledge.mockResolvedValue([{ content: '결제는 Stripe', sourceAgent: 'plan_task', category: 'decision', createdAt: 't' }])
+    getKnowledge.mockResolvedValue([{ id: 1, content: '결제는 Stripe', sourceAgent: 'plan_task', category: 'decision', createdAt: 't' }])
     renderAt('p1')
     await waitFor(() => expect(screen.getByTestId('wiki-item-category')).toBeInTheDocument())
     expect(screen.getByTestId('wiki-item-category')).toHaveTextContent('decision')
   })
 
   test('category가 없으면 분류 배지를 표시하지 않는다', async () => {
-    getKnowledge.mockResolvedValue([{ content: 'x', sourceAgent: 'plan_task', createdAt: 't' }])
+    getKnowledge.mockResolvedValue([{ id: 1, content: 'x', sourceAgent: 'plan_task', createdAt: 't' }])
     renderAt('p1')
     await waitFor(() => expect(screen.getByTestId('wiki-item')).toBeInTheDocument())
     expect(screen.queryByTestId('wiki-item-category')).not.toBeInTheDocument()
@@ -79,5 +89,84 @@ describe('WikiPanel', () => {
     await waitFor(() =>
       expect(getKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', undefined, undefined, 'decision'),
     )
+  })
+
+  test('편집 진입 후 저장 시 updateKnowledge 호출 + 목록 refetch', async () => {
+    getKnowledge.mockResolvedValue([{ id: 42, content: '원본', sourceAgent: 'plan_task', category: 'decision', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item-edit')).toBeInTheDocument())
+    expect(getKnowledge).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByTestId('wiki-item-edit'))
+    // 편집 버퍼는 원본으로 초기화된다
+    expect((screen.getByTestId('wiki-edit-content') as HTMLTextAreaElement).value).toBe('원본')
+    expect((screen.getByTestId('wiki-edit-category') as HTMLSelectElement).value).toBe('decision')
+
+    fireEvent.change(screen.getByTestId('wiki-edit-content'), { target: { value: '수정됨' } })
+    fireEvent.change(screen.getByTestId('wiki-edit-category'), { target: { value: 'rule' } })
+    fireEvent.click(screen.getByTestId('wiki-edit-save'))
+
+    await waitFor(() =>
+      expect(updateKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 42, '수정됨', 'rule'),
+    )
+    // 저장 후 refetch(최초 1회 + 저장 후 1회 = 2회)
+    await waitFor(() => expect(getKnowledge).toHaveBeenCalledTimes(2))
+  })
+
+  test('편집 카테고리를 미분류로 비우면 null로 저장한다', async () => {
+    getKnowledge.mockResolvedValue([{ id: 7, content: 'x', sourceAgent: 'plan_task', category: 'decision', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item-edit')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('wiki-item-edit'))
+    fireEvent.change(screen.getByTestId('wiki-edit-category'), { target: { value: '' } })
+    fireEvent.click(screen.getByTestId('wiki-edit-save'))
+    await waitFor(() =>
+      expect(updateKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 7, 'x', null),
+    )
+  })
+
+  test('편집 취소 시 원본을 복원하고 updateKnowledge를 호출하지 않는다', async () => {
+    getKnowledge.mockResolvedValue([{ id: 5, content: '원본 내용', sourceAgent: 'plan_task', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item-edit')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('wiki-item-edit'))
+    fireEvent.change(screen.getByTestId('wiki-edit-content'), { target: { value: '버려질 변경' } })
+    fireEvent.click(screen.getByTestId('wiki-edit-cancel'))
+
+    // 편집 영역이 사라지고 원본 내용이 다시 표시된다
+    await waitFor(() => expect(screen.queryByTestId('wiki-edit-content')).not.toBeInTheDocument())
+    expect(screen.getByTestId('wiki-item')).toHaveTextContent('원본 내용')
+    expect(updateKnowledge).not.toHaveBeenCalled()
+  })
+
+  test('삭제 → in-DOM 확인 → deleteKnowledge 호출 + 목록 refetch', async () => {
+    getKnowledge.mockResolvedValue([{ id: 99, content: '삭제 대상', sourceAgent: 'plan_task', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item-delete')).toBeInTheDocument())
+    expect(getKnowledge).toHaveBeenCalledTimes(1)
+
+    // 1차 클릭: in-DOM 확인 영역 노출(즉시 삭제 금지)
+    fireEvent.click(screen.getByTestId('wiki-item-delete'))
+    expect(screen.getByTestId('wiki-delete-confirm')).toBeInTheDocument()
+    expect(deleteKnowledge).not.toHaveBeenCalled()
+
+    // 확인 클릭: deleteKnowledge 호출 + refetch
+    fireEvent.click(screen.getByTestId('wiki-delete-confirm'))
+    await waitFor(() => expect(deleteKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 99))
+    await waitFor(() => expect(getKnowledge).toHaveBeenCalledTimes(2))
+  })
+
+  test('삭제 확인을 취소하면 deleteKnowledge를 호출하지 않는다', async () => {
+    getKnowledge.mockResolvedValue([{ id: 11, content: 'x', sourceAgent: 'plan_task', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item-delete')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('wiki-item-delete'))
+    expect(screen.getByTestId('wiki-delete-cancel')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('wiki-delete-cancel'))
+
+    await waitFor(() => expect(screen.queryByTestId('wiki-delete-confirm')).not.toBeInTheDocument())
+    expect(deleteKnowledge).not.toHaveBeenCalled()
   })
 })

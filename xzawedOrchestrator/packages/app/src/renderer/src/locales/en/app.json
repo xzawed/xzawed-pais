@@ -67,6 +67,12 @@
     "source": "source",
     "search_placeholder": "Search knowledge…",
     "all_sources": "All sources",
-    "all_categories": "All categories"
+    "all_categories": "All categories",
+    "edit": "Edit",
+    "delete": "Delete",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete_confirm": "Delete this item?",
+    "category_none": "Uncategorized"
   }
 }
