@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
 const getKnowledge = vi.fn()
@@ -12,7 +12,7 @@ vi.mock('../lib/api.js', () => ({
   deleteKnowledge: (...a: unknown[]) => deleteKnowledge(...a),
 }))
 
-import { WikiPanel } from '../components/WikiPanel.js'
+import { WikiPanel, WIKI_POLL_MS } from '../components/WikiPanel.js'
 
 function renderAt(projectId: string) {
   return render(
@@ -204,5 +204,37 @@ describe('WikiPanel', () => {
     await waitFor(() => expect(deleteKnowledge).toHaveBeenCalled())
     // 실패 → 확인 영역 유지(setConfirmingId(null) 미도달)
     expect(screen.getByTestId('wiki-delete-confirm')).toBeInTheDocument()
+  })
+
+  test('자동 갱신: 폴링 주기마다 refetch한다', async () => {
+    vi.useFakeTimers()
+    try {
+      getKnowledge.mockResolvedValue([])
+      renderAt('p1')
+      await act(async () => { await Promise.resolve() }) // 마운트 fetch 마이크로태스크 플러시
+      expect(getKnowledge).toHaveBeenCalledTimes(1)
+      await act(async () => { vi.advanceTimersByTime(WIKI_POLL_MS) })
+      expect(getKnowledge).toHaveBeenCalledTimes(2)
+      await act(async () => { vi.advanceTimersByTime(WIKI_POLL_MS) })
+      expect(getKnowledge).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('편집 중에는 폴링이 중단된다', async () => {
+    vi.useFakeTimers()
+    try {
+      getKnowledge.mockResolvedValue([{ id: 1, content: 'x', sourceAgent: 'plan_task', createdAt: 't' }])
+      renderAt('p1')
+      await act(async () => { await Promise.resolve() })
+      // 편집 진입 → 폴링 effect가 editingId 가드로 중단
+      fireEvent.click(screen.getByTestId('wiki-item-edit'))
+      const before = getKnowledge.mock.calls.length
+      await act(async () => { vi.advanceTimersByTime(WIKI_POLL_MS * 3) })
+      expect(getKnowledge.mock.calls.length).toBe(before) // 편집 중 추가 조회 없음
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
