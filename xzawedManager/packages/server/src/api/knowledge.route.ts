@@ -1,8 +1,12 @@
-import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { KnowledgeRepo } from '../db/knowledge.repo.js'
+
+type RouteHook = (req: FastifyRequest, reply: FastifyReply) => Promise<void>
 
 interface KnowledgeRouteOptions {
   knowledgeRepo?: KnowledgeRepo
+  /** 설정 시 쓰기 경로(PATCH/DELETE)에만 적용되는 인증 훅. GET(읽기)은 항상 개방. */
+  authHook?: RouteHook
 }
 
 const DEFAULT_LIMIT = 50
@@ -29,6 +33,9 @@ export async function knowledgeRoute(
   app: FastifyInstance,
   opts: KnowledgeRouteOptions,
 ): Promise<void> {
+  // 쓰기 경로(PATCH/DELETE)에만 적용. authHook 미설정(기본)이면 개방 유지(하위호환).
+  const writePreHandler = opts.authHook ? [opts.authHook] : []
+
   app.get<{ Params: { projectId: string }; Querystring: { limit?: string; q?: string; source?: string; category?: string } }>(
     '/projects/:projectId/knowledge',
     async (req) => {
@@ -45,9 +52,10 @@ export async function knowledgeRoute(
     },
   )
 
-  // 항목 편집 — content·category 갱신. 비인증(GET과 동일). project_id 가드는 repo에서.
+  // 항목 편집 — content·category 갱신. authHook 설정 시 서비스 토큰 필요. project_id 가드는 repo에서.
   app.patch<{ Params: { projectId: string; id: string }; Body: { content?: string; category?: string } }>(
     '/projects/:projectId/knowledge/:id',
+    { preHandler: writePreHandler },
     async (req, reply) => {
       const id = parseId(opts.knowledgeRepo, req.params.id, reply)
       if (id === null) return reply
@@ -62,9 +70,10 @@ export async function knowledgeRoute(
     },
   )
 
-  // 항목 삭제 — 성공 시 본문 없이 204. 비인증(GET과 동일). project_id 가드는 repo에서.
+  // 항목 삭제 — 성공 시 본문 없이 204. authHook 설정 시 서비스 토큰 필요. project_id 가드는 repo에서.
   app.delete<{ Params: { projectId: string; id: string } }>(
     '/projects/:projectId/knowledge/:id',
+    { preHandler: writePreHandler },
     async (req, reply) => {
       const id = parseId(opts.knowledgeRepo, req.params.id, reply)
       if (id === null) return reply

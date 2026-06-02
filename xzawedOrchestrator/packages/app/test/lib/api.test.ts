@@ -121,6 +121,18 @@ describe('updateKnowledge', () => {
     await expect(updateKnowledge('ftp://evil', 'p1', 1, 'x', null)).rejects.toThrow(/http or https/)
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  it('accessToken이 있으면 Authorization 헤더를 첨부한다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    await updateKnowledge('http://localhost:3000', 'p1', 42, 'x', null, 'tok-123')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/projects/p1/knowledge/42',
+      expect.objectContaining({
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok-123' },
+      }),
+    )
+  })
 })
 
 describe('deleteKnowledge', () => {
@@ -146,5 +158,15 @@ describe('deleteKnowledge', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(deleteKnowledge('ftp://evil', 'p1', 1)).rejects.toThrow(/http or https/)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('accessToken이 있으면 Authorization 헤더를 첨부한다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    await deleteKnowledge('http://localhost:3000', 'p1', 99, 'tok-123')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/projects/p1/knowledge/99',
+      expect.objectContaining({ method: 'DELETE', headers: { Authorization: 'Bearer tok-123' } }),
+    )
   })
 })

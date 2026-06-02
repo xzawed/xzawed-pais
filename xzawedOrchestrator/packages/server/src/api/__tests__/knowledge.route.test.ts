@@ -1,13 +1,33 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import Fastify from 'fastify'
 import { knowledgeRoutes } from '../knowledge.route.js'
+import { makeUserAuthHook } from '../../auth/user-auth.hook.js'
+import { issueAccessToken } from '../../auth/tokens.js'
+import { buildServer } from '../../server.js'
 
 afterEach(() => vi.restoreAllMocks())
+
+const USER_SECRET = 'u'.repeat(32)
 
 async function build() {
   const app = Fastify()
   await app.register(knowledgeRoutes, { managerUrl: 'http://manager:3001' })
   return app
+}
+
+/** AUTH=jwt 구성: 쓰기 경로에 user JWT 요구 + Manager로 서비스 토큰 전달. */
+async function buildWithAuth() {
+  const app = Fastify()
+  await app.register(knowledgeRoutes, {
+    managerUrl: 'http://manager:3001',
+    userAuthHook: makeUserAuthHook(USER_SECRET),
+    signServiceToken: () => 'svc-token-xyz',
+  })
+  return app
+}
+
+function userToken(): string {
+  return issueAccessToken({ sub: 'u1', email: 'a@b.c', displayName: null }, USER_SECRET)
 }
 
 describe('knowledgeRoutes (proxy)', () => {
@@ -147,5 +167,99 @@ describe('knowledgeRoutes (proxy)', () => {
     const res = await app.inject({ method: 'DELETE', url: '/projects/p1/knowledge/42' })
     expect(res.statusCode).toBe(502)
     await app.close()
+  })
+
+  describe('쓰기 경로 인증(userAuthHook 설정 시)', () => {
+    it('PATCH는 사용자 토큰 없으면 401이고 Manager를 호출하지 않는다', async () => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+      const app = await buildWithAuth()
+      const res = await app.inject({ method: 'PATCH', url: '/projects/p1/knowledge/5', payload: { content: 'x' } })
+      expect(res.statusCode).toBe(401)
+      expect(fetchMock).not.toHaveBeenCalled()
+      await app.close()
+    })
+
+    it('DELETE는 사용자 토큰 없으면 401이고 Manager를 호출하지 않는다', async () => {
+      const fetchMock = vi.fn()
+      vi.stubGlobal('fetch', fetchMock)
+      const app = await buildWithAuth()
+      const res = await app.inject({ method: 'DELETE', url: '/projects/p1/knowledge/5' })
+      expect(res.statusCode).toBe(401)
+      expect(fetchMock).not.toHaveBeenCalled()
+      await app.close()
+    })
+
+    it('PATCH는 유효 사용자 토큰이면 Manager에 서비스 토큰을 실어 프록시한다', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        status: 200, headers: new Headers({ 'content-type': 'application/json' }),
+        text: () => Promise.resolve(JSON.stringify({ ok: true })),
+      } as Response)
+      vi.stubGlobal('fetch', fetchMock)
+      const app = await buildWithAuth()
+      const res = await app.inject({
+        method: 'PATCH', url: '/projects/p1/knowledge/5',
+        headers: { authorization: `Bearer ${userToken()}` }, payload: { content: 'x' },
+      })
+      expect(res.statusCode).toBe(200)
+      const init = fetchMock.mock.calls[0][1] as RequestInit
+      expect((init.headers as Record<string, string>)['authorization']).toBe('Bearer svc-token-xyz')
+      await app.close()
+    })
+
+    it('DELETE는 유효 사용자 토큰이면 Manager에 서비스 토큰을 실어 프록시한다', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        status: 204, headers: new Headers(), text: () => Promise.resolve(''),
+      } as Response)
+      vi.stubGlobal('fetch', fetchMock)
+      const app = await buildWithAuth()
+      const res = await app.inject({
+        method: 'DELETE', url: '/projects/p1/knowledge/5',
+        headers: { authorization: `Bearer ${userToken()}` },
+      })
+      expect(res.statusCode).toBe(204)
+      const init = fetchMock.mock.calls[0][1] as RequestInit
+      expect((init.headers as Record<string, string>)['authorization']).toBe('Bearer svc-token-xyz')
+      await app.close()
+    })
+
+    it('GET(읽기)은 인증 설정에도 토큰 없이 개방 유지', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ items: [] }) } as Response))
+      const app = await buildWithAuth()
+      const res = await app.inject({ method: 'GET', url: '/projects/p1/knowledge' })
+      expect(res.statusCode).toBe(200)
+      await app.close()
+    })
+  })
+
+  // buildServer 배선 통합: auth=jwt면 프록시가 app.jwt.sign으로 서비스 토큰을 발급해 Manager에 전달.
+  describe('buildServer 위키 프록시 인증 배선', () => {
+    const AUTH_CONFIG = {
+      port: 0,
+      redisUrl: 'redis://127.0.0.1:6399',
+      managerUrl: 'http://manager:3001',
+      claudeMode: 'api' as const,
+      mode: 'local' as const,
+      auth: 'jwt' as const,
+      claudeModel: 'test',
+      serveWeb: false,
+      serviceJwtSecret: 's'.repeat(32),
+    }
+    const stubRunner = { async *send() { yield { type: 'done' as const, content: '' } } }
+
+    it('auth=jwt면 Manager 쓰기 호출에 서비스 토큰을 발급해 전달한다', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        status: 200, headers: new Headers({ 'content-type': 'application/json' }),
+        text: () => Promise.resolve(JSON.stringify({ ok: true })),
+      } as Response)
+      vi.stubGlobal('fetch', fetchMock)
+      const app = await buildServer(AUTH_CONFIG as never, stubRunner as never)
+      // dbPool 없으므로 userAuthHook 미적용(쓰기 개방) — signServiceToken 배선만 검증
+      const res = await app.inject({ method: 'PATCH', url: '/projects/p1/knowledge/5', payload: { content: 'x' } })
+      expect(res.statusCode).toBe(200)
+      const init = fetchMock.mock.calls[0][1] as RequestInit
+      expect((init.headers as Record<string, string>)['authorization']).toMatch(/^Bearer .+/)
+      await app.close()
+    })
   })
 })

@@ -120,7 +120,8 @@ export async function buildServer(
   watcherEventConsumer.start()
 
   await app.register(healthRoute)
-  await app.register(knowledgeRoute, knowledgeRepo ? { knowledgeRepo } : {})
+  // 쓰기 경로(PATCH/DELETE)에만 서비스 토큰 요구(authHook). GET은 개방 유지.
+  await app.register(knowledgeRoute, { ...(knowledgeRepo && { knowledgeRepo }), ...(authHook && { authHook }) })
   await app.register(sessionsRoute, {
     redisUrl: config.REDIS_URL,
     runner,

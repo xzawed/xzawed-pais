@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
+import { useAuthStore } from '@xzawed/ui'
 import { deleteKnowledge, getKnowledge, updateKnowledge, type KnowledgeItem } from '../lib/api.js'
 import { useAppStore } from '../store/app.store.js'
 
@@ -15,6 +16,8 @@ export const WIKI_POLL_MS = 10_000
 export function WikiPanel(): React.JSX.Element {
   const { t } = useTranslation('app')
   const { settings } = useAppStore()
+  // AUTH=jwt 환경에서 쓰기(편집·삭제) 요청에 실을 사용자 토큰(미로그인/AUTH=none이면 null → 헤더 생략).
+  const accessToken = useAuthStore((s) => s.accessToken)
   const { projectId } = useParams<{ projectId?: string }>()
   const [items, setItems] = useState<KnowledgeItem[]>([])
   const [query, setQuery] = useState('')
@@ -91,6 +94,7 @@ export function WikiPanel(): React.JSX.Element {
         id,
         content,
         editCategory === '' ? null : editCategory,
+        accessToken ?? undefined,
       )
       cancelEdit()
       setRefreshKey((n) => n + 1) // refetch는 useEffect의 가드 경로로(직접 호출 시 stale clobber 위험)
@@ -104,7 +108,7 @@ export function WikiPanel(): React.JSX.Element {
   async function confirmDelete(id: number): Promise<void> {
     if (!projectId) return
     try {
-      await deleteKnowledge(settings.serverUrl, projectId, id)
+      await deleteKnowledge(settings.serverUrl, projectId, id, accessToken ?? undefined)
       setConfirmingId(null)
       setRefreshKey((n) => n + 1)
     } catch (err) {

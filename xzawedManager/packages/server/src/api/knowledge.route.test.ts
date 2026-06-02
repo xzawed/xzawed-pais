@@ -1,10 +1,19 @@
 import { describe, it, expect, vi } from 'vitest'
 import Fastify from 'fastify'
 import { knowledgeRoute } from './knowledge.route.js'
+import { registerJwt, verifyServiceToken } from '../auth/jwt.plugin.js'
 
 async function build(repo: unknown) {
   const app = Fastify()
   await app.register(knowledgeRoute, { knowledgeRepo: repo as never })
+  return app
+}
+
+/** SERVICE_JWT 인증이 켜진 구성(authHook 주입). 토큰 발급은 app.jwt.sign으로. */
+async function buildWithAuth(repo: unknown) {
+  const app = Fastify()
+  await registerJwt(app, 'a'.repeat(32))
+  await app.register(knowledgeRoute, { knowledgeRepo: repo as never, authHook: verifyServiceToken })
   return app
 }
 
@@ -182,6 +191,63 @@ describe('knowledgeRoute', () => {
       const app = await build(undefined)
       const res = await app.inject({ method: 'DELETE', url: '/projects/p1/knowledge/5' })
       expect(res.statusCode).toBe(503)
+      await app.close()
+    })
+  })
+
+  describe('쓰기 경로 인증(authHook 설정 시)', () => {
+    it('PATCH는 토큰 없으면 401이고 updateById를 호출하지 않는다', async () => {
+      const repo = { updateById: vi.fn() }
+      const app = await buildWithAuth(repo)
+      const res = await app.inject({
+        method: 'PATCH', url: '/projects/p1/knowledge/5', payload: { content: '내용' },
+      })
+      expect(res.statusCode).toBe(401)
+      expect(repo.updateById).not.toHaveBeenCalled()
+      await app.close()
+    })
+
+    it('PATCH는 유효한 서비스 토큰이면 통과해 updateById를 호출한다', async () => {
+      const repo = { updateById: vi.fn().mockResolvedValue(true) }
+      const app = await buildWithAuth(repo)
+      const token = app.jwt.sign({ svc: 'orchestrator' })
+      const res = await app.inject({
+        method: 'PATCH', url: '/projects/p1/knowledge/5',
+        headers: { authorization: `Bearer ${token}` }, payload: { content: '내용' },
+      })
+      expect(res.statusCode).toBe(200)
+      expect(repo.updateById).toHaveBeenCalledWith('p1', 5, '내용', null)
+      await app.close()
+    })
+
+    it('DELETE는 토큰 없으면 401이고 deleteById를 호출하지 않는다', async () => {
+      const repo = { deleteById: vi.fn() }
+      const app = await buildWithAuth(repo)
+      const res = await app.inject({ method: 'DELETE', url: '/projects/p1/knowledge/5' })
+      expect(res.statusCode).toBe(401)
+      expect(repo.deleteById).not.toHaveBeenCalled()
+      await app.close()
+    })
+
+    it('DELETE는 유효한 서비스 토큰이면 통과해 deleteById를 호출한다', async () => {
+      const repo = { deleteById: vi.fn().mockResolvedValue(true) }
+      const app = await buildWithAuth(repo)
+      const token = app.jwt.sign({ svc: 'orchestrator' })
+      const res = await app.inject({
+        method: 'DELETE', url: '/projects/p1/knowledge/5',
+        headers: { authorization: `Bearer ${token}` },
+      })
+      expect(res.statusCode).toBe(204)
+      expect(repo.deleteById).toHaveBeenCalledWith('p1', 5)
+      await app.close()
+    })
+
+    it('GET(읽기)은 authHook이 있어도 토큰 없이 개방 유지', async () => {
+      const repo = { recentByProject: vi.fn().mockResolvedValue([]) }
+      const app = await buildWithAuth(repo)
+      const res = await app.inject({ method: 'GET', url: '/projects/p1/knowledge' })
+      expect(res.statusCode).toBe(200)
+      expect(repo.recentByProject).toHaveBeenCalled()
       await app.close()
     })
   })

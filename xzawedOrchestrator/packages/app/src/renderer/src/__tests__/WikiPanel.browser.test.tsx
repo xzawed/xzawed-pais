@@ -12,6 +12,7 @@ vi.mock('../lib/api.js', () => ({
   deleteKnowledge: (...a: unknown[]) => deleteKnowledge(...a),
 }))
 
+import { useAuthStore } from '@xzawed/ui'
 import { WikiPanel, WIKI_POLL_MS } from '../components/WikiPanel.js'
 
 function renderAt(projectId: string) {
@@ -28,6 +29,7 @@ beforeEach(() => {
   getKnowledge.mockReset()
   updateKnowledge.mockReset().mockResolvedValue(undefined)
   deleteKnowledge.mockReset().mockResolvedValue(undefined)
+  useAuthStore.setState({ accessToken: null }) // 기본은 미로그인(AUTH=none) — 토큰 미전달
 })
 
 describe('WikiPanel', () => {
@@ -107,10 +109,23 @@ describe('WikiPanel', () => {
     fireEvent.click(screen.getByTestId('wiki-edit-save'))
 
     await waitFor(() =>
-      expect(updateKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 42, '수정됨', 'rule'),
+      expect(updateKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 42, '수정됨', 'rule', undefined),
     )
     // 저장 후 refetch(최초 1회 + 저장 후 1회 = 2회)
     await waitFor(() => expect(getKnowledge).toHaveBeenCalledTimes(2))
+  })
+
+  test('로그인 상태면 accessToken을 편집·삭제 요청에 전달한다', async () => {
+    useAuthStore.setState({ accessToken: 'tok-xyz' })
+    getKnowledge.mockResolvedValue([{ id: 42, content: '원본', sourceAgent: 'plan_task', category: 'decision', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item-edit')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('wiki-item-edit'))
+    fireEvent.change(screen.getByTestId('wiki-edit-content'), { target: { value: '수정됨' } })
+    fireEvent.click(screen.getByTestId('wiki-edit-save'))
+    await waitFor(() =>
+      expect(updateKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 42, '수정됨', 'decision', 'tok-xyz'),
+    )
   })
 
   test('편집 카테고리를 미분류로 비우면 null로 저장한다', async () => {
@@ -121,7 +136,7 @@ describe('WikiPanel', () => {
     fireEvent.change(screen.getByTestId('wiki-edit-category'), { target: { value: '' } })
     fireEvent.click(screen.getByTestId('wiki-edit-save'))
     await waitFor(() =>
-      expect(updateKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 7, 'x', null),
+      expect(updateKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 7, 'x', null, undefined),
     )
   })
 
@@ -153,7 +168,7 @@ describe('WikiPanel', () => {
 
     // 확인 클릭: deleteKnowledge 호출 + refetch
     fireEvent.click(screen.getByTestId('wiki-delete-confirm'))
-    await waitFor(() => expect(deleteKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 99))
+    await waitFor(() => expect(deleteKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 99, undefined))
     await waitFor(() => expect(getKnowledge).toHaveBeenCalledTimes(2))
   })
 

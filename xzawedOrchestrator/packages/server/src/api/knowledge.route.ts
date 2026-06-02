@@ -1,7 +1,19 @@
-import type { FastifyInstance, FastifyReply } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+
+type RouteHook = (req: FastifyRequest, reply: FastifyReply) => Promise<void>
 
 interface KnowledgeRoutesConfig {
   managerUrl: string
+  /** 설정 시 쓰기 경로(PATCH/DELETE)에 사용자 JWT를 요구한다. GET(읽기)은 항상 개방. */
+  userAuthHook?: RouteHook
+  /** 설정 시 Manager 쓰기 호출에 실을 서비스 토큰을 발급한다(서비스 간 인증). */
+  signServiceToken?: () => string
+}
+
+/** Manager 쓰기 호출용 헤더 — 서비스 토큰이 있으면 Authorization을 덧붙인다. */
+function managerWriteHeaders(config: KnowledgeRoutesConfig, base: Record<string, string>): Record<string, string> {
+  if (!config.signServiceToken) return base
+  return { ...base, authorization: `Bearer ${config.signServiceToken()}` }
 }
 
 /**
@@ -39,6 +51,9 @@ export async function knowledgeRoutes(
   app: FastifyInstance,
   config: KnowledgeRoutesConfig,
 ): Promise<void> {
+  // 쓰기 경로(PATCH/DELETE)에만 적용. 미설정(기본)이면 개방 유지(하위호환).
+  const writePreHandler = config.userAuthHook ? [config.userAuthHook] : []
+
   app.get<{ Params: { projectId: string }; Querystring: { limit?: string; q?: string; source?: string; category?: string } }>(
     '/projects/:projectId/knowledge',
     async (req) => {
@@ -60,12 +75,13 @@ export async function knowledgeRoutes(
 
   app.patch<{ Params: { projectId: string; id: string }; Body: { content: string; category?: string } }>(
     '/projects/:projectId/knowledge/:id',
+    { preHandler: writePreHandler },
     async (req, reply) => {
       try {
         const url = buildManagerUrl(config, req.params.projectId, req.params.id)
         const res = await fetch(url, {
           method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
+          headers: managerWriteHeaders(config, { 'content-type': 'application/json' }),
           body: JSON.stringify(req.body),
           signal: AbortSignal.timeout(5000),
         })
@@ -80,10 +96,15 @@ export async function knowledgeRoutes(
 
   app.delete<{ Params: { projectId: string; id: string } }>(
     '/projects/:projectId/knowledge/:id',
+    { preHandler: writePreHandler },
     async (req, reply) => {
       try {
         const url = buildManagerUrl(config, req.params.projectId, req.params.id)
-        const res = await fetch(url, { method: 'DELETE', signal: AbortSignal.timeout(5000) })
+        const res = await fetch(url, {
+          method: 'DELETE',
+          headers: managerWriteHeaders(config, {}),
+          signal: AbortSignal.timeout(5000),
+        })
         // 상태코드 pass-through: Manager의 204/400/404를 그대로 중계
         return await relayManagerResponse(reply, res)
       } catch (err) {
