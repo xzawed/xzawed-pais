@@ -6,6 +6,12 @@ function mockPool(rows: unknown[] = []) {
     import('pg').Pool & { query: ReturnType<typeof vi.fn> }
 }
 
+/** rowCount만 반환하는 변이(UPDATE/DELETE)용 mock pool. */
+function mockMutationPool(rowCount: number) {
+  return { query: vi.fn().mockResolvedValue({ rowCount }) } as unknown as
+    import('pg').Pool & { query: ReturnType<typeof vi.fn> }
+}
+
 describe('KnowledgeRepo', () => {
   it('insertMany는 빈 배열이면 쿼리하지 않는다', async () => {
     const pool = mockPool()
@@ -27,7 +33,7 @@ describe('KnowledgeRepo', () => {
   })
 
   it('recentByProject에 query가 있으면 content ILIKE 필터를 추가한다', async () => {
-    const pool = mockPool([{ content: '결제는 Stripe', source_agent: 'planner', created_at: 't' }])
+    const pool = mockPool([{ id: 7, content: '결제는 Stripe', source_agent: 'planner', created_at: 't' }])
     const out = await new KnowledgeRepo(pool).recentByProject('p1', 20, 'stripe')
     const [sql, params] = pool.query.mock.calls[0]
     expect(sql).toMatch(/content ILIKE/i)
@@ -78,28 +84,91 @@ describe('KnowledgeRepo', () => {
     expect(params).toEqual(['p1', 'jwt', 'develop_code', 'constraint', 20])
   })
 
-  it('recentByProject는 created_at DESC LIMIT로 조회해 createdAt 포함 매핑한다', async () => {
+  it('recentByProject는 created_at DESC LIMIT로 조회해 id·createdAt 포함 매핑한다', async () => {
     const pool = mockPool([
-      { content: 'a', source_agent: 'planner', created_at: '2026-06-02T00:00:00Z' },
-      { content: 'b', source_agent: 'developer', created_at: '2026-06-01T00:00:00Z' },
+      { id: 10, content: 'a', source_agent: 'planner', created_at: '2026-06-02T00:00:00Z' },
+      { id: 9, content: 'b', source_agent: 'developer', created_at: '2026-06-01T00:00:00Z' },
     ])
     const out = await new KnowledgeRepo(pool).recentByProject('p1', 20)
     expect(pool.query.mock.calls[0][0]).toMatch(/ORDER BY created_at DESC/i)
     expect(pool.query.mock.calls[0][1]).toEqual(['p1', 20])
     expect(out).toEqual([
-      { content: 'a', sourceAgent: 'planner', createdAt: '2026-06-02T00:00:00Z' },
-      { content: 'b', sourceAgent: 'developer', createdAt: '2026-06-01T00:00:00Z' },
+      { id: 10, content: 'a', sourceAgent: 'planner', createdAt: '2026-06-02T00:00:00Z' },
+      { id: 9, content: 'b', sourceAgent: 'developer', createdAt: '2026-06-01T00:00:00Z' },
     ])
+  })
+
+  it('recentByProject는 SELECT에 id를 포함하고 id를 number로 매핑한다(BIGINT 문자열 허용)', async () => {
+    const pool = mockPool([{ id: '42', content: 'a', source_agent: 'planner', created_at: 't' }])
+    const out = await new KnowledgeRepo(pool).recentByProject('p1', 20)
+    expect(pool.query.mock.calls[0][0]).toMatch(/SELECT id, content, source_agent, category/i)
+    expect(out[0]?.id).toBe(42)
+    expect(typeof out[0]?.id).toBe('number')
   })
 
   it('recentByProject는 category가 있으면 매핑하고 없으면 생략한다', async () => {
     const pool = mockPool([
-      { content: 'a', source_agent: 'planner', category: 'decision', created_at: 't' },
-      { content: 'b', source_agent: 'planner', category: null, created_at: 't' },
+      { id: 2, content: 'a', source_agent: 'planner', category: 'decision', created_at: 't' },
+      { id: 1, content: 'b', source_agent: 'planner', category: null, created_at: 't' },
     ])
     const out = await new KnowledgeRepo(pool).recentByProject('p1', 20)
-    expect(pool.query.mock.calls[0][0]).toMatch(/SELECT content, source_agent, category/i)
-    expect(out[0]).toEqual({ content: 'a', sourceAgent: 'planner', category: 'decision', createdAt: 't' })
-    expect(out[1]).toEqual({ content: 'b', sourceAgent: 'planner', createdAt: 't' })
+    expect(pool.query.mock.calls[0][0]).toMatch(/SELECT id, content, source_agent, category/i)
+    expect(out[0]).toEqual({ id: 2, content: 'a', sourceAgent: 'planner', category: 'decision', createdAt: 't' })
+    expect(out[1]).toEqual({ id: 1, content: 'b', sourceAgent: 'planner', createdAt: 't' })
+  })
+
+  describe('updateById', () => {
+    it('content·category를 UPDATE하고 WHERE에 id AND project_id 가드를 둔다', async () => {
+      const pool = mockMutationPool(1)
+      const ok = await new KnowledgeRepo(pool).updateById('p1', 5, '수정된 내용', 'rule')
+      const [sql, params] = pool.query.mock.calls[0]
+      expect(sql).toMatch(/UPDATE domain_knowledge SET content = \$1, category = \$2/i)
+      expect(sql).toMatch(/WHERE id = \$3 AND project_id = \$4/i)
+      expect(params).toEqual(['수정된 내용', 'rule', 5, 'p1'])
+      expect(ok).toBe(true)
+    })
+
+    it('category=null이면 분류 해제 값으로 바인딩한다', async () => {
+      const pool = mockMutationPool(1)
+      await new KnowledgeRepo(pool).updateById('p1', 5, '내용', null)
+      expect(pool.query.mock.calls[0][1]).toEqual(['내용', null, 5, 'p1'])
+    })
+
+    it('rowCount가 0이면 false를 반환한다(타 프로젝트·없는 id)', async () => {
+      const pool = mockMutationPool(0)
+      const ok = await new KnowledgeRepo(pool).updateById('p1', 999, '내용', null)
+      expect(ok).toBe(false)
+    })
+
+    it('rowCount가 undefined여도 false로 처리한다', async () => {
+      const pool = { query: vi.fn().mockResolvedValue({ rowCount: undefined }) } as unknown as
+        import('pg').Pool & { query: ReturnType<typeof vi.fn> }
+      const ok = await new KnowledgeRepo(pool).updateById('p1', 5, '내용', null)
+      expect(ok).toBe(false)
+    })
+  })
+
+  describe('deleteById', () => {
+    it('WHERE에 id AND project_id 가드를 두고 DELETE한다', async () => {
+      const pool = mockMutationPool(1)
+      const ok = await new KnowledgeRepo(pool).deleteById('p1', 5)
+      const [sql, params] = pool.query.mock.calls[0]
+      expect(sql).toMatch(/DELETE FROM domain_knowledge WHERE id = \$1 AND project_id = \$2/i)
+      expect(params).toEqual([5, 'p1'])
+      expect(ok).toBe(true)
+    })
+
+    it('rowCount가 0이면 false를 반환한다(타 프로젝트·없는 id)', async () => {
+      const pool = mockMutationPool(0)
+      const ok = await new KnowledgeRepo(pool).deleteById('p1', 999)
+      expect(ok).toBe(false)
+    })
+
+    it('rowCount가 undefined여도 false로 처리한다', async () => {
+      const pool = { query: vi.fn().mockResolvedValue({ rowCount: undefined }) } as unknown as
+        import('pg').Pool & { query: ReturnType<typeof vi.fn> }
+      const ok = await new KnowledgeRepo(pool).deleteById('p1', 5)
+      expect(ok).toBe(false)
+    })
   })
 })
