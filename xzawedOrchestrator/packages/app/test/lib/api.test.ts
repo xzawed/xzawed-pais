@@ -55,4 +55,12 @@ describe('getKnowledge', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) }))
     expect(await getKnowledge('http://localhost:3000', 'p1')).toEqual([])
   })
+
+  it('query가 있으면 q 파라미터를 붙인다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ items: [] }) })
+    vi.stubGlobal('fetch', fetchMock)
+    await getKnowledge('http://localhost:3000', 'p1', 'stripe')
+    const calledUrl = fetchMock.mock.calls[0][0] as URL
+    expect(calledUrl.searchParams.get('q')).toBe('stripe')
+  })
 })

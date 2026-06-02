@@ -1,6 +1,6 @@
 import React from 'react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
 const getKnowledge = vi.fn()
@@ -34,5 +34,15 @@ describe('WikiPanel', () => {
     renderAt('p1')
     await waitFor(() => expect(screen.getByTestId('wiki-panel')).toBeInTheDocument())
     expect(screen.queryByTestId('wiki-item')).not.toBeInTheDocument()
+  })
+
+  test('검색어 입력 시 query와 함께 재조회한다', async () => {
+    getKnowledge.mockResolvedValue([])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-search')).toBeInTheDocument())
+    fireEvent.change(screen.getByTestId('wiki-search'), { target: { value: 'stripe' } })
+    await waitFor(() =>
+      expect(getKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 'stripe'),
+    )
   })
 })

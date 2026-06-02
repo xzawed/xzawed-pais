@@ -19,11 +19,20 @@ export class KnowledgeRepo {
     }
   }
 
-  async recentByProject(projectId: string, limit: number): Promise<KnowledgeEntry[]> {
+  /** 최근순 조회. query가 있으면 content를 대소문자 무관(ILIKE) 부분일치로 필터한다. */
+  async recentByProject(projectId: string, limit: number, query?: string): Promise<KnowledgeEntry[]> {
+    const params: unknown[] = [projectId]
+    let where = 'WHERE project_id = $1'
+    if (query) {
+      params.push(query)
+      where += ` AND content ILIKE '%' || $${params.length} || '%'`
+    }
+    params.push(limit)
+    const limitIdx = params.length
     const res = await this.pool.query(
       `SELECT content, source_agent, created_at FROM domain_knowledge
-       WHERE project_id = $1 ORDER BY created_at DESC LIMIT $2`,
-      [projectId, limit],
+       ${where} ORDER BY created_at DESC LIMIT $${limitIdx}`,
+      params,
     )
     return (res.rows as { content: string; source_agent: string; created_at: unknown }[]).map((r) => ({
       content: r.content,
