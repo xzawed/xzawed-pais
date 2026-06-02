@@ -8,6 +8,9 @@ import { useAppStore } from '../store/app.store.js'
 /** 도메인 지식 의미 분류 리터럴(필터·편집 드롭다운이 공유하는 단일 소스). */
 const CATEGORIES = ['decision', 'constraint', 'rule', 'tech'] as const
 
+/** 위키 자동 갱신 폴링 주기(ms). 데스크톱 PO 도구라 보수적. */
+export const WIKI_POLL_MS = 10_000
+
 /** 프로젝트에 누적된 도메인 지식을 표시하고 PO가 인라인 편집·삭제하는 패널(위키). */
 export function WikiPanel(): React.JSX.Element {
   const { t } = useTranslation('app')
@@ -54,6 +57,14 @@ export function WikiPanel(): React.JSX.Element {
       signal.active = false
     }
   }, [fetchKnowledge])
+
+  // 자동 갱신: WIKI_POLL_MS마다 refreshKey를 bump해 가드 refetch 경로 재사용.
+  // 편집/삭제 확인 중엔 폴링 중단(진행 중 버퍼·확인 UI를 refetch가 흔들지 않도록).
+  useEffect(() => {
+    if (!projectId || editingId !== null || confirmingId !== null) return
+    const timer = setInterval(() => setRefreshKey((n) => n + 1), WIKI_POLL_MS)
+    return () => clearInterval(timer)
+  }, [projectId, editingId, confirmingId])
 
   function startEdit(it: KnowledgeItem): void {
     setConfirmingId(null)
