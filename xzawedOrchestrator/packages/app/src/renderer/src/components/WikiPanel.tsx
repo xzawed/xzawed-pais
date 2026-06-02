@@ -11,6 +11,7 @@ export function WikiPanel(): React.JSX.Element {
   const { projectId } = useParams<{ projectId?: string }>()
   const [items, setItems] = useState<KnowledgeItem[]>([])
   const [query, setQuery] = useState('')
+  const [source, setSource] = useState('')
 
   useEffect(() => {
     if (!projectId) {
@@ -19,13 +20,13 @@ export function WikiPanel(): React.JSX.Element {
     }
     let active = true
     const q = query.trim()
-    void getKnowledge(settings.serverUrl, projectId, q || undefined).then((r) => {
+    void getKnowledge(settings.serverUrl, projectId, q || undefined, source || undefined).then((r) => {
       if (active) setItems(r)
     })
     return () => {
       active = false
     }
-  }, [projectId, settings.serverUrl, query])
+  }, [projectId, settings.serverUrl, query, source])
 
   return (
     <div
@@ -36,7 +37,7 @@ export function WikiPanel(): React.JSX.Element {
       <div className="border-b border-border px-4 py-2 text-[13px] font-semibold text-fg">
         {t('wiki.title')}
       </div>
-      <div className="border-b border-border px-3 py-2">
+      <div className="border-b border-border px-3 py-2 flex flex-col gap-2">
         <input
           data-testid="wiki-search"
           type="search"
@@ -45,6 +46,18 @@ export function WikiPanel(): React.JSX.Element {
           placeholder={t('wiki.search_placeholder')}
           className="w-full rounded border border-border bg-bg px-2 py-1 text-[12px] text-fg placeholder:text-fg-ghost outline-none focus:border-accent transition-colors"
         />
+        <select
+          data-testid="wiki-source-filter"
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+          className="w-full rounded border border-border bg-bg px-2 py-1 text-[12px] text-fg outline-none focus:border-accent transition-colors"
+        >
+          <option value="">{t('wiki.all_sources')}</option>
+          <option value="plan_task">plan_task</option>
+          <option value="design_ui">design_ui</option>
+          <option value="develop_code">develop_code</option>
+          <option value="security_audit">security_audit</option>
+        </select>
       </div>
       <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
         {items.length === 0 ? (

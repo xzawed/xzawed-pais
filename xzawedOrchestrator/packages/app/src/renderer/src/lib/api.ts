@@ -85,11 +85,20 @@ export interface KnowledgeItem {
   createdAt: string
 }
 
-/** 프로젝트에 누적된 도메인 지식을 조회한다(Orchestrator → Manager 프록시). query가 있으면 content 검색. 실패 시 빈 배열. */
-export async function getKnowledge(baseUrl: string, projectId: string, query?: string): Promise<KnowledgeItem[]> {
+/**
+ * 프로젝트에 누적된 도메인 지식을 조회한다(Orchestrator → Manager 프록시).
+ * query가 있으면 content 검색, source가 있으면 산출 에이전트로 필터. 실패 시 빈 배열.
+ */
+export async function getKnowledge(
+  baseUrl: string,
+  projectId: string,
+  query?: string,
+  source?: string,
+): Promise<KnowledgeItem[]> {
   validateBaseUrl(baseUrl)
   const url = new URL(`${baseUrl}/projects/${projectId}/knowledge`)
   if (query) url.searchParams.set('q', query)
+  if (source) url.searchParams.set('source', source)
   const res = await fetch(url)
   if (!res.ok) return []
   const data = await res.json() as { items?: KnowledgeItem[] }
