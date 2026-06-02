@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { Config } from './config.js'
 import { registerJwt, verifyServiceToken } from './auth/jwt.plugin.js'
 import { healthRoute } from './api/health.route.js'
+import { knowledgeRoute } from './api/knowledge.route.js'
 import { sessionsRoute, makeSessionStarter } from './api/sessions.route.js'
 import { StreamProducer } from './streams/producer.js'
 import { StreamConsumer } from './streams/consumer.js'
@@ -119,6 +120,7 @@ export async function buildServer(
   watcherEventConsumer.start()
 
   await app.register(healthRoute)
+  await app.register(knowledgeRoute, knowledgeRepo ? { knowledgeRepo } : {})
   await app.register(sessionsRoute, {
     redisUrl: config.REDIS_URL,
     runner,

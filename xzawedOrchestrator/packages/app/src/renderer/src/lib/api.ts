@@ -79,6 +79,21 @@ export async function postUiAction(
   if (!res.ok) throw new Error(`postUiAction failed: ${res.status}`)
 }
 
+export interface KnowledgeItem {
+  content: string
+  sourceAgent: string
+  createdAt: string
+}
+
+/** 프로젝트에 누적된 도메인 지식을 조회한다(Orchestrator → Manager 프록시). 실패 시 빈 배열. */
+export async function getKnowledge(baseUrl: string, projectId: string): Promise<KnowledgeItem[]> {
+  validateBaseUrl(baseUrl)
+  const res = await fetch(`${baseUrl}/projects/${projectId}/knowledge`)
+  if (!res.ok) return []
+  const data = await res.json() as { items?: KnowledgeItem[] }
+  return Array.isArray(data.items) ? data.items : []
+}
+
 export async function checkHealth(baseUrl: string): Promise<boolean> {
   try {
     validateBaseUrl(baseUrl)

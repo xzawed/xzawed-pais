@@ -12,6 +12,7 @@ const NAV_ITEMS: NavItem[] = [
   { panel: 'github',  icon: '🐙', label: 'GitHub' },
   { panel: 'mcp',     icon: '🔌', label: 'MCP 서버' },
   { panel: 'plugins', icon: '🧩', label: '플러그인' },
+  { panel: 'wiki',    icon: '📚', label: '위키' },
 ]
 
 export function ActivityBar(): React.JSX.Element {

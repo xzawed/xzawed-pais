@@ -59,5 +59,10 @@
     "abort": "중단",
     "feedback_placeholder": "수정 요청 시 피드백을 입력하세요",
     "remember_auto": "이 단계 앞으로 자동 승인"
+  },
+  "wiki": {
+    "title": "프로젝트 위키",
+    "empty": "아직 누적된 도메인 지식이 없습니다",
+    "source": "출처"
   }
 }

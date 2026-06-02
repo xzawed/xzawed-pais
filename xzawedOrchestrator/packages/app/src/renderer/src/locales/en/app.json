@@ -59,5 +59,10 @@
     "abort": "Abort",
     "feedback_placeholder": "Enter feedback for requested changes",
     "remember_auto": "Auto-approve this step from now on"
+  },
+  "wiki": {
+    "title": "Project Wiki",
+    "empty": "No domain knowledge accumulated yet",
+    "source": "source"
   }
 }
