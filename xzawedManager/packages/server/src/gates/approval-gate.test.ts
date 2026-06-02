@@ -86,6 +86,31 @@ describe('parseDecision', () => {
   it('revise인데 feedback 없으면 빈 문자열', () => {
     expect(parseDecision('{"decision":"revise"}')).toEqual({ kind: 'revise', feedback: '' })
   })
+  it('approve + wikiSummary(PO 편집 요약)를 포함한다', () => {
+    expect(parseDecision('{"decision":"approve","saveToWiki":true,"wikiSummary":"PO가 다듬은 결정"}'))
+      .toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: true, wikiSummary: 'PO가 다듬은 결정' })
+  })
+  it('wikiSummary 누락이면 approve에 wikiSummary 키가 없다', () => {
+    const d = parseDecision('{"decision":"approve","saveToWiki":true}')
+    expect(d).toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: true })
+    expect('wikiSummary' in d).toBe(false)
+  })
+  it('wikiSummary가 비문자열이면 무시(fail-open)', () => {
+    expect(parseDecision('{"decision":"approve","saveToWiki":true,"wikiSummary":123}'))
+      .toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: true })
+  })
+  it('wikiSummary가 공백뿐이면 무시(자동 요약으로 폴백)', () => {
+    expect(parseDecision('{"decision":"approve","saveToWiki":true,"wikiSummary":"   "}'))
+      .toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: true })
+  })
+  it('wikiSummary가 2000자 초과면 잘린다', () => {
+    const long = 'x'.repeat(5000)
+    const d = parseDecision(JSON.stringify({ decision: 'approve', saveToWiki: true, wikiSummary: long })) as {
+      kind: 'approve'; wikiSummary: string
+    }
+    expect(d.wikiSummary.length).toBeLessThanOrEqual(2000 + '...[truncated]'.length)
+    expect(d.wikiSummary.endsWith('...[truncated]')).toBe(true)
+  })
 })
 
 describe('isKnowledgeBearingStage', () => {

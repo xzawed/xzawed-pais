@@ -126,6 +126,60 @@ describe('ChatView', () => {
     )
   })
 
+  test('위키 저장 체크 시 편집 가능한 summary textarea가 요약으로 prefill된다', () => {
+    useChatStore.setState({
+      sessionId: 'sess-wiki-prefill',
+      pendingInfoRequest: {
+        agentId: 'manager', prompt: 'review',
+        approval: { stage: 'plan_task', summary: '자동 생성된 요약', mode: 'manual' },
+      },
+    })
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
+    // 체크 전엔 편집 textarea 미노출
+    expect(screen.queryByTestId('approval-wiki-summary')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('approval-save-wiki'))
+    const ta = screen.getByTestId('approval-wiki-summary') as HTMLTextAreaElement
+    expect(ta).toBeInTheDocument()
+    expect(ta.value).toBe('자동 생성된 요약')
+  })
+
+  test('요약 편집 후 승인하면 payload에 편집된 wikiSummary가 포함된다', () => {
+    postUiAction.mockClear()
+    useChatStore.setState({
+      sessionId: 'sess-wiki-edit',
+      pendingInfoRequest: {
+        agentId: 'manager', prompt: 'review',
+        approval: { stage: 'plan_task', summary: '자동 요약', mode: 'manual' },
+      },
+    })
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
+    fireEvent.click(screen.getByTestId('approval-save-wiki'))
+    fireEvent.change(screen.getByTestId('approval-wiki-summary'), { target: { value: 'PO가 다듬은 결정 요약' } })
+    fireEvent.click(screen.getByTestId('approval-approve'))
+    expect(postUiAction).toHaveBeenCalledWith(
+      expect.any(String), 'sess-wiki-edit',
+      JSON.stringify({ decision: 'approve', rememberAuto: false, saveToWiki: true, wikiSummary: 'PO가 다듬은 결정 요약' }),
+    )
+  })
+
+  test('위키 저장 체크했지만 편집하지 않으면 wikiSummary를 보내지 않는다', () => {
+    postUiAction.mockClear()
+    useChatStore.setState({
+      sessionId: 'sess-wiki-noedit',
+      pendingInfoRequest: {
+        agentId: 'manager', prompt: 'review',
+        approval: { stage: 'plan_task', summary: '자동 요약', mode: 'manual' },
+      },
+    })
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
+    fireEvent.click(screen.getByTestId('approval-save-wiki'))
+    fireEvent.click(screen.getByTestId('approval-approve'))
+    expect(postUiAction).toHaveBeenCalledWith(
+      expect.any(String), 'sess-wiki-noedit',
+      JSON.stringify({ decision: 'approve', rememberAuto: false, saveToWiki: true }),
+    )
+  })
+
   test('비지식성 단계(build_project)는 save-to-wiki 체크박스를 표시하지 않는다', () => {
     useChatStore.setState({
       sessionId: 'sess-build',

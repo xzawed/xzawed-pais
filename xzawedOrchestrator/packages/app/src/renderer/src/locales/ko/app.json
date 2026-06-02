@@ -59,7 +59,8 @@
     "abort": "중단",
     "feedback_placeholder": "수정 요청 시 피드백을 입력하세요",
     "remember_auto": "이 단계 앞으로 자동 승인",
-    "save_to_wiki": "이 결정을 위키에 저장"
+    "save_to_wiki": "이 결정을 위키에 저장",
+    "wiki_summary": "위키에 저장할 요약 (편집 가능)"
   },
   "wiki": {
     "title": "프로젝트 위키",
