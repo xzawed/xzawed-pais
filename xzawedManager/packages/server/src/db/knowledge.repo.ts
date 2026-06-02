@@ -3,6 +3,7 @@ import type { Pool } from 'pg'
 export interface KnowledgeEntry {
   content: string
   sourceAgent: string
+  category?: string
   createdAt?: string
 }
 
@@ -13,8 +14,8 @@ export class KnowledgeRepo {
   async insertMany(projectId: string, entries: KnowledgeEntry[]): Promise<void> {
     for (const e of entries) {
       await this.pool.query(
-        `INSERT INTO domain_knowledge (project_id, content, source_agent) VALUES ($1, $2, $3)`,
-        [projectId, e.content, e.sourceAgent],
+        `INSERT INTO domain_knowledge (project_id, content, source_agent, category) VALUES ($1, $2, $3, $4)`,
+        [projectId, e.content, e.sourceAgent, e.category ?? null],
       )
     }
   }
@@ -42,13 +43,14 @@ export class KnowledgeRepo {
     params.push(limit)
     const limitIdx = params.length
     const res = await this.pool.query(
-      `SELECT content, source_agent, created_at FROM domain_knowledge
+      `SELECT content, source_agent, category, created_at FROM domain_knowledge
        ${where} ORDER BY created_at DESC LIMIT $${limitIdx}`,
       params,
     )
-    return (res.rows as { content: string; source_agent: string; created_at: unknown }[]).map((r) => ({
+    return (res.rows as { content: string; source_agent: string; category: string | null; created_at: unknown }[]).map((r) => ({
       content: r.content,
       sourceAgent: r.source_agent,
+      ...(r.category ? { category: r.category } : {}),
       createdAt: String(r.created_at),
     }))
   }

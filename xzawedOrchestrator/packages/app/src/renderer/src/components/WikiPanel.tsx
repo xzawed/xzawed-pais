@@ -70,9 +70,19 @@ export function WikiPanel(): React.JSX.Element {
               className="rounded border border-border bg-bg px-2.5 py-1.5"
             >
               <p className="text-[12px] text-fg whitespace-pre-wrap break-words">{it.content}</p>
-              <span className="mt-1 inline-block text-[9px] text-fg-ghost uppercase">
-                {t('wiki.source')}: {it.sourceAgent}
-              </span>
+              <div className="mt-1 flex items-center gap-1.5">
+                {it.category && (
+                  <span
+                    data-testid="wiki-item-category"
+                    className="inline-block rounded bg-accent/15 px-1.5 py-0.5 text-[9px] text-accent uppercase"
+                  >
+                    {it.category}
+                  </span>
+                )}
+                <span className="inline-block text-[9px] text-fg-ghost uppercase">
+                  {t('wiki.source')}: {it.sourceAgent}
+                </span>
+              </div>
             </div>
           ))
         )}

@@ -670,6 +670,25 @@ describe('ClaudeRunner', () => {
       expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [{ content: '결제는 Stripe', sourceAgent: 'plan_task' }])
     })
 
+    it('knowledge가 {content, category} 객체면 category까지 저장한다', async () => {
+      const repo = makeKnowledgeRepo()
+      const store = planAutoSession()
+      const exec = vi.fn().mockResolvedValue({
+        steps: [], estimatedTime: '1h',
+        knowledge: [{ content: '결제는 Stripe', category: 'decision' }, '미분류 항목'],
+      })
+      registry.register({ name: 'plan_task', description: '', inputSchema: GATED_SCHEMA, execute: exec } as never)
+      planThenEndWithCtx()
+
+      const r = new ClaudeRunner(client, 'm', registry, repo as never)
+      await r.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore, userContext: userCtx } as Parameters<typeof r.run>[0])
+
+      expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [
+        { content: '결제는 Stripe', sourceAgent: 'plan_task', category: 'decision' },
+        { content: '미분류 항목', sourceAgent: 'plan_task' },
+      ])
+    })
+
     it('repo가 없으면 주입·저장을 건너뛰고 기존 흐름을 유지한다', async () => {
       const store = planAutoSession()
       const exec = vi.fn().mockResolvedValue({ steps: [], estimatedTime: '1h', knowledge: ['x'] })

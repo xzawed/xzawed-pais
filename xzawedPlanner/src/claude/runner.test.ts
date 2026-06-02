@@ -85,6 +85,26 @@ describe('ClaudeRunner', () => {
     }
   })
 
+  it('knowledge가 {content, category} 객체 배열이면 그대로 반환한다', async () => {
+    const withCategorized = JSON.stringify({
+      steps: [{
+        id: 'step-1', title: '결제 연동', description: 'Stripe 결제',
+        agentType: 'developer', dependencies: [], estimatedMinutes: 30,
+      }],
+      estimatedTime: '30 minutes',
+      knowledge: [{ content: '결제는 Stripe 사용', category: 'decision' }],
+    })
+    const mockClient = makeClient(withCategorized)
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
+
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
+    const result = await runner.generatePlan('결제', {}, 'normal')
+
+    if (!(result instanceof ClarificationNeeded) && !(result instanceof AgentQuery)) {
+      expect(result.knowledge).toEqual([{ content: '결제는 Stripe 사용', category: 'decision' }])
+    }
+  })
+
   it('knowledge가 없으면 결과에 knowledge 키가 없다', async () => {
     const mockClient = makeClient(stepsResponse)
     AnthropicMock.mockImplementation(function () { return mockClient as any })
