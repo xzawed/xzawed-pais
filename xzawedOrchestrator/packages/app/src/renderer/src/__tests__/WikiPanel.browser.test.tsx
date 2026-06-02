@@ -25,8 +25,9 @@ describe('WikiPanel', () => {
     getKnowledge.mockResolvedValue([{ content: '결제는 Stripe', sourceAgent: 'plan_task', createdAt: 't' }])
     renderAt('p1')
     await waitFor(() => expect(screen.getByTestId('wiki-item')).toBeInTheDocument())
-    expect(screen.getByText(/결제는 Stripe/)).toBeInTheDocument()
-    expect(screen.getByText(/plan_task/)).toBeInTheDocument()
+    // plan_task는 출처 필터 옵션에도 있으므로 항목 내부로 한정해 검증
+    expect(screen.getByTestId('wiki-item')).toHaveTextContent('결제는 Stripe')
+    expect(screen.getByTestId('wiki-item')).toHaveTextContent('plan_task')
   })
 
   test('빈 상태 안내를 표시하고 항목이 없다', async () => {
@@ -42,7 +43,17 @@ describe('WikiPanel', () => {
     await waitFor(() => expect(screen.getByTestId('wiki-search')).toBeInTheDocument())
     fireEvent.change(screen.getByTestId('wiki-search'), { target: { value: 'stripe' } })
     await waitFor(() =>
-      expect(getKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 'stripe'),
+      expect(getKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 'stripe', undefined),
+    )
+  })
+
+  test('출처 필터 선택 시 source와 함께 재조회한다', async () => {
+    getKnowledge.mockResolvedValue([])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-source-filter')).toBeInTheDocument())
+    fireEvent.change(screen.getByTestId('wiki-source-filter'), { target: { value: 'security_audit' } })
+    await waitFor(() =>
+      expect(getKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', undefined, 'security_audit'),
     )
   })
 })

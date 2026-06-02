@@ -12,7 +12,7 @@ export async function knowledgeRoutes(
   app: FastifyInstance,
   config: KnowledgeRoutesConfig,
 ): Promise<void> {
-  app.get<{ Params: { projectId: string }; Querystring: { limit?: string; q?: string } }>(
+  app.get<{ Params: { projectId: string }; Querystring: { limit?: string; q?: string; source?: string } }>(
     '/projects/:projectId/knowledge',
     async (req) => {
       try {
@@ -20,6 +20,7 @@ export async function knowledgeRoutes(
         const url = new URL(`/projects/${encodeURIComponent(req.params.projectId)}/knowledge`, base)
         if (req.query.limit) url.searchParams.set('limit', req.query.limit)
         if (req.query.q) url.searchParams.set('q', req.query.q)
+        if (req.query.source) url.searchParams.set('source', req.query.source)
         const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
         if (!res.ok) return { items: [] }
         return await res.json()

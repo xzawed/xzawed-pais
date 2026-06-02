@@ -23,14 +23,15 @@ describe('knowledgeRoutes (proxy)', () => {
     await app.close()
   })
 
-  it('q·limit 쿼리를 Manager URL로 전달한다', async () => {
+  it('q·limit·source 쿼리를 Manager URL로 전달한다', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ items: [] }) } as Response)
     vi.stubGlobal('fetch', fetchMock)
     const app = await build()
-    await app.inject({ method: 'GET', url: '/projects/p1/knowledge?q=stripe&limit=10' })
+    await app.inject({ method: 'GET', url: '/projects/p1/knowledge?q=stripe&limit=10&source=plan_task' })
     const calledUrl = fetchMock.mock.calls[0][0] as URL
     expect(calledUrl.searchParams.get('q')).toBe('stripe')
     expect(calledUrl.searchParams.get('limit')).toBe('10')
+    expect(calledUrl.searchParams.get('source')).toBe('plan_task')
     await app.close()
   })
 

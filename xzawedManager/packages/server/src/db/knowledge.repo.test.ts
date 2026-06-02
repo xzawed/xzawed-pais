@@ -42,6 +42,23 @@ describe('KnowledgeRepo', () => {
     expect(params).toEqual(['p1', 20])
   })
 
+  it('recentByProject에 sourceAgent가 있으면 source_agent 필터를 추가한다', async () => {
+    const pool = mockPool([])
+    await new KnowledgeRepo(pool).recentByProject('p1', 20, undefined, 'security_audit')
+    const [sql, params] = pool.query.mock.calls[0]
+    expect(sql).toMatch(/source_agent = /i)
+    expect(params).toEqual(['p1', 'security_audit', 20])
+  })
+
+  it('recentByProject는 query·sourceAgent를 함께 필터한다', async () => {
+    const pool = mockPool([])
+    await new KnowledgeRepo(pool).recentByProject('p1', 20, 'jwt', 'develop_code')
+    const [sql, params] = pool.query.mock.calls[0]
+    expect(sql).toMatch(/content ILIKE/i)
+    expect(sql).toMatch(/source_agent = /i)
+    expect(params).toEqual(['p1', 'jwt', 'develop_code', 20])
+  })
+
   it('recentByProject는 created_at DESC LIMIT로 조회해 createdAt 포함 매핑한다', async () => {
     const pool = mockPool([
       { content: 'a', source_agent: 'planner', created_at: '2026-06-02T00:00:00Z' },

@@ -15,7 +15,7 @@ describe('knowledgeRoute', () => {
     const res = await app.inject({ method: 'GET', url: '/projects/p1/knowledge' })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ items: [{ content: 'a', sourceAgent: 'planner', createdAt: 't' }] })
-    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 50, undefined)
+    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 50, undefined, undefined)
     await app.close()
   })
 
@@ -30,7 +30,7 @@ describe('knowledgeRoute', () => {
     const repo = { recentByProject: vi.fn().mockResolvedValue([]) }
     const app = await build(repo)
     await app.inject({ method: 'GET', url: '/projects/p1/knowledge?limit=999' })
-    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 200, undefined)
+    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 200, undefined, undefined)
     await app.close()
   })
 
@@ -38,7 +38,15 @@ describe('knowledgeRoute', () => {
     const repo = { recentByProject: vi.fn().mockResolvedValue([]) }
     const app = await build(repo)
     await app.inject({ method: 'GET', url: '/projects/p1/knowledge?q=%20stripe%20' })
-    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 50, 'stripe')
+    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 50, 'stripe', undefined)
+    await app.close()
+  })
+
+  it('source 쿼리를 trim해 산출 에이전트 필터로 전달한다', async () => {
+    const repo = { recentByProject: vi.fn().mockResolvedValue([]) }
+    const app = await build(repo)
+    await app.inject({ method: 'GET', url: '/projects/p1/knowledge?source=%20security_audit%20' })
+    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 50, undefined, 'security_audit')
     await app.close()
   })
 
@@ -46,7 +54,7 @@ describe('knowledgeRoute', () => {
     const repo = { recentByProject: vi.fn().mockResolvedValue([]) }
     const app = await build(repo)
     await app.inject({ method: 'GET', url: '/projects/p1/knowledge?q=%20%20' })
-    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 50, undefined)
+    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 50, undefined, undefined)
     await app.close()
   })
 })

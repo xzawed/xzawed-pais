@@ -64,6 +64,7 @@
     "title": "プロジェクトWiki",
     "empty": "まだ蓄積されたドメイン知識がありません",
     "source": "出典",
-    "search_placeholder": "知識を検索…"
+    "search_placeholder": "知識を検索…",
+    "all_sources": "すべての出典"
   }
 }

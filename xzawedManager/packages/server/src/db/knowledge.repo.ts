@@ -19,13 +19,25 @@ export class KnowledgeRepo {
     }
   }
 
-  /** 최근순 조회. query가 있으면 content를 대소문자 무관(ILIKE) 부분일치로 필터한다. */
-  async recentByProject(projectId: string, limit: number, query?: string): Promise<KnowledgeEntry[]> {
+  /**
+   * 최근순 조회. query가 있으면 content를 대소문자 무관(ILIKE) 부분일치로,
+   * sourceAgent가 있으면 산출 에이전트(도구명)로 필터한다.
+   */
+  async recentByProject(
+    projectId: string,
+    limit: number,
+    query?: string,
+    sourceAgent?: string,
+  ): Promise<KnowledgeEntry[]> {
     const params: unknown[] = [projectId]
     let where = 'WHERE project_id = $1'
     if (query) {
       params.push(query)
       where += ` AND content ILIKE '%' || $${params.length} || '%'`
+    }
+    if (sourceAgent) {
+      params.push(sourceAgent)
+      where += ` AND source_agent = $${params.length}`
     }
     params.push(limit)
     const limitIdx = params.length
