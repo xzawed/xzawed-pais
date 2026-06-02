@@ -23,6 +23,17 @@ describe('knowledgeRoutes (proxy)', () => {
     await app.close()
   })
 
+  it('q·limit 쿼리를 Manager URL로 전달한다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ items: [] }) } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    const app = await build()
+    await app.inject({ method: 'GET', url: '/projects/p1/knowledge?q=stripe&limit=10' })
+    const calledUrl = fetchMock.mock.calls[0][0] as URL
+    expect(calledUrl.searchParams.get('q')).toBe('stripe')
+    expect(calledUrl.searchParams.get('limit')).toBe('10')
+    await app.close()
+  })
+
   it('Manager 오류(non-ok) 시 빈 목록', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false } as Response))
     const app = await build()

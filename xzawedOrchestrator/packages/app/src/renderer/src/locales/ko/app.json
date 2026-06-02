@@ -63,6 +63,7 @@
   "wiki": {
     "title": "프로젝트 위키",
     "empty": "아직 누적된 도메인 지식이 없습니다",
-    "source": "출처"
+    "source": "출처",
+    "search_placeholder": "지식 검색…"
   }
 }

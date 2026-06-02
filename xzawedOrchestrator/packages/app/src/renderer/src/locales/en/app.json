@@ -63,6 +63,7 @@
   "wiki": {
     "title": "Project Wiki",
     "empty": "No domain knowledge accumulated yet",
-    "source": "source"
+    "source": "source",
+    "search_placeholder": "Search knowledge…"
   }
 }

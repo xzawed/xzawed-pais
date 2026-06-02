@@ -25,6 +25,23 @@ describe('KnowledgeRepo', () => {
     expect(pool.query.mock.calls[1][1]).toEqual(['p1', 'PII는 암호화', 'planner'])
   })
 
+  it('recentByProject에 query가 있으면 content ILIKE 필터를 추가한다', async () => {
+    const pool = mockPool([{ content: '결제는 Stripe', source_agent: 'planner', created_at: 't' }])
+    const out = await new KnowledgeRepo(pool).recentByProject('p1', 20, 'stripe')
+    const [sql, params] = pool.query.mock.calls[0]
+    expect(sql).toMatch(/content ILIKE/i)
+    expect(params).toEqual(['p1', 'stripe', 20])
+    expect(out).toHaveLength(1)
+  })
+
+  it('recentByProject에 query가 없으면 필터 없이 projectId·limit만 바인딩한다', async () => {
+    const pool = mockPool([])
+    await new KnowledgeRepo(pool).recentByProject('p1', 20)
+    const [sql, params] = pool.query.mock.calls[0]
+    expect(sql).not.toMatch(/ILIKE/i)
+    expect(params).toEqual(['p1', 20])
+  })
+
   it('recentByProject는 created_at DESC LIMIT로 조회해 createdAt 포함 매핑한다', async () => {
     const pool = mockPool([
       { content: 'a', source_agent: 'planner', created_at: '2026-06-02T00:00:00Z' },

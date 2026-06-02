@@ -15,7 +15,7 @@ describe('knowledgeRoute', () => {
     const res = await app.inject({ method: 'GET', url: '/projects/p1/knowledge' })
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ items: [{ content: 'a', sourceAgent: 'planner', createdAt: 't' }] })
-    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 50)
+    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 50, undefined)
     await app.close()
   })
 
@@ -30,7 +30,23 @@ describe('knowledgeRoute', () => {
     const repo = { recentByProject: vi.fn().mockResolvedValue([]) }
     const app = await build(repo)
     await app.inject({ method: 'GET', url: '/projects/p1/knowledge?limit=999' })
-    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 200)
+    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 200, undefined)
+    await app.close()
+  })
+
+  it('q 쿼리를 trim해 검색어로 전달한다', async () => {
+    const repo = { recentByProject: vi.fn().mockResolvedValue([]) }
+    const app = await build(repo)
+    await app.inject({ method: 'GET', url: '/projects/p1/knowledge?q=%20stripe%20' })
+    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 50, 'stripe')
+    await app.close()
+  })
+
+  it('빈 q는 undefined로 전달한다(전체 조회)', async () => {
+    const repo = { recentByProject: vi.fn().mockResolvedValue([]) }
+    const app = await build(repo)
+    await app.inject({ method: 'GET', url: '/projects/p1/knowledge?q=%20%20' })
+    expect(repo.recentByProject).toHaveBeenCalledWith('p1', 50, undefined)
     await app.close()
   })
 })

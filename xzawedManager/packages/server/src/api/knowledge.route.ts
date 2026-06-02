@@ -13,13 +13,14 @@ export async function knowledgeRoute(
   app: FastifyInstance,
   opts: KnowledgeRouteOptions,
 ): Promise<void> {
-  app.get<{ Params: { projectId: string }; Querystring: { limit?: string } }>(
+  app.get<{ Params: { projectId: string }; Querystring: { limit?: string; q?: string } }>(
     '/projects/:projectId/knowledge',
     async (req) => {
       if (!opts.knowledgeRepo) return { items: [] }
       const parsed = Number.parseInt(req.query.limit ?? String(DEFAULT_LIMIT), 10)
       const limit = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), MAX_LIMIT) : DEFAULT_LIMIT
-      const items = await opts.knowledgeRepo.recentByProject(req.params.projectId, limit)
+      const q = req.query.q?.trim()
+      const items = await opts.knowledgeRepo.recentByProject(req.params.projectId, limit, q || undefined)
       return { items }
     },
   )

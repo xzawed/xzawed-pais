@@ -12,13 +12,14 @@ export async function knowledgeRoutes(
   app: FastifyInstance,
   config: KnowledgeRoutesConfig,
 ): Promise<void> {
-  app.get<{ Params: { projectId: string }; Querystring: { limit?: string } }>(
+  app.get<{ Params: { projectId: string }; Querystring: { limit?: string; q?: string } }>(
     '/projects/:projectId/knowledge',
     async (req) => {
       try {
         const base = new URL(config.managerUrl) // SSRF 방어: 설정값 파싱
         const url = new URL(`/projects/${encodeURIComponent(req.params.projectId)}/knowledge`, base)
         if (req.query.limit) url.searchParams.set('limit', req.query.limit)
+        if (req.query.q) url.searchParams.set('q', req.query.q)
         const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
         if (!res.ok) return { items: [] }
         return await res.json()
