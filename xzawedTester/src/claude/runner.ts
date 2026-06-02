@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { answerViaClaude } from '@xzawed/agent-streams'
+import { answerViaClaude, extractKnowledgeViaClaude } from '@xzawed/agent-streams'
 import type { TestFailure } from '../types.js'
 
 const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
@@ -15,6 +15,19 @@ Rules:
 - If the file path is unknown, use "unknown"
 - Keep message concise (under 200 chars)
 - Make suggestions actionable`
+
+const KNOWLEDGE_PROMPT = `You extract DURABLE domain knowledge from a test run for a project's long-term wiki.
+
+Return ONLY a JSON object:
+{"knowledge": ["one durable testing decision per line"]}
+
+Capture ONLY lasting decisions worth remembering across the whole project, such as:
+- Testing strategy or framework choices (e.g. "테스트는 Vitest로 작성, 프로세스 격리(pool:forks)")
+- Coverage policies or quality gates (e.g. "신규 코드 커버리지 80% 게이트")
+- Reproducible fragile/flaky areas or invariants (e.g. "Redis 블로킹 mock은 setImmediate로 양보 필요")
+
+Do NOT emit transient run state — never "tests passed", "5 tests failed", counts, durations, or one-off failure details.
+If there is nothing durable, return {"knowledge": []}.`
 
 export class ClaudeRunner {
   private readonly client: Anthropic
@@ -57,6 +70,14 @@ export class ClaudeRunner {
     } catch {
       return []
     }
+  }
+
+  /**
+   * 테스트 실행 출력에서 지속적(durable) 테스트 도메인 지식만 추출한다.
+   * 일시 상태(통과/실패·카운트)는 제외하며, 지식이 없거나 호출 실패 시 빈 배열을 반환한다.
+   */
+  async extractKnowledge(output: string): Promise<string[]> {
+    return extractKnowledgeViaClaude(this.client, this.model, KNOWLEDGE_PROMPT, output, API_TIMEOUT_MS)
   }
 
   parseFailures(text: string): TestFailure[] {

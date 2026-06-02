@@ -19,6 +19,7 @@ export interface TesterToManagerMessage {
     failed?: number
     failures?: TestFailure[]
     duration?: number
+    knowledge?: string[]
     content: string
   }
 }

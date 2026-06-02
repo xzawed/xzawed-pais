@@ -37,7 +37,10 @@ function makeProducer() {
 }
 
 function makeRunner() {
-  return { analyzeBuildFailure: vi.fn().mockResolvedValue([]) } as unknown as ClaudeRunner
+  return {
+    analyzeBuildFailure: vi.fn().mockResolvedValue([]),
+    extractKnowledge: vi.fn().mockResolvedValue([]),
+  } as unknown as ClaudeRunner
 }
 
 function makeConfig(overrides: Partial<Config> = {}): Config {

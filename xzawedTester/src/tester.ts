@@ -64,6 +64,7 @@ export class Tester {
 
         const { passed, failed } = parseTestCounts(result.output)
         const failures = result.success ? [] : await this.runner.analyzeFailures(result.output)
+        const knowledge = await this.runner.extractKnowledge(result.output)
 
         return {
           publishResult: () => this.producer.publish(base.sessionId, {
@@ -75,6 +76,7 @@ export class Tester {
               failed,
               failures,
               duration,
+              ...(knowledge.length > 0 ? { knowledge } : {}),
               content: result.output.slice(0, 2000),
             },
           }),

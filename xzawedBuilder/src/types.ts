@@ -19,6 +19,7 @@ export interface BuilderToManagerMessage {
     artifacts?: string[]
     duration?: number
     errors?: BuildError[]
+    knowledge?: string[]
     content: string
   }
 }

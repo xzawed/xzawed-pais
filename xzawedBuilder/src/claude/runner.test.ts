@@ -74,4 +74,19 @@ describe('ClaudeRunner', () => {
     const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
     expect(await runner.answerQuery('이 의존성 충돌 해결법은?', {})).toBe('빌드 관점 답변')
   })
+
+  it('extractKnowledge는 durable 빌드 지식을 반환한다', async () => {
+    AnthropicMock.mockImplementation(function () {
+      return makeClient(JSON.stringify({ knowledge: ['빌드는 Turborepo로 오케스트레이션'] })) as any
+    })
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
+    expect(await runner.extractKnowledge('build log')).toEqual(['빌드는 Turborepo로 오케스트레이션'])
+  })
+
+  it('extractKnowledge는 SDK 오류 시 []를 반환한다', async () => {
+    const mockClient = { messages: { create: vi.fn().mockRejectedValue(new Error('API error')) } }
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
+    expect(await runner.extractKnowledge('build log')).toEqual([])
+  })
 })
