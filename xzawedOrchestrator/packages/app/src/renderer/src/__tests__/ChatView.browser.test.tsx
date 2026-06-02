@@ -85,7 +85,7 @@ describe('ChatView', () => {
     render(<MemoryRouter><ChatView /></MemoryRouter>)
     fireEvent.click(screen.getByTestId('approval-approve'))
     expect(postUiAction).toHaveBeenCalledWith(
-      expect.any(String), 'sess-approve', JSON.stringify({ decision: 'approve', rememberAuto: false }),
+      expect.any(String), 'sess-approve', JSON.stringify({ decision: 'approve', rememberAuto: false, saveToWiki: false }),
     )
     // 승인 후 대기 요청이 사라진다
     expect(useChatStore.getState().pendingInfoRequest).toBeNull()
@@ -104,8 +104,39 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByTestId('approval-remember-auto'))
     fireEvent.click(screen.getByTestId('approval-approve'))
     expect(postUiAction).toHaveBeenCalledWith(
-      expect.any(String), 'sess-auto', JSON.stringify({ decision: 'approve', rememberAuto: true }),
+      expect.any(String), 'sess-auto', JSON.stringify({ decision: 'approve', rememberAuto: true, saveToWiki: false }),
     )
+  })
+
+  test('지식성 단계: save-to-wiki 체크박스 표시 + 체크 후 승인 시 saveToWiki:true', () => {
+    postUiAction.mockClear()
+    useChatStore.setState({
+      sessionId: 'sess-wiki',
+      pendingInfoRequest: {
+        agentId: 'manager', prompt: 'review',
+        approval: { stage: 'plan_task', summary: 's', mode: 'manual' },
+      },
+    })
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
+    expect(screen.getByTestId('approval-save-wiki')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('approval-save-wiki'))
+    fireEvent.click(screen.getByTestId('approval-approve'))
+    expect(postUiAction).toHaveBeenCalledWith(
+      expect.any(String), 'sess-wiki', JSON.stringify({ decision: 'approve', rememberAuto: false, saveToWiki: true }),
+    )
+  })
+
+  test('비지식성 단계(build_project)는 save-to-wiki 체크박스를 표시하지 않는다', () => {
+    useChatStore.setState({
+      sessionId: 'sess-build',
+      pendingInfoRequest: {
+        agentId: 'manager', prompt: 'review',
+        approval: { stage: 'build_project', summary: 's', mode: 'manual' },
+      },
+    })
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
+    expect(screen.getByTestId('approval-actions')).toBeInTheDocument()
+    expect(screen.queryByTestId('approval-save-wiki')).not.toBeInTheDocument()
   })
 
   test('revise requires feedback and sends it', () => {

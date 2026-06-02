@@ -58,7 +58,8 @@
     "revise": "Request changes",
     "abort": "Abort",
     "feedback_placeholder": "Enter feedback for requested changes",
-    "remember_auto": "Auto-approve this step from now on"
+    "remember_auto": "Auto-approve this step from now on",
+    "save_to_wiki": "Save this decision to the wiki"
   },
   "wiki": {
     "title": "Project Wiki",

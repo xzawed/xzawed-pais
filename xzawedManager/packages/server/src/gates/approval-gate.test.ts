@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   DEFAULT_GATE_CONFIG, effectiveMode, isGatedTool,
   summarizeOutput, parseDecision, GATED_TOOLS,
+  isKnowledgeBearingStage, KNOWLEDGE_BEARING_STAGES,
 } from './approval-gate.js'
 
 describe('isGatedTool', () => {
@@ -51,11 +52,23 @@ describe('effectiveMode', () => {
 
 describe('parseDecision', () => {
   it('approve JSON', () => {
-    expect(parseDecision('{"decision":"approve"}')).toEqual({ kind: 'approve', rememberAuto: false })
+    expect(parseDecision('{"decision":"approve"}')).toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: false })
   })
   it('approve + rememberAuto', () => {
     expect(parseDecision('{"decision":"approve","rememberAuto":true}'))
-      .toEqual({ kind: 'approve', rememberAuto: true })
+      .toEqual({ kind: 'approve', rememberAuto: true, saveToWiki: false })
+  })
+  it('approve + saveToWiki', () => {
+    expect(parseDecision('{"decision":"approve","saveToWiki":true}'))
+      .toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: true })
+  })
+  it('approve + rememberAuto + saveToWiki', () => {
+    expect(parseDecision('{"decision":"approve","rememberAuto":true,"saveToWiki":true}'))
+      .toEqual({ kind: 'approve', rememberAuto: true, saveToWiki: true })
+  })
+  it('saveToWiki 누락/비boolean이면 false (fail-open)', () => {
+    expect(parseDecision('{"decision":"approve"}')).toMatchObject({ saveToWiki: false })
+    expect(parseDecision('{"decision":"approve","saveToWiki":"yes"}')).toMatchObject({ saveToWiki: false })
   })
   it('revise + feedback', () => {
     expect(parseDecision('{"decision":"revise","feedback":"색상 변경"}'))
@@ -65,13 +78,31 @@ describe('parseDecision', () => {
     expect(parseDecision('{"decision":"abort"}')).toEqual({ kind: 'abort' })
   })
   it('파싱 불가 문자열은 approve로 fail-open', () => {
-    expect(parseDecision('그냥 진행')).toEqual({ kind: 'approve', rememberAuto: false })
+    expect(parseDecision('그냥 진행')).toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: false })
   })
   it('알 수 없는 decision은 approve', () => {
-    expect(parseDecision('{"decision":"xxx"}')).toEqual({ kind: 'approve', rememberAuto: false })
+    expect(parseDecision('{"decision":"xxx"}')).toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: false })
   })
   it('revise인데 feedback 없으면 빈 문자열', () => {
     expect(parseDecision('{"decision":"revise"}')).toEqual({ kind: 'revise', feedback: '' })
+  })
+})
+
+describe('isKnowledgeBearingStage', () => {
+  it('지식성 4단계는 true', () => {
+    expect(isKnowledgeBearingStage('plan_task')).toBe(true)
+    expect(isKnowledgeBearingStage('design_ui')).toBe(true)
+    expect(isKnowledgeBearingStage('develop_code')).toBe(true)
+    expect(isKnowledgeBearingStage('security_audit')).toBe(true)
+  })
+  it('일시 산출물 단계·배포는 false', () => {
+    expect(isKnowledgeBearingStage('run_tests')).toBe(false)
+    expect(isKnowledgeBearingStage('build_project')).toBe(false)
+    expect(isKnowledgeBearingStage('watch_changes')).toBe(false)
+    expect(isKnowledgeBearingStage('deploy_project')).toBe(false)
+  })
+  it('KNOWLEDGE_BEARING_STAGES는 4개', () => {
+    expect(KNOWLEDGE_BEARING_STAGES.size).toBe(4)
   })
 })
 

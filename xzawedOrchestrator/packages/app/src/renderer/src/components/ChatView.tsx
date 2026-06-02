@@ -15,6 +15,9 @@ import { UiSpecPreview } from './chat/UiSpecPreview.js'
 import { parseAgentSteps } from '../lib/parseAgentSteps.js'
 import { postMessage, postUiAction, SessionWsClient } from '../lib/api.js'
 
+/** 지식성 단계(도메인 지식 산출) — 승인 시 '위키에 저장' 체크박스를 이 단계에서만 노출. Manager 가드와 동일 집합. */
+const KNOWLEDGE_BEARING_STAGES = new Set(['plan_task', 'design_ui', 'develop_code', 'security_audit'])
+
 export function ChatView(): React.JSX.Element {
   const { t } = useTranslation('app')
   const {
@@ -25,6 +28,7 @@ export function ChatView(): React.JSX.Element {
   const wsClientRef = useRef<SessionWsClient | null>(null)
   const [infoResponseValue, setInfoResponseValue] = useState('')
   const [rememberAuto, setRememberAuto] = useState(false)
+  const [saveToWiki, setSaveToWiki] = useState(false)
   const { projectId } = useParams<{ projectId?: string }>()
   const navigate = useNavigate()
   const projects = useProjectsStore((s) => s.projects)
@@ -117,6 +121,7 @@ export function ChatView(): React.JSX.Element {
     store.setPendingInfoRequest(null)
     setInfoResponseValue('')
     setRememberAuto(false)
+    setSaveToWiki(false)
   }
 
   function handleInfoResponseSend(): void {
@@ -140,7 +145,7 @@ export function ChatView(): React.JSX.Element {
       return
     }
     if (decision === 'approve') {
-      sendUiAction(JSON.stringify({ decision, rememberAuto }), t('approval.approve'))
+      sendUiAction(JSON.stringify({ decision, rememberAuto, saveToWiki }), t('approval.approve'))
       return
     }
     sendUiAction(JSON.stringify({ decision }), t('approval.abort'))
@@ -280,6 +285,18 @@ export function ChatView(): React.JSX.Element {
                     />
                     {t('approval.remember_auto')}
                   </label>
+                  {KNOWLEDGE_BEARING_STAGES.has(pendingInfoRequest.approval.stage) && (
+                    <label className="flex items-center gap-1.5 text-[11px] text-fg-muted select-none">
+                      <input
+                        data-testid="approval-save-wiki"
+                        type="checkbox"
+                        checked={saveToWiki}
+                        onChange={(e) => setSaveToWiki(e.target.checked)}
+                        className="accent-accent"
+                      />
+                      {t('approval.save_to_wiki')}
+                    </label>
+                  )}
                 </div>
               ) : (
                 <div className="flex items-end gap-2">
