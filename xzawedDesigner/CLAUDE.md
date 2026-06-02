@@ -5,7 +5,7 @@
 xzawedDesigner는 xzawed 멀티 에이전트 시스템의 **UI 설계 에이전트**다.
 xzawedManager로부터 UI/UX 설계 요청을 받아 ComponentSpec 구조로 컴포넌트 스펙을 생성하고 반환한다.
 
-**현재 상태: 구현 완료 (26/26 테스트 통과)**
+**현재 상태: 구현 완료 (84/84 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -96,5 +96,9 @@ interface UISpec {
 - `claude/runner.ts`의 `parseResponse`: JSON 펜스 제거 후 `ComponentSpec[]` 파싱
 - **Redis 메시지 검증**: 수신 메시지는 `ManagerToDesignerMessageSchema.safeParse()`로 검증. 실패 시 xack 후 skip
 - **Redis xack 보장**: `handler()` 호출을 `try/finally`로 감싸 PEL 누수 방지
+
+**협업·도메인 위키 (createCollaborativeHandler)**
+- `handle()`는 `createCollaborativeHandler`로 감싸 교차질의 발생·답변을 통합 — `generateDesign`이 `AgentQuery` 반환 시 `agent_query`로 발행(Designer↔Developer 교차질의 개시), 수신 query는 `runner.answerQuery`로 답변
+- `design_complete`에 도메인 지식 emit: `knowledge` 필드로 디자인 도메인 결정·제약 반환
 
 **Manager 연결:** `xzawedManager/packages/server/src/tools/design-ui.ts` (`createDesignUiHandler`)

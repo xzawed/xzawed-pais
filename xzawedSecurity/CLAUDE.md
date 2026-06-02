@@ -5,7 +5,7 @@
 xzawedSecurity는 xzawed 멀티 에이전트 시스템의 **보안 감사 에이전트**다.
 xzawedManager로부터 감사 요청을 받아 OWASP Top 10 기반 정적 분석, 의존성 취약점 검사, Claude AI 분석을 병렬로 실행하고 보안 점수와 수정 제안을 반환한다.
 
-**현재 상태: 구현 완료 (106/106 테스트 통과)**
+**현재 상태: 구현 완료 (111/111 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -111,5 +111,9 @@ interface SecurityIssue {
 - `deps.ts` 목(mock): `vi.fn()` 직접 팩토리 내부 사용 후 `vi.mocked(execFile)` 접근 (hoisting 오류 방지)
 - 분석기 독립성: 각 `.catch(() => [])` — 하나가 실패해도 나머지 결과 반환
 - `executor.test.ts`: `test.each([3개 케이스])` + `test(1개)` = 4개 테스트
+
+**협업·도메인 위키 (createCollaborativeHandler)**
+- `handle()`는 `createCollaborativeHandler`로 감싸 다른 에이전트의 교차질의에 `runner.answerQuery`로 답변(답변자 역할)
+- `audit_complete`에 도메인 지식 emit: Claude 분석기 결과의 `knowledge`(보안 도메인 규칙)를 함께 반환
 
 **Manager 연결:** `xzawedManager/packages/server/src/tools/security-audit.ts` (`createSecurityAuditHandler`)

@@ -5,9 +5,9 @@
 xzawedWatcher는 xzawed 멀티 에이전트 시스템의 **파일 감시 에이전트**다.
 xzawedManager로부터 감시 요청을 받아 chokidar로 파일 변경을 감지하고 이벤트를 스트리밍한다.
 
-**Claude API 미사용** — 순수 파일 시스템 이벤트 처리만 수행. `ANTHROPIC_API_KEY` 불필요.
+**Claude API 미사용** — 순수 파일 시스템 이벤트 처리만 수행. `ANTHROPIC_API_KEY` 불필요. Claude를 쓰지 않으므로 에이전트 협업(AgentQuery 답변·교차질의)·도메인 지식 emit 대상에서 제외된다(`createCollaborativeHandler` 미적용).
 
-**현재 상태: 구현 완료 (27/27 테스트 통과)**
+**현재 상태: 구현 완료 (49/49 테스트 통과)**
 
 ## 핵심 명령어
 

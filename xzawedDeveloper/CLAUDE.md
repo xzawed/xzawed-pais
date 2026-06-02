@@ -5,7 +5,7 @@
 xzawedDeveloper는 xzawed 멀티 에이전트 시스템의 **코드 생성 에이전트**다.
 xzawedManager로부터 계획(plan)과 프로젝트 경로를 받아 코드를 생성·수정하고 결과를 반환한다.
 
-**현재 상태: 구현 완료 (31/31 테스트 통과)**
+**현재 상태: 구현 완료 (120/120 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -98,5 +98,9 @@ interface FileChange {
 **공통 보안 패턴**
 - Redis 메시지: `ManagerToDeveloperMessageSchema.safeParse()` 검증. 실패 시 xack 후 skip
 - xack 보장: `handler()` `try/finally` 래핑으로 PEL 누수 방지
+
+**협업·도메인 위키 (createCollaborativeHandler)**
+- `handle()`는 `createCollaborativeHandler`로 감싸 다른 에이전트의 교차질의에 `runner.answerQuery`로 답변
+- `develop_complete`에 도메인 지식 emit: `parseResponse`가 `{changes, knowledge}` 객체 형식을 우선 시도하고 실패 시 `FileChange[]` 배열로 폴백하는 tolerant 파서 — `knowledge`는 구현 결정·제약 `string[]`
 
 **Manager 연결:** `xzawedManager/packages/server/src/tools/develop-code.ts` (`createDevelopCodeHandler`)

@@ -5,7 +5,7 @@
 xzawedTester는 xzawed 멀티 에이전트 시스템의 **테스트 실행 에이전트**다.
 xzawedManager로부터 프로젝트 경로를 받아 테스트를 실행하고 결과를 분석해 반환한다.
 
-**현재 상태: 구현 완료 (32/32 테스트 통과)**
+**현재 상태: 구현 완료 (61/61 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -98,5 +98,8 @@ interface TestFailure { file: string; testName: string; message: string; suggest
 - `parseTestCounts()`: Vitest, Jest(`Tests: N failed, N passed`), Cargo(`N passed; N failed`) 포맷 지원
 - 테스트 출력은 최대 2000자로 잘라 `content`에 전달
 - `executor.ts`: `COREPACK_ENABLE_STRICT=0`, `COREPACK_ENABLE_AUTO_PIN=0` 환경변수 강제 설정
+
+**협업 (createCollaborativeHandler)**
+- `handle()`는 `createCollaborativeHandler`로 감싸 다른 에이전트의 교차질의에 `runner.answerQuery`로 답변(답변자 역할 — 교차질의 개시·지식 emit은 없음)
 
 **Manager 연결:** `xzawedManager/packages/server/src/tools/run-tests.ts` (`createRunTestsHandler`)

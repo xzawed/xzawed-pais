@@ -5,7 +5,7 @@
 xzawedBuilder는 xzawed 멀티 에이전트 시스템의 **빌드 에이전트**다.
 xzawedManager로부터 프로젝트 경로와 빌드 타깃을 받아 빌드를 실행하고 결과 아티팩트를 반환한다.
 
-**현재 상태: 구현 완료 (49/49 테스트 통과)**
+**현재 상태: 구현 완료 (132/132 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -103,6 +103,9 @@ interface BuildError { file?: string; line?: number; message: string; suggestion
 - `detectBuildInfo()`: `projectPath`에서 `workspaceRoot`까지 상향 탐색 → Cargo.toml → Makefile → package.json → go.mod 순서
 
 **스트리밍:** stdout/stderr 청크를 즉시 `build_progress`로 발행 (버퍼링 없음)
+
+**협업 (createCollaborativeHandler)**
+- `handle()`는 `createCollaborativeHandler`로 감싸 다른 에이전트의 교차질의에 `runner.answerQuery`로 답변(답변자 역할 — 교차질의 개시·지식 emit은 없음)
 
 **아키텍처 상세:** `docs/services/builder-architecture.md`
 

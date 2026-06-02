@@ -5,7 +5,7 @@
 xzawedPlanner는 xzawed 멀티 에이전트 시스템의 **계획 에이전트**다.
 xzawedManager로부터 작업 지시(intent)를 받아 실행 가능한 단계별 계획(`Step[]`)으로 분해하고 반환한다.
 
-**현재 상태: 구현 완료 (33/33 테스트 통과)**
+**현재 상태: 구현 완료 (92/92 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -94,5 +94,9 @@ interface Step {
 - `JSON.parse() as Type` 캐스트 금지 — 반드시 `safeParse` 사용
 - **Redis 메시지 검증**: `ManagerToPlannerMessageSchema.safeParse()`. 실패 시 xack 후 skip
 - **Redis xack 보장**: `handler()` `try/finally` 래핑으로 PEL 누수 방지
+
+**협업·도메인 위키 (createCollaborativeHandler)**
+- `handle()`는 `createCollaborativeHandler`로 감싸 답변 모드(`answerQuery`)와 교차질의 발생을 통합 — `generatePlan`이 `AgentQuery` 반환 시 `agent_query` 타입으로 발행(교차질의 개시), 수신 query는 `runner.answerQuery`로 답변
+- `plan_complete`에 도메인 지식 emit: `knowledge`는 `{content, category}` 항목 배열이며 `category`는 `decision`/`constraint`/`rule`/`tech` 중 하나(모호 시 생략, 키 자체 생략으로 정규화)
 
 **Manager 연결:** `xzawedManager/packages/server/src/tools/plan-task.ts` (`createPlanTaskHandler`)
