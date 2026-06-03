@@ -169,6 +169,41 @@ describe('knowledgeRoutes (proxy)', () => {
     await app.close()
   })
 
+  it('GET: deleted=true 쿼리를 Manager URL로 전달한다(휴지통)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ items: [] }) } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    const app = await build()
+    await app.inject({ method: 'GET', url: '/projects/p1/knowledge?deleted=true' })
+    const calledUrl = fetchMock.mock.calls[0][0] as URL
+    expect(calledUrl.searchParams.get('deleted')).toBe('true')
+    await app.close()
+  })
+
+  it('POST restore: Manager의 /:id/restore로 프록시하고 200을 pass-through 한다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200, headers: new Headers({ 'content-type': 'application/json' }),
+      text: () => Promise.resolve(JSON.stringify({ ok: true })),
+    } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    const app = await build()
+    const res = await app.inject({ method: 'POST', url: '/projects/p1/knowledge/42/restore' })
+    const calledUrl = fetchMock.mock.calls[0][0] as URL
+    const calledInit = fetchMock.mock.calls[0][1] as RequestInit
+    expect(calledUrl.pathname).toBe('/projects/p1/knowledge/42/restore')
+    expect(calledInit.method).toBe('POST')
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ ok: true })
+    await app.close()
+  })
+
+  it('POST restore: transport 오류 시 502로 폴백한다', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('down')))
+    const app = await build()
+    const res = await app.inject({ method: 'POST', url: '/projects/p1/knowledge/42/restore' })
+    expect(res.statusCode).toBe(502)
+    await app.close()
+  })
+
   describe('쓰기 경로 인증(userAuthHook 설정 시)', () => {
     it('PATCH는 사용자 토큰 없으면 401이고 Manager를 호출하지 않는다', async () => {
       const fetchMock = vi.fn()

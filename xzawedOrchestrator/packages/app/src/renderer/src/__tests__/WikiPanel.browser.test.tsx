@@ -4,12 +4,16 @@ import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
 const getKnowledge = vi.fn()
+const getDeletedKnowledge = vi.fn()
 const updateKnowledge = vi.fn()
 const deleteKnowledge = vi.fn()
+const restoreKnowledge = vi.fn()
 vi.mock('../lib/api.js', () => ({
   getKnowledge: (...a: unknown[]) => getKnowledge(...a),
+  getDeletedKnowledge: (...a: unknown[]) => getDeletedKnowledge(...a),
   updateKnowledge: (...a: unknown[]) => updateKnowledge(...a),
   deleteKnowledge: (...a: unknown[]) => deleteKnowledge(...a),
+  restoreKnowledge: (...a: unknown[]) => restoreKnowledge(...a),
 }))
 
 import { useAuthStore } from '@xzawed/ui'
@@ -27,8 +31,10 @@ function renderAt(projectId: string) {
 
 beforeEach(() => {
   getKnowledge.mockReset()
+  getDeletedKnowledge.mockReset().mockResolvedValue([])
   updateKnowledge.mockReset().mockResolvedValue(undefined)
   deleteKnowledge.mockReset().mockResolvedValue(undefined)
+  restoreKnowledge.mockReset().mockResolvedValue(undefined)
   useAuthStore.setState({ accessToken: null }) // 기본은 미로그인(AUTH=none) — 토큰 미전달
 })
 
@@ -40,6 +46,27 @@ describe('WikiPanel', () => {
     // plan_task는 출처 필터 옵션에도 있으므로 항목 내부로 한정해 검증
     expect(screen.getByTestId('wiki-item')).toHaveTextContent('결제는 Stripe')
     expect(screen.getByTestId('wiki-item')).toHaveTextContent('plan_task')
+  })
+
+  test('휴지통 토글 시 getDeletedKnowledge로 삭제 항목을 조회하고 복구 버튼을 표시한다', async () => {
+    getKnowledge.mockResolvedValue([])
+    getDeletedKnowledge.mockResolvedValue([{ id: 9, content: '삭제된 지식', sourceAgent: 'plan_task', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(getKnowledge).toHaveBeenCalled())
+    fireEvent.click(screen.getByTestId('wiki-trash-toggle'))
+    await waitFor(() => expect(getDeletedKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1'))
+    await waitFor(() => expect(screen.getByTestId('wiki-item')).toHaveTextContent('삭제된 지식'))
+    expect(screen.getByTestId('wiki-item-restore')).toBeInTheDocument()
+  })
+
+  test('휴지통에서 복구 클릭 시 restoreKnowledge 호출 + 목록 refetch', async () => {
+    getKnowledge.mockResolvedValue([])
+    getDeletedKnowledge.mockResolvedValue([{ id: 9, content: '삭제된 지식', sourceAgent: 'plan_task', createdAt: 't' }])
+    renderAt('p1')
+    fireEvent.click(screen.getByTestId('wiki-trash-toggle'))
+    await waitFor(() => expect(screen.getByTestId('wiki-item-restore')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('wiki-item-restore'))
+    await waitFor(() => expect(restoreKnowledge).toHaveBeenCalledWith(expect.any(String), 'p1', 9, undefined))
   })
 
   test('category가 있으면 분류 배지를 표시한다', async () => {

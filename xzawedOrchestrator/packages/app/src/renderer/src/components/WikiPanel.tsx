@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAuthStore } from '@xzawed/ui'
-import { deleteKnowledge, getKnowledge, updateKnowledge, type KnowledgeItem } from '../lib/api.js'
+import { deleteKnowledge, getDeletedKnowledge, getKnowledge, restoreKnowledge, updateKnowledge, type KnowledgeItem } from '../lib/api.js'
 import { useAppStore } from '../store/app.store.js'
 
 /** 도메인 지식 의미 분류 리터럴(필터·편집 드롭다운이 공유하는 단일 소스). */
@@ -11,6 +11,28 @@ const CATEGORIES = ['decision', 'constraint', 'rule', 'tech'] as const
 
 /** 위키 자동 갱신 폴링 주기(ms). 데스크톱 PO 도구라 보수적. */
 export const WIKI_POLL_MS = 10_000
+
+/** 위키 항목 본문(내용·분류 배지·출처) — 활성/휴지통 뷰가 공유하는 읽기 표시. */
+function ItemContent({ it, sourceLabel }: Readonly<{ it: KnowledgeItem; sourceLabel: string }>): React.JSX.Element {
+  return (
+    <>
+      <p className="text-[12px] text-fg whitespace-pre-wrap break-words">{it.content}</p>
+      <div className="mt-1 flex items-center gap-1.5">
+        {it.category && (
+          <span
+            data-testid="wiki-item-category"
+            className="inline-block rounded bg-accent/15 px-1.5 py-0.5 text-[9px] text-accent uppercase"
+          >
+            {it.category}
+          </span>
+        )}
+        <span className="inline-block text-[9px] text-fg-ghost uppercase">
+          {sourceLabel}: {it.sourceAgent}
+        </span>
+      </div>
+    </>
+  )
+}
 
 /** 프로젝트에 누적된 도메인 지식을 표시하고 PO가 인라인 편집·삭제하는 패널(위키). */
 export function WikiPanel(): React.JSX.Element {
@@ -29,10 +51,12 @@ export function WikiPanel(): React.JSX.Element {
   const [editCategory, setEditCategory] = useState('')
   // 삭제 확인 상태: 확인 영역을 노출 중인 항목 id
   const [confirmingId, setConfirmingId] = useState<number | null>(null)
-  // 변이(편집·삭제) 성공 후 refetch를 useEffect의 active-signal 경로로 강제(stale 결과 clobber 방지)
+  // 휴지통(soft-delete된 항목) 보기 여부 — true면 삭제된 항목 목록 + 복구 버튼
+  const [showTrash, setShowTrash] = useState(false)
+  // 변이(편집·삭제·복구) 성공 후 refetch를 useEffect의 active-signal 경로로 강제(stale 결과 clobber 방지)
   const [refreshKey, setRefreshKey] = useState(0)
 
-  /** 현재 필터 기준으로 지식 목록을 조회한다(편집·삭제 후 refetch 단일 재사용). */
+  /** 현재 보기(활성/휴지통)·필터 기준으로 지식 목록을 조회한다(변이 후 refetch 단일 재사용). */
   const fetchKnowledge = useCallback(
     (signal?: { active: boolean }): Promise<void> => {
       if (!projectId) {
@@ -40,17 +64,14 @@ export function WikiPanel(): React.JSX.Element {
         return Promise.resolve()
       }
       const q = query.trim()
-      return getKnowledge(
-        settings.serverUrl,
-        projectId,
-        q || undefined,
-        source || undefined,
-        category || undefined,
-      ).then((r) => {
+      const load = showTrash
+        ? getDeletedKnowledge(settings.serverUrl, projectId)
+        : getKnowledge(settings.serverUrl, projectId, q || undefined, source || undefined, category || undefined)
+      return load.then((r) => {
         if (!signal || signal.active) setItems(r)
       })
     },
-    [projectId, settings.serverUrl, query, source, category, refreshKey],
+    [projectId, settings.serverUrl, query, source, category, showTrash, refreshKey],
   )
 
   useEffect(() => {
@@ -117,14 +138,41 @@ export function WikiPanel(): React.JSX.Element {
     }
   }
 
+  /** soft-delete된 항목을 복구한다(휴지통 뷰). 성공 시 refetch로 목록 갱신. */
+  async function restore(id: number): Promise<void> {
+    if (!projectId) return
+    try {
+      await restoreKnowledge(settings.serverUrl, projectId, id, accessToken ?? undefined)
+      setRefreshKey((n) => n + 1)
+    } catch (err) {
+      toast.error(t('wiki.restore_failed'))
+      console.error('[WikiPanel] 복구 실패:', err)
+    }
+  }
+
+  /** 활성/휴지통 보기 전환 — 진행 중 편집·삭제확인 버퍼를 정리한다. */
+  function toggleTrash(): void {
+    setEditingId(null)
+    setConfirmingId(null)
+    setShowTrash((v) => !v)
+  }
+
   return (
     <div
       data-testid="wiki-panel"
       className="flex flex-shrink-0 flex-col border-l border-border bg-surface overflow-hidden"
       style={{ width: 320 }}
     >
-      <div className="border-b border-border px-4 py-2 text-[13px] font-semibold text-fg">
-        {t('wiki.title')}
+      <div className="border-b border-border px-4 py-2 flex items-center justify-between gap-2">
+        <span className="text-[13px] font-semibold text-fg">{t('wiki.title')}</span>
+        <button
+          data-testid="wiki-trash-toggle"
+          type="button"
+          onClick={toggleTrash}
+          className="rounded border border-border px-2 py-0.5 text-[10px] text-fg-muted hover:bg-surface-raised transition-colors"
+        >
+          {showTrash ? t('wiki.view_active') : t('wiki.view_trash')}
+        </button>
       </div>
       <div className="border-b border-border px-3 py-2 flex flex-col gap-2">
         <input
@@ -171,7 +219,21 @@ export function WikiPanel(): React.JSX.Element {
               data-testid="wiki-item"
               className="rounded border border-border bg-bg px-2.5 py-1.5"
             >
-              {editingId === it.id ? (
+              {showTrash ? (
+                <>
+                  <ItemContent it={it} sourceLabel={t('wiki.source')} />
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    <button
+                      data-testid="wiki-item-restore"
+                      type="button"
+                      onClick={() => void restore(it.id)}
+                      className="rounded border border-border px-2 py-0.5 text-[11px] text-fg hover:bg-surface transition-colors"
+                    >
+                      {t('wiki.restore')}
+                    </button>
+                  </div>
+                </>
+              ) : editingId === it.id ? (
                 <div className="flex flex-col gap-1.5">
                   <textarea
                     data-testid="wiki-edit-content"
@@ -215,20 +277,7 @@ export function WikiPanel(): React.JSX.Element {
                 </div>
               ) : (
                 <>
-                  <p className="text-[12px] text-fg whitespace-pre-wrap break-words">{it.content}</p>
-                  <div className="mt-1 flex items-center gap-1.5">
-                    {it.category && (
-                      <span
-                        data-testid="wiki-item-category"
-                        className="inline-block rounded bg-accent/15 px-1.5 py-0.5 text-[9px] text-accent uppercase"
-                      >
-                        {it.category}
-                      </span>
-                    )}
-                    <span className="inline-block text-[9px] text-fg-ghost uppercase">
-                      {t('wiki.source')}: {it.sourceAgent}
-                    </span>
-                  </div>
+                  <ItemContent it={it} sourceLabel={t('wiki.source')} />
                   {confirmingId === it.id ? (
                     <div className="mt-1.5 flex items-center gap-1.5">
                       <span className="text-[11px] text-fg-ghost">{t('wiki.delete_confirm')}</span>

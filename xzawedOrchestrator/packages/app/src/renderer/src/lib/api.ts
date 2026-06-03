@@ -92,6 +92,14 @@ export interface KnowledgeItem {
  * 프로젝트에 누적된 도메인 지식을 조회한다(Orchestrator → Manager 프록시).
  * query가 있으면 content 검색, source가 있으면 산출 에이전트로, category가 있으면 의미 분류로 필터. 실패 시 빈 배열.
  */
+/** 위키 조회 응답을 KnowledgeItem[]로 파싱(getKnowledge·getDeletedKnowledge 공유). 실패 시 빈 배열. */
+async function fetchKnowledgeItems(url: URL): Promise<KnowledgeItem[]> {
+  const res = await fetch(url)
+  if (!res.ok) return []
+  const data = await res.json() as { items?: KnowledgeItem[] }
+  return Array.isArray(data.items) ? data.items : []
+}
+
 export async function getKnowledge(
   baseUrl: string,
   projectId: string,
@@ -104,10 +112,15 @@ export async function getKnowledge(
   if (query) url.searchParams.set('q', query)
   if (source) url.searchParams.set('source', source)
   if (category) url.searchParams.set('category', category)
-  const res = await fetch(url)
-  if (!res.ok) return []
-  const data = await res.json() as { items?: KnowledgeItem[] }
-  return Array.isArray(data.items) ? data.items : []
+  return fetchKnowledgeItems(url)
+}
+
+/** soft-delete된 도메인 지식(휴지통)을 조회한다(Orchestrator → Manager 프록시, ?deleted=true). 실패 시 빈 배열. */
+export async function getDeletedKnowledge(baseUrl: string, projectId: string): Promise<KnowledgeItem[]> {
+  validateBaseUrl(baseUrl)
+  const url = new URL(`${baseUrl}/projects/${projectId}/knowledge`)
+  url.searchParams.set('deleted', 'true')
+  return fetchKnowledgeItems(url)
 }
 
 /**
@@ -150,6 +163,24 @@ export async function deleteKnowledge(
     ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
   })
   if (!res.ok) throw new Error(`deleteKnowledge failed: ${res.status}`)
+}
+
+/**
+ * soft-delete된 도메인 지식 항목을 복구한다(Orchestrator → Manager 프록시, POST /:id/restore).
+ * AUTH=jwt 환경에선 accessToken을 Authorization 헤더로 전달. non-ok면 throw.
+ */
+export async function restoreKnowledge(
+  baseUrl: string,
+  projectId: string,
+  id: number,
+  accessToken?: string,
+): Promise<void> {
+  validateBaseUrl(baseUrl)
+  const res = await fetch(`${baseUrl}/projects/${projectId}/knowledge/${id}/restore`, {
+    method: 'POST',
+    ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
+  })
+  if (!res.ok) throw new Error(`restoreKnowledge failed: ${res.status}`)
 }
 
 export async function checkHealth(baseUrl: string): Promise<boolean> {
