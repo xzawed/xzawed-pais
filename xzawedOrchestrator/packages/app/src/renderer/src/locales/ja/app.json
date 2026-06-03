@@ -83,6 +83,7 @@
     "view_trash": "ゴミ箱",
     "view_active": "一覧",
     "restore": "復元",
-    "restore_failed": "復元に失敗しました"
+    "restore_failed": "復元に失敗しました",
+    "approved_by": "承認者"
   }
 }

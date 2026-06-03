@@ -83,6 +83,7 @@
     "view_trash": "휴지통",
     "view_active": "목록",
     "restore": "복구",
-    "restore_failed": "복구에 실패했습니다"
+    "restore_failed": "복구에 실패했습니다",
+    "approved_by": "승인자"
   }
 }

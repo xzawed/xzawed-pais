@@ -1,5 +1,5 @@
 import { Pool } from 'pg'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
 
@@ -16,7 +16,8 @@ export function getPool(): Pool | null {
 
 export async function runMigrations(p: Pool): Promise<void> {
   const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), 'migrations')
-  const files = ['001_sessions.sql', '002_domain_knowledge.sql']
+  // 디렉터리의 모든 .sql을 번호 prefix(001_, 002_, …) 사전순으로 적용 — 새 마이그레이션 추가 시 자동 반영(목록 누락 방지)
+  const files = (await readdir(migrationsDir)).filter((f) => f.endsWith('.sql')).sort()
   for (const file of files) {
     const sql = await readFile(join(migrationsDir, file), 'utf-8')
     await p.query(sql)

@@ -818,8 +818,9 @@ describe('ClaudeRunner', () => {
     it('승인 시 saveToWiki=true면 지식성 단계 결정 요약을 위키에 저장한다', async () => {
       const repo = makeKnowledgeRepo()
       await runManualGateApprove(repo, 'plan_task', { content: '결제는 Stripe로 결정', steps: [] }, { decision: 'approve', saveToWiki: true })
+      // 승인자(userContext.userId='u1')가 approver로 기록된다(provenance·audit)
       expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [
-        { content: '결제는 Stripe로 결정', sourceAgent: 'approval-gate', category: 'decision' },
+        { content: '결제는 Stripe로 결정', sourceAgent: 'approval-gate', category: 'decision', approver: 'u1' },
       ])
     })
 
@@ -860,7 +861,7 @@ describe('ClaudeRunner', () => {
         { decision: 'approve', saveToWiki: true, wikiSummary: 'PO가 편집한 결정 요약' },
       )
       expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [
-        { content: 'PO가 편집한 결정 요약', sourceAgent: 'approval-gate', category: 'decision' },
+        { content: 'PO가 편집한 결정 요약', sourceAgent: 'approval-gate', category: 'decision', approver: 'u1' },
       ])
     })
   })
