@@ -3,7 +3,7 @@ import type { ToolRegistry } from '../tools/registry.js'
 import type { StreamProducer } from '../streams/producer.js'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { UserContext } from '../types/user-context.js'
-import type { ManagerToOrchestratorMessage, UISpec } from '../types/streams.js'
+import type { ManagerToOrchestratorMessage, UISpec, ComponentSpec } from '../types/streams.js'
 import { ClarificationNeededError, AgentQueryError, GateAbortError } from '../tools/errors.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
 import { isGatedTool, effectiveMode, summarizeOutput, parseDecision, isKnowledgeBearingStage } from '../gates/approval-gate.js'
@@ -157,6 +157,12 @@ export class ClaudeRunner {
     if (block.name === 'design_ui') {
       const designResult = result as Record<string, unknown>
       if (designResult['uiSpec'] !== undefined) {
+        // Designer 컴포넌트 트리를 uiSpec에 병합해 전달 — 프론트가 리치 데모(중첩 박스)로 렌더(P4)
+        const designUiSpec = designResult['uiSpec'] as UISpec
+        const components = designResult['components']
+        const uiSpec: UISpec = Array.isArray(components) && components.length > 0
+          ? { ...designUiSpec, components: components as ComponentSpec[] }
+          : designUiSpec
         await producer.publish({
           sessionId,
           messageId: crypto.randomUUID(),
@@ -165,7 +171,7 @@ export class ClaudeRunner {
           payload: {
             agentId: 'manager',
             content: `UI 설계 완료: ${String(designResult['content'] ?? '')}`,
-            uiSpec: designResult['uiSpec'] as UISpec,
+            uiSpec,
           },
         })
         return this.toToolResult(block.id, result)

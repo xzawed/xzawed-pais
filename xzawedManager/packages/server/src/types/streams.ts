@@ -70,10 +70,21 @@ export interface UIField {
   placeholder?: string
 }
 
+/** Designer 컴포넌트 트리 노드(재귀) — Orchestrator UiSpecPreview가 중첩 박스 와이어프레임으로 렌더. */
+export interface ComponentSpec {
+  name: string
+  description: string
+  props?: Record<string, string>
+  children?: ComponentSpec[]
+  cssClasses?: string[]
+}
+
 export interface UISpec {
   type: 'form' | 'mockup_viewer' | 'progress_board'
   title?: string
   fields?: UIField[]
   submitAction?: string
   content?: string
+  /** Designer 컴포넌트 트리(design_ui 산출). 프론트가 리치 데모 렌더에 사용. */
+  components?: ComponentSpec[]
 }
