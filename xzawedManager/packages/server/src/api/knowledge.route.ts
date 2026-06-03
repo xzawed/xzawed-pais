@@ -36,12 +36,17 @@ export async function knowledgeRoute(
   // 쓰기 경로(PATCH/DELETE)에만 적용. authHook 미설정(기본)이면 개방 유지(하위호환).
   const writePreHandler = opts.authHook ? [opts.authHook] : []
 
-  app.get<{ Params: { projectId: string }; Querystring: { limit?: string; q?: string; source?: string; category?: string } }>(
+  app.get<{ Params: { projectId: string }; Querystring: { limit?: string; q?: string; source?: string; category?: string; deleted?: string } }>(
     '/projects/:projectId/knowledge',
     async (req) => {
       if (!opts.knowledgeRepo) return { items: [] }
       const parsed = Number.parseInt(req.query.limit ?? String(DEFAULT_LIMIT), 10)
       const limit = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), MAX_LIMIT) : DEFAULT_LIMIT
+      // deleted=true면 휴지통(soft-delete된 항목) 조회 — 복구 UI용
+      if (req.query.deleted === 'true') {
+        const items = await opts.knowledgeRepo.deletedByProject(req.params.projectId, limit)
+        return { items }
+      }
       const q = req.query.q?.trim()
       const source = req.query.source?.trim()
       const category = req.query.category?.trim()
@@ -70,7 +75,7 @@ export async function knowledgeRoute(
     },
   )
 
-  // 항목 삭제 — 성공 시 본문 없이 204. authHook 설정 시 서비스 토큰 필요. project_id 가드는 repo에서.
+  // 항목 삭제 — soft-delete(deleted_at 설정). 성공 시 본문 없이 204. authHook 설정 시 서비스 토큰 필요.
   app.delete<{ Params: { projectId: string; id: string } }>(
     '/projects/:projectId/knowledge/:id',
     { preHandler: writePreHandler },
@@ -80,6 +85,19 @@ export async function knowledgeRoute(
       const ok = await opts.knowledgeRepo!.deleteById(req.params.projectId, id)
       if (!ok) return reply.code(404).send({ error: 'not found' })
       return reply.code(204).send()
+    },
+  )
+
+  // 항목 복구 — soft-delete된 항목을 되돌린다. authHook 설정 시 서비스 토큰 필요. project_id 가드는 repo에서.
+  app.post<{ Params: { projectId: string; id: string } }>(
+    '/projects/:projectId/knowledge/:id/restore',
+    { preHandler: writePreHandler },
+    async (req, reply) => {
+      const id = parseId(opts.knowledgeRepo, req.params.id, reply)
+      if (id === null) return reply
+      const ok = await opts.knowledgeRepo!.restoreById(req.params.projectId, id)
+      if (!ok) return reply.code(404).send({ error: 'not found' })
+      return reply.code(200).send({ ok: true })
     },
   )
 }
