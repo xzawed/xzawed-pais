@@ -14,7 +14,7 @@ vi.mock('@anthropic-ai/sdk', () => {
 import AnthropicDefault from '@anthropic-ai/sdk'
 import { ClaudeRunner, parseMaxIterations } from './runner.js'
 import { ToolRegistry } from '../tools/registry.js'
-import { AgentQueryError } from '../tools/errors.js'
+import { AgentQueryError, ClarificationNeededError } from '../tools/errors.js'
 import { SessionStore } from '../sessions/session.store.js'
 
 /** 조건이 참이 될 때까지 macrotask로 양보하며 폴링한다. */
@@ -643,6 +643,51 @@ describe('ClaudeRunner', () => {
 
       await expect(runP).rejects.toThrow(/aborted/i)
       expect(createFn).toHaveBeenCalledTimes(1) // 다음 단계(2번째 Claude 호출) 미실행
+    })
+
+    it('명확화 재실행 결과도 승인 게이트를 거친다(우회 방지)', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      // plan_task: 1차 실행은 명확화 필요(throw), 명확화 응답으로 재실행 시 결과 반환
+      const exec = vi.fn()
+        .mockRejectedValueOnce(new ClarificationNeededError('어떤 DB를 쓸까요?'))
+        .mockResolvedValueOnce({ content: '계획: Postgres' })
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      // 1) 명확화 대기 → 응답
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', 'Postgres')
+      // 2) 재실행 결과가 게이트로 진입해 승인 대기에 다시 들어가야 한다(우회되면 곧장 완료됨)
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve' }))
+      await runP
+
+      expect(exec).toHaveBeenCalledTimes(2) // 1차(명확화 throw) + 재실행
+      // 재실행 결과(plan_task)에 대한 승인 요청(approval) info_request가 발행됨
+      const approvalMsgs = mockProducer.publish.mock.calls
+        .map((c) => c[0] as { payload?: { approval?: { stage?: string } } })
+        .filter((m) => m.payload?.approval?.stage === 'plan_task')
+      expect(approvalMsgs.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('재실행 결과 게이트에서 abort하면 세션이 종료된다', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn()
+        .mockRejectedValueOnce(new ClarificationNeededError('질문?'))
+        .mockResolvedValueOnce({ content: '재실행 결과' })
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', '답변')
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'abort' }))
+
+      await expect(runP).rejects.toThrow(/aborted/i)
     })
   })
 

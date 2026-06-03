@@ -117,6 +117,7 @@ describe('ClaudeRunner — ClarificationNeededError / design_ui 통합', () => {
     registry.register(makeHandler('design_ui', execute))
     const { runner, sessionStore, producer } = makeRunner(registry)
     sessionStore.create('sess-clarify-1')
+    sessionStore.setGateDefaultMode('sess-clarify-1', 'auto') // 명확화 흐름만 검증(승인 게이트는 우회)
 
     setImmediate(() => sessionStore.resolveInfo('sess-clarify-1', 'blue'))
 
@@ -161,6 +162,7 @@ describe('ClaudeRunner — ClarificationNeededError / design_ui 통합', () => {
     registry.register(makeHandler('design_ui', execute))
     const { runner, sessionStore, producer } = makeRunner(registry)
     sessionStore.create('sess-clarify-uispec')
+    sessionStore.setGateDefaultMode('sess-clarify-uispec', 'auto') // 명확화 흐름만 검증(승인 게이트는 우회)
 
     setImmediate(() => sessionStore.resolveInfo('sess-clarify-uispec', 'red'))
 
@@ -204,6 +206,7 @@ describe('ClaudeRunner — ClarificationNeededError / design_ui 통합', () => {
     registry.register(makeHandler('design_ui', execute))
     const { runner, sessionStore, producer } = makeRunner(registry)
     sessionStore.create('sess-rerun')
+    sessionStore.setGateDefaultMode('sess-rerun', 'auto') // 명확화 흐름만 검증(승인 게이트는 우회)
 
     setImmediate(() => sessionStore.resolveInfo('sess-rerun', 'green'))
 
