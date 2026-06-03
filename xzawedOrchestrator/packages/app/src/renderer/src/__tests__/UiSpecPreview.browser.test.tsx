@@ -46,4 +46,39 @@ describe('UiSpecPreview', () => {
     render(<UiSpecPreview spec={spec} />)
     expect(screen.getByTestId('uispec-preview')).toBeInTheDocument()
   })
+
+  test('components 트리를 중첩 박스 와이어프레임으로 재귀 렌더한다', () => {
+    const spec: UISpec = {
+      type: 'mockup_viewer',
+      title: 'Login Page',
+      content: '## Login',
+      components: [
+        {
+          name: 'LoginForm',
+          description: 'auth form',
+          cssClasses: ['form', 'login-form'],
+          children: [
+            { name: 'EmailInput', description: 'email field', cssClasses: ['input'] },
+            { name: 'PasswordInput', description: 'password field' },
+          ],
+        },
+      ],
+    }
+    render(<UiSpecPreview spec={spec} />)
+    expect(screen.getByTestId('uispec-components')).toBeInTheDocument()
+    // 부모·자식 컴포넌트 이름이 모두 렌더(재귀)
+    expect(screen.getByText('LoginForm')).toBeInTheDocument()
+    expect(screen.getByText('EmailInput')).toBeInTheDocument()
+    expect(screen.getByText('PasswordInput')).toBeInTheDocument()
+    // cssClasses 시각 힌트
+    expect(screen.getByText('.form.login-form')).toBeInTheDocument()
+    // description도 표시
+    expect(screen.getByText('email field')).toBeInTheDocument()
+  })
+
+  test('components가 없으면 컴포넌트 트리를 렌더하지 않는다', () => {
+    const spec: UISpec = { type: 'mockup_viewer', title: 'M', content: '## x' }
+    render(<UiSpecPreview spec={spec} />)
+    expect(screen.queryByTestId('uispec-components')).not.toBeInTheDocument()
+  })
 })

@@ -307,6 +307,43 @@ describe('ClaudeRunner — ClarificationNeededError / design_ui 통합', () => {
     ).toEqual(uiSpec)
   })
 
+  it('design_ui 결과의 components를 uiSpec에 병합해 status_update로 발행한다(P4)', async () => {
+    mockCreate
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'tool-comp', name: 'design_ui', input: { task: 'login' } }],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'Designed with components.' }],
+      })
+
+    const components = [
+      { name: 'LoginForm', description: 'auth form', children: [{ name: 'EmailInput', description: 'email' }] },
+    ]
+    const execute = vi.fn().mockResolvedValue({
+      content: 'UI 설계 완료',
+      uiSpec: { type: 'mockup_viewer', title: 'Login' },
+      components,
+    })
+
+    const registry = new ToolRegistry()
+    registry.register(makeHandler('design_ui', execute))
+    const { runner, sessionStore, producer } = makeRunner(registry)
+    sessionStore.create('sess-comp')
+    sessionStore.setGateDefaultMode('sess-comp', 'auto')
+
+    await runner.run({ sessionId: 'sess-comp', intent: 'design', context: {}, producer, sessionStore })
+
+    const call = mockPublish.mock.calls.find((c) => {
+      const m = c[0] as { type: string; payload: { uiSpec?: { components?: unknown[] } } }
+      return m.type === 'status_update' && m.payload.uiSpec?.components !== undefined
+    })
+    expect(call).toBeDefined()
+    const published = (call![0] as { payload: { uiSpec: { components: Array<{ name: string }> } } }).payload.uiSpec
+    expect(published.components[0].name).toBe('LoginForm')
+  })
+
   it('design_ui 결과에 uiSpec이 없으면 uiSpec 없는 일반 status_update만 발행된다', async () => {
     mockCreate
       .mockResolvedValueOnce({
