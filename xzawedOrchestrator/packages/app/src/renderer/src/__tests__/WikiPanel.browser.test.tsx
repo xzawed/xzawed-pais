@@ -83,6 +83,20 @@ describe('WikiPanel', () => {
     expect(screen.queryByTestId('wiki-item-category')).not.toBeInTheDocument()
   })
 
+  test('approver가 있으면 승인자를 표시한다', async () => {
+    getKnowledge.mockResolvedValue([{ id: 1, content: '승인된 결정', sourceAgent: 'approval-gate', category: 'decision', approver: 'user-1', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item-approver')).toBeInTheDocument())
+    expect(screen.getByTestId('wiki-item-approver')).toHaveTextContent('user-1')
+  })
+
+  test('approver가 없으면 승인자 표시를 하지 않는다', async () => {
+    getKnowledge.mockResolvedValue([{ id: 1, content: 'x', sourceAgent: 'plan_task', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item')).toBeInTheDocument())
+    expect(screen.queryByTestId('wiki-item-approver')).not.toBeInTheDocument()
+  })
+
   test('빈 상태 안내를 표시하고 항목이 없다', async () => {
     getKnowledge.mockResolvedValue([])
     renderAt('p1')

@@ -83,6 +83,7 @@
     "view_trash": "Trash",
     "view_active": "List",
     "restore": "Restore",
-    "restore_failed": "Failed to restore"
+    "restore_failed": "Failed to restore",
+    "approved_by": "Approved by"
   }
 }

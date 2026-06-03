@@ -13,11 +13,11 @@ const CATEGORIES = ['decision', 'constraint', 'rule', 'tech'] as const
 export const WIKI_POLL_MS = 10_000
 
 /** 위키 항목 본문(내용·분류 배지·출처) — 활성/휴지통 뷰가 공유하는 읽기 표시. */
-function ItemContent({ it, sourceLabel }: Readonly<{ it: KnowledgeItem; sourceLabel: string }>): React.JSX.Element {
+function ItemContent({ it, sourceLabel, approverLabel }: Readonly<{ it: KnowledgeItem; sourceLabel: string; approverLabel: string }>): React.JSX.Element {
   return (
     <>
       <p className="text-[12px] text-fg whitespace-pre-wrap break-words">{it.content}</p>
-      <div className="mt-1 flex items-center gap-1.5">
+      <div className="mt-1 flex flex-wrap items-center gap-1.5">
         {it.category && (
           <span
             data-testid="wiki-item-category"
@@ -29,6 +29,11 @@ function ItemContent({ it, sourceLabel }: Readonly<{ it: KnowledgeItem; sourceLa
         <span className="inline-block text-[9px] text-fg-ghost uppercase">
           {sourceLabel}: {it.sourceAgent}
         </span>
+        {it.approver && (
+          <span data-testid="wiki-item-approver" className="inline-block text-[9px] text-fg-ghost">
+            {approverLabel}: {it.approver}
+          </span>
+        )}
       </div>
     </>
   )
@@ -221,7 +226,7 @@ export function WikiPanel(): React.JSX.Element {
             >
               {showTrash ? (
                 <>
-                  <ItemContent it={it} sourceLabel={t('wiki.source')} />
+                  <ItemContent it={it} sourceLabel={t('wiki.source')} approverLabel={t('wiki.approved_by')} />
                   <div className="mt-1.5 flex items-center gap-1.5">
                     <button
                       data-testid="wiki-item-restore"
@@ -277,7 +282,7 @@ export function WikiPanel(): React.JSX.Element {
                 </div>
               ) : (
                 <>
-                  <ItemContent it={it} sourceLabel={t('wiki.source')} />
+                  <ItemContent it={it} sourceLabel={t('wiki.source')} approverLabel={t('wiki.approved_by')} />
                   {confirmingId === it.id ? (
                     <div className="mt-1.5 flex items-center gap-1.5">
                       <span className="text-[11px] text-fg-ghost">{t('wiki.delete_confirm')}</span>

@@ -233,7 +233,8 @@ export class ClaudeRunner {
     if (!this.knowledgeRepo || !userContext?.projectId || !isKnowledgeBearingStage(stage)) return
     try {
       await this.knowledgeRepo.insertMany(userContext.projectId, [
-        { content: summary, sourceAgent: 'approval-gate', category: 'decision' },
+        // 승인자(userContext.userId)를 기록해 결정 provenance·audit를 남긴다
+        { content: summary, sourceAgent: 'approval-gate', category: 'decision', ...(userContext.userId ? { approver: userContext.userId } : {}) },
       ])
     } catch (err) {
       console.warn('[runner] 승인 결정 위키 저장 실패 — 작업 계속:', err)

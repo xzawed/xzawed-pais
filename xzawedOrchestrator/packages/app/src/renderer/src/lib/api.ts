@@ -86,6 +86,8 @@ export interface KnowledgeItem {
   sourceAgent: string
   category?: string
   createdAt: string
+  /** 승인 게이트 저장 항목의 승인자(userId). provenance·audit 표시용. */
+  approver?: string
 }
 
 /**

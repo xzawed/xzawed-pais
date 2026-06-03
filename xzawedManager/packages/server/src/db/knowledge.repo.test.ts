@@ -27,9 +27,31 @@ describe('KnowledgeRepo', () => {
     ]
     await new KnowledgeRepo(pool).insertMany('p1', entries)
     expect(pool.query).toHaveBeenCalledTimes(2)
-    expect(pool.query.mock.calls[0][1]).toEqual(['p1', '결제는 Stripe 사용', 'planner', 'decision'])
+    // approver는 5번째 파라미터 — 없으면 null
+    expect(pool.query.mock.calls[0][1]).toEqual(['p1', '결제는 Stripe 사용', 'planner', 'decision', null])
     // category 없으면 null로 저장
-    expect(pool.query.mock.calls[1][1]).toEqual(['p1', 'PII는 암호화', 'planner', null])
+    expect(pool.query.mock.calls[1][1]).toEqual(['p1', 'PII는 암호화', 'planner', null, null])
+  })
+
+  it('insertMany는 approver가 있으면 5번째 파라미터로 저장한다(승인자 audit)', async () => {
+    const pool = mockPool()
+    await new KnowledgeRepo(pool).insertMany('p1', [
+      { content: '승인된 결정', sourceAgent: 'approval-gate', category: 'decision', approver: 'user-1' },
+    ])
+    const [sql, params] = pool.query.mock.calls[0]
+    expect(sql).toMatch(/INSERT INTO domain_knowledge \(project_id, content, source_agent, category, approver\)/i)
+    expect(params).toEqual(['p1', '승인된 결정', 'approval-gate', 'decision', 'user-1'])
+  })
+
+  it('recentByProject는 approver를 SELECT하고 있으면 매핑, 없으면 생략한다', async () => {
+    const pool = mockPool([
+      { id: 5, content: 'a', source_agent: 'approval-gate', category: 'decision', approver: 'user-1', created_at: 't' },
+      { id: 4, content: 'b', source_agent: 'planner', category: null, approver: null, created_at: 't' },
+    ])
+    const out = await new KnowledgeRepo(pool).recentByProject('p1', 20)
+    expect(pool.query.mock.calls[0][0]).toMatch(/SELECT id, content, source_agent, category, approver/i)
+    expect(out[0]).toEqual({ id: 5, content: 'a', sourceAgent: 'approval-gate', category: 'decision', approver: 'user-1', createdAt: 't' })
+    expect(out[1]).toEqual({ id: 4, content: 'b', sourceAgent: 'planner', createdAt: 't' })
   })
 
   it('recentByProject에 query가 있으면 content ILIKE 필터를 추가한다', async () => {

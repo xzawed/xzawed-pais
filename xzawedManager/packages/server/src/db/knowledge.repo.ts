@@ -5,6 +5,8 @@ export interface KnowledgeEntry {
   sourceAgent: string
   category?: string
   createdAt?: string
+  /** 승인 게이트 저장 시 결정을 승인한 사용자 ID(provenance·audit). 그 외 항목은 없음. */
+  approver?: string
 }
 
 /**
@@ -21,8 +23,8 @@ export class KnowledgeRepo {
   async insertMany(projectId: string, entries: KnowledgeEntry[]): Promise<void> {
     for (const e of entries) {
       await this.pool.query(
-        `INSERT INTO domain_knowledge (project_id, content, source_agent, category) VALUES ($1, $2, $3, $4)`,
-        [projectId, e.content, e.sourceAgent, e.category ?? null],
+        `INSERT INTO domain_knowledge (project_id, content, source_agent, category, approver) VALUES ($1, $2, $3, $4, $5)`,
+        [projectId, e.content, e.sourceAgent, e.category ?? null, e.approver ?? null],
       )
     }
   }
@@ -56,7 +58,7 @@ export class KnowledgeRepo {
     params.push(limit)
     const limitIdx = params.length
     const res = await this.pool.query(
-      `SELECT id, content, source_agent, category, created_at FROM domain_knowledge
+      `SELECT id, content, source_agent, category, approver, created_at FROM domain_knowledge
        ${where} ORDER BY created_at DESC LIMIT $${limitIdx}`,
       params,
     )
@@ -66,7 +68,7 @@ export class KnowledgeRepo {
   /** soft-delete된 항목만 최근 삭제순으로 조회한다(휴지통/복구 뷰용). */
   async deletedByProject(projectId: string, limit: number): Promise<KnowledgeRecord[]> {
     const res = await this.pool.query(
-      `SELECT id, content, source_agent, category, created_at FROM domain_knowledge
+      `SELECT id, content, source_agent, category, approver, created_at FROM domain_knowledge
        WHERE project_id = $1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT $2`,
       [projectId, limit],
     )
@@ -118,11 +120,12 @@ export class KnowledgeRepo {
 
 /** domain_knowledge 행을 KnowledgeRecord로 매핑(recentByProject·deletedByProject 공유). */
 function mapRows(rows: unknown[]): KnowledgeRecord[] {
-  return (rows as { id: unknown; content: string; source_agent: string; category: string | null; created_at: unknown }[]).map((r) => ({
+  return (rows as { id: unknown; content: string; source_agent: string; category: string | null; approver?: string | null; created_at: unknown }[]).map((r) => ({
     id: Number(r.id),
     content: r.content,
     sourceAgent: r.source_agent,
     ...(r.category ? { category: r.category } : {}),
+    ...(r.approver ? { approver: r.approver } : {}),
     createdAt: String(r.created_at),
   }))
 }
