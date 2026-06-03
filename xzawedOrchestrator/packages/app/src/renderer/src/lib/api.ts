@@ -21,6 +21,7 @@ export type WsMessage =
       uiSpec?: unknown
       approval?: { stage: string; summary: string; mode: 'manual' }
     }
+  | { type: 'knowledge_changed'; projectId?: string }
 
 export interface CreateSessionResponse {
   sessionId: string

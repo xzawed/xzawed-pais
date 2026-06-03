@@ -211,6 +211,13 @@ export function handleConsumerMessage(
         ...(msg.payload.approval !== undefined ? { approval: msg.payload.approval } : {}),
       }))
       break
+    case 'knowledge_changed':
+      // 위키 지식 변경 알림 — 진행상황/세션 종료와 무관(태스크·컨슈머 유지). WikiPanel 실시간 갱신용.
+      socket.send(JSON.stringify({
+        type: 'knowledge_changed',
+        ...(msg.payload.projectId !== undefined ? { projectId: msg.payload.projectId } : {}),
+      }))
+      break
   }
 }
 

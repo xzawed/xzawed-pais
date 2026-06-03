@@ -9,7 +9,7 @@ const ManagerToOrchestratorMessageSchema = z.object({
   sessionId: z.string(),
   messageId: z.string(),
   timestamp: z.number(),
-  type: z.enum(['status_update', 'info_request', 'task_complete', 'error']),
+  type: z.enum(['status_update', 'info_request', 'task_complete', 'error', 'knowledge_changed']),
   payload: z.object({
     agentId: z.string(),
     content: z.string(),
@@ -19,6 +19,8 @@ const ManagerToOrchestratorMessageSchema = z.object({
       summary: z.string(),
       mode: z.literal('manual'),
     }).optional(),
+    // knowledge_changed 대상 프로젝트(위키 실시간 갱신) — 빈 문자열은 거부(방어심층).
+    projectId: z.string().min(1).optional(),
   }),
 })
 

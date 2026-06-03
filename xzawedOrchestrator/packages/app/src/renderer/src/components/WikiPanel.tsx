@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { useAuthStore } from '@xzawed/ui'
 import { deleteKnowledge, getDeletedKnowledge, getKnowledge, restoreKnowledge, updateKnowledge, type KnowledgeItem } from '../lib/api.js'
 import { useAppStore } from '../store/app.store.js'
+import { useChatStore } from '../store/chat.store.js'
 
 /** 도메인 지식 의미 분류 리터럴(필터·편집 드롭다운이 공유하는 단일 소스). */
 const CATEGORIES = ['decision', 'constraint', 'rule', 'tech'] as const
@@ -46,6 +47,8 @@ export function WikiPanel(): React.JSX.Element {
   // AUTH=jwt 환경에서 쓰기(편집·삭제) 요청에 실을 사용자 토큰(미로그인/AUTH=none이면 null → 헤더 생략).
   const accessToken = useAuthStore((s) => s.accessToken)
   const { projectId } = useParams<{ projectId?: string }>()
+  // WS knowledge_changed 신호(에이전트가 위키에 기록 시) — 폴링을 기다리지 않고 즉시 새로고침.
+  const knowledgeChange = useChatStore((s) => s.knowledgeChange)
   const [items, setItems] = useState<KnowledgeItem[]>([])
   const [query, setQuery] = useState('')
   const [source, setSource] = useState('')
@@ -94,6 +97,14 @@ export function WikiPanel(): React.JSX.Element {
     const timer = setInterval(() => setRefreshKey((n) => n + 1), WIKI_POLL_MS)
     return () => clearInterval(timer)
   }, [projectId, editingId, confirmingId])
+
+  // WS knowledge_changed(현재 프로젝트) 수신 시 즉시 refetch — 폴링 지연 없이 실시간 반영.
+  // 편집/삭제 확인 중엔 보류(진행 중 버퍼·확인 UI를 흔들지 않도록).
+  useEffect(() => {
+    if (!knowledgeChange || knowledgeChange.projectId !== projectId) return
+    if (editingId !== null || confirmingId !== null) return
+    setRefreshKey((n) => n + 1)
+  }, [knowledgeChange, projectId, editingId, confirmingId])
 
   function startEdit(it: KnowledgeItem): void {
     setConfirmingId(null)

@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react'
 import { useIntegrationsStore } from '../store/integrations.store.js'
+import { useSessionWs } from '../lib/useSessionWs.js'
 import { ActivityBar } from './layout/ActivityBar.js'
 import { ResizeHandle } from './layout/ResizeHandle.js'
 import { Sidebar } from './Sidebar.js'
@@ -39,6 +40,8 @@ function saveWidth(key: string, value: number): void {
 
 export function ChatLayout(): React.JSX.Element {
   const { activePanel } = useIntegrationsStore()
+  // 세션 WS를 패널과 무관하게 항상 구독 — wiki 탭 등으로 ChatView가 언마운트돼도 끊기지 않는다.
+  useSessionWs()
 
   const [sidebarWidth, setSidebarWidth] = useState(() => loadWidth('layout.sidebar', 210))
   const [dynamicWidth, setDynamicWidth] = useState(() => loadWidth('layout.dynamic', 280))

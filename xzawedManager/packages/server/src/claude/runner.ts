@@ -94,6 +94,25 @@ export class ClaudeRunner {
     }
   }
 
+  /** 위키 지식이 변경됐음을 Orchestrator에 알린다(WikiPanel 실시간 갱신용·비차단). */
+  private async publishKnowledgeChanged(
+    producer: StreamProducer,
+    sessionId: string,
+    projectId: string,
+  ): Promise<void> {
+    try {
+      await producer.publish({
+        sessionId,
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now(),
+        type: 'knowledge_changed',
+        payload: { agentId: 'manager', content: '', projectId },
+      })
+    } catch (err) {
+      console.warn('[runner] knowledge_changed 발행 실패 — 작업 계속:', err)
+    }
+  }
+
   private async handleRequestInfoTool(
     block: Anthropic.ToolUseBlock,
     sessionId: string,
@@ -161,7 +180,10 @@ export class ClaudeRunner {
     }
 
     // 위키 저장: 게이트 통과한 결과의 knowledge를 프로젝트 위키에 누적
-    await this.storeDomainKnowledge(block.name, result, userContext)
+    const stored = await this.storeDomainKnowledge(block.name, result, userContext)
+    if (stored && userContext?.projectId) {
+      await this.publishKnowledgeChanged(producer, sessionId, userContext.projectId)
+    }
 
     // design_ui 완료 시 uiSpec을 포함한 상태 업데이트 발행 (게이트 통과한 최종 result 기준)
     if (block.name === 'design_ui') {
@@ -207,20 +229,22 @@ export class ClaudeRunner {
     }
   }
 
-  /** 게이트 통과한 결과의 knowledge[]를 프로젝트 위키에 저장한다(sourceAgent=도구명). */
-  private async storeDomainKnowledge(stage: string, result: unknown, userContext?: UserContext): Promise<void> {
-    if (!this.knowledgeRepo || !userContext?.projectId) return
+  /** 게이트 통과한 결과의 knowledge[]를 프로젝트 위키에 저장한다(sourceAgent=도구명). 실제 저장 시 true. */
+  private async storeDomainKnowledge(stage: string, result: unknown, userContext?: UserContext): Promise<boolean> {
+    if (!this.knowledgeRepo || !userContext?.projectId) return false
     const raw = (typeof result === 'object' && result !== null) ? (result as Record<string, unknown>)['knowledge'] : undefined
-    if (!Array.isArray(raw)) return
+    if (!Array.isArray(raw)) return false
     // knowledge 항목은 문자열(미분류) 또는 { content, category } 객체 모두 허용(하위호환)
     const entries = raw
       .map((k) => toKnowledgeEntry(k, stage))
       .filter((e): e is { content: string; sourceAgent: string; category?: string } => e !== null)
-    if (entries.length === 0) return
+    if (entries.length === 0) return false
     try {
       await this.knowledgeRepo.insertMany(userContext.projectId, entries)
+      return true
     } catch (err) {
       console.warn('[runner] 위키 저장 실패 — 작업 계속:', err)
+      return false
     }
   }
 
@@ -229,15 +253,17 @@ export class ClaudeRunner {
    * 지식성 단계(plan_task·design_ui·develop_code·security_audit)에서만 저장하며,
    * repo·projectId 없으면 skip하고 저장 실패해도 승인 흐름을 차단하지 않는다.
    */
-  private async saveApprovedDecision(stage: string, summary: string, userContext?: UserContext): Promise<void> {
-    if (!this.knowledgeRepo || !userContext?.projectId || !isKnowledgeBearingStage(stage)) return
+  private async saveApprovedDecision(stage: string, summary: string, userContext?: UserContext): Promise<boolean> {
+    if (!this.knowledgeRepo || !userContext?.projectId || !isKnowledgeBearingStage(stage)) return false
     try {
       await this.knowledgeRepo.insertMany(userContext.projectId, [
         // 승인자(userContext.userId)를 기록해 결정 provenance·audit를 남긴다
         { content: summary, sourceAgent: 'approval-gate', category: 'decision', ...(userContext.userId ? { approver: userContext.userId } : {}) },
       ])
+      return true
     } catch (err) {
       console.warn('[runner] 승인 결정 위키 저장 실패 — 작업 계속:', err)
+      return false
     }
   }
 
@@ -290,7 +316,10 @@ export class ClaudeRunner {
         // PO가 '위키에 저장' 선택 시 승인된 결정 요약을 도메인 위키에 누적(지식성 단계 한정·비차단).
         // PO가 저장 전 요약을 편집했으면 그 내용(wikiSummary)을 우선, 없으면 자동 요약을 저장.
         if (decision.saveToWiki) {
-          await this.saveApprovedDecision(block.name, decision.wikiSummary ?? summary, userContext)
+          const saved = await this.saveApprovedDecision(block.name, decision.wikiSummary ?? summary, userContext)
+          if (saved && userContext?.projectId) {
+            await this.publishKnowledgeChanged(producer, sessionId, userContext.projectId)
+          }
         }
         return result
       }
