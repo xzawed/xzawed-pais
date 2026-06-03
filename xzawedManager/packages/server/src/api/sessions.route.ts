@@ -55,6 +55,7 @@ export function makeSessionStarter(
               sessionStore: opts.sessionStore,
               ...(sig !== undefined && { signal: sig }),
               ...(userContext !== undefined && { userContext }),
+              ...(msg.payload.gateMode !== undefined && { gateMode: msg.payload.gateMode }),
             } satisfies RunnerOptions)
 
             await opts.producer.publish({

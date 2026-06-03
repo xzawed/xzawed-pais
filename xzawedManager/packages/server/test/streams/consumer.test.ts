@@ -64,6 +64,28 @@ describe('StreamConsumer', () => {
     )
   })
 
+  it('task_request의 gateMode를 보존해 핸들러로 전달한다', async () => {
+    const msg: OrchestratorToManagerMessage = {
+      sessionId: 'sess-gm', messageId: 'msg-gm', timestamp: 1000,
+      type: 'task_request',
+      payload: { intent: 'x', context: {}, priority: 'normal', gateMode: 'auto' },
+    }
+    const { StreamConsumer } = await import('../../src/streams/consumer.js')
+    const consumer = new StreamConsumer('redis://localhost:6379')
+    let calls = 0
+    mockXreadgroup.mockImplementation(async () => {
+      calls++
+      if (calls === 1) return [['orchestrator:to-manager:sess-gm', [['1-0', ['data', JSON.stringify(msg)]]]]]
+      consumer.stop()
+      return null
+    })
+    const handler = vi.fn().mockResolvedValue(undefined)
+    await consumer.start('sess-gm', handler)
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ payload: expect.objectContaining({ gateMode: 'auto' }) }),
+    )
+  })
+
   it('creates consumer group with MKSTREAM on ensureGroup', async () => {
     const { StreamConsumer } = await import('../../src/streams/consumer.js')
     const consumer = new StreamConsumer('redis://localhost:6379')

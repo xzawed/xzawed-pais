@@ -12,7 +12,14 @@ interface BaseMessage {
 
 export interface TaskRequestMessage extends BaseMessage {
   type: 'task_request'
-  payload: { intent: string; context: Record<string, unknown>; priority: 'normal' | 'high'; userContext?: UserContext | undefined }
+  payload: {
+    intent: string
+    context: Record<string, unknown>
+    priority: 'normal' | 'high'
+    userContext?: UserContext | undefined
+    /** 전역 게이트 모드(설정 UI에서 전달) — Manager가 세션 기본 승인 모드로 적용. */
+    gateMode?: 'manual' | 'auto' | undefined
+  }
 }
 
 export interface InfoResponseMessage extends BaseMessage {

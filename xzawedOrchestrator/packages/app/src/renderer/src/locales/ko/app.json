@@ -9,7 +9,10 @@
     "language": "언어",
     "lang_ko": "한국어",
     "lang_en": "English",
-    "lang_ja": "日本語"
+    "lang_ja": "日本語",
+    "gate_mode": "승인 게이트 모드",
+    "gate_mode_manual": "모든 단계 수동 승인",
+    "gate_mode_auto": "모든 단계 자동 통과"
   },
   "sidebar": {
     "new_session": "새 세션",

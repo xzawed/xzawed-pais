@@ -18,6 +18,8 @@ const TaskRequestSchema = z.object({
     context: z.record(z.unknown()),
     priority: z.enum(['normal', 'high']),
     userContext: UserContextSchema.optional(),
+    // 전역 게이트 모드(설정 UI) — Manager가 세션 기본 승인 모드로 적용. 누락 시 기본(manual).
+    gateMode: z.enum(['manual', 'auto']).optional(),
   }),
 })
 

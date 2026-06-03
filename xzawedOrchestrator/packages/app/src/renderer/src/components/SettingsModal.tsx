@@ -11,17 +11,19 @@ export function SettingsModal(): React.JSX.Element {
   const [localUrl, setLocalUrl] = useState(settings.serverUrl)
   const [localMode, setLocalMode] = useState(settings.mode)
   const [localUserId, setLocalUserId] = useState(settings.userId)
+  const [localGateMode, setLocalGateMode] = useState(settings.gateMode)
 
   useEffect(() => {
     if (showSettings) {
       setLocalUrl(settings.serverUrl)
       setLocalMode(settings.mode)
       setLocalUserId(settings.userId)
+      setLocalGateMode(settings.gateMode)
     }
   }, [showSettings, settings])
 
   function handleSave(): void {
-    const updated = { serverUrl: localUrl, mode: localMode, userId: localUserId }
+    const updated = { serverUrl: localUrl, mode: localMode, userId: localUserId, gateMode: localGateMode }
     updateSettings(updated)
     globalThis.electronAPI?.setSettings(updated).catch(console.error)
     toggleSettings()
@@ -77,6 +79,20 @@ export function SettingsModal(): React.JSX.Element {
               className={inputClass}
               placeholder="user-id"
             />
+          </div>
+
+          <div>
+            <label htmlFor="settings-gate-mode" className={labelClass}>{t('settings.gate_mode')}</label>
+            <select
+              id="settings-gate-mode"
+              data-testid="settings-gate-mode"
+              value={localGateMode}
+              onChange={(e) => setLocalGateMode(e.target.value as 'manual' | 'auto')}
+              className={inputClass}
+            >
+              <option value="manual">{t('settings.gate_mode_manual')}</option>
+              <option value="auto">{t('settings.gate_mode_auto')}</option>
+            </select>
           </div>
 
           <div>

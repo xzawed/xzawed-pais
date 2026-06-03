@@ -510,6 +510,30 @@ describe('ClaudeRunner', () => {
         .find((m) => m.payload?.approval)?.payload?.approval
     }
 
+    it('gateMode가 주어지면 setGateDefaultMode로 세션 기본 모드를 설정한다', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      // 도구 없이 즉시 end_turn — 게이트 미개입, 기본 모드 설정만 검증
+      createFn.mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+
+      await runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore, gateMode: 'auto' })
+
+      expect(store.getGateConfig('sess-1').defaultMode).toBe('auto')
+    })
+
+    it('gateMode=auto면 게이트 없이 통과한다(승인 요청 미발행)', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn().mockResolvedValue({ content: '계획 산출' })
+      registerPlan(exec)
+      planThenEnd()
+
+      await runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore, gateMode: 'auto' })
+
+      expect(exec).toHaveBeenCalledTimes(1)
+      expect(findApproval()).toBeUndefined()
+    })
+
     it('manual: 승인 전까지 다음 단계로 진행하지 않고, 승인 시 결과를 반환한다', async () => {
       const store = new SessionStore()
       store.create('sess-1')
