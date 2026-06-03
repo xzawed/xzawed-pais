@@ -251,4 +251,70 @@ describe('knowledgeRoute', () => {
       await app.close()
     })
   })
+
+  describe('GET ?deleted=true (휴지통)', () => {
+    it('deletedByProject 결과를 반환한다', async () => {
+      const repo = { deletedByProject: vi.fn().mockResolvedValue([{ id: 3, content: 'x', sourceAgent: 'planner', createdAt: 't' }]) }
+      const app = await build(repo)
+      const res = await app.inject({ method: 'GET', url: '/projects/p1/knowledge?deleted=true' })
+      expect(res.statusCode).toBe(200)
+      expect(repo.deletedByProject).toHaveBeenCalledWith('p1', 50)
+      expect(res.json()).toEqual({ items: [{ id: 3, content: 'x', sourceAgent: 'planner', createdAt: 't' }] })
+      await app.close()
+    })
+
+    it('deleted 미지정이면 recentByProject(활성)만 조회한다', async () => {
+      const repo = { recentByProject: vi.fn().mockResolvedValue([]), deletedByProject: vi.fn() }
+      const app = await build(repo)
+      await app.inject({ method: 'GET', url: '/projects/p1/knowledge' })
+      expect(repo.recentByProject).toHaveBeenCalled()
+      expect(repo.deletedByProject).not.toHaveBeenCalled()
+      await app.close()
+    })
+  })
+
+  describe('POST /:id/restore', () => {
+    it('복구 성공 시 200 {ok}이고 restoreById에 id를 전달한다', async () => {
+      const repo = { restoreById: vi.fn().mockResolvedValue(true) }
+      const app = await build(repo)
+      const res = await app.inject({ method: 'POST', url: '/projects/p1/knowledge/5/restore' })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toEqual({ ok: true })
+      expect(repo.restoreById).toHaveBeenCalledWith('p1', 5)
+      await app.close()
+    })
+
+    it('restoreById가 false면 404(없음·삭제 안 된 행)', async () => {
+      const repo = { restoreById: vi.fn().mockResolvedValue(false) }
+      const app = await build(repo)
+      const res = await app.inject({ method: 'POST', url: '/projects/p1/knowledge/999/restore' })
+      expect(res.statusCode).toBe(404)
+      await app.close()
+    })
+
+    it('id가 비숫자면 400이고 restoreById를 호출하지 않는다', async () => {
+      const repo = { restoreById: vi.fn() }
+      const app = await build(repo)
+      const res = await app.inject({ method: 'POST', url: '/projects/p1/knowledge/abc/restore' })
+      expect(res.statusCode).toBe(400)
+      expect(repo.restoreById).not.toHaveBeenCalled()
+      await app.close()
+    })
+
+    it('repo가 없으면 503', async () => {
+      const app = await build(undefined)
+      const res = await app.inject({ method: 'POST', url: '/projects/p1/knowledge/5/restore' })
+      expect(res.statusCode).toBe(503)
+      await app.close()
+    })
+
+    it('authHook 설정 시 토큰 없으면 401이고 restoreById를 호출하지 않는다', async () => {
+      const repo = { restoreById: vi.fn() }
+      const app = await buildWithAuth(repo)
+      const res = await app.inject({ method: 'POST', url: '/projects/p1/knowledge/5/restore' })
+      expect(res.statusCode).toBe(401)
+      expect(repo.restoreById).not.toHaveBeenCalled()
+      await app.close()
+    })
+  })
 })

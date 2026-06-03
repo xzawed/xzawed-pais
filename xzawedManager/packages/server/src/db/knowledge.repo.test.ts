@@ -148,12 +148,21 @@ describe('KnowledgeRepo', () => {
     })
   })
 
-  describe('deleteById', () => {
-    it('WHERE에 id AND project_id 가드를 두고 DELETE한다', async () => {
+  it('recentByProject는 soft-delete된 행을 제외한다(deleted_at IS NULL)', async () => {
+    const pool = mockPool([])
+    await new KnowledgeRepo(pool).recentByProject('p1', 20)
+    expect(pool.query.mock.calls[0][0]).toMatch(/deleted_at IS NULL/i)
+  })
+
+  describe('deleteById (soft-delete)', () => {
+    it('deleted_at을 NOW()로 설정하고 id AND project_id 가드를 둔다(하드 삭제 아님)', async () => {
       const pool = mockMutationPool(1)
       const ok = await new KnowledgeRepo(pool).deleteById('p1', 5)
       const [sql, params] = pool.query.mock.calls[0]
-      expect(sql).toMatch(/DELETE FROM domain_knowledge WHERE id = \$1 AND project_id = \$2/i)
+      expect(sql).toMatch(/UPDATE domain_knowledge SET deleted_at = NOW\(\)/i)
+      expect(sql).toMatch(/WHERE id = \$1 AND project_id = \$2/i)
+      expect(sql).toMatch(/deleted_at IS NULL/i) // 이미 삭제된 행은 재삭제하지 않음
+      expect(sql).not.toMatch(/DELETE FROM/i)
       expect(params).toEqual([5, 'p1'])
       expect(ok).toBe(true)
     })
@@ -169,6 +178,36 @@ describe('KnowledgeRepo', () => {
         import('pg').Pool & { query: ReturnType<typeof vi.fn> }
       const ok = await new KnowledgeRepo(pool).deleteById('p1', 5)
       expect(ok).toBe(false)
+    })
+  })
+
+  describe('restoreById', () => {
+    it('deleted_at을 NULL로 되돌리고 id AND project_id·deleted_at IS NOT NULL 가드를 둔다', async () => {
+      const pool = mockMutationPool(1)
+      const ok = await new KnowledgeRepo(pool).restoreById('p1', 5)
+      const [sql, params] = pool.query.mock.calls[0]
+      expect(sql).toMatch(/UPDATE domain_knowledge SET deleted_at = NULL/i)
+      expect(sql).toMatch(/WHERE id = \$1 AND project_id = \$2/i)
+      expect(sql).toMatch(/deleted_at IS NOT NULL/i) // 삭제된 행만 복구
+      expect(params).toEqual([5, 'p1'])
+      expect(ok).toBe(true)
+    })
+
+    it('rowCount가 0이면 false(없음·타 프로젝트·삭제 안 된 행)', async () => {
+      const ok = await new KnowledgeRepo(mockMutationPool(0)).restoreById('p1', 999)
+      expect(ok).toBe(false)
+    })
+  })
+
+  describe('deletedByProject', () => {
+    it('soft-delete된 행만 deleted_at DESC로 조회하고 id·createdAt 매핑한다', async () => {
+      const pool = mockPool([{ id: 3, content: 'x', source_agent: 'planner', category: null, created_at: 't' }])
+      const out = await new KnowledgeRepo(pool).deletedByProject('p1', 20)
+      const [sql, params] = pool.query.mock.calls[0]
+      expect(sql).toMatch(/deleted_at IS NOT NULL/i)
+      expect(sql).toMatch(/ORDER BY deleted_at DESC/i)
+      expect(params).toEqual(['p1', 20])
+      expect(out).toEqual([{ id: 3, content: 'x', sourceAgent: 'planner', createdAt: 't' }])
     })
   })
 })
