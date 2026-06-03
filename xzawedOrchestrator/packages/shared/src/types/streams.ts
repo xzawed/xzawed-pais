@@ -1,7 +1,7 @@
 import type { UISpec } from './ui-spec.js'
 
 export type OrchestratorMessageType = 'task_request' | 'info_response' | 'abort'
-export type ManagerMessageType = 'status_update' | 'info_request' | 'task_complete' | 'error'
+export type ManagerMessageType = 'status_update' | 'info_request' | 'task_complete' | 'error' | 'knowledge_changed'
 
 export interface UserContext {
   userId: string
@@ -55,5 +55,7 @@ export interface ManagerToOrchestratorMessage {
     content: string
     uiSpec?: UISpec
     approval?: ApprovalRequest
+    /** knowledge_changed 이벤트의 대상 프로젝트 — 위키가 즉시 새로고침할지 판단. */
+    projectId?: string
   }
 }

@@ -17,6 +17,7 @@ vi.mock('../lib/api.js', () => ({
 }))
 
 import { useAuthStore } from '@xzawed/ui'
+import { useChatStore } from '../store/chat.store.js'
 import { WikiPanel, WIKI_POLL_MS } from '../components/WikiPanel.js'
 
 function renderAt(projectId: string) {
@@ -36,6 +37,7 @@ beforeEach(() => {
   deleteKnowledge.mockReset().mockResolvedValue(undefined)
   restoreKnowledge.mockReset().mockResolvedValue(undefined)
   useAuthStore.setState({ accessToken: null }) // 기본은 미로그인(AUTH=none) — 토큰 미전달
+  useChatStore.getState().reset() // WS knowledge_changed 신호(knowledgeChange) 초기화 — 테스트 간 누수 방지
 })
 
 describe('WikiPanel', () => {
@@ -260,6 +262,34 @@ describe('WikiPanel', () => {
     await waitFor(() => expect(deleteKnowledge).toHaveBeenCalled())
     // 실패 → 확인 영역 유지(setConfirmingId(null) 미도달)
     expect(screen.getByTestId('wiki-delete-confirm')).toBeInTheDocument()
+  })
+
+  test('knowledge_changed(현재 프로젝트) 수신 시 즉시 refetch한다', async () => {
+    getKnowledge.mockResolvedValue([])
+    renderAt('p1')
+    await waitFor(() => expect(getKnowledge).toHaveBeenCalledTimes(1))
+    act(() => { useChatStore.getState().notifyKnowledgeChange('p1') })
+    await waitFor(() => expect(getKnowledge).toHaveBeenCalledTimes(2))
+  })
+
+  test('다른 프로젝트의 knowledge_changed는 무시한다', async () => {
+    getKnowledge.mockResolvedValue([])
+    renderAt('p1')
+    await waitFor(() => expect(getKnowledge).toHaveBeenCalledTimes(1))
+    act(() => { useChatStore.getState().notifyKnowledgeChange('other-project') })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(getKnowledge).toHaveBeenCalledTimes(1)
+  })
+
+  test('편집 중에는 knowledge_changed로 refetch하지 않는다(진행 중 버퍼 보호)', async () => {
+    getKnowledge.mockResolvedValue([{ id: 1, content: 'x', sourceAgent: 'plan_task', createdAt: 't' }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('wiki-item-edit')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('wiki-item-edit'))
+    const before = getKnowledge.mock.calls.length
+    act(() => { useChatStore.getState().notifyKnowledgeChange('p1') })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(getKnowledge.mock.calls.length).toBe(before)
   })
 
   test('자동 갱신: 폴링 주기마다 refetch한다', async () => {

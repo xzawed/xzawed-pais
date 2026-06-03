@@ -13,7 +13,7 @@ import { ProjectContextBar } from './ProjectContextBar.js'
 import { ScrollArea } from './ui/scroll-area.js'
 import { UiSpecPreview } from './chat/UiSpecPreview.js'
 import { parseAgentSteps } from '../lib/parseAgentSteps.js'
-import { postMessage, postUiAction, SessionWsClient } from '../lib/api.js'
+import { postMessage, postUiAction } from '../lib/api.js'
 
 /** 지식성 단계(도메인 지식 산출) — 승인 시 '위키에 저장' 체크박스를 이 단계에서만 노출. Manager 가드와 동일 집합. */
 const KNOWLEDGE_BEARING_STAGES = new Set(['plan_task', 'design_ui', 'develop_code', 'security_audit'])
@@ -25,7 +25,6 @@ export function ChatView(): React.JSX.Element {
   } = useChatStore()
   const { settings } = useAppStore()
   const bottomRef = useRef<HTMLDivElement>(null)
-  const wsClientRef = useRef<SessionWsClient | null>(null)
   const [infoResponseValue, setInfoResponseValue] = useState('')
   const [rememberAuto, setRememberAuto] = useState(false)
   const [saveToWiki, setSaveToWiki] = useState(false)
@@ -39,62 +38,8 @@ export function ChatView(): React.JSX.Element {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamingContent])
 
-  useEffect(() => {
-    if (!sessionId) return
-    const client = new SessionWsClient()
-    wsClientRef.current = client
-    const teardown = client.connect(settings.serverUrl, sessionId, (msg) => {
-      const store = useChatStore.getState()
-      if (msg.type === 'chunk') {
-        if (store.streamingMsgId !== msg.messageId) store.startStream(msg.messageId)
-        store.appendChunk(msg.content)
-        const lines = msg.content.split('\n').filter((l) => /^\[[A-Z]{2,3}\]/.exec(l))
-        lines.forEach((l) => store.addLogLine(l.trim()))
-      } else if (msg.type === 'done') {
-        store.finalizeStream(msg.messageId)
-      } else if (msg.type === 'error') {
-        store.setPending(false)
-        store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `[Error] ${msg.content}`, timestamp: Date.now() })
-      } else if (msg.type === 'status') {
-        store.addLogLine(`[STATUS] ${msg.content}`)
-      } else if (msg.type === 'agent_status') {
-        const agentTag = (msg.agentId ?? 'AGENT').toUpperCase().slice(0, 8)
-        store.addLogLine(`[${agentTag}] ${msg.content}`)
-        if ((msg as { uiSpec?: unknown }).uiSpec) {
-          store.setUiSpec((msg as { uiSpec: import('@xzawed/shared').UISpec }).uiSpec)
-        }
-      } else if (msg.type === 'agent_done') {
-        store.addMessage({
-          id: crypto.randomUUID(),
-          sessionId,
-          role: 'assistant',
-          content: msg.content,
-          timestamp: Date.now(),
-        })
-      } else if (msg.type === 'agent_error') {
-        store.addMessage({
-          id: crypto.randomUUID(),
-          sessionId,
-          role: 'assistant',
-          content: `[에이전트 오류 - ${msg.agentId}] ${msg.content}`,
-          timestamp: Date.now(),
-        })
-      } else if (msg.type === 'agent_info_request') {
-        store.setPendingInfoRequest({
-          agentId: msg.agentId,
-          prompt: msg.content,
-          ...(msg.approval !== undefined ? { approval: msg.approval } : {}),
-        })
-      }
-    }, () => {
-      useChatStore.getState().cancelStream()
-      wsClientRef.current = null
-    })
-    return () => {
-      teardown()
-      wsClientRef.current = null
-    }
-  }, [sessionId, settings.serverUrl])
+  // 세션 WS 구독은 ChatLayout(항상 마운트)의 useSessionWs로 이관 — 패널 전환 시 끊김 방지.
+  // ChatView는 chat.store만 읽어 렌더한다.
 
   async function handleSend(content: string): Promise<void> {
     if (!sessionId) return

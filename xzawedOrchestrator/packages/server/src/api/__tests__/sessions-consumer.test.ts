@@ -152,6 +152,34 @@ describe('handleConsumerMessage — info_request', () => {
   })
 })
 
+describe('handleConsumerMessage — knowledge_changed', () => {
+  it('소켓에 knowledge_changed(projectId 포함) 전송, 컨슈머 유지', () => {
+    const socket = makeSocket()
+    const taskStore = new TaskStore()
+    const { map, consumer } = makeConsumers()
+
+    handleConsumerMessage(makeMsg('knowledge_changed', { projectId: 'proj-9' }), SID, socket, map, taskStore)
+
+    const sent = JSON.parse((socket.send as ReturnType<typeof vi.fn>).mock.calls[0][0] as string) as SentPayload & { projectId?: string }
+    expect(sent.type).toBe('knowledge_changed')
+    expect(sent.projectId).toBe('proj-9')
+    // 위키 갱신 이벤트는 세션을 종료하지 않는다(컨슈머 유지)
+    expect(consumer.stop).not.toHaveBeenCalled()
+    expect(map.has(SID)).toBe(true)
+  })
+
+  it('활성 태스크 상태를 변경하지 않는다(진행상황 아님)', () => {
+    const socket = makeSocket()
+    const taskStore = new TaskStore()
+    taskStore.create(SID, 'intent')
+    const { map } = makeConsumers()
+
+    handleConsumerMessage(makeMsg('knowledge_changed', { projectId: 'proj-9' }), SID, socket, map, taskStore)
+
+    expect(taskStore.findBySessionId(SID)[0]?.status).toBe('pending')
+  })
+})
+
 describe('handleConsumerMessage — onTerminate 콜백', () => {
   it('task_complete 수신 시 onTerminate가 sessionId와 함께 호출됨', () => {
     const socket = makeSocket()

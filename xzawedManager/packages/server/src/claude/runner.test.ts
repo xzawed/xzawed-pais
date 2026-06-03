@@ -764,6 +764,35 @@ describe('ClaudeRunner', () => {
       expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [{ content: '결제는 Stripe', sourceAgent: 'plan_task' }])
     })
 
+    it('result.knowledge 저장 후 knowledge_changed를 발행한다(위키 실시간 갱신)', async () => {
+      const repo = makeKnowledgeRepo()
+      const store = planAutoSession()
+      const exec = vi.fn().mockResolvedValue({ steps: [], estimatedTime: '1h', knowledge: ['결제는 Stripe'] })
+      registry.register({ name: 'plan_task', description: '', inputSchema: GATED_SCHEMA, execute: exec } as never)
+      planThenEndWithCtx()
+
+      const r = new ClaudeRunner(client, 'm', registry, repo as never)
+      await r.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore, userContext: userCtx } as Parameters<typeof r.run>[0])
+
+      const events = mockProducer.publish.mock.calls.filter((c) => (c[0] as { type: string }).type === 'knowledge_changed')
+      expect(events).toHaveLength(1)
+      expect((events[0]?.[0] as { payload: { projectId: string } }).payload.projectId).toBe('proj-1')
+    })
+
+    it('저장할 knowledge가 없으면 knowledge_changed를 발행하지 않는다', async () => {
+      const repo = makeKnowledgeRepo()
+      const store = planAutoSession()
+      const exec = vi.fn().mockResolvedValue({ steps: [], estimatedTime: '1h' }) // knowledge 없음
+      registry.register({ name: 'plan_task', description: '', inputSchema: GATED_SCHEMA, execute: exec } as never)
+      planThenEndWithCtx()
+
+      const r = new ClaudeRunner(client, 'm', registry, repo as never)
+      await r.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore, userContext: userCtx } as Parameters<typeof r.run>[0])
+
+      const events = mockProducer.publish.mock.calls.filter((c) => (c[0] as { type: string }).type === 'knowledge_changed')
+      expect(events).toHaveLength(0)
+    })
+
     it('knowledge가 {content, category} 객체면 category까지 저장한다', async () => {
       const repo = makeKnowledgeRepo()
       const store = planAutoSession()
@@ -863,6 +892,14 @@ describe('ClaudeRunner', () => {
       expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [
         { content: 'PO가 편집한 결정 요약', sourceAgent: 'approval-gate', category: 'decision', approver: 'u1' },
       ])
+    })
+
+    it('승인 결정 저장(saveToWiki) 후 knowledge_changed를 발행한다(위키 실시간 갱신)', async () => {
+      const repo = makeKnowledgeRepo()
+      await runManualGateApprove(repo, 'plan_task', { content: '결정' }, { decision: 'approve', saveToWiki: true })
+      const events = mockProducer.publish.mock.calls.filter((c) => (c[0] as { type: string }).type === 'knowledge_changed')
+      expect(events).toHaveLength(1)
+      expect((events[0]?.[0] as { payload: { projectId: string } }).payload.projectId).toBe('proj-1')
     })
   })
 

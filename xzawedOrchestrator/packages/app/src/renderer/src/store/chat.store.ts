@@ -21,6 +21,8 @@ interface ChatState {
   elapsedMs: number
   modifiedFiles: string[]
   pendingInfoRequest: PendingInfoRequest | null
+  /** 위키 지식 변경 신호(WS knowledge_changed). projectId·단조 증가 seq로 WikiPanel이 즉시 새로고침을 판단. */
+  knowledgeChange: { projectId: string; seq: number } | null
   initSession: (sessionId: string) => void
   addMessage: (msg: Message) => void
   setPending: (v: boolean) => void
@@ -34,6 +36,7 @@ interface ChatState {
   setElapsedMs: (ms: number) => void
   addModifiedFile: (path: string) => void
   setPendingInfoRequest: (req: PendingInfoRequest | null) => void
+  notifyKnowledgeChange: (projectId: string) => void
   reset: () => void
 }
 
@@ -50,6 +53,7 @@ const initialState = {
   elapsedMs: 0,
   modifiedFiles: [] as string[],
   pendingInfoRequest: null as PendingInfoRequest | null,
+  knowledgeChange: null as { projectId: string; seq: number } | null,
 }
 
 export const useChatStore = create<ChatState>((set) => ({
@@ -106,6 +110,10 @@ export const useChatStore = create<ChatState>((set) => ({
     })),
 
   setPendingInfoRequest: (req) => set({ pendingInfoRequest: req }),
+
+  // seq를 단조 증가시켜 동일 projectId 연속 변경도 새 참조로 구독자(WikiPanel useEffect)를 깨운다.
+  notifyKnowledgeChange: (projectId) =>
+    set((state) => ({ knowledgeChange: { projectId, seq: (state.knowledgeChange?.seq ?? 0) + 1 } })),
 
   reset: () => set({ ...initialState }),
 }))
