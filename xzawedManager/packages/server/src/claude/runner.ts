@@ -122,7 +122,26 @@ export class ClaudeRunner {
     // 위키 주입: 호출 전 프로젝트 최근 지식을 context.domainKnowledge로 주입
     const input = await this.injectDomainKnowledge(block.input, userContext)
     // ClarificationNeededError는 catch하지 않고 processToolUseBlocks로 전파
-    let result = await handler.execute(input, sessionId, userContext)
+    const result = await handler.execute(input, sessionId, userContext)
+    // 정상 실행·재실행이 동일 후처리(게이트·위키 저장)를 거치도록 finalizeAgentResult로 통합
+    return this.finalizeAgentResult(handler, block, result, sessionId, producer, sessionStore, userContext)
+  }
+
+  /**
+   * 도구 실행 결과 공통 후처리: 승인 게이트(대상 한정) → 위키 저장 → design_ui 상태 발행 → tool_result.
+   * handleAgentTool(정상)과 reExecuteWithContext(명확화·교차질의 재실행)가 공유해,
+   * 재실행으로 완성된 산출물도 PO 승인 게이트를 우회하지 않게 한다.
+   */
+  private async finalizeAgentResult(
+    handler: { execute: (i: unknown, s: string, u?: UserContext) => Promise<unknown> },
+    block: Anthropic.ToolUseBlock,
+    rawResult: unknown,
+    sessionId: string,
+    producer: StreamProducer,
+    sessionStore: SessionStore,
+    userContext?: UserContext,
+  ): Promise<Anthropic.ToolResultBlockParam> {
+    let result = rawResult
 
     // 코드로 강제하는 승인 게이트 — 에이전트 디스패치 도구에만 적용
     if (isGatedTool(block.name)) {
@@ -269,12 +288,13 @@ export class ClaudeRunner {
     }
   }
 
-  /** 도구를 추가 context와 함께 재실행하고 tool_result 블록을 만든다. */
+  /** 도구를 추가 context와 함께 재실행하고, 정상 경로와 동일한 후처리(게이트·위키 저장)를 거쳐 tool_result를 만든다. */
   private async reExecuteWithContext(
     block: Anthropic.ToolUseBlock,
     extraContext: Record<string, unknown>,
     sessionId: string,
     producer: StreamProducer,
+    sessionStore: SessionStore,
     userContext?: UserContext,
   ): Promise<Anthropic.ToolResultBlockParam> {
     const handler = this.registry.get(block.name)
@@ -282,14 +302,10 @@ export class ClaudeRunner {
     try {
       const augmented = { ...(block.input as Record<string, unknown>), ...extraContext }
       const result = await handler.execute(augmented, sessionId, userContext)
-      await this.publishStatus(producer, sessionId, `Completed ${block.name}: ${JSON.stringify(result)}`)
-      const resultStr = JSON.stringify(result)
-      return {
-        type: 'tool_result',
-        tool_use_id: block.id,
-        content: resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr,
-      }
+      // 재실행 결과도 승인 게이트·위키 저장을 거친다(명확화/교차질의 산출물의 게이트 우회 방지)
+      return await this.finalizeAgentResult(handler, block, result, sessionId, producer, sessionStore, userContext)
     } catch (retryErr) {
+      if (retryErr instanceof GateAbortError) throw retryErr // 사용자 abort는 세션 종료로 전파(에러 결과로 변환 금지)
       const msg = retryErr instanceof Error ? retryErr.message : String(retryErr)
       return {
         type: 'tool_result',
@@ -334,7 +350,7 @@ export class ClaudeRunner {
             // 명확화 응답을 포함하여 에이전트 재실행
             toolResults.push(
               await this.reExecuteWithContext(
-                block, { clarificationContext: answer }, sessionId, producer, userContext,
+                block, { clarificationContext: answer }, sessionId, producer, sessionStore, userContext,
               ),
             )
           } else if (err instanceof AgentQueryError) {
@@ -368,7 +384,7 @@ export class ClaudeRunner {
             toolResults.push(
               await this.reExecuteWithContext(
                 block, { clarificationContext: JSON.stringify(queryAnswer) },
-                sessionId, producer, userContext,
+                sessionId, producer, sessionStore, userContext,
               ),
             )
           } else {
