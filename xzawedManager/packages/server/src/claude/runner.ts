@@ -8,6 +8,7 @@ import { ClarificationNeededError, AgentQueryError, GateAbortError } from '../to
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
 import { isGatedTool, effectiveMode, summarizeOutput, parseDecision, isKnowledgeBearingStage } from '../gates/approval-gate.js'
 import type { GateMode } from '../gates/approval-gate.js'
+import { validateToolInput } from './validate-tool-input.js'
 import type { KnowledgeRepo } from '../db/knowledge.repo.js'
 
 /** MANAGER_MAX_ITERATIONS 환경변수를 파싱하고 유효성을 검증한다. 유효하지 않으면 Error를 throw한다. */
@@ -117,6 +118,15 @@ export class ClaudeRunner {
   ): Promise<Anthropic.ToolResultBlockParam> {
     const handler = this.registry.get(block.name)
     if (!handler) throw new Error(`Unknown tool: ${block.name}`)
+
+    // LLM tool 입력을 핸들러 inputSchema로 선검증 — 잘못된 입력은 디스패치 없이 is_error로 반환해
+    // Claude가 즉시 재시도하게 한다(에이전트단 Zod 거부로 인한 무응답·타임아웃 방지, 방어심층).
+    const inputErrors = validateToolInput(block.input, handler.inputSchema)
+    if (inputErrors.length > 0) {
+      const msg = `Invalid input for ${block.name}: ${inputErrors.join('; ')}`
+      await this.publishStatus(producer, sessionId, msg)
+      return { type: 'tool_result', tool_use_id: block.id, content: msg, is_error: true }
+    }
 
     await this.publishStatus(producer, sessionId, `Starting ${block.name}...`)
     // 위키 주입: 호출 전 프로젝트 최근 지식을 context.domainKnowledge로 주입

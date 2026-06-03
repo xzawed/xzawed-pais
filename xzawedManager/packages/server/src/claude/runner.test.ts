@@ -209,6 +209,31 @@ describe('ClaudeRunner', () => {
       const content = lastMsg.content as Array<Anthropic.ToolResultBlockParam & { is_error?: boolean }>
       expect(content[0].is_error).toBe(true)
     })
+
+    it('tool 입력이 inputSchema를 위반하면 디스패치 없이 is_error를 반환한다', async () => {
+      const exec = vi.fn().mockResolvedValue({ content: '결과' })
+      registry.register({
+        name: 'plan_task',
+        description: 'plan',
+        inputSchema: { type: 'object', properties: { intent: { type: 'string' } }, required: ['intent'] },
+        execute: exec,
+      } as never)
+      // LLM이 required 'intent' 없이 호출
+      createFn
+        .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('tu-bad', 'plan_task', { context: {} })]))
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('재시도 처리')]))
+
+      const result = await runner.run(baseRunOptions())
+      expect(result).toBe('재시도 처리')
+      // 디스패치되지 않음(핸들러 미호출)
+      expect(exec).not.toHaveBeenCalled()
+      // is_error tool_result에 검증 위반 메시지
+      const secondCallMessages = createFn.mock.calls[1][0].messages as Anthropic.MessageParam[]
+      const lastMsg = secondCallMessages[secondCallMessages.length - 1]
+      const content = lastMsg.content as Array<Anthropic.ToolResultBlockParam & { is_error?: boolean }>
+      expect(content[0].is_error).toBe(true)
+      expect(String(content[0].content)).toContain('Invalid input')
+    })
   })
 
   describe('MAX_ITERATIONS 초과', () => {
