@@ -40,7 +40,7 @@ Return ONLY valid JSON in this exact structure:
   "uiSpec": {
     "type": "mockup_viewer",
     "title": "Login Page",
-    "content": "## Login Page\\n\\n- **Email** input (required)\\n- **Password** input\\n- [Sign in] button\\n\\nMobile-first single-page layout."
+    "content": "## Login Page — **Email** input (required), **Password** input, then a [Sign in] button. Mobile-first single-page layout."
   },
   "knowledge": ["UI/UX 도메인 결정·제약을 한 줄씩 (예: '폼은 모바일 우선', '접근성 WCAG AA 준수'). 없으면 생략."]
 }
