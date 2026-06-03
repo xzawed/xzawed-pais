@@ -7,7 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 277/280 테스트, 3 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
+현재 상태: **구현 완료 (server 293/296 테스트, 3 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
+
+**최근 반영(#212~#216)**: 게이트 승인 시 PO가 저장 전 요약을 편집하는 `wikiSummary`(#212), 위키 쓰기 경로(PATCH/DELETE) 서비스 JWT 인증(#213), 전역 게이트 모드 `task_request.payload.gateMode`→`setGateDefaultMode` 배선(#215), 명확화·교차질의 **재실행 산출물도 승인 게이트를 거치도록** `finalizeAgentResult` 공통화(#216).
 
 설계 스펙: `docs/specs/2026-05-15-manager-design.md`
 
@@ -48,7 +50,7 @@ packages/
         ├── db/                 # knowledge.repo.ts(KnowledgeRepo: insertMany·recentByProject 필터·updateById·deleteById) + session.repo.ts + pool.ts + migrations/
         ├── tools/              # ToolHandler 11개 (7 RedisAgent + register-project + switch-project + github-ops* + deploy-project* / *GITHUB_TOKEN 조건부) + agent-tool-map.ts + errors.ts
         ├── sessions/           # 세션 상태 추적 (session.store.ts: gateConfig·waitForInfo·게이트 override)
-        └── api/                # health 라우트 + knowledge.route.ts(GET/PATCH/DELETE, 비인증)
+        └── api/                # health 라우트 + knowledge.route.ts(GET 비인증·읽기; PATCH/DELETE는 authHook 설정 시 서비스 JWT 필요)
 ```
 
 ## Redis Streams 인터페이스
@@ -56,8 +58,8 @@ packages/
 **수신:** `orchestrator:to-manager:{sessionId}` (consumer group: `manager-consumers`)
 | type | 처리 |
 |---|---|
-| `task_request` | Claude tool-calling 루프 시작 |
-| `info_response` | 대기 중 루프 재개. `answer`가 승인 게이트 응답이면 JSON 결정(`{decision: approve\|revise\|abort, rememberAuto?, saveToWiki?, feedback?}`)으로 해석 (`parseDecision`) |
+| `task_request` | Claude tool-calling 루프 시작. `payload.gateMode`(`manual\|auto`) 있으면 세션 기본 승인 모드로 적용(`setGateDefaultMode`) |
+| `info_response` | 대기 중 루프 재개. `answer`가 승인 게이트 응답이면 JSON 결정(`{decision: approve\|revise\|abort, rememberAuto?, saveToWiki?, wikiSummary?, feedback?}`)으로 해석 (`parseDecision`) |
 | `abort` | 루프 즉시 중단 |
 
 **발신:** `manager:to-orchestrator:{sessionId}`
@@ -94,14 +96,15 @@ interface ToolHandler<TInput = unknown, TOutput = unknown> {
 
 코드로 강제하는 단계별 승인 게이트. 에이전트 디스패치 도구 결과를 PO가 검토·승인해야 다음으로 진행한다.
 
-- **모드**: `GateMode = 'manual' | 'auto'`. `GateConfig`(defaultMode + 단계별 overrides)는 세션별로 `session.store.ts`가 보관. `effectiveMode(config, stage)`가 단계 적용 모드를 결정 — 단, **배포는 항상 manual**.
+- **모드**: `GateMode = 'manual' | 'auto'`. `GateConfig`(defaultMode + 단계별 overrides)는 세션별로 `session.store.ts`가 보관. `defaultMode`는 `task_request.payload.gateMode`(전역 게이트 모드 설정 UI)로 `setGateDefaultMode`에서 설정. `effectiveMode(config, stage)`가 단계 적용 모드를 결정 — 단, **배포는 항상 manual**.
 - **대상**: `isGatedTool` = `GATED_TOOLS`(plan_task·design_ui·develop_code·run_tests·build_project·watch_changes·security_audit) ∪ `DEPLOY_TOOLS`(deploy_project, auto override 무시 — 항상 수동 승인). `KNOWLEDGE_BEARING_STAGES`(plan_task·design_ui·develop_code·security_audit)는 위키 저장이 의미 있는 단계.
-- **결정 파싱**: `parseDecision(answer)`가 `info_response.answer`(JSON)를 `GateDecision`(`approve{rememberAuto, saveToWiki}` | `revise{feedback}` | `abort`)으로 해석. 파싱 불가·미지 값은 approve로 fail-open.
+- **결정 파싱**: `parseDecision(answer)`가 `info_response.answer`(JSON)를 `GateDecision`(`approve{rememberAuto, saveToWiki, wikiSummary?}` | `revise{feedback}` | `abort`)으로 해석. 파싱 불가·미지 값은 approve로 fail-open. `wikiSummary`(PO가 저장 전 편집한 요약)는 비어있지 않은 문자열일 때만 채택(2000자 클램프).
 - **요약**: `summarizeOutput(stage, result)` — content 우선, 없으면 직렬화(2000자 상한).
-- **runner 게이트 훅** (`runner.ts` `applyApprovalGate`): manual이면 `info_request`(`approval: { stage, summary, mode }`) 발행 후 `waitForInfo`로 대기.
-  - `approve` → 결과 반환. `rememberAuto: true`면 해당 단계 override를 auto로 전환. `saveToWiki: true`면 `saveApprovedDecision`으로 승인 결정을 위키에 누적.
+- **runner 게이트 훅** (`runner.ts` `applyApprovalGate`, 공통 후처리 `finalizeAgentResult` 경유): manual이면 `info_request`(`approval: { stage, summary, mode }`) 발행 후 `waitForInfo`로 대기.
+  - `approve` → 결과 반환. `rememberAuto: true`면 해당 단계 override를 auto로 전환. `saveToWiki: true`면 `saveApprovedDecision`으로 승인 결정을 위키에 누적(`wikiSummary` 있으면 그 편집본을 우선 저장).
   - `revise` → 피드백을 `clarificationContext`로 추가해 재실행 후 재게이트 (`MANAGER_MAX_GATE_REVISES` 상한).
   - `abort` → 세션 abort + `GateAbortError` throw(루프 종료).
+  - **재실행 경로도 동일 게이트 적용(#216)**: 명확화·교차질의로 재실행(`reExecuteWithContext`)된 산출물도 `finalizeAgentResult`를 거쳐 승인 게이트를 우회하지 않는다(`GateAbortError`는 재던져 세션 종료 보존).
 
 ## 도메인 위키 (`db/knowledge.repo.ts` · `api/knowledge.route.ts`)
 
@@ -111,9 +114,9 @@ interface ToolHandler<TInput = unknown, TOutput = unknown> {
 - **runner 통합** (`runner.ts`):
   - 호출 전 `injectDomainKnowledge` — `recentByProject`로 최근 지식을 도구 입력 `context.domainKnowledge`로 주입(`MANAGER_WIKI_INJECT_LIMIT`).
   - 게이트 통과 후 `storeDomainKnowledge` — 결과의 `knowledge[]`(문자열 또는 `{content, category}`)를 sourceAgent=도구명으로 `insertMany`.
-  - `saveApprovedDecision` — 게이트 approve+saveToWiki 시 승인 결정 요약을 sourceAgent=`approval-gate`·category=`decision`으로 저장(지식성 단계 한정).
+  - `saveApprovedDecision` — 게이트 approve+saveToWiki 시 승인 결정 요약(PO가 편집한 `wikiSummary` 우선, 없으면 자동 summary)을 sourceAgent=`approval-gate`·category=`decision`으로 저장(지식성 단계 한정).
   - 위키 주입/저장은 모두 비차단(repo·projectId 없거나 실패 시 작업 계속).
-- **HTTP 라우트** (비인증, GET과 동일): `GET /projects/:projectId/knowledge`(limit·q·source·category 필터), `PATCH /:id`(content·category 갱신), `DELETE /:id`. PATCH/DELETE는 project_id 가드(repo)로 타 프로젝트 행 변조 차단.
+- **HTTP 라우트**: `GET /projects/:projectId/knowledge`(limit·q·source·category 필터, **비인증·읽기**), `PATCH /:id`(content·category 갱신), `DELETE /:id`. **쓰기(PATCH/DELETE)는 `authHook` 설정 시 서비스 JWT 필요**(#213 defense-in-depth; `SERVICE_JWT_SECRET` 미설정 시 개방·하위호환). PATCH/DELETE는 project_id 가드(repo)로 타 프로젝트 행 변조 차단.
 
 ## AgentQuery 교차질의
 
