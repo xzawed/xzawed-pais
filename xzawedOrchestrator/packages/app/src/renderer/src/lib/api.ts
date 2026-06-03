@@ -119,11 +119,15 @@ export async function updateKnowledge(
   id: number,
   content: string,
   category: string | null,
+  accessToken?: string,
 ): Promise<void> {
   validateBaseUrl(baseUrl)
   const res = await fetch(`${baseUrl}/projects/${projectId}/knowledge/${id}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
     body: JSON.stringify({ content, category }),
   })
   if (!res.ok) throw new Error(`updateKnowledge failed: ${res.status}`)
@@ -131,16 +135,18 @@ export async function updateKnowledge(
 
 /**
  * 도메인 지식 항목을 삭제한다(Orchestrator → Manager 프록시, DELETE).
- * non-ok면 throw.
+ * AUTH=jwt 환경에선 accessToken을 Authorization 헤더로 전달. non-ok면 throw.
  */
 export async function deleteKnowledge(
   baseUrl: string,
   projectId: string,
   id: number,
+  accessToken?: string,
 ): Promise<void> {
   validateBaseUrl(baseUrl)
   const res = await fetch(`${baseUrl}/projects/${projectId}/knowledge/${id}`, {
     method: 'DELETE',
+    ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
   })
   if (!res.ok) throw new Error(`deleteKnowledge failed: ${res.status}`)
 }

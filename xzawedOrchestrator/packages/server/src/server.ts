@@ -121,7 +121,6 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
 
   await app.register(websocket)
   await app.register(healthRoutes)
-  await app.register(knowledgeRoutes, { managerUrl: config.managerUrl })
   if (dbPool && config.userJwtSecret) {
     await registerAuthRoutes(app, dbPool, config)
   } else {
@@ -130,6 +129,17 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   const userAuthHook = (dbPool && config.userJwtSecret)
     ? makeUserAuthHook(config.userJwtSecret)
     : undefined
+
+  // 위키 프록시: 쓰기 경로에 user JWT 요구(userAuthHook) + Manager 호출에 서비스 토큰 발급·전달.
+  // jwtPlugin은 auth==='jwt' && serviceJwtSecret일 때만 등록되므로 app.jwt도 그 경우에만 사용.
+  const signServiceToken = (config.auth === 'jwt' && config.serviceJwtSecret)
+    ? (): string => app.jwt.sign({ svc: 'knowledge-proxy' }, { expiresIn: '60s' })
+    : undefined
+  await app.register(knowledgeRoutes, {
+    managerUrl: config.managerUrl,
+    ...(userAuthHook && { userAuthHook }),
+    ...(signServiceToken && { signServiceToken }),
+  })
 
   await app.register(sessionsRoutes, {
     store, runner, wsSessions,
