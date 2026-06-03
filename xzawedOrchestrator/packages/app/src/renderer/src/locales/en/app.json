@@ -79,6 +79,10 @@
     "delete_confirm": "Delete this item?",
     "category_none": "Uncategorized",
     "save_failed": "Failed to save",
-    "delete_failed": "Failed to delete"
+    "delete_failed": "Failed to delete",
+    "view_trash": "Trash",
+    "view_active": "List",
+    "restore": "Restore",
+    "restore_failed": "Failed to restore"
   }
 }

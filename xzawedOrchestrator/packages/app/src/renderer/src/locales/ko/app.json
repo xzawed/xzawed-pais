@@ -79,6 +79,10 @@
     "delete_confirm": "이 항목을 삭제할까요?",
     "category_none": "미분류",
     "save_failed": "저장에 실패했습니다",
-    "delete_failed": "삭제에 실패했습니다"
+    "delete_failed": "삭제에 실패했습니다",
+    "view_trash": "휴지통",
+    "view_active": "목록",
+    "restore": "복구",
+    "restore_failed": "복구에 실패했습니다"
   }
 }

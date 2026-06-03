@@ -54,7 +54,7 @@ export async function knowledgeRoutes(
   // 쓰기 경로(PATCH/DELETE)에만 적용. 미설정(기본)이면 개방 유지(하위호환).
   const writePreHandler = config.userAuthHook ? [config.userAuthHook] : []
 
-  app.get<{ Params: { projectId: string }; Querystring: { limit?: string; q?: string; source?: string; category?: string } }>(
+  app.get<{ Params: { projectId: string }; Querystring: { limit?: string; q?: string; source?: string; category?: string; deleted?: string } }>(
     '/projects/:projectId/knowledge',
     async (req) => {
       try {
@@ -63,6 +63,7 @@ export async function knowledgeRoutes(
         if (req.query.q) url.searchParams.set('q', req.query.q)
         if (req.query.source) url.searchParams.set('source', req.query.source)
         if (req.query.category) url.searchParams.set('category', req.query.category)
+        if (req.query.deleted) url.searchParams.set('deleted', req.query.deleted) // 휴지통 조회 passthrough
         const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
         if (!res.ok) return { items: [] }
         return await res.json()
@@ -109,6 +110,27 @@ export async function knowledgeRoutes(
         return await relayManagerResponse(reply, res)
       } catch (err) {
         app.log.warn({ err }, 'knowledge delete proxy failed')
+        return reply.status(502).send({ error: 'manager unreachable' })
+      }
+    },
+  )
+
+  // soft-delete된 항목 복구 — Manager의 POST /:id/restore로 프록시(쓰기 인증·서비스 토큰 동일).
+  app.post<{ Params: { projectId: string; id: string } }>(
+    '/projects/:projectId/knowledge/:id/restore',
+    { preHandler: writePreHandler },
+    async (req, reply) => {
+      try {
+        const url = buildManagerUrl(config, req.params.projectId, req.params.id)
+        url.pathname += '/restore'
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: managerWriteHeaders(config, {}),
+          signal: AbortSignal.timeout(5000),
+        })
+        return await relayManagerResponse(reply, res)
+      } catch (err) {
+        app.log.warn({ err }, 'knowledge restore proxy failed')
         return reply.status(502).send({ error: 'manager unreachable' })
       }
     },

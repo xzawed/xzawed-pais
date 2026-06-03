@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { postMessage, postUiAction, getKnowledge, updateKnowledge, deleteKnowledge } from '../../src/renderer/src/lib/api.js'
+import { postMessage, postUiAction, getKnowledge, getDeletedKnowledge, updateKnowledge, deleteKnowledge, restoreKnowledge } from '../../src/renderer/src/lib/api.js'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -190,5 +190,38 @@ describe('deleteKnowledge', () => {
       'http://localhost:3000/projects/p1/knowledge/99',
       expect.objectContaining({ method: 'DELETE', headers: { Authorization: 'Bearer tok-123' } }),
     )
+  })
+})
+
+describe('getDeletedKnowledge', () => {
+  it('?deleted=true로 휴지통 항목을 조회한다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ items: [{ id: 3, content: 'x', sourceAgent: 'planner', createdAt: 't' }] }) })
+    vi.stubGlobal('fetch', fetchMock)
+    const out = await getDeletedKnowledge('http://localhost:3000', 'p1')
+    const calledUrl = fetchMock.mock.calls[0][0] as URL
+    expect(calledUrl.searchParams.get('deleted')).toBe('true')
+    expect(out).toHaveLength(1)
+  })
+
+  it('non-ok면 빈 배열', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false }))
+    expect(await getDeletedKnowledge('http://localhost:3000', 'p1')).toEqual([])
+  })
+})
+
+describe('restoreKnowledge', () => {
+  it('POST /:id/restore로 복구하고 accessToken을 Authorization으로 전달한다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    await restoreKnowledge('http://localhost:3000', 'p1', 5, 'tok-123')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/projects/p1/knowledge/5/restore',
+      expect.objectContaining({ method: 'POST', headers: { Authorization: 'Bearer tok-123' } }),
+    )
+  })
+
+  it('non-ok면 throw한다', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 } as Response))
+    await expect(restoreKnowledge('http://localhost:3000', 'p1', 1)).rejects.toThrow(/404/)
   })
 })
