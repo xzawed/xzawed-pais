@@ -7,6 +7,7 @@ import type { ManagerToOrchestratorMessage, UISpec } from '../types/streams.js'
 import { ClarificationNeededError, AgentQueryError, GateAbortError } from '../tools/errors.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
 import { isGatedTool, effectiveMode, summarizeOutput, parseDecision, isKnowledgeBearingStage } from '../gates/approval-gate.js'
+import type { GateMode } from '../gates/approval-gate.js'
 import type { KnowledgeRepo } from '../db/knowledge.repo.js'
 
 /** MANAGER_MAX_ITERATIONS 환경변수를 파싱하고 유효성을 검증한다. 유효하지 않으면 Error를 throw한다. */
@@ -61,6 +62,8 @@ export interface RunnerOptions {
   sessionStore: SessionStore
   signal?: AbortSignal
   userContext?: UserContext
+  /** 전역 게이트 모드(설정 UI에서 전달) — 이 세션의 기본 승인 모드를 설정한다. */
+  gateMode?: GateMode
 }
 
 export class ClaudeRunner {
@@ -381,7 +384,11 @@ export class ClaudeRunner {
   }
 
   async run(options: RunnerOptions): Promise<string> {
-    const { sessionId, intent, context, producer, sessionStore, signal, userContext } = options
+    const { sessionId, intent, context, producer, sessionStore, signal, userContext, gateMode } = options
+
+    // 전역 게이트 모드(설정 UI) 적용 — 이 세션의 기본 승인 모드를 설정한다.
+    // 단계별 override·배포 always-manual은 effectiveMode에서 그대로 우선하므로 영향 없음.
+    if (gateMode) sessionStore.setGateDefaultMode(sessionId, gateMode)
 
     const messages: Anthropic.MessageParam[] = [
       {

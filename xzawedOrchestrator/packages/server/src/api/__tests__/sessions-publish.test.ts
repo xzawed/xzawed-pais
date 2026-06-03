@@ -87,6 +87,22 @@ describe('publishTaskToManager — projectId 있음, pool 없음', () => {
   })
 })
 
+describe('publishTaskToManager — gateMode', () => {
+  it('gateMode가 주어지면 task_request payload에 포함한다', async () => {
+    const producer = makeProducer()
+    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, undefined, makeLog(), undefined, 'ko', 'auto')
+    const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: { gateMode?: string } }
+    expect(msg.payload.gateMode).toBe('auto')
+  })
+
+  it('gateMode가 없으면 payload에 gateMode 키가 없다', async () => {
+    const producer = makeProducer()
+    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, undefined, makeLog())
+    const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: Record<string, unknown> }
+    expect('gateMode' in msg.payload).toBe(false)
+  })
+})
+
 describe('publishTaskToManager — projectId 있음, pool 있음', () => {
   it('ProjectRepo.findByIdAndUser 호출하여 workspace_path를 workspaceRoot로 사용', async () => {
     mockFindByIdAndUser.mockResolvedValueOnce(makeProject('/custom/workspace'))

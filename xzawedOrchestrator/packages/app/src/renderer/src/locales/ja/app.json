@@ -9,7 +9,10 @@
     "language": "言語",
     "lang_ko": "한국어",
     "lang_en": "English",
-    "lang_ja": "日本語"
+    "lang_ja": "日本語",
+    "gate_mode": "承認ゲートモード",
+    "gate_mode_manual": "すべてのステップを手動承認",
+    "gate_mode_auto": "すべてのステップを自動通過"
   },
   "sidebar": {
     "new_session": "新しいセッション",

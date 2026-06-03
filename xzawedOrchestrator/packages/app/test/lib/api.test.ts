@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { postUiAction, getKnowledge, updateKnowledge, deleteKnowledge } from '../../src/renderer/src/lib/api.js'
+import { postMessage, postUiAction, getKnowledge, updateKnowledge, deleteKnowledge } from '../../src/renderer/src/lib/api.js'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -32,6 +32,28 @@ describe('postUiAction', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(postUiAction('ftp://evil', 'sess-1', 'x')).rejects.toThrow(/http or https/)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('postMessage', () => {
+  it('gateMode가 있으면 body에 포함한다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ messageId: 'm', status: 'accepted' }) })
+    vi.stubGlobal('fetch', fetchMock)
+    await postMessage('http://localhost:3000', 'sess-1', '안녕', 'auto')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/sessions/sess-1/messages',
+      expect.objectContaining({ body: JSON.stringify({ content: '안녕', gateMode: 'auto' }) }),
+    )
+  })
+
+  it('gateMode가 없으면 content만 보낸다', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ messageId: 'm', status: 'accepted' }) })
+    vi.stubGlobal('fetch', fetchMock)
+    await postMessage('http://localhost:3000', 'sess-1', '안녕')
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://localhost:3000/sessions/sess-1/messages',
+      expect.objectContaining({ body: JSON.stringify({ content: '안녕' }) }),
+    )
   })
 })
 

@@ -101,7 +101,7 @@ export function ChatView(): React.JSX.Element {
     store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'user', content, timestamp: Date.now() })
     store.setPending(true)
     try {
-      await postMessage(settings.serverUrl, sessionId, content)
+      await postMessage(settings.serverUrl, sessionId, content, settings.gateMode)
     } catch (err) {
       store.setPending(false)
       store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `[Error] ${err instanceof Error ? err.message : String(err)}`, timestamp: Date.now() })

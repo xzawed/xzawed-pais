@@ -7,6 +7,8 @@ export interface AppSettings {
   serverUrl: string
   mode: 'local' | 'remote'
   userId: string
+  /** 전역 승인 게이트 모드 — 모든 단계 수동 승인(manual) vs 자동 통과(auto). 기본 manual. */
+  gateMode: 'manual' | 'auto'
 }
 
 interface AppState {
@@ -26,6 +28,7 @@ export const useAppStore = create<AppState>((set) => ({
     serverUrl: 'http://localhost:3000',
     mode: 'local',
     userId: 'user',
+    gateMode: 'manual',
   },
   serverStatus: 'unknown',
   showSettings: false,

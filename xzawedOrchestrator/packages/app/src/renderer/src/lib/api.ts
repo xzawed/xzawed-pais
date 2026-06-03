@@ -47,7 +47,8 @@ export async function createSession(baseUrl: string, userId: string): Promise<Cr
 export async function postMessage(
   baseUrl: string,
   sessionId: string,
-  content: string
+  content: string,
+  gateMode?: 'manual' | 'auto',
 ): Promise<PostMessageResponse> {
   validateBaseUrl(baseUrl)
   const res = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
@@ -55,7 +56,7 @@ export async function postMessage(
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, ...(gateMode ? { gateMode } : {}) }),
   })
   if (!res.ok) throw new Error(`postMessage failed: ${res.status}`)
   return res.json() as Promise<PostMessageResponse>

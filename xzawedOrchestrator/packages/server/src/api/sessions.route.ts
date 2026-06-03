@@ -98,6 +98,7 @@ export async function publishTaskToManager(
   log: FastifyInstance['log'],
   pool?: Pool,
   locale: ServerLocale = 'ko',
+  gateMode?: 'manual' | 'auto',
 ): Promise<void> {
   const envFallback = process.env.WORKSPACE_ROOT ?? '/workspace'
   let userContext: { userId: string; projectId: string; workspaceRoot: string }
@@ -127,6 +128,7 @@ export async function publishTaskToManager(
         context: { history: snapshot.map((m) => ({ role: m.role, content: m.content })) },
         priority: 'normal',
         ...(userContext ? { userContext } : {}),
+        ...(gateMode ? { gateMode } : {}),
       },
     })
     socket?.send(JSON.stringify({ type: 'status', content: t('status.forwarding', locale) }))
@@ -339,7 +341,7 @@ export async function sessionsRoutes(
     return messageStore.get(req.params.id) ?? []
   })
 
-  app.post<{ Params: { id: string }; Body: { content: string } }>(
+  app.post<{ Params: { id: string }; Body: { content: string; gateMode?: 'manual' | 'auto' } }>(
     '/sessions/:id/messages',
     routeOpts,
     async (req, reply) => {
@@ -375,6 +377,7 @@ export async function sessionsRoutes(
       const capturedProjectId = session.projectId
       const capturedUserId = session.userId
       const capturedLocale = resolved.loc
+      const capturedGateMode = req.body.gateMode
 
       processingSessionIds.add(sessionId)
       ;(async () => {
@@ -396,7 +399,7 @@ export async function sessionsRoutes(
           taskStore.create(sessionId, intent)
 
           const capturedSession = { userId: capturedUserId, projectId: capturedProjectId }
-          await publishTaskToManager(producer, sessionId, intent, snapshot, capturedSession, socket, app.log, pool, capturedLocale)
+          await publishTaskToManager(producer, sessionId, intent, snapshot, capturedSession, socket, app.log, pool, capturedLocale, capturedGateMode)
 
           socket?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
         } catch (err) {

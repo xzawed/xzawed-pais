@@ -24,6 +24,9 @@ vi.mock('../lib/i18n.js', async () => {
               lang_ko: '한국어',
               lang_en: 'English',
               lang_ja: '日本語',
+              gate_mode: '승인 게이트 모드',
+              gate_mode_manual: '모든 단계 수동 승인',
+              gate_mode_auto: '모든 단계 자동 통과',
             },
           },
           common: { save: '저장', cancel: '취소' },
@@ -44,7 +47,7 @@ vi.stubGlobal('electronAPI', { setSettings: vi.fn().mockResolvedValue(undefined)
 describe('SettingsModal', () => {
   beforeEach(() => {
     useAppStore.setState({
-      settings: { serverUrl: 'http://localhost:3000', mode: 'local', userId: 'user' },
+      settings: { serverUrl: 'http://localhost:3000', mode: 'local', userId: 'user', gateMode: 'manual' },
       showSettings: false,
       locale: 'ko',
     })
@@ -98,6 +101,18 @@ describe('SettingsModal', () => {
     fireEvent.click(saveButton)
     expect(updateSettings).toHaveBeenCalledOnce()
     expect(toggleSettings).toHaveBeenCalledOnce()
+  })
+
+  test('게이트 모드 select가 렌더되고 변경 후 저장 시 gateMode가 반영된다', () => {
+    const updateSettings = vi.fn()
+    useAppStore.setState({ showSettings: true, updateSettings })
+    render(<SettingsModal />)
+    const sel = screen.getByTestId('settings-gate-mode') as HTMLSelectElement
+    expect(sel).toBeInTheDocument()
+    expect(sel.value).toBe('manual')
+    fireEvent.change(sel, { target: { value: 'auto' } })
+    fireEvent.click(screen.getByTestId('settings-save'))
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ gateMode: 'auto' }))
   })
 
   test('서버 URL 입력 변경이 반영된다', () => {
