@@ -40,7 +40,7 @@ Return ONLY valid JSON in this exact structure:
   "uiSpec": {
     "type": "mockup_viewer",
     "title": "Login Page",
-    "content": "Single-page login with email/password inputs"
+    "content": "## Login Page\\n\\n- **Email** input (required)\\n- **Password** input\\n- [Sign in] button\\n\\nMobile-first single-page layout."
   },
   "knowledge": ["UI/UX 도메인 결정·제약을 한 줄씩 (예: '폼은 모바일 우선', '접근성 WCAG AA 준수'). 없으면 생략."]
 }
@@ -50,6 +50,7 @@ Rules:
 - props values are TypeScript type strings
 - children is optional; omit if the component has no sub-components
 - cssClasses uses the target design system conventions
+- uiSpec.content MUST be Markdown — use headings (##), component/field lists (-), and emphasis (**) so the approval-gate demo renders a rich structured mockup rather than a plain caption
 
 COLLABORATION — instead of components, you MAY return one of these to talk to another agent:
 

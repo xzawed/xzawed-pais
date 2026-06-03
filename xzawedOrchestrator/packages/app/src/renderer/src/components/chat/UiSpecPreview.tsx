@@ -1,5 +1,6 @@
 import React from 'react'
 import type { UISpec, UIField } from '@xzawed/shared'
+import { MarkdownContent } from './MarkdownContent.js'
 
 /**
  * 승인 게이트에서 디자인 산출물(UISpec)을 **읽기 전용**으로 미리보여 주는 데모 렌더러.
@@ -43,9 +44,8 @@ export function UiSpecPreview({ spec }: Readonly<{ spec: UISpec }>): React.JSX.E
       )}
 
       {(spec.type === 'mockup_viewer' || spec.type === 'progress_board') && (
-        <pre className="text-[11px] text-fg whitespace-pre-wrap break-words m-0">
-          {spec.content ?? ''}
-        </pre>
+        // content를 마크다운으로 리치 렌더(제목·목록·표·강조·코드) — 단순 raw 텍스트 대신 구조를 시각화.
+        <MarkdownContent content={spec.content ?? ''} />
       )}
     </div>
   )
