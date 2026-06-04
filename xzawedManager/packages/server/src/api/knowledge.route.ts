@@ -28,6 +28,15 @@ function parseId(repo: KnowledgeRepo | undefined, rawId: string, reply: FastifyR
   return Number(rawId)
 }
 
+/**
+ * 변경 주체(actor) 추출: Orchestrator 프록시가 전달한 `x-actor-id` 헤더(인증된 user id).
+ * 없으면 undefined → audit에 NULL로 기록(서비스 자체 호출·미전달 호환).
+ */
+function extractActor(req: FastifyRequest): string | undefined {
+  const h = req.headers['x-actor-id']
+  return typeof h === 'string' && h.trim() ? h.trim() : undefined
+}
+
 /** 프로젝트 도메인 지식 조회 — 읽기 전용·비인증(민감정보 아님, health와 동일). */
 export async function knowledgeRoute(
   app: FastifyInstance,
@@ -69,7 +78,7 @@ export async function knowledgeRoute(
       // category: 없거나 빈 문자열이면 분류 해제(null), 있으면 그대로.
       const rawCategory = req.body?.category?.trim()
       const category = rawCategory ? rawCategory : null
-      const ok = await opts.knowledgeRepo!.updateById(req.params.projectId, id, content, category)
+      const ok = await opts.knowledgeRepo!.updateById(req.params.projectId, id, content, category, extractActor(req))
       if (!ok) return reply.code(404).send({ error: 'not found' })
       return reply.code(200).send({ ok: true })
     },
@@ -82,7 +91,7 @@ export async function knowledgeRoute(
     async (req, reply) => {
       const id = parseId(opts.knowledgeRepo, req.params.id, reply)
       if (id === null) return reply
-      const ok = await opts.knowledgeRepo!.deleteById(req.params.projectId, id)
+      const ok = await opts.knowledgeRepo!.deleteById(req.params.projectId, id, extractActor(req))
       if (!ok) return reply.code(404).send({ error: 'not found' })
       return reply.code(204).send()
     },
@@ -95,9 +104,22 @@ export async function knowledgeRoute(
     async (req, reply) => {
       const id = parseId(opts.knowledgeRepo, req.params.id, reply)
       if (id === null) return reply
-      const ok = await opts.knowledgeRepo!.restoreById(req.params.projectId, id)
+      const ok = await opts.knowledgeRepo!.restoreById(req.params.projectId, id, extractActor(req))
       if (!ok) return reply.code(404).send({ error: 'not found' })
       return reply.code(200).send({ ok: true })
+    },
+  )
+
+  // 항목별 변경 이력(audit) 조회 — 읽기 전용·비인증(GET과 동일 정책). project_id 가드는 repo에서.
+  app.get<{ Params: { projectId: string; id: string }; Querystring: { limit?: string } }>(
+    '/projects/:projectId/knowledge/:id/audit',
+    async (req, reply) => {
+      const id = parseId(opts.knowledgeRepo, req.params.id, reply)
+      if (id === null) return reply
+      const parsed = Number.parseInt(req.query.limit ?? String(DEFAULT_LIMIT), 10)
+      const limit = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), MAX_LIMIT) : DEFAULT_LIMIT
+      const items = await opts.knowledgeRepo!.auditHistory(req.params.projectId, id, limit)
+      return reply.code(200).send({ items })
     },
   )
 }

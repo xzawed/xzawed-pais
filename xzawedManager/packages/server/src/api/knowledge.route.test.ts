@@ -85,7 +85,7 @@ describe('knowledgeRoute', () => {
       })
       expect(res.statusCode).toBe(200)
       expect(res.json()).toEqual({ ok: true })
-      expect(repo.updateById).toHaveBeenCalledWith('p1', 5, '수정된 내용', 'rule')
+      expect(repo.updateById).toHaveBeenCalledWith('p1', 5, '수정된 내용', 'rule', undefined)
       await app.close()
     })
 
@@ -96,7 +96,7 @@ describe('knowledgeRoute', () => {
         method: 'PATCH', url: '/projects/p1/knowledge/5',
         payload: { content: '내용', category: '   ' },
       })
-      expect(repo.updateById).toHaveBeenCalledWith('p1', 5, '내용', null)
+      expect(repo.updateById).toHaveBeenCalledWith('p1', 5, '내용', null, undefined)
       await app.close()
     })
 
@@ -104,7 +104,7 @@ describe('knowledgeRoute', () => {
       const repo = { updateById: vi.fn().mockResolvedValue(true) }
       const app = await build(repo)
       await app.inject({ method: 'PATCH', url: '/projects/p1/knowledge/5', payload: { content: '내용' } })
-      expect(repo.updateById).toHaveBeenCalledWith('p1', 5, '내용', null)
+      expect(repo.updateById).toHaveBeenCalledWith('p1', 5, '내용', null, undefined)
       await app.close()
     })
 
@@ -166,7 +166,7 @@ describe('knowledgeRoute', () => {
       const res = await app.inject({ method: 'DELETE', url: '/projects/p1/knowledge/5' })
       expect(res.statusCode).toBe(204)
       expect(res.body).toBe('')
-      expect(repo.deleteById).toHaveBeenCalledWith('p1', 5)
+      expect(repo.deleteById).toHaveBeenCalledWith('p1', 5, undefined)
       await app.close()
     })
 
@@ -216,7 +216,7 @@ describe('knowledgeRoute', () => {
         headers: { authorization: `Bearer ${token}` }, payload: { content: '내용' },
       })
       expect(res.statusCode).toBe(200)
-      expect(repo.updateById).toHaveBeenCalledWith('p1', 5, '내용', null)
+      expect(repo.updateById).toHaveBeenCalledWith('p1', 5, '내용', null, undefined)
       await app.close()
     })
 
@@ -238,7 +238,7 @@ describe('knowledgeRoute', () => {
         headers: { authorization: `Bearer ${token}` },
       })
       expect(res.statusCode).toBe(204)
-      expect(repo.deleteById).toHaveBeenCalledWith('p1', 5)
+      expect(repo.deleteById).toHaveBeenCalledWith('p1', 5, undefined)
       await app.close()
     })
 
@@ -280,7 +280,7 @@ describe('knowledgeRoute', () => {
       const res = await app.inject({ method: 'POST', url: '/projects/p1/knowledge/5/restore' })
       expect(res.statusCode).toBe(200)
       expect(res.json()).toEqual({ ok: true })
-      expect(repo.restoreById).toHaveBeenCalledWith('p1', 5)
+      expect(repo.restoreById).toHaveBeenCalledWith('p1', 5, undefined)
       await app.close()
     })
 
@@ -314,6 +314,61 @@ describe('knowledgeRoute', () => {
       const res = await app.inject({ method: 'POST', url: '/projects/p1/knowledge/5/restore' })
       expect(res.statusCode).toBe(401)
       expect(repo.restoreById).not.toHaveBeenCalled()
+      await app.close()
+    })
+  })
+
+  describe('actor 전달 + GET audit 이력', () => {
+    it('PATCH에 x-actor-id 헤더가 있으면 actor로 updateById에 전달한다', async () => {
+      const repo = { updateById: vi.fn().mockResolvedValue(true) }
+      const app = await build(repo)
+      await app.inject({
+        method: 'PATCH', url: '/projects/p1/knowledge/5',
+        headers: { 'x-actor-id': 'user-9' }, payload: { content: '내용' },
+      })
+      expect(repo.updateById).toHaveBeenCalledWith('p1', 5, '내용', null, 'user-9')
+      await app.close()
+    })
+
+    it('DELETE에 x-actor-id 헤더가 있으면 actor로 deleteById에 전달한다', async () => {
+      const repo = { deleteById: vi.fn().mockResolvedValue(true) }
+      const app = await build(repo)
+      await app.inject({ method: 'DELETE', url: '/projects/p1/knowledge/5', headers: { 'x-actor-id': 'user-9' } })
+      expect(repo.deleteById).toHaveBeenCalledWith('p1', 5, 'user-9')
+      await app.close()
+    })
+
+    it('GET /:id/audit는 auditHistory 결과를 반환한다', async () => {
+      const repo = { auditHistory: vi.fn().mockResolvedValue([{ id: 1, knowledgeId: 5, action: 'update', at: 't' }]) }
+      const app = await build(repo)
+      const res = await app.inject({ method: 'GET', url: '/projects/p1/knowledge/5/audit' })
+      expect(res.statusCode).toBe(200)
+      expect(repo.auditHistory).toHaveBeenCalledWith('p1', 5, 50)
+      expect(res.json()).toEqual({ items: [{ id: 1, knowledgeId: 5, action: 'update', at: 't' }] })
+      await app.close()
+    })
+
+    it('GET /:id/audit는 limit를 상한 200으로 제한한다', async () => {
+      const repo = { auditHistory: vi.fn().mockResolvedValue([]) }
+      const app = await build(repo)
+      await app.inject({ method: 'GET', url: '/projects/p1/knowledge/5/audit?limit=999' })
+      expect(repo.auditHistory).toHaveBeenCalledWith('p1', 5, 200)
+      await app.close()
+    })
+
+    it('GET /:id/audit에서 id가 비숫자면 400이고 auditHistory를 호출하지 않는다', async () => {
+      const repo = { auditHistory: vi.fn() }
+      const app = await build(repo)
+      const res = await app.inject({ method: 'GET', url: '/projects/p1/knowledge/abc/audit' })
+      expect(res.statusCode).toBe(400)
+      expect(repo.auditHistory).not.toHaveBeenCalled()
+      await app.close()
+    })
+
+    it('GET /:id/audit는 repo가 없으면 503', async () => {
+      const app = await build(undefined)
+      const res = await app.inject({ method: 'GET', url: '/projects/p1/knowledge/5/audit' })
+      expect(res.statusCode).toBe(503)
       await app.close()
     })
   })
