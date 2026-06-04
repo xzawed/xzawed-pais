@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { jsx, jsxs, Fragment } from 'react/jsx-runtime'
 import { toJsxRuntime } from 'hast-util-to-jsx-runtime'
 import { getHighlighter, detectLang } from '../../lib/markdown.js'
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function CodeBlock({ code, filename, lang, streaming = false }: Readonly<Props>): React.JSX.Element {
+  const { t } = useTranslation('app')
   const [node, setNode] = useState<ReactNode>(null)
   const [copied, setCopied] = useState(false)
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -61,7 +63,7 @@ export function CodeBlock({ code, filename, lang, streaming = false }: Readonly<
           onClick={handleCopy}
           className="text-[9px] text-accent hover:text-fg transition-colors duration-150"
         >
-          {copied ? '✓ 복사됨' : '복사'}
+          {copied ? t('chat.code_copied') : t('chat.code_copy')}
         </button>
       </div>
       <div className="relative overflow-x-auto">

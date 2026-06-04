@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { useTranslation } from 'react-i18next'
+import { useTranslation, Trans } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { Message } from '@xzawed/shared'
 import { useProjectsStore, useAuthStore } from '@xzawed/ui'
@@ -125,7 +125,16 @@ export function ChatView(): React.JSX.Element {
         <div data-testid="empty-chat-message" className="flex flex-1 flex-col items-center justify-center bg-bg text-fg-ghost">
           <div className="mb-2 text-4xl">💬</div>
           <p className="text-sm text-fg-muted">{t('chat.empty_state')}</p>
-          <p className="mt-1 text-[10px] text-fg-ghost">사이드바의 <strong className="text-fg-dim">+ 새 세션</strong> 버튼을 클릭하거나 <kbd className="rounded border border-border bg-surface px-1 py-0.5 text-[9px]">⌘K</kbd>를 누르세요</p>
+          <p className="mt-1 text-[10px] text-fg-ghost">
+            <Trans
+              t={t}
+              i18nKey="chat.empty_hint"
+              components={[
+                <strong className="text-fg-dim" />,
+                <kbd className="rounded border border-border bg-surface px-1 py-0.5 text-[9px]" />,
+              ]}
+            />
+          </p>
         </div>
       ) : (
         <>

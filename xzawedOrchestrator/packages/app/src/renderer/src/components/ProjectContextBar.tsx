@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface Props {
   projectName: string | null
@@ -14,6 +15,7 @@ function WorkspaceIcon({ type }: Readonly<{ type: 'none' | 'local' | 'github' | 
 }
 
 export function ProjectContextBar({ projectName, workspacePath, workspaceType, onSwitch }: Readonly<Props>): React.JSX.Element {
+  const { t } = useTranslation('app')
   return (
     <div data-testid="project-context-bar" className="flex items-center border-t border-border px-3 py-1">
       <button
@@ -23,7 +25,7 @@ export function ProjectContextBar({ projectName, workspacePath, workspaceType, o
         title={workspacePath ?? undefined}
       >
         <WorkspaceIcon type={workspaceType} />
-        <span>{projectName ?? '(프로젝트 없음)'}</span>
+        <span>{projectName ?? t('chat.project_none')}</span>
         <span className="opacity-50">▾</span>
       </button>
     </div>
