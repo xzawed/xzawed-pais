@@ -1,11 +1,19 @@
 import { z } from 'zod'
 import { collaborationPayloadFields } from '@xzawed/agent-streams'
 
+/**
+ * Planner가 단계에 배정할 수 있는 에이전트 타입의 **단일 소스**.
+ * StepSchema(z.enum)·SYSTEM_PROMPT 열거·Step.agentType 타입이 모두 이 튜플에서 파생되어
+ * 셋 사이의 드리프트(예: 새 에이전트 추가 시 일부만 갱신)를 원천 차단한다.
+ */
+export const AGENT_TYPES = ['developer', 'designer', 'tester', 'builder', 'watcher', 'security'] as const
+export type AgentType = (typeof AGENT_TYPES)[number]
+
 export interface Step {
   id: string
   title: string
   description: string
-  agentType: 'developer' | 'designer' | 'tester' | 'builder' | 'watcher' | 'security'
+  agentType: AgentType
   dependencies: string[]
   estimatedMinutes: number
 }

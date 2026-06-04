@@ -1,15 +1,19 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { AgentQuery, parseAgentQuery, answerViaClaude, callClaudeText, formatDomainKnowledge } from '@xzawed/agent-streams'
+import { AGENT_TYPES } from '../types.js'
 import type { Step, UISpec } from '../types.js'
 
 const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
+
+/** 프롬프트에 노출할 agentType 열거 문자열 — AGENT_TYPES 단일 소스에서 생성. */
+const AGENT_TYPE_LIST = AGENT_TYPES.map((t) => `"${t}"`).join(' | ')
 
 const StepSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1).max(200),
   description: z.string(),
-  agentType: z.enum(['developer', 'designer', 'tester', 'builder', 'watcher', 'security']),
+  agentType: z.enum(AGENT_TYPES),
   dependencies: z.array(z.string()),
   estimatedMinutes: z.number().positive().max(480),
 })
@@ -25,7 +29,7 @@ const PlanResponseSchema = z.object({
   knowledge: z.array(KnowledgeItemSchema).optional(),
 })
 
-const SYSTEM_PROMPT = `You are a software project planning agent. Given a development intent and context, break it down into concrete, actionable steps.
+export const SYSTEM_PROMPT = `You are a software project planning agent. Given a development intent and context, break it down into concrete, actionable steps.
 
 If the prompt includes a "이전 프로젝트 도메인 지식" section, you MUST respect and build upon those prior decisions and constraints.
 
@@ -65,7 +69,7 @@ Format 3 — When you need another expert agent's input to plan correctly:
   "kind": "active_request"
 }
 
-agentType / "to" values: "developer" | "designer" | "tester" | "builder" | "watcher" | "security"
+agentType / "to" values: ${AGENT_TYPE_LIST}
 Set dependencies as array of step ids that must complete first.
 Only ask the user for clarification (Format 2) when truly essential information is missing.
 Use Format 3 only when another expert's input genuinely affects the plan. When an answer from another agent is provided, incorporate it and return Format 1.`
