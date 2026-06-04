@@ -40,7 +40,17 @@
   "chat": {
     "empty_state": "新しいセッションを開始してください",
     "input_placeholder": "メッセージを入力...",
-    "send_hint": "Enter で送信 · Shift+Enter で改行"
+    "send_hint": "Enter で送信 · Shift+Enter で改行",
+    "empty_hint": "サイドバーの <0>+ 新規セッション</0> ボタンをクリックするか <1>⌘K</1> を押してください",
+    "send_aria": "メッセージを送信",
+    "timeline_done": "✓ 完了",
+    "timeline_active": "⚡ 進行中",
+    "timeline_waiting": "待機中",
+    "timeline_starts_after": "前のエージェントの完了後に開始します。",
+    "pipeline_label": "パイプライン",
+    "code_copied": "✓ コピー済み",
+    "code_copy": "コピー",
+    "project_none": "(プロジェクトなし)"
   },
   "mcp": {
     "title": "🔌 MCPサーバー",
@@ -57,7 +67,8 @@
     "placeholder_args": "スペース区切り",
     "placeholder_env": "例: {\"API_KEY\": \"sk-...\"}",
     "btn_add_start": "+ 追加して起動",
-    "toggle_loading": "..."
+    "toggle_loading": "...",
+    "env_json_invalid": "環境変数のJSON形式が正しくありません。空の値に置き換えます。"
   },
   "github": {
     "title": "GitHub",

@@ -40,7 +40,17 @@
   "chat": {
     "empty_state": "새 세션을 시작해주세요",
     "input_placeholder": "메시지를 입력하세요...",
-    "send_hint": "Enter 전송 · Shift+Enter 줄바꿈"
+    "send_hint": "Enter 전송 · Shift+Enter 줄바꿈",
+    "empty_hint": "사이드바의 <0>+ 새 세션</0> 버튼을 클릭하거나 <1>⌘K</1>를 누르세요",
+    "send_aria": "메시지 전송",
+    "timeline_done": "✓ 완료",
+    "timeline_active": "⚡ 진행중",
+    "timeline_waiting": "대기중",
+    "timeline_starts_after": "이전 에이전트 완료 후 시작됩니다.",
+    "pipeline_label": "파이프라인",
+    "code_copied": "✓ 복사됨",
+    "code_copy": "복사",
+    "project_none": "(프로젝트 없음)"
   },
   "mcp": {
     "title": "🔌 MCP 서버",
@@ -57,7 +67,8 @@
     "placeholder_args": "공백으로 구분 (따옴표 포함 인수 미지원)",
     "placeholder_env": "예: {\"API_KEY\": \"sk-...\"}",
     "btn_add_start": "+ 추가 및 시작",
-    "toggle_loading": "..."
+    "toggle_loading": "...",
+    "env_json_invalid": "환경변수 JSON 형식이 올바르지 않습니다. 빈 값으로 대체합니다."
   },
   "github": {
     "title": "GitHub",

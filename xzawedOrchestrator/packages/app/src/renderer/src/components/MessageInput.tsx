@@ -68,7 +68,7 @@ export function MessageInput({ onSend, disabled }: Readonly<Props>): React.JSX.E
             {disabled ? '' : t('chat.send_hint')}
           </span>
           <motion.button
-            aria-label="메시지 전송"
+            aria-label={t('chat.send_aria')}
             data-testid="message-send-button"
             onClick={handleSend}
             disabled={!canSend}

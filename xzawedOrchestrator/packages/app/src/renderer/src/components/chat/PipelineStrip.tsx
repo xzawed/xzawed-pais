@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { AgentStep } from '../../lib/parseAgentSteps.js'
 import { cn } from '../../lib/utils.js'
@@ -8,11 +9,12 @@ interface Props {
 }
 
 export function PipelineStrip({ steps }: Readonly<Props>): React.JSX.Element {
+  const { t } = useTranslation('app')
   if (steps.length === 0) return <div />
 
   return (
     <div className="flex items-center gap-1 border-b border-border bg-surface px-4 py-1.5 overflow-x-auto">
-      <span className="mr-1 flex-shrink-0 text-[9px] text-fg-ghost">파이프라인</span>
+      <span className="mr-1 flex-shrink-0 text-[9px] text-fg-ghost">{t('chat.pipeline_label')}</span>
       {steps.map((step, i) => (
         <React.Fragment key={`${step.agentName}-${i}`}>
           {i > 0 && (

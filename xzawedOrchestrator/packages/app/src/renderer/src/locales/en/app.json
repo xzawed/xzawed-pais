@@ -40,7 +40,17 @@
   "chat": {
     "empty_state": "Start a new session",
     "input_placeholder": "Type a message...",
-    "send_hint": "Enter to send · Shift+Enter for new line"
+    "send_hint": "Enter to send · Shift+Enter for new line",
+    "empty_hint": "Click <0>+ New session</0> in the sidebar or press <1>⌘K</1>",
+    "send_aria": "Send message",
+    "timeline_done": "✓ Done",
+    "timeline_active": "⚡ In progress",
+    "timeline_waiting": "Waiting",
+    "timeline_starts_after": "Starts after the previous agent completes.",
+    "pipeline_label": "Pipeline",
+    "code_copied": "✓ Copied",
+    "code_copy": "Copy",
+    "project_none": "(No project)"
   },
   "mcp": {
     "title": "🔌 MCP Servers",
@@ -57,7 +67,8 @@
     "placeholder_args": "Space-separated (quoted args not supported)",
     "placeholder_env": "e.g. {\"API_KEY\": \"sk-...\"}",
     "btn_add_start": "+ Add & Start",
-    "toggle_loading": "..."
+    "toggle_loading": "...",
+    "env_json_invalid": "Invalid environment variable JSON. Replacing with empty value."
   },
   "github": {
     "title": "GitHub",

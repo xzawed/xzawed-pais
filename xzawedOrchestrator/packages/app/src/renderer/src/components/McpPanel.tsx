@@ -108,7 +108,7 @@ export function McpPanel(): React.JSX.Element {
     }
     if (envParseError) {
       console.warn('[McpPanel] env JSON parse failed, using {}')
-      toast.error('환경변수 JSON 형식이 올바르지 않습니다. 빈 값으로 대체합니다.')
+      toast.error(t('mcp.env_json_invalid'))
     }
     const config: McpServerConfig = { id, name: form.name, command: form.command, args, env, autoStart: true }
     setLoading(id)

@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import type { Message } from '@xzawed/shared'
 import { parseAgentSteps, type AgentStep, type AgentName } from '../../lib/parseAgentSteps.js'
@@ -60,6 +61,7 @@ function TimelineStep({ step, index, streaming }: {
   index: number
   streaming: boolean
 }): React.JSX.Element {
+  const { t } = useTranslation('app')
   const meta = AGENT_META[step.agentName]
   const isActive = step.status === 'active'
   const isDone = step.status === 'done'
@@ -95,16 +97,16 @@ function TimelineStep({ step, index, streaming }: {
           <span className={cn('text-[10px] font-semibold', meta.color)}>{step.agentName}</span>
           {isDone && (
             <span className="ml-auto rounded-full bg-ok-bg px-1.5 py-0.5 text-[8px] text-ok border border-ok/20">
-              ✓ 완료
+              {t('chat.timeline_done')}
             </span>
           )}
           {isActive && (
             <span className="ml-auto rounded-full bg-accent-bg px-1.5 py-0.5 text-[8px] text-accent border border-accent/30 animate-pulse-glow-blue">
-              ⚡ 진행중
+              {t('chat.timeline_active')}
             </span>
           )}
           {isWaiting && (
-            <span className="ml-auto text-[8px] text-fg-ghost">대기중</span>
+            <span className="ml-auto text-[8px] text-fg-ghost">{t('chat.timeline_waiting')}</span>
           )}
         </div>
 
@@ -113,7 +115,7 @@ function TimelineStep({ step, index, streaming }: {
           <MarkdownContent content={step.content} streaming={isActive && streaming} />
         )}
         {isWaiting && !step.content && (
-          <p className="text-[10px] text-fg-ghost">이전 에이전트 완료 후 시작됩니다.</p>
+          <p className="text-[10px] text-fg-ghost">{t('chat.timeline_starts_after')}</p>
         )}
       </div>
     </motion.div>
