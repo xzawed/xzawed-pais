@@ -1,21 +1,23 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { useIntegrationsStore, type ActivePanel } from '../../store/integrations.store.js'
 import { useAppStore } from '../../store/app.store.js'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip.js'
 import { cn } from '../../lib/utils.js'
 
-interface NavItem { panel: ActivePanel; icon: string; label: string }
+interface NavItem { panel: ActivePanel; icon: string }
 
 const NAV_ITEMS: NavItem[] = [
-  { panel: 'chat',    icon: '💬', label: '채팅' },
-  { panel: 'github',  icon: '🐙', label: 'GitHub' },
-  { panel: 'mcp',     icon: '🔌', label: 'MCP 서버' },
-  { panel: 'plugins', icon: '🧩', label: '플러그인' },
-  { panel: 'wiki',    icon: '📚', label: '위키' },
+  { panel: 'chat',    icon: '💬' },
+  { panel: 'github',  icon: '🐙' },
+  { panel: 'mcp',     icon: '🔌' },
+  { panel: 'plugins', icon: '🧩' },
+  { panel: 'wiki',    icon: '📚' },
 ]
 
 export function ActivityBar(): React.JSX.Element {
+  const { t } = useTranslation('app')
   const { activePanel, setActivePanel } = useIntegrationsStore()
   const { toggleSettings } = useAppStore()
 
@@ -25,6 +27,7 @@ export function ActivityBar(): React.JSX.Element {
         <ActivityButton
           key={item.panel}
           item={item}
+          label={t(`activity_bar.${item.panel}`)}
           isActive={activePanel === item.panel}
           onClick={() => setActivePanel(item.panel)}
         />
@@ -35,14 +38,14 @@ export function ActivityBar(): React.JSX.Element {
           <TooltipTrigger asChild>
             <button
               onClick={toggleSettings}
-              aria-label="설정"
+              aria-label={t('activity_bar.settings')}
               data-testid="settings-trigger"
               className="relative flex h-8 w-8 items-center justify-center rounded text-base text-fg-ghost transition-all duration-150 hover:scale-110 hover:bg-border hover:text-fg"
             >
               ⚙
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right">설정</TooltipContent>
+          <TooltipContent side="right">{t('activity_bar.settings')}</TooltipContent>
         </Tooltip>
 
         <div className="h-7 w-7 rounded-full bg-accent flex items-center justify-center text-[11px] font-bold text-white cursor-pointer transition-all duration-150 hover:ring-2 hover:ring-accent/50">
@@ -53,17 +56,18 @@ export function ActivityBar(): React.JSX.Element {
   )
 }
 
-function ActivityButton({ item, isActive, onClick }: {
+function ActivityButton({ item, label, isActive, onClick }: Readonly<{
   item: NavItem
+  label: string
   isActive: boolean
   onClick: () => void
-}): React.JSX.Element {
+}>): React.JSX.Element {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           onClick={onClick}
-          aria-label={item.label}
+          aria-label={label}
           data-testid={`nav-${item.panel}`}
           className={cn(
             'relative flex h-8 w-8 items-center justify-center rounded text-base transition-all duration-150',
@@ -84,7 +88,7 @@ function ActivityButton({ item, isActive, onClick }: {
           {item.icon}
         </button>
       </TooltipTrigger>
-      <TooltipContent side="right">{item.label}</TooltipContent>
+      <TooltipContent side="right">{label}</TooltipContent>
     </Tooltip>
   )
 }

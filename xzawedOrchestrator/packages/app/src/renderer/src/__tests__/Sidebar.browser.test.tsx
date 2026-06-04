@@ -20,6 +20,8 @@ vi.mock('../lib/i18n.js', async () => {
               search_placeholder: '세션 검색...',
               current_session: '현재 세션',
               today: '오늘',
+              no_sessions: '세션이 없습니다',
+              plugins_count: '플러그인 {{count}}',
             },
           },
           common: { loading: '로딩 중...' },

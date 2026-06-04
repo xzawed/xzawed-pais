@@ -18,7 +18,24 @@
     "new_session": "New Session",
     "search_placeholder": "Search sessions...",
     "current_session": "Current Session",
-    "today": "Today"
+    "today": "Today",
+    "no_sessions": "No sessions",
+    "plugins_count": "Plugins {{count}}"
+  },
+  "activity_bar": {
+    "chat": "Chat",
+    "github": "GitHub",
+    "mcp": "MCP Servers",
+    "plugins": "Plugins",
+    "wiki": "Wiki",
+    "settings": "Settings"
+  },
+  "status_bar": {
+    "server": "Server",
+    "running": "Running",
+    "stopped": "Stopped",
+    "checking": "Checking",
+    "mcp_count": "MCP {{count}}"
   },
   "chat": {
     "empty_state": "Start a new session",
@@ -44,16 +61,59 @@
   },
   "github": {
     "title": "GitHub",
-    "connect_hint": "Connect your GitHub account to manage repositories."
+    "connect_hint": "Connect your GitHub account to manage repositories.",
+    "connected": "Connected",
+    "disconnect": "Disconnect",
+    "default_repo": "Default Repository",
+    "select_repo": "-- Select a repo --",
+    "repo_hint": "The agent will create branches and push code based on the selected repository.",
+    "repo_count": "Repositories ({{count}})",
+    "private_label": "🔒 private",
+    "login_button": "🐙 Sign in with GitHub",
+    "oauth_hint": "GitHub OAuth App Client ID/Secret must be set in GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET environment variables.",
+    "error_connect": "Connection failed",
+    "error_connect_generic": "An error occurred while connecting",
+    "error_disconnect": "An error occurred while disconnecting"
   },
   "plugins": {
     "title": "Plugins",
-    "search_placeholder": "Search plugins..."
+    "search_placeholder": "Search plugins...",
+    "install_btn": "+ Install",
+    "install_loading": "Installing...",
+    "install_submit": "Install",
+    "pkg_label": "Package name",
+    "pkg_placeholder": "e.g. claude-plugins-official/figma",
+    "type_label": "Type",
+    "filter_all": "All",
+    "no_results": "No results found.",
+    "no_plugins": "No plugins installed.",
+    "toggle_disable": "Disable",
+    "toggle_enable": "Enable",
+    "toggle_loading": "...",
+    "uninstall": "Uninstall",
+    "error_toggle": "Toggle failed",
+    "error_uninstall": "Uninstall failed",
+    "error_install": "Install failed"
   },
   "command_palette": {
     "placeholder": "Search commands...",
     "new_session": "New Session",
-    "settings": "Settings"
+    "settings": "Settings",
+    "no_results": "No results",
+    "session_group": "Session",
+    "navigate_group": "Navigate",
+    "nav_chat": "Go to Chat",
+    "nav_github": "GitHub Panel",
+    "nav_mcp": "MCP Servers Panel",
+    "nav_plugins": "Plugins Panel",
+    "other_group": "Other"
+  },
+  "right_panel": {
+    "output_title": "Output",
+    "waiting": "Waiting...",
+    "tokens": "Tokens",
+    "elapsed": "Elapsed",
+    "modified_files": "Modified"
   },
   "approval": {
     "title": "Review the result of the \"{{stage}}\" step",

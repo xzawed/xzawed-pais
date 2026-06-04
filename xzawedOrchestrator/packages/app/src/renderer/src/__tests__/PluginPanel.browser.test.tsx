@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { useIntegrationsStore } from '../store/integrations.store.js'
 import { PluginPanel } from '../components/PluginPanel.js'
 import type { PluginInfo } from '../store/integrations.store.js'
+import '../lib/i18n.js'
 
 vi.mock('../lib/i18n.js', async () => {
   const { default: i18n } = await import('i18next')
@@ -16,6 +17,22 @@ vi.mock('../lib/i18n.js', async () => {
       plugins: {
         title: '플러그인',
         search_placeholder: '플러그인 검색...',
+        install_btn: '+ 설치',
+        install_loading: '설치 중...',
+        install_submit: '설치',
+        pkg_label: '패키지명',
+        pkg_placeholder: '예: claude-plugins-official/figma',
+        type_label: '종류',
+        filter_all: '전체',
+        no_results: '검색 결과가 없습니다.',
+        no_plugins: '설치된 플러그인이 없습니다.',
+        toggle_disable: '비활성화',
+        toggle_enable: '활성화',
+        toggle_loading: '...',
+        uninstall: '제거',
+        error_toggle: '토글 실패',
+        error_uninstall: '제거 실패',
+        error_install: '설치 실패',
       },
     }, true, true)
   } else {
@@ -26,6 +43,22 @@ vi.mock('../lib/i18n.js', async () => {
             plugins: {
               title: '플러그인',
               search_placeholder: '플러그인 검색...',
+              install_btn: '+ 설치',
+              install_loading: '설치 중...',
+              install_submit: '설치',
+              pkg_label: '패키지명',
+              pkg_placeholder: '예: claude-plugins-official/figma',
+              type_label: '종류',
+              filter_all: '전체',
+              no_results: '검색 결과가 없습니다.',
+              no_plugins: '설치된 플러그인이 없습니다.',
+              toggle_disable: '비활성화',
+              toggle_enable: '활성화',
+              toggle_loading: '...',
+              uninstall: '제거',
+              error_toggle: '토글 실패',
+              error_uninstall: '제거 실패',
+              error_install: '설치 실패',
             },
           },
           common: {
