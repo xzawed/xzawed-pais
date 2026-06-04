@@ -2,11 +2,22 @@ import { vi, describe, it, expect } from 'vitest'
 
 vi.mock('@anthropic-ai/sdk')
 
-import { ClaudeRunner, ClarificationNeeded } from './runner.js'
+import { ClaudeRunner, ClarificationNeeded, SYSTEM_PROMPT } from './runner.js'
+import { AGENT_TYPES } from '../types.js'
 import { AgentQuery } from '@xzawed/agent-streams'
 import Anthropic from '@anthropic-ai/sdk'
 
 const AnthropicMock = vi.mocked(Anthropic)
+
+describe('agentType 단일 소스(AGENT_TYPES)', () => {
+  it('SYSTEM_PROMPT의 agentType 열거가 AGENT_TYPES에서 파생된다(드리프트 차단)', () => {
+    // 프롬프트에 정확히 동일한 열거 문자열이 포함되어야 한다 — 하드코딩 아님
+    const expectedList = AGENT_TYPES.map((t) => `"${t}"`).join(' | ')
+    expect(SYSTEM_PROMPT).toContain(`agentType / "to" values: ${expectedList}`)
+    // 모든 에이전트 타입이 프롬프트에 노출된다
+    for (const t of AGENT_TYPES) expect(SYSTEM_PROMPT).toContain(`"${t}"`)
+  })
+})
 
 function makeClient(responseText: string) {
   return {
