@@ -140,20 +140,28 @@ describe('KnowledgeRepo', () => {
   })
 
   describe('updateById', () => {
-    it('content·category를 UPDATE하고 WHERE에 id AND project_id 가드를 둔다', async () => {
+    it('content·category를 UPDATE하고 WHERE에 id AND project_id 가드를 두며 audit를 남긴다', async () => {
       const pool = mockMutationPool(1)
       const ok = await new KnowledgeRepo(pool).updateById('p1', 5, '수정된 내용', 'rule')
       const [sql, params] = pool.query.mock.calls[0]
       expect(sql).toMatch(/UPDATE domain_knowledge SET content = \$1, category = \$2/i)
       expect(sql).toMatch(/WHERE id = \$3 AND project_id = \$4/i)
-      expect(params).toEqual(['수정된 내용', 'rule', 5, 'p1'])
+      expect(sql).toMatch(/INSERT INTO domain_knowledge_audit/i)
+      expect(sql).toMatch(/'update'/i)
+      expect(params).toEqual(['수정된 내용', 'rule', 5, 'p1', null]) // 5번째=actor(없으면 null)
       expect(ok).toBe(true)
+    })
+
+    it('actor가 주어지면 audit의 5번째 파라미터로 기록한다', async () => {
+      const pool = mockMutationPool(1)
+      await new KnowledgeRepo(pool).updateById('p1', 5, 'c', 'cat', 'user-9')
+      expect(pool.query.mock.calls[0][1]).toEqual(['c', 'cat', 5, 'p1', 'user-9'])
     })
 
     it('category=null이면 분류 해제 값으로 바인딩한다', async () => {
       const pool = mockMutationPool(1)
       await new KnowledgeRepo(pool).updateById('p1', 5, '내용', null)
-      expect(pool.query.mock.calls[0][1]).toEqual(['내용', null, 5, 'p1'])
+      expect(pool.query.mock.calls[0][1]).toEqual(['내용', null, 5, 'p1', null])
     })
 
     it('rowCount가 0이면 false를 반환한다(타 프로젝트·없는 id)', async () => {
@@ -185,7 +193,9 @@ describe('KnowledgeRepo', () => {
       expect(sql).toMatch(/WHERE id = \$1 AND project_id = \$2/i)
       expect(sql).toMatch(/deleted_at IS NULL/i) // 이미 삭제된 행은 재삭제하지 않음
       expect(sql).not.toMatch(/DELETE FROM/i)
-      expect(params).toEqual([5, 'p1'])
+      expect(sql).toMatch(/INSERT INTO domain_knowledge_audit/i)
+      expect(sql).toMatch(/'delete'/i)
+      expect(params).toEqual([5, 'p1', null]) // 3번째=actor(없으면 null)
       expect(ok).toBe(true)
     })
 
@@ -211,7 +221,9 @@ describe('KnowledgeRepo', () => {
       expect(sql).toMatch(/UPDATE domain_knowledge SET deleted_at = NULL/i)
       expect(sql).toMatch(/WHERE id = \$1 AND project_id = \$2/i)
       expect(sql).toMatch(/deleted_at IS NOT NULL/i) // 삭제된 행만 복구
-      expect(params).toEqual([5, 'p1'])
+      expect(sql).toMatch(/INSERT INTO domain_knowledge_audit/i)
+      expect(sql).toMatch(/'restore'/i)
+      expect(params).toEqual([5, 'p1', null]) // 3번째=actor(없으면 null)
       expect(ok).toBe(true)
     })
 
@@ -230,6 +242,23 @@ describe('KnowledgeRepo', () => {
       expect(sql).toMatch(/ORDER BY deleted_at DESC/i)
       expect(params).toEqual(['p1', 20])
       expect(out).toEqual([{ id: 3, content: 'x', sourceAgent: 'planner', createdAt: 't' }])
+    })
+  })
+
+  describe('auditHistory', () => {
+    it('project_id·knowledge_id 가드로 최신순 조회하고 매핑한다(actor·prevCategory 없으면 생략)', async () => {
+      const pool = mockPool([
+        { id: 2, knowledge_id: 5, action: 'update', actor: 'user-9', prev_content: '이전', prev_category: 'rule', at: 't2' },
+        { id: 1, knowledge_id: 5, action: 'delete', actor: null, prev_content: 'orig', prev_category: null, at: 't1' },
+      ])
+      const out = await new KnowledgeRepo(pool).auditHistory('p1', 5, 20)
+      const [sql, params] = pool.query.mock.calls[0]
+      expect(sql).toMatch(/FROM domain_knowledge_audit/i)
+      expect(sql).toMatch(/WHERE project_id = \$1 AND knowledge_id = \$2/i)
+      expect(sql).toMatch(/ORDER BY at DESC/i)
+      expect(params).toEqual(['p1', 5, 20])
+      expect(out[0]).toEqual({ id: 2, knowledgeId: 5, action: 'update', actor: 'user-9', prevContent: '이전', prevCategory: 'rule', at: 't2' })
+      expect(out[1]).toEqual({ id: 1, knowledgeId: 5, action: 'delete', prevContent: 'orig', at: 't1' })
     })
   })
 })

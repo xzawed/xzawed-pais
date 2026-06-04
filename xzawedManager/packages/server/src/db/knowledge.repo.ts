@@ -16,6 +16,20 @@ export interface KnowledgeEntry {
  */
 export type KnowledgeRecord = KnowledgeEntry & { id: number }
 
+/** 위키 항목 변경 이력 한 건(domain_knowledge_audit). */
+export interface KnowledgeAuditRecord {
+  id: number
+  knowledgeId: number
+  action: 'update' | 'delete' | 'restore'
+  /** 변경 주체(Orchestrator가 전달한 user id 등). 없으면 생략. */
+  actor?: string
+  /** 변경 직전 content (되돌림·비교용). */
+  prevContent?: string
+  /** 변경 직전 category. */
+  prevCategory?: string
+  at: string
+}
+
 /** 프로젝트 단위 도메인 지식(domain_knowledge) 저장소. SessionRepo와 동일 패턴. */
 export class KnowledgeRepo {
   constructor(private readonly pool: Pool) {}
@@ -76,45 +90,83 @@ export class KnowledgeRepo {
   }
 
   /**
-   * id로 단일 항목의 content·category를 갱신한다. project_id 가드로 타 프로젝트 행은 변조 불가.
-   * category=null이면 분류 해제(clear). 반환은 실제 갱신된 행이 있는지(rowCount > 0).
+   * id로 단일 항목의 content·category를 갱신하고, 변경 직전 상태를 audit 이력에 남긴다.
+   * project_id 가드로 타 프로젝트 행은 변조 불가. category=null이면 분류 해제(clear).
+   * 단일 CTE로 갱신과 audit 기록을 원자적으로 처리 — 갱신 성공 시에만 audit 1행이 쌓인다.
+   * 반환은 실제 갱신된 행이 있는지(rowCount > 0).
    */
   async updateById(
     projectId: string,
     id: number,
     content: string,
     category: string | null,
+    actor?: string | null,
   ): Promise<boolean> {
     const res = await this.pool.query(
-      `UPDATE domain_knowledge SET content = $1, category = $2 WHERE id = $3 AND project_id = $4`,
-      [content, category, id, projectId],
+      `WITH prev AS (
+         SELECT content, category FROM domain_knowledge WHERE id = $3 AND project_id = $4
+       ),
+       upd AS (
+         UPDATE domain_knowledge SET content = $1, category = $2 WHERE id = $3 AND project_id = $4 RETURNING id
+       )
+       INSERT INTO domain_knowledge_audit (knowledge_id, project_id, action, actor, prev_content, prev_category)
+       SELECT $3, $4, 'update', $5, prev.content, prev.category FROM prev JOIN upd ON true`,
+      [content, category, id, projectId, actor ?? null],
     )
     return (res.rowCount ?? 0) > 0
   }
 
   /**
-   * id로 단일 항목을 soft-delete한다(deleted_at 설정). 누적 지식의 영구 손실을 막아 복구 가능하게 한다.
-   * project_id 가드로 타 프로젝트 행은 삭제 불가. 이미 삭제된 행(deleted_at IS NOT NULL)은 재삭제하지 않음.
-   * 반환은 실제 삭제 처리된 행이 있는지(rowCount > 0).
+   * id로 단일 항목을 soft-delete하고(deleted_at 설정) 변경 직전 상태를 audit 이력에 남긴다.
+   * 누적 지식의 영구 손실을 막아 복구 가능하게 한다. project_id 가드로 타 프로젝트 행은 삭제 불가.
+   * 이미 삭제된 행(deleted_at IS NOT NULL)은 재삭제하지 않음. 반환은 삭제 처리된 행 존재 여부.
    */
-  async deleteById(projectId: string, id: number): Promise<boolean> {
+  async deleteById(projectId: string, id: number, actor?: string | null): Promise<boolean> {
     const res = await this.pool.query(
-      `UPDATE domain_knowledge SET deleted_at = NOW() WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL`,
-      [id, projectId],
+      `WITH prev AS (
+         SELECT content, category FROM domain_knowledge WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
+       ),
+       del AS (
+         UPDATE domain_knowledge SET deleted_at = NOW() WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL RETURNING id
+       )
+       INSERT INTO domain_knowledge_audit (knowledge_id, project_id, action, actor, prev_content, prev_category)
+       SELECT $1, $2, 'delete', $3, prev.content, prev.category FROM prev JOIN del ON true`,
+      [id, projectId, actor ?? null],
     )
     return (res.rowCount ?? 0) > 0
   }
 
   /**
-   * soft-delete된 항목을 복구한다(deleted_at IS NULL로 되돌림). project_id 가드.
+   * soft-delete된 항목을 복구하고(deleted_at IS NULL로 되돌림) audit 이력에 남긴다. project_id 가드.
    * 삭제되지 않은 행(deleted_at IS NULL)은 대상이 아니다. 반환은 복구된 행 존재 여부.
    */
-  async restoreById(projectId: string, id: number): Promise<boolean> {
+  async restoreById(projectId: string, id: number, actor?: string | null): Promise<boolean> {
     const res = await this.pool.query(
-      `UPDATE domain_knowledge SET deleted_at = NULL WHERE id = $1 AND project_id = $2 AND deleted_at IS NOT NULL`,
-      [id, projectId],
+      `WITH prev AS (
+         SELECT content, category FROM domain_knowledge WHERE id = $1 AND project_id = $2 AND deleted_at IS NOT NULL
+       ),
+       res AS (
+         UPDATE domain_knowledge SET deleted_at = NULL WHERE id = $1 AND project_id = $2 AND deleted_at IS NOT NULL RETURNING id
+       )
+       INSERT INTO domain_knowledge_audit (knowledge_id, project_id, action, actor, prev_content, prev_category)
+       SELECT $1, $2, 'restore', $3, prev.content, prev.category FROM prev JOIN res ON true`,
+      [id, projectId, actor ?? null],
     )
     return (res.rowCount ?? 0) > 0
+  }
+
+  /**
+   * 항목별 변경 이력(audit)을 최신순으로 조회한다. project_id 가드로 타 프로젝트 이력은 노출하지 않는다.
+   */
+  async auditHistory(projectId: string, knowledgeId: number, limit: number): Promise<KnowledgeAuditRecord[]> {
+    const res = await this.pool.query(
+      `SELECT id, knowledge_id, action, actor, prev_content, prev_category, at
+       FROM domain_knowledge_audit
+       WHERE project_id = $1 AND knowledge_id = $2
+       ORDER BY at DESC LIMIT $3`,
+      [projectId, knowledgeId, limit],
+    )
+    return mapAuditRows(res.rows)
   }
 }
 
@@ -127,5 +179,18 @@ function mapRows(rows: unknown[]): KnowledgeRecord[] {
     ...(r.category ? { category: r.category } : {}),
     ...(r.approver ? { approver: r.approver } : {}),
     createdAt: String(r.created_at),
+  }))
+}
+
+/** domain_knowledge_audit 행을 KnowledgeAuditRecord로 매핑. */
+function mapAuditRows(rows: unknown[]): KnowledgeAuditRecord[] {
+  return (rows as { id: unknown; knowledge_id: unknown; action: string; actor?: string | null; prev_content?: string | null; prev_category?: string | null; at: unknown }[]).map((r) => ({
+    id: Number(r.id),
+    knowledgeId: Number(r.knowledge_id),
+    action: r.action as KnowledgeAuditRecord['action'],
+    ...(r.actor ? { actor: r.actor } : {}),
+    ...(r.prev_content != null ? { prevContent: r.prev_content } : {}),
+    ...(r.prev_category ? { prevCategory: r.prev_category } : {}),
+    at: String(r.at),
   }))
 }
