@@ -116,7 +116,7 @@ export function Sidebar({ style }: Readonly<{ style?: React.CSSProperties }>): R
                 <SessionItem key={s.id} session={s} index={i} isActive={s.id === sessionId} />
               ))}
               {filteredToday.length === 0 && (
-                <p className="px-4 py-2 text-[10px] text-fg-ghost">세션이 없습니다</p>
+                <p className="px-4 py-2 text-[10px] text-fg-ghost">{t('sidebar.no_sessions')}</p>
               )}
             </motion.div>
           )}
@@ -139,7 +139,7 @@ export function Sidebar({ style }: Readonly<{ style?: React.CSSProperties }>): R
         )}
         {plugins.length > 0 && (
           <Badge variant="muted" className="cursor-pointer" onClick={() => setActivePanel('plugins')}>
-            플러그인 {plugins.length}
+            {t('sidebar.plugins_count', { count: plugins.length })}
           </Badge>
         )}
       </div>

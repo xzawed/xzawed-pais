@@ -79,27 +79,27 @@ export function CommandPalette(): React.JSX.Element {
             <Command>
               <CommandInput data-testid="command-palette-input" placeholder={t('command_palette.placeholder')} value={search} onValueChange={setSearch} />
               <CommandList>
-                <CommandEmpty>결과 없음</CommandEmpty>
-                <CommandGroup heading="세션">
+                <CommandEmpty>{t('command_palette.no_results')}</CommandEmpty>
+                <CommandGroup heading={t('command_palette.session_group')}>
                   <CommandItem data-testid="command-palette-item" value="새 세션" onSelect={newSession}>
                     <span>＋</span> {t('command_palette.new_session')}
                   </CommandItem>
                 </CommandGroup>
-                <CommandGroup heading="이동">
+                <CommandGroup heading={t('command_palette.navigate_group')}>
                   <CommandItem data-testid="command-palette-item" value="채팅으로 이동" onSelect={() => navigate('chat')}>
-                    <span>💬</span> 채팅으로 이동
+                    <span>💬</span> {t('command_palette.nav_chat')}
                   </CommandItem>
                   <CommandItem data-testid="command-palette-item" value="GitHub 패널" onSelect={() => navigate('github')}>
-                    <span>🐙</span> GitHub 패널
+                    <span>🐙</span> {t('command_palette.nav_github')}
                   </CommandItem>
                   <CommandItem data-testid="command-palette-item" value="MCP 서버 패널" onSelect={() => navigate('mcp')}>
-                    <span>🔌</span> MCP 서버 패널
+                    <span>🔌</span> {t('command_palette.nav_mcp')}
                   </CommandItem>
                   <CommandItem data-testid="command-palette-item" value="플러그인 패널" onSelect={() => navigate('plugins')}>
-                    <span>🧩</span> 플러그인 패널
+                    <span>🧩</span> {t('command_palette.nav_plugins')}
                   </CommandItem>
                 </CommandGroup>
-                <CommandGroup heading="기타">
+                <CommandGroup heading={t('command_palette.other_group')}>
                   <CommandItem data-testid="command-palette-item" value="설정" onSelect={openSettings}>
                     <span>⚙</span> {t('command_palette.settings')}
                   </CommandItem>

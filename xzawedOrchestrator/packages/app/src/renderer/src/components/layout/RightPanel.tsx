@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 import { useChatStore } from '../../store/chat.store.js'
 import { cn } from '../../lib/utils.js'
@@ -21,6 +22,7 @@ function getLineColor(line: string): string {
 }
 
 export function RightPanel({ style }: Readonly<{ style?: React.CSSProperties }>): React.JSX.Element {
+  const { t } = useTranslation('app')
   const { logLines, tokenCount, elapsedMs, modifiedFiles, isStreaming } = useChatStore()
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -39,13 +41,13 @@ export function RightPanel({ style }: Readonly<{ style?: React.CSSProperties }>)
         {isStreaming && (
           <div className="h-1.5 w-1.5 rounded-full bg-ok animate-pulse-glow-green" />
         )}
-        <span className="text-[9px] uppercase tracking-wide text-fg-ghost">Output</span>
+        <span className="text-[9px] uppercase tracking-wide text-fg-ghost">{t('right_panel.output_title')}</span>
       </div>
 
       {/* Log lines */}
       <div className="flex-1 overflow-y-auto px-2 py-2 min-h-0 space-y-0.5">
         {logLines.length === 0 && (
-          <p className="text-[9px] text-fg-ghost italic">대기 중...</p>
+          <p className="text-[9px] text-fg-ghost italic">{t('right_panel.waiting')}</p>
         )}
         {logLines.map((line, i) => (
           <motion.div
@@ -64,15 +66,15 @@ export function RightPanel({ style }: Readonly<{ style?: React.CSSProperties }>)
       {/* Stats footer */}
       <div className="border-t border-border px-3 py-2 space-y-1">
         <div className="flex justify-between text-[9px]">
-          <span className="text-fg-ghost">토큰</span>
+          <span className="text-fg-ghost">{t('right_panel.tokens')}</span>
           <span className="text-agent-dev font-mono">{tokenCount.toLocaleString()}</span>
         </div>
         <div className="flex justify-between text-[9px]">
-          <span className="text-fg-ghost">경과</span>
+          <span className="text-fg-ghost">{t('right_panel.elapsed')}</span>
           <span className="font-mono text-fg-dim">{elapsedStr}</span>
         </div>
         <div className="flex justify-between text-[9px]">
-          <span className="text-fg-ghost">수정 파일</span>
+          <span className="text-fg-ghost">{t('right_panel.modified_files')}</span>
           <span className="text-ok font-mono">{modifiedFiles.length}</span>
         </div>
       </div>

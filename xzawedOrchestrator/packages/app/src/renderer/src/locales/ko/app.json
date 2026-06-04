@@ -18,7 +18,24 @@
     "new_session": "새 세션",
     "search_placeholder": "세션 검색...",
     "current_session": "현재 세션",
-    "today": "오늘"
+    "today": "오늘",
+    "no_sessions": "세션이 없습니다",
+    "plugins_count": "플러그인 {{count}}"
+  },
+  "activity_bar": {
+    "chat": "채팅",
+    "github": "GitHub",
+    "mcp": "MCP 서버",
+    "plugins": "플러그인",
+    "wiki": "위키",
+    "settings": "설정"
+  },
+  "status_bar": {
+    "server": "서버",
+    "running": "실행중",
+    "stopped": "중지됨",
+    "checking": "확인중",
+    "mcp_count": "MCP {{count}}개"
   },
   "chat": {
     "empty_state": "새 세션을 시작해주세요",
@@ -44,16 +61,59 @@
   },
   "github": {
     "title": "GitHub",
-    "connect_hint": "GitHub 계정을 연결하면 레포지토리를 관리할 수 있습니다."
+    "connect_hint": "GitHub 계정을 연결하면 레포지토리를 관리할 수 있습니다.",
+    "connected": "연결됨",
+    "disconnect": "연결 해제",
+    "default_repo": "기본 레포지토리",
+    "select_repo": "-- 레포 선택 --",
+    "repo_hint": "선택된 레포를 기준으로 에이전트가 브랜치를 생성하고 코드를 push합니다.",
+    "repo_count": "레포지토리 ({{count}}개)",
+    "private_label": "🔒 private",
+    "login_button": "🐙 GitHub으로 로그인",
+    "oauth_hint": "GitHub OAuth App Client ID/Secret이 환경변수 GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET에 설정돼 있어야 합니다.",
+    "error_connect": "연결 실패",
+    "error_connect_generic": "연결 중 오류가 발생했습니다",
+    "error_disconnect": "연결 해제 중 오류가 발생했습니다"
   },
   "plugins": {
     "title": "플러그인",
-    "search_placeholder": "플러그인 검색..."
+    "search_placeholder": "플러그인 검색...",
+    "install_btn": "+ 설치",
+    "install_loading": "설치 중...",
+    "install_submit": "설치",
+    "pkg_label": "패키지명",
+    "pkg_placeholder": "예: claude-plugins-official/figma",
+    "type_label": "종류",
+    "filter_all": "전체",
+    "no_results": "검색 결과가 없습니다.",
+    "no_plugins": "설치된 플러그인이 없습니다.",
+    "toggle_disable": "비활성화",
+    "toggle_enable": "활성화",
+    "toggle_loading": "...",
+    "uninstall": "제거",
+    "error_toggle": "토글 실패",
+    "error_uninstall": "제거 실패",
+    "error_install": "설치 실패"
   },
   "command_palette": {
     "placeholder": "명령어 검색...",
     "new_session": "새 세션",
-    "settings": "설정"
+    "settings": "설정",
+    "no_results": "결과 없음",
+    "session_group": "세션",
+    "navigate_group": "이동",
+    "nav_chat": "채팅으로 이동",
+    "nav_github": "GitHub 패널",
+    "nav_mcp": "MCP 서버 패널",
+    "nav_plugins": "플러그인 패널",
+    "other_group": "기타"
+  },
+  "right_panel": {
+    "output_title": "Output",
+    "waiting": "대기 중...",
+    "tokens": "토큰",
+    "elapsed": "경과",
+    "modified_files": "수정 파일"
   },
   "approval": {
     "title": "\"{{stage}}\" 단계 결과를 검토하세요",

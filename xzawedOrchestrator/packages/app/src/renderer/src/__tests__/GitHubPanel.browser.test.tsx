@@ -3,6 +3,7 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { useIntegrationsStore } from '../store/integrations.store.js'
 import { GitHubPanel } from '../components/GitHubPanel.js'
+import '../lib/i18n.js'
 
 vi.mock('../lib/i18n.js', async () => {
   const { default: i18n } = await import('i18next')

@@ -34,12 +34,12 @@ export function GitHubPanel(): React.JSX.Element {
     setLoading(true); setError(null)
     try {
       const result = await globalThis.electronAPI?.githubConnect()
-      if (!result) throw new Error('연결 실패')
+      if (!result) throw new Error(t('github.error_connect'))
       setGitHubConnected(result.username, result.avatarUrl)
       const repos = await globalThis.electronAPI?.githubListRepos() ?? []
       setGitHubRepos(repos)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '연결 중 오류가 발생했습니다')
+      setError(err instanceof Error ? err.message : t('github.error_connect_generic'))
     } finally {
       setLoading(false)
     }
@@ -52,7 +52,7 @@ export function GitHubPanel(): React.JSX.Element {
       await globalThis.electronAPI?.githubDisconnect()
       disconnectGitHub()
     } catch (err) {
-      setError(err instanceof Error ? err.message : '연결 해제 중 오류가 발생했습니다')
+      setError(err instanceof Error ? err.message : t('github.error_disconnect'))
     } finally {
       setLoading(false)
     }
@@ -77,38 +77,38 @@ export function GitHubPanel(): React.JSX.Element {
             )}
             <div className="flex-1">
               <div className="text-[12px] font-semibold text-fg">{github.username}</div>
-              <div className="text-[11px] text-fg-ghost">연결됨</div>
+              <div className="text-[11px] text-fg-ghost">{t('github.connected')}</div>
             </div>
             <Button variant="danger" onClick={handleDisconnect} disabled={loading}>
-              연결 해제
+              {t('github.disconnect')}
             </Button>
           </div>
 
           <div className="flex flex-col gap-2 rounded border border-border bg-surface px-4 py-3">
-            <div className="text-[13px] font-semibold text-fg">기본 레포지토리</div>
+            <div className="text-[13px] font-semibold text-fg">{t('github.default_repo')}</div>
             <select
               className="w-full rounded border border-border bg-bg px-3 py-2 text-[13px] text-fg focus:outline-none"
               value={github.defaultRepo ?? ''}
               onChange={(e) => setDefaultRepo(e.target.value)}
             >
-              <option value="">-- 레포 선택 --</option>
+              <option value="">{t('github.select_repo')}</option>
               {github.repos.map((r) => (
                 <option key={r.id} value={r.fullName}>{r.fullName} {r.private ? '🔒' : ''}</option>
               ))}
             </select>
             <p className="text-[11px] text-fg-ghost">
-              선택된 레포를 기준으로 에이전트가 브랜치를 생성하고 코드를 push합니다.
+              {t('github.repo_hint')}
             </p>
           </div>
 
           <div className="text-[13px] font-semibold text-fg">
-            레포지토리 ({github.repos.length}개)
+            {t('github.repo_count', { count: github.repos.length })}
           </div>
           <div data-testid="github-repo-list" className="flex flex-col gap-1.5">
             {github.repos.map((repo) => (
               <div key={repo.id} className="flex items-center justify-between rounded border border-border bg-surface px-3 py-2">
                 <span className="text-[12px] text-fg">{repo.fullName}</span>
-                {repo.private && <span className="text-[11px] text-fg-ghost">🔒 private</span>}
+                {repo.private && <span className="text-[11px] text-fg-ghost">{t('github.private_label')}</span>}
               </div>
             ))}
           </div>
@@ -119,10 +119,10 @@ export function GitHubPanel(): React.JSX.Element {
             {t('github.connect_hint')}
           </p>
           <Button data-testid="github-oauth-button" variant="default" onClick={handleConnect} disabled={loading}>
-            {loading ? t('loading', { ns: 'common' }) : '🐙 GitHub으로 로그인'}
+            {loading ? t('loading', { ns: 'common' }) : t('github.login_button')}
           </Button>
           <p className="text-[11px] text-fg-ghost text-center">
-            GitHub OAuth App Client ID/Secret이 환경변수 GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET에 설정돼 있어야 합니다.
+            {t('github.oauth_hint')}
           </p>
         </div>
       )}

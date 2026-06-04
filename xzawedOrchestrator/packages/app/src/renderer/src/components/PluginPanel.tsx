@@ -37,7 +37,7 @@ export function PluginPanel(): React.JSX.Element {
       await globalThis.electronAPI?.pluginToggle(id)
       useIntegrationsStore.getState().togglePlugin(id)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '토글 실패')
+      setError(err instanceof Error ? err.message : t('plugins.error_toggle'))
     } finally {
       setLoading(null)
     }
@@ -51,7 +51,7 @@ export function PluginPanel(): React.JSX.Element {
       const { plugins: current, setPlugins: set } = useIntegrationsStore.getState()
       set(current.filter((p) => p.id !== id))
     } catch (err) {
-      setError(err instanceof Error ? err.message : '제거 실패')
+      setError(err instanceof Error ? err.message : t('plugins.error_uninstall'))
     } finally {
       setLoading(null)
     }
@@ -68,7 +68,7 @@ export function PluginPanel(): React.JSX.Element {
       setInstallForm({ pkg: '', type: 'claude-code' })
       setShowInstall(false)
     } catch (err) {
-      setError(err instanceof Error ? err.message : '설치 실패')
+      setError(err instanceof Error ? err.message : t('plugins.error_install'))
     } finally {
       setLoading(null)
     }
@@ -85,7 +85,7 @@ export function PluginPanel(): React.JSX.Element {
             size="sm"
             onClick={() => { setShowInstall(!showInstall); setError(null) }}
           >
-            + 설치
+            {t('plugins.install_btn')}
           </Button>
         </div>
       </div>
@@ -97,17 +97,17 @@ export function PluginPanel(): React.JSX.Element {
       {showInstall && (
         <div className="flex items-end gap-2 rounded border border-border bg-surface px-4 py-3">
           <div className="flex-1 flex flex-col gap-1">
-            <label htmlFor="plugin-pkg" className="text-[11px] text-fg-ghost">패키지명</label>
+            <label htmlFor="plugin-pkg" className="text-[11px] text-fg-ghost">{t('plugins.pkg_label')}</label>
             <input
               id="plugin-pkg"
               className="w-full rounded border border-border bg-bg px-3 py-1.5 text-[12px] text-fg placeholder:text-fg-ghost focus:outline-none focus:border-accent"
-              placeholder="예: claude-plugins-official/figma"
+              placeholder={t('plugins.pkg_placeholder')}
               value={installForm.pkg}
               onChange={(e) => setInstallForm({ ...installForm, pkg: e.target.value })}
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label htmlFor="plugin-type" className="text-[11px] text-fg-ghost">종류</label>
+            <label htmlFor="plugin-type" className="text-[11px] text-fg-ghost">{t('plugins.type_label')}</label>
             <select
               id="plugin-type"
               className="rounded border border-border bg-bg px-3 py-1.5 text-[12px] text-fg focus:outline-none"
@@ -124,7 +124,7 @@ export function PluginPanel(): React.JSX.Element {
             disabled={!installForm.pkg || loading === '__installing__'}
             onClick={() => void handleInstall()}
           >
-            {loading === '__installing__' ? '설치 중...' : '설치'}
+            {loading === '__installing__' ? t('plugins.install_loading') : t('plugins.install_submit')}
           </Button>
         </div>
       )}
@@ -142,7 +142,7 @@ export function PluginPanel(): React.JSX.Element {
           value={filter}
           onChange={(e) => setFilter(e.target.value as typeof filter)}
         >
-          <option value="all">전체</option>
+          <option value="all">{t('plugins.filter_all')}</option>
           <option value="claude-code">Claude Code</option>
           <option value="xzawed">xzawed</option>
         </select>
@@ -151,12 +151,12 @@ export function PluginPanel(): React.JSX.Element {
       <div className="flex flex-col gap-2">
         {filtered.length === 0 && (
           <div className="py-10 text-center text-[11px] text-fg-ghost">
-            {search ? '검색 결과가 없습니다.' : '설치된 플러그인이 없습니다.'}
+            {search ? t('plugins.no_results') : t('plugins.no_plugins')}
           </div>
         )}
         {filtered.map((p) => {
-          let toggleLabel = p.enabled ? '비활성화' : '활성화'
-          if (loading === p.id) toggleLabel = '...'
+          let toggleLabel = p.enabled ? t('plugins.toggle_disable') : t('plugins.toggle_enable')
+          if (loading === p.id) toggleLabel = t('plugins.toggle_loading')
           return (
             <div key={p.id} className="flex items-center justify-between rounded border border-border bg-surface px-3 py-2">
               <div className="flex-1">
@@ -187,7 +187,7 @@ export function PluginPanel(): React.JSX.Element {
                   disabled={loading === p.id}
                   onClick={() => void handleUninstall(p.id)}
                 >
-                  제거
+                  {t('plugins.uninstall')}
                 </Button>
               </div>
             </div>

@@ -1,17 +1,19 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../../store/app.store.js'
 import { useIntegrationsStore } from '../../store/integrations.store.js'
 import { cn } from '../../lib/utils.js'
 
-function serverStatusLabel(status: string): string {
-  if (status === 'running') return '실행중'
-  if (status === 'stopped') return '중지됨'
-  return '확인중'
-}
-
 export function StatusBar(): React.JSX.Element {
+  const { t } = useTranslation('app')
   const { serverStatus } = useAppStore()
   const { github, mcp } = useIntegrationsStore()
+
+  function statusLabel(): string {
+    if (serverStatus === 'running') return t('status_bar.running')
+    if (serverStatus === 'stopped') return t('status_bar.stopped')
+    return t('status_bar.checking')
+  }
 
   return (
     <div
@@ -23,7 +25,7 @@ export function StatusBar(): React.JSX.Element {
         className={cn('flex items-center gap-1', serverStatus !== 'running' && 'opacity-60')}
       >
         <span className={cn('h-1.5 w-1.5 rounded-full', serverStatus === 'running' ? 'bg-ok' : 'bg-danger')} />
-        서버 {serverStatusLabel(serverStatus)}
+        {t('status_bar.server')} {statusLabel()}
       </span>
       {github.connected && (
         <span className="flex items-center gap-1">
@@ -32,7 +34,7 @@ export function StatusBar(): React.JSX.Element {
         </span>
       )}
       {mcp.servers.length > 0 && (
-        <span>MCP {mcp.servers.length}개</span>
+        <span>{t('status_bar.mcp_count', { count: mcp.servers.length })}</span>
       )}
       <div className="ml-auto">xzawedPAIS</div>
     </div>
