@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
-import { postMessage, postUiAction, getKnowledge, getDeletedKnowledge, updateKnowledge, deleteKnowledge, restoreKnowledge } from '../../src/renderer/src/lib/api.js'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
+import { postMessage, postUiAction, getKnowledge, getDeletedKnowledge, updateKnowledge, deleteKnowledge, restoreKnowledge, SessionWsClient } from '../../src/renderer/src/lib/api.js'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -223,5 +223,78 @@ describe('restoreKnowledge', () => {
   it('non-ok면 throw한다', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 } as Response))
     await expect(restoreKnowledge('http://localhost:3000', 'p1', 1)).rejects.toThrow(/404/)
+  })
+})
+
+describe('SessionWsClient', () => {
+  const wsInstances: MockWebSocket[] = []
+  class MockWebSocket {
+    static readonly OPEN = 1
+    readyState = 1
+    onopen: (() => void) | null = null
+    onmessage: ((e: { data: string }) => void) | null = null
+    onerror: ((e: unknown) => void) | null = null
+    onclose: (() => void) | null = null
+    sent: string[] = []
+    closed = false
+    constructor(
+      public url: string,
+      public protocols?: string | string[],
+    ) {
+      wsInstances.push(this)
+    }
+    send(d: string): void {
+      this.sent.push(d)
+    }
+    close(): void {
+      this.closed = true
+      this.onclose?.()
+    }
+  }
+
+  beforeEach(() => {
+    wsInstances.length = 0
+    vi.stubGlobal('WebSocket', MockWebSocket)
+  })
+
+  it('토큰이 있으면 bearer.<token> 서브프로토콜로 연결한다', () => {
+    new SessionWsClient().connect('http://localhost:3000', 'sess-1', vi.fn(), vi.fn(), 'tok-9', vi.fn())
+    expect(wsInstances[0]?.url).toBe('ws://localhost:3000/ws/sessions/sess-1')
+    expect(wsInstances[0]?.protocols).toEqual(['bearer.tok-9'])
+  })
+
+  it('토큰이 없으면 서브프로토콜 없이 연결한다', () => {
+    new SessionWsClient().connect('http://localhost:3000', 'sess-1', vi.fn())
+    expect(wsInstances[0]?.protocols).toBeUndefined()
+  })
+
+  it('연결 성공 시 onOpen을 호출한다(백오프 리셋용)', () => {
+    const onOpen = vi.fn()
+    new SessionWsClient().connect('http://localhost:3000', 'sess-1', vi.fn(), vi.fn(), null, onOpen)
+    wsInstances[0]?.onopen?.()
+    expect(onOpen).toHaveBeenCalledOnce()
+  })
+
+  it('전송 오류 시 onClose만 호출하고 채팅 에러 메시지를 주입하지 않는다(재연결 스팸 방지)', () => {
+    const onMessage = vi.fn()
+    const onClose = vi.fn()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    new SessionWsClient().connect('http://localhost:3000', 'sess-1', onMessage, onClose)
+    wsInstances[0]?.onerror?.(new Event('error'))
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onMessage).not.toHaveBeenCalled()
+  })
+
+  it('수신 JSON 프레임을 파싱해 onMessage로 전달한다', () => {
+    const onMessage = vi.fn()
+    new SessionWsClient().connect('http://localhost:3000', 'sess-1', onMessage)
+    wsInstances[0]?.onmessage?.({ data: JSON.stringify({ type: 'status', content: 'hi' }) })
+    expect(onMessage).toHaveBeenCalledWith({ type: 'status', content: 'hi' })
+  })
+
+  it('teardown 호출 시 소켓을 닫는다', () => {
+    const teardown = new SessionWsClient().connect('http://localhost:3000', 'sess-1', vi.fn())
+    teardown()
+    expect(wsInstances[0]?.closed).toBe(true)
   })
 })
