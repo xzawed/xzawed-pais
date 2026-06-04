@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { UISpec } from '@xzawed/shared'
+import { useAuthStore } from '@xzawed/ui'
 import { useChatStore } from '../store/chat.store.js'
 import { useAppStore } from '../store/app.store.js'
 import { SessionWsClient, type WsMessage } from './api.js'
@@ -13,6 +14,7 @@ import { SessionWsClient, type WsMessage } from './api.js'
 export function useSessionWs(): void {
   const sessionId = useChatStore((s) => s.sessionId)
   const serverUrl = useAppStore((s) => s.settings.serverUrl)
+  const accessToken = useAuthStore((s) => s.accessToken)
   const clientRef = useRef<SessionWsClient | null>(null)
 
   useEffect(() => {
@@ -27,12 +29,13 @@ export function useSessionWs(): void {
         useChatStore.getState().cancelStream()
         clientRef.current = null
       },
+      accessToken,
     )
     return () => {
       teardown()
       clientRef.current = null
     }
-  }, [sessionId, serverUrl])
+  }, [sessionId, serverUrl, accessToken])
 }
 
 /** WS 수신 메시지를 chat.store 변이로 디스패치한다. */

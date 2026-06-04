@@ -85,7 +85,7 @@ describe('ChatView', () => {
     render(<MemoryRouter><ChatView /></MemoryRouter>)
     fireEvent.click(screen.getByTestId('approval-approve'))
     expect(postUiAction).toHaveBeenCalledWith(
-      expect.any(String), 'sess-approve', JSON.stringify({ decision: 'approve', rememberAuto: false, saveToWiki: false }),
+      expect.any(String), 'sess-approve', JSON.stringify({ decision: 'approve', rememberAuto: false, saveToWiki: false }), null,
     )
     // 승인 후 대기 요청이 사라진다
     expect(useChatStore.getState().pendingInfoRequest).toBeNull()
@@ -104,7 +104,7 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByTestId('approval-remember-auto'))
     fireEvent.click(screen.getByTestId('approval-approve'))
     expect(postUiAction).toHaveBeenCalledWith(
-      expect.any(String), 'sess-auto', JSON.stringify({ decision: 'approve', rememberAuto: true, saveToWiki: false }),
+      expect.any(String), 'sess-auto', JSON.stringify({ decision: 'approve', rememberAuto: true, saveToWiki: false }), null,
     )
   })
 
@@ -122,7 +122,7 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByTestId('approval-save-wiki'))
     fireEvent.click(screen.getByTestId('approval-approve'))
     expect(postUiAction).toHaveBeenCalledWith(
-      expect.any(String), 'sess-wiki', JSON.stringify({ decision: 'approve', rememberAuto: false, saveToWiki: true }),
+      expect.any(String), 'sess-wiki', JSON.stringify({ decision: 'approve', rememberAuto: false, saveToWiki: true }), null,
     )
   })
 
@@ -158,7 +158,7 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByTestId('approval-approve'))
     expect(postUiAction).toHaveBeenCalledWith(
       expect.any(String), 'sess-wiki-edit',
-      JSON.stringify({ decision: 'approve', rememberAuto: false, saveToWiki: true, wikiSummary: 'PO가 다듬은 결정 요약' }),
+      JSON.stringify({ decision: 'approve', rememberAuto: false, saveToWiki: true, wikiSummary: 'PO가 다듬은 결정 요약' }), null,
     )
   })
 
@@ -176,7 +176,7 @@ describe('ChatView', () => {
     fireEvent.click(screen.getByTestId('approval-approve'))
     expect(postUiAction).toHaveBeenCalledWith(
       expect.any(String), 'sess-wiki-noedit',
-      JSON.stringify({ decision: 'approve', rememberAuto: false, saveToWiki: true }),
+      JSON.stringify({ decision: 'approve', rememberAuto: false, saveToWiki: true }), null,
     )
   })
 
@@ -210,7 +210,7 @@ describe('ChatView', () => {
     fireEvent.change(screen.getByTestId('approval-feedback-input'), { target: { value: '색상 변경' } })
     fireEvent.click(screen.getByTestId('approval-revise'))
     expect(postUiAction).toHaveBeenCalledWith(
-      expect.any(String), 'sess-revise', JSON.stringify({ decision: 'revise', feedback: '색상 변경' }),
+      expect.any(String), 'sess-revise', JSON.stringify({ decision: 'revise', feedback: '색상 변경' }), null,
     )
   })
 
@@ -253,7 +253,7 @@ describe('ChatView', () => {
     render(<MemoryRouter><ChatView /></MemoryRouter>)
     fireEvent.click(screen.getByTestId('approval-abort'))
     expect(postUiAction).toHaveBeenCalledWith(
-      expect.any(String), 'sess-abort', JSON.stringify({ decision: 'abort' }),
+      expect.any(String), 'sess-abort', JSON.stringify({ decision: 'abort' }), null,
     )
   })
 })

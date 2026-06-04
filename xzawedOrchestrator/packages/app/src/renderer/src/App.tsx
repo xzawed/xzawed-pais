@@ -15,14 +15,20 @@ import i18n from './lib/i18n.js'
 
 function RequireAuth({ children, noAuth }: { children: React.ReactNode; noAuth: boolean }): React.JSX.Element {
   const user = useAuthStore((s) => s.user)
+  const isRestoring = useAuthStore((s) => s.isRestoring)
+  // While a startup token restore is in flight, hold off — a valid session may
+  // still be restored, so redirecting to /login now would flash the login page.
+  if (isRestoring) return <></>
   if (!noAuth && !user) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
 function RootRedirect({ authChecked, noAuth }: { authChecked: boolean; noAuth: boolean }): React.JSX.Element | null {
   const user = useAuthStore((s) => s.user)
-  // Don't navigate until we know auth mode — prevents flash of login page
-  if (!authChecked) return null
+  const isRestoring = useAuthStore((s) => s.isRestoring)
+  // Don't navigate until we know the auth mode AND token restore has settled —
+  // prevents a flash of the login page when a stored session is being restored.
+  if (!authChecked || isRestoring) return null
   if (noAuth) return <Navigate to="/chat" replace />
   return <Navigate to={user ? '/projects' : '/login'} replace />
 }

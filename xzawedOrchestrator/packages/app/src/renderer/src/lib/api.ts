@@ -32,12 +32,17 @@ export interface PostMessageResponse {
   status: 'accepted'
 }
 
-export async function createSession(baseUrl: string, userId: string): Promise<CreateSessionResponse> {
+export async function createSession(
+  baseUrl: string,
+  userId: string,
+  accessToken?: string | null,
+): Promise<CreateSessionResponse> {
   validateBaseUrl(baseUrl)
   const res = await fetch(`${baseUrl}/sessions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
     body: JSON.stringify({ userId }),
   })
@@ -50,12 +55,14 @@ export async function postMessage(
   sessionId: string,
   content: string,
   gateMode?: 'manual' | 'auto',
+  accessToken?: string | null,
 ): Promise<PostMessageResponse> {
   validateBaseUrl(baseUrl)
   const res = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
     body: JSON.stringify({ content, ...(gateMode ? { gateMode } : {}) }),
   })
@@ -70,12 +77,16 @@ export async function postMessage(
 export async function postUiAction(
   baseUrl: string,
   sessionId: string,
-  action: string
+  action: string,
+  accessToken?: string | null,
 ): Promise<void> {
   validateBaseUrl(baseUrl)
   const res = await fetch(`${baseUrl}/sessions/${sessionId}/ui-actions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
     body: JSON.stringify({ action }),
   })
   if (!res.ok) throw new Error(`postUiAction failed: ${res.status}`)
@@ -203,7 +214,8 @@ export class SessionWsClient {
     baseUrl: string,
     sessionId: string,
     onMessage: (msg: WsMessage) => void,
-    onClose?: () => void
+    onClose?: () => void,
+    accessToken?: string | null,
   ): () => void {
     validateBaseUrl(baseUrl)
     const base = new URL(baseUrl)
@@ -212,7 +224,10 @@ export class SessionWsClient {
     base.search = ''
     base.hash = ''
     const wsUrl = base.toString()
-    this.ws = new WebSocket(wsUrl)
+    // Browsers can't set an Authorization header on the WS upgrade — pass the
+    // token via the Sec-WebSocket-Protocol subprotocol (`bearer.<token>`), which
+    // the server's user-auth hook accepts as a fallback. (AUTH=jwt)
+    this.ws = accessToken ? new WebSocket(wsUrl, [`bearer.${accessToken}`]) : new WebSocket(wsUrl)
 
     this.ws.onopen = () => {}
 

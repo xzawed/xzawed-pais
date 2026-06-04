@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useAuthStore } from '@xzawed/ui'
 import { useAppStore } from '../store/app.store.js'
 import { useIntegrationsStore } from '../store/integrations.store.js'
 import { useChatStore } from '../store/chat.store.js'
@@ -17,6 +18,7 @@ export function CommandPalette(): React.JSX.Element {
   const { settings, toggleSettings } = useAppStore()
   const { setActivePanel } = useIntegrationsStore()
   const { initSession } = useChatStore()
+  const accessToken = useAuthStore((s) => s.accessToken)
 
   useEffect(() => {
     function handler(e: KeyboardEvent): void {
@@ -39,7 +41,7 @@ export function CommandPalette(): React.JSX.Element {
   async function newSession(): Promise<void> {
     setOpen(false)
     try {
-      const { sessionId } = await createSession(settings.serverUrl, settings.userId)
+      const { sessionId } = await createSession(settings.serverUrl, settings.userId, accessToken)
       initSession(sessionId)
       setActivePanel('chat')
     } catch (e) { console.error('newSession failed', e) }

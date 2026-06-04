@@ -195,4 +195,36 @@ describe('useAuthStore', () => {
       expect(useAuthStore.getState().user).toBeNull()
     })
   })
+
+  describe('isRestoring', () => {
+    it('restore 진행 중에는 isRestoring=true, 완료 후 false로 복원된다', async () => {
+      const { useAuthStore } = await import('../stores/auth.store.js')
+      useAuthStore.setState({ user: null, accessToken: null, isRestoring: false })
+
+      let restoringDuring: boolean | undefined
+      const authRestore = vi.fn().mockImplementation(async () => {
+        // restore()는 authRestore를 await하기 전에 isRestoring=true로 설정한다
+        restoringDuring = useAuthStore.getState().isRestoring
+        return { user: { id: 'u1', email: 'u@t.com' }, accessToken: 'at_x' }
+      })
+      vi.stubGlobal('electronAPI', { authRestore })
+
+      await useAuthStore.getState().restore('http://localhost')
+
+      expect(restoringDuring).toBe(true)
+      expect(useAuthStore.getState().isRestoring).toBe(false)
+    })
+
+    it('restore 중 오류가 나도 isRestoring은 false로 복원된다(try/finally)', async () => {
+      const { useAuthStore } = await import('../stores/auth.store.js')
+      useAuthStore.setState({ user: null, accessToken: null, isRestoring: false })
+
+      const authRestore = vi.fn().mockRejectedValue(new Error('Network error'))
+      vi.stubGlobal('electronAPI', { authRestore })
+
+      await useAuthStore.getState().restore('http://localhost')
+
+      expect(useAuthStore.getState().isRestoring).toBe(false)
+    })
+  })
 })

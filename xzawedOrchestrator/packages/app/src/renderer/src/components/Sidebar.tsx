@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useAuthStore } from '@xzawed/ui'
 import { useAppStore } from '../store/app.store.js'
 import { useChatStore } from '../store/chat.store.js'
 import { useIntegrationsStore } from '../store/integrations.store.js'
@@ -27,6 +28,7 @@ export function Sidebar({ style }: Readonly<{ style?: React.CSSProperties }>): R
   const { t } = useTranslation('app')
   const { sessionId, initSession } = useChatStore()
   const { github, mcp, plugins, setActivePanel } = useIntegrationsStore()
+  const accessToken = useAuthStore((s) => s.accessToken)
   const [isCreating, setIsCreating] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [todayOpen, setTodayOpen] = useState(true)
@@ -36,7 +38,7 @@ export function Sidebar({ style }: Readonly<{ style?: React.CSSProperties }>): R
     if (isCreating) return
     setIsCreating(true)
     try {
-      const { sessionId: newId } = await createSession(settings.serverUrl, settings.userId)
+      const { sessionId: newId } = await createSession(settings.serverUrl, settings.userId, accessToken)
       initSession(newId)
       setActivePanel('chat')
     } catch {
