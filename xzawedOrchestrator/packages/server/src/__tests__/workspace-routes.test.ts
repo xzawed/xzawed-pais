@@ -133,6 +133,17 @@ describe('workspace routes', () => {
       expect(res.statusCode).toBe(400)
     })
 
+    it('유효하지 않은 branch 이름 — 400 반환', async () => {
+      const app = await buildApp(pool)
+      const res = await app.inject({
+        method: 'PATCH',
+        url: '/projects/proj-1/workspace',
+        headers: { authorization: `Bearer ${makeToken()}` },
+        payload: { workspaceType: 'github', repoUrl: 'https://github.com/test/repo', branch: '-bad;branch' },
+      })
+      expect(res.statusCode).toBe(400)
+    })
+
     it('localPath에 .. 포함 — 400 반환 (경로 traversal 차단)', async () => {
       const app = await buildApp(pool)
       const res = await app.inject({

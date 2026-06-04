@@ -10,6 +10,7 @@ vi.mock('node:child_process', () => ({ spawn: mockSpawn }))
 vi.mock('node:fs/promises', () => ({ access: mockAccess, constants: { R_OK: 4 }, rm: mockRm }))
 
 import { WorkspaceService } from '../workspace.service.js'
+import { validateBranchName } from '../branch-validation.js'
 
 describe('WorkspaceService', () => {
   let svc: WorkspaceService
@@ -134,5 +135,25 @@ describe('WorkspaceService', () => {
     await expect(
       svc.cloneRepo('https://github.com/user/repo', '/tmp/clone-dest', 'main')
     ).rejects.toThrow('git clone failed')
+  })
+
+  it('cloneRepo rejects invalid branch name before spawning', async () => {
+    await expect(svc.cloneRepo('https://github.com/user/repo', '/workspaces/dest', '-bad-branch')).rejects.toThrow('Invalid branch name')
+    expect(mockSpawn).not.toHaveBeenCalled()
+  })
+
+  it('pullRepo rejects invalid branch name before spawning', async () => {
+    await expect(svc.pullRepo('/workspaces/project', 'bad;branch')).rejects.toThrow('Invalid branch name')
+    expect(mockSpawn).not.toHaveBeenCalled()
+  })
+})
+
+describe('validateBranchName', () => {
+  it.each(['main', 'develop', 'feature/my-feat', 'release-1.0', 'v2.0.0', 'fix_issue'])('유효한 브랜치 이름 허용: %s', (name) => {
+    expect(() => validateBranchName(name)).not.toThrow()
+  })
+
+  it.each(['-bad', '.bad', '', 'bad;branch', 'bad branch', 'bad|branch', 'bad&branch', '../etc'])('유효하지 않은 브랜치 이름 거부: %s', (name) => {
+    expect(() => validateBranchName(name)).toThrow('Invalid branch name')
   })
 })

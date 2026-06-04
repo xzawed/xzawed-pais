@@ -3,6 +3,7 @@ import type { Pool } from 'pg'
 import type { SessionStore } from '../sessions/session.store.js'
 import { ProjectRepo } from '../projects/project.repo.js'
 import { WorkspaceService } from '../projects/workspace.service.js'
+import { validateBranchName } from '../projects/branch-validation.js'
 
 interface InternalRoutesConfig {
   pool: Pool
@@ -34,6 +35,11 @@ export async function internalRoutes(
       if (!session) return reply.status(404).send({ error: 'Session not found' })
 
       const { name, workspaceType, localPath, repoUrl, branch = 'main', description } = req.body
+
+      try { validateBranchName(branch) } catch {
+        return reply.status(400).send({ error: 'Invalid branch name' })
+      }
+
       const repo = new ProjectRepo(pool)
 
       const project = await repo.create(session.userId, name, { description })
