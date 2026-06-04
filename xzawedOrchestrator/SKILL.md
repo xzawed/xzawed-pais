@@ -7,7 +7,7 @@ description: xzawedOrchestrator 개발·디버깅·운영 스킬
 
 # xzawedOrchestrator 스킬
 
-**테스트 실행**: `pnpm test` (163건: server 116 + app 41 + ui 6)
+**테스트 실행**: `pnpm test` (수량은 루트 CLAUDE.md 서비스 표 참조)
 **관련 문서**: [docs/services/orchestrator.md](../docs/services/orchestrator.md)
 
 ---

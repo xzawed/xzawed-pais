@@ -7,7 +7,7 @@ description: xzawedDeveloper 개발·디버깅·운영 스킬
 
 # xzawedDeveloper 스킬
 
-**테스트 실행**: `pnpm test` (31건)
+**테스트 실행**: `pnpm test` (수량은 루트 CLAUDE.md 서비스 표 참조)
 **관련 문서**: [docs/services/developer.md](../docs/services/developer.md)
 
 ---

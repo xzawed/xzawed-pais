@@ -196,7 +196,7 @@ pnpm install
 # 서버 개발 모드
 cd packages/server && pnpm dev
 
-# 전체 테스트 (139건)
+# 전체 테스트
 pnpm test
 
 # 단일 테스트 파일
