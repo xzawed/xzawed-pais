@@ -216,6 +216,7 @@ export class SessionWsClient {
     onMessage: (msg: WsMessage) => void,
     onClose?: () => void,
     accessToken?: string | null,
+    onOpen?: () => void,
   ): () => void {
     validateBaseUrl(baseUrl)
     const base = new URL(baseUrl)
@@ -229,7 +230,9 @@ export class SessionWsClient {
     // the server's user-auth hook accepts as a fallback. (AUTH=jwt)
     this.ws = accessToken ? new WebSocket(wsUrl, [`bearer.${accessToken}`]) : new WebSocket(wsUrl)
 
-    this.ws.onopen = () => {}
+    this.ws.onopen = () => {
+      onOpen?.()
+    }
 
     this.ws.onmessage = (event: MessageEvent<string>) => {
       try {
@@ -240,9 +243,10 @@ export class SessionWsClient {
       }
     }
 
+    // 전송 계층 오류는 채팅 메시지로 주입하지 않는다 — 자동 재연결(useSessionWs)이
+    // 처리하므로 일시 단절마다 "[Error]" 메시지가 누적되는 것을 막는다. onClose로만 통지.
     this.ws.onerror = (e) => {
       console.error('[WS] Error:', e)
-      onMessage({ type: 'error', content: 'WebSocket connection error' })
       onClose?.()
     }
 
