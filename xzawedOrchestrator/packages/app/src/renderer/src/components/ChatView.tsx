@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import type { Message } from '@xzawed/shared'
-import { useProjectsStore } from '@xzawed/ui'
+import { useProjectsStore, useAuthStore } from '@xzawed/ui'
 import { useChatStore } from '../store/chat.store.js'
 import { useAppStore } from '../store/app.store.js'
 import { UserBubble } from './chat/UserBubble.js'
@@ -32,6 +32,7 @@ export function ChatView(): React.JSX.Element {
   const { projectId } = useParams<{ projectId?: string }>()
   const navigate = useNavigate()
   const projects = useProjectsStore((s) => s.projects)
+  const accessToken = useAuthStore((s) => s.accessToken)
   const activeProject = projects.find((p) => p.id === projectId)
 
   useEffect(() => {
@@ -47,7 +48,7 @@ export function ChatView(): React.JSX.Element {
     store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'user', content, timestamp: Date.now() })
     store.setPending(true)
     try {
-      await postMessage(settings.serverUrl, sessionId, content, settings.gateMode)
+      await postMessage(settings.serverUrl, sessionId, content, settings.gateMode, accessToken)
     } catch (err) {
       store.setPending(false)
       store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `[Error] ${err instanceof Error ? err.message : String(err)}`, timestamp: Date.now() })
@@ -58,7 +59,7 @@ export function ChatView(): React.JSX.Element {
     if (!sessionId) return
     const store = useChatStore.getState()
     store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'user', content: echo, timestamp: Date.now() })
-    void postUiAction(settings.serverUrl, sessionId, action).catch((err: unknown) => {
+    void postUiAction(settings.serverUrl, sessionId, action, accessToken).catch((err: unknown) => {
       store.addMessage({
         id: crypto.randomUUID(), sessionId, role: 'assistant',
         content: `[Error] ${err instanceof Error ? err.message : String(err)}`, timestamp: Date.now(),

@@ -37,6 +37,8 @@ interface AuthState {
   user: AuthUser | null
   accessToken: string | null
   isLoading: boolean
+  /** 앱 시작 시 토큰 복원이 진행 중인지 — true 동안 인증 게이트(App.tsx)가 성급한 /login 리다이렉트를 보류한다. */
+  isRestoring: boolean
   login: (serverUrl: string, email: string, password: string) => Promise<void>
   register: (serverUrl: string, email: string, password: string, displayName?: string) => Promise<void>
   logout: () => Promise<void>
@@ -47,6 +49,7 @@ export const useAuthStore = create<AuthState>()((set) => ({
   user: null,
   accessToken: null,
   isLoading: false,
+  isRestoring: false,
 
   login: async (serverUrl, email, password) => {
     set({ isLoading: true })
@@ -88,59 +91,64 @@ export const useAuthStore = create<AuthState>()((set) => ({
   },
 
   restore: async (serverUrl) => {
-    // In Electron: use main-process proxy to avoid token read-back to renderer
-    const electronAPI = getElectronAuthAPI()
-    if (electronAPI?.authRestore) {
-      try {
-        const result = await electronAPI.authRestore(serverUrl)
-        if (result.user && result.accessToken) {
-          set({ user: result.user, accessToken: result.accessToken })
-        }
-      } catch {
-        // network error — keep logged-out state
-      }
-      return
-    }
-
-    // Web/browser fallback: use sessionStorage-backed tokenStorage
-    const token = await tokenStorage.getAccessToken()
-    if (!token) return
+    set({ isRestoring: true })
     try {
-      const res = await fetch(`${serverUrl}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.ok) {
-        const { user } = (await res.json()) as { user: AuthUser }
-        set({ user, accessToken: token })
-        return
-      }
-      if (res.status === 401) {
-        const refreshToken = await tokenStorage.getRefreshToken()
-        if (!refreshToken) { await tokenStorage.clearTokens(); return }
-        const refreshRes = await fetch(`${serverUrl}/auth/refresh`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken }),
-        })
-        if (!refreshRes.ok) { await tokenStorage.clearTokens(); return }
-        const { accessToken: newAt, refreshToken: newRt } =
-          (await refreshRes.json()) as { accessToken: string; refreshToken: string }
-        await tokenStorage.setAccessToken(newAt)
-        await tokenStorage.setRefreshToken(newRt)
-        const meRes = await fetch(`${serverUrl}/auth/me`, {
-          headers: { Authorization: `Bearer ${newAt}` },
-        })
-        if (meRes.ok) {
-          const { user } = (await meRes.json()) as { user: AuthUser }
-          set({ user, accessToken: newAt })
-        } else {
-          await tokenStorage.clearTokens()
+      // In Electron: use main-process proxy to avoid token read-back to renderer
+      const electronAPI = getElectronAuthAPI()
+      if (electronAPI?.authRestore) {
+        try {
+          const result = await electronAPI.authRestore(serverUrl)
+          if (result.user && result.accessToken) {
+            set({ user: result.user, accessToken: result.accessToken })
+          }
+        } catch {
+          // network error — keep logged-out state
         }
         return
       }
-      await tokenStorage.clearTokens()
-    } catch {
-      // network error — keep token for retry, don't set user
+
+      // Web/browser fallback: use sessionStorage-backed tokenStorage
+      const token = await tokenStorage.getAccessToken()
+      if (!token) return
+      try {
+        const res = await fetch(`${serverUrl}/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (res.ok) {
+          const { user } = (await res.json()) as { user: AuthUser }
+          set({ user, accessToken: token })
+          return
+        }
+        if (res.status === 401) {
+          const refreshToken = await tokenStorage.getRefreshToken()
+          if (!refreshToken) { await tokenStorage.clearTokens(); return }
+          const refreshRes = await fetch(`${serverUrl}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken }),
+          })
+          if (!refreshRes.ok) { await tokenStorage.clearTokens(); return }
+          const { accessToken: newAt, refreshToken: newRt } =
+            (await refreshRes.json()) as { accessToken: string; refreshToken: string }
+          await tokenStorage.setAccessToken(newAt)
+          await tokenStorage.setRefreshToken(newRt)
+          const meRes = await fetch(`${serverUrl}/auth/me`, {
+            headers: { Authorization: `Bearer ${newAt}` },
+          })
+          if (meRes.ok) {
+            const { user } = (await meRes.json()) as { user: AuthUser }
+            set({ user, accessToken: newAt })
+          } else {
+            await tokenStorage.clearTokens()
+          }
+          return
+        }
+        await tokenStorage.clearTokens()
+      } catch {
+        // network error — keep token for retry, don't set user
+      }
+    } finally {
+      set({ isRestoring: false })
     }
   },
 }))
