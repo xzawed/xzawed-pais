@@ -170,7 +170,7 @@ packages/
 - **Vitest 3** + `vitest.config.ts` `projects` API — `unit` (node) + `browser` (playwright/chromium) 두 프로젝트 분리
   - `unit`: `test/**/*.test.ts` + `src/renderer/src/lib/parseAgentSteps.test.ts` (store, main 프로세스, 파서 유닛 테스트)
   - `browser`: `src/renderer/src/__tests__/**/*.browser.test.tsx` (App·Sidebar·ChatView(승인 카드)·WikiPanel·SettingsModal·CommandPalette·GitHubPanel·McpPanel·PluginPanel·detect-locale·app.store 등 컴포넌트·스토어 렌더링)
-  - 총 `pnpm test`: **193건** (app) + **422건** (server, Redis/DB 없으면 15건 skip → 407 pass) + **74건** (ui, jsdom) = **~689건**
+  - 총 `pnpm test`: **212건** (app) + **422건** (server, Redis/DB 없으면 15건 skip → 407 pass) + **74건** (ui, jsdom) = **~708건**
 - **@vitest/browser + playwright** — 실제 Chromium에서 React 컴포넌트 렌더링 검증
 - **@testing-library/react** — 브라우저 모드 렌더링; `afterEach(cleanup)` 명시 필요
 - **@playwright/test** + `playwright._electron` — Electron E2E (`e2e/`, 110건/17 spec 파일, `pnpm test:e2e`)
@@ -215,7 +215,11 @@ ActivityBar의 **위키 탭**(`activePanel === 'wiki'`)에서 `WikiPanel`이 프
 
 ### i18n 네임스페이스
 
-`locales/{ko,en,ja}/app.json`에 `wiki.*`(title·empty·source·search_placeholder·all_sources·all_categories·edit·delete·save·cancel·delete_confirm·category_none·save_failed·delete_failed), `approval.*`(title·approve·revise·abort·feedback_placeholder·remember_auto·save_to_wiki·**wiki_summary** #212), `settings.*`(server_url·mode·user_id·language·lang_*·**gate_mode**·gate_mode_manual·gate_mode_auto #215) 네임스페이스가 추가되어 있다. 문자열 추가 시 3개 로케일 동기화 필수.
+`locales/{ko,en,ja}/app.json`에 `wiki.*`(title·empty·source·search_placeholder·all_sources·all_categories·edit·delete·save·cancel·delete_confirm·category_none·save_failed·delete_failed), `approval.*`(title·approve·revise·abort·feedback_placeholder·remember_auto·save_to_wiki·**wiki_summary** #212), `settings.*`(server_url·mode·user_id·language·lang_*·**gate_mode**·gate_mode_manual·gate_mode_auto #215) 네임스페이스가 추가되어 있다.
+
+**내비/패널 i18n 일괄(#227):** `activity_bar.*`(chat·github·mcp·plugins·**wiki**·settings)·`status_bar.*`(server·running·stopped·checking·mcp_count)·`right_panel.*`(output_title·waiting·tokens·elapsed·modified_files) 네임스페이스 신규 + `github.*`·`plugins.*`·`command_palette.*`·`sidebar.*` 확장. `ActivityBar`·`StatusBar`·`RightPanel`·`Sidebar`·`GitHubPanel`·`PluginPanel`·`CommandPalette`가 `useTranslation('app')`로 렌더(CommandPalette의 cmdk `value=`는 로케일 무관 필터 식별자로 유지). app.json **123키** 3로케일 동기화(`node scripts/check-i18n.js`). ⚠️ 잔여 하드코딩 한국어(후속 i18n 배치 예정): `ChatView`(empty-state 안내)·`McpPanel`(env 파싱 toast)·`MessageInput`(전송 aria-label)·`AgentTimelineCard`·`CodeBlock`·`PipelineStrip`·`ProjectContextBar`.
+
+문자열 추가 시 3개 로케일 동기화 필수.
 
 ## 환경 변수
 
