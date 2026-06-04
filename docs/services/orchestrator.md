@@ -245,7 +245,7 @@ pnpm install
 # 서버 개발 모드
 cd packages/server && pnpm dev
 
-# 전체 테스트 (unit + browser + server = 163건)
+# 전체 테스트 (unit + browser + server)
 pnpm test
 
 # 서버 테스트만

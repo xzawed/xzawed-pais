@@ -129,7 +129,7 @@ pnpm install
 
 pnpm dev         # tsx watch 개발 모드
 
-pnpm test        # Vitest 전체 실행 (33건)
+pnpm test        # Vitest 전체 실행
 
 pnpm test -- --reporter=verbose src/planner.test.ts  # 단일 파일
 

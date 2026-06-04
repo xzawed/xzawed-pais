@@ -7,7 +7,7 @@ description: xzawedPlanner 개발·디버깅·운영 스킬
 
 # xzawedPlanner 스킬
 
-**테스트 실행**: `pnpm test` (33건)
+**테스트 실행**: `pnpm test` (수량은 루트 CLAUDE.md 서비스 표 참조)
 **관련 문서**: [docs/services/planner.md](../docs/services/planner.md)
 
 ---

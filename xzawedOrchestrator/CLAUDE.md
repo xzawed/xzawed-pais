@@ -180,9 +180,9 @@ packages/
   - `e2e/specs/`: 기능별 분류 — auth/chat/error-states/i18n/panels/projects/settings/ui (PR #129 신규, 97건)
   - data-testid: ActivityBar·Sidebar·GitHubPanel·McpPanel·MessageInput·CodeBlock·PipelineStrip·ChatView·streaming-indicator·command-palette-item 등
   - CI: `playwright-e2e` 잡 (`ubuntu-latest`, `xvfb-run`, Electron 바이너리 다운로드)
-- **Redis 통합 테스트** (`packages/server/src/__tests__/redis-streams.integration.test.ts`) — 5건, `REDIS_URL` 없으면 skip
+- **Redis 통합 테스트** (`packages/server/src/__tests__/redis-streams.integration.test.ts`) — 7건, `REDIS_URL` 없으면 skip
 - **서버 i18n 테스트** (`packages/server/src/i18n/__tests__/server-i18n.test.ts`) — 18건, Accept-Language 파싱·LocalizedRequest 인터페이스 검증 (PR #129 신규)
-- **@xzawed/ui 테스트** (`packages/ui/src/__tests__/`) — 74건, jsdom 환경 (`vitest.config.ts`), `pnpm --filter @xzawed/ui test`
+- **@xzawed/ui 테스트** (`packages/ui/src/__tests__/`) — 76건, jsdom 환경 (`vitest.config.ts`), `pnpm --filter @xzawed/ui test`
 - **knowledge 프록시 테스트** (`packages/server/src/api/__tests__/knowledge.route.test.ts`) — GET/PATCH/DELETE pass-through·폴백 검증
 - **위키/승인 컴포넌트 테스트** — `WikiPanel.browser.test.tsx`(검색·출처/분류 필터·배지·편집·삭제) + ChatView 승인 카드 렌더(승인/수정/중단·rememberAuto·위키저장)
 
