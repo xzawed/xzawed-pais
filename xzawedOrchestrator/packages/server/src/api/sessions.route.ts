@@ -40,16 +40,16 @@ interface ChunkProcessResult {
 async function processChunk(
   chunk: Chunk,
   assistantMsgId: string,
-  socket: WebSocket | undefined,
+  getSocket: () => WebSocket | undefined,
   accumulator: { fullContent: string },
 ): Promise<'continue' | 'error' | 'done'> {
   if (chunk.type === 'text') {
     accumulator.fullContent += chunk.content
-    socket?.send(JSON.stringify({ type: 'chunk', messageId: assistantMsgId, content: chunk.content }))
+    getSocket()?.send(JSON.stringify({ type: 'chunk', messageId: assistantMsgId, content: chunk.content }))
     return 'continue'
   }
   if (chunk.type === 'error') {
-    socket?.send(JSON.stringify({ type: 'error', content: chunk.content }))
+    getSocket()?.send(JSON.stringify({ type: 'error', content: chunk.content }))
     return 'error'
   }
   if (chunk.type === 'done') return 'done'
@@ -61,11 +61,11 @@ async function processRunnerChunks(
   snapshot: Message[],
   runOptions: RunOptions,
   assistantMsgId: string,
-  socket: WebSocket | undefined,
+  getSocket: () => WebSocket | undefined,
 ): Promise<ChunkProcessResult> {
   const acc = { fullContent: '' }
   for await (const chunk of runner.send(snapshot, runOptions)) {
-    const result = await processChunk(chunk, assistantMsgId, socket, acc)
+    const result = await processChunk(chunk, assistantMsgId, getSocket, acc)
     if (result === 'error') return { fullContent: acc.fullContent, aborted: true }
     if (result === 'done') break
   }
@@ -94,7 +94,7 @@ export async function publishTaskToManager(
   intent: string,
   snapshot: Message[],
   session: { userId: string; projectId?: string | null },
-  socket: WebSocket | undefined,
+  getSocket: () => WebSocket | undefined,
   log: FastifyInstance['log'],
   pool?: Pool,
   locale: ServerLocale = 'ko',
@@ -131,7 +131,7 @@ export async function publishTaskToManager(
         ...(gateMode ? { gateMode } : {}),
       },
     })
-    socket?.send(JSON.stringify({ type: 'status', content: t('status.forwarding', locale) }))
+    getSocket()?.send(JSON.stringify({ type: 'status', content: t('status.forwarding', locale) }))
   } catch (publishErr: unknown) {
     log.warn({ err: publishErr }, 'Redis publish failed — Manager unavailable, skipping forwarding')
   }
@@ -387,13 +387,15 @@ export async function sessionsRoutes(
       const capturedGateMode = req.body.gateMode
 
       processingSessionIds.add(sessionId)
+      // Live socket lookup, not a captured reference: a WS reconnect during the grace window
+      // swaps the socket in wsSessions, so chunks/done/error must resolve the current socket.
+      const getSocket = (): WebSocket | undefined => wsSessions.get(sessionId)
       ;(async () => {
-        const socket = wsSessions.get(sessionId)
         const assistantMsgId = crypto.randomUUID()
 
         try {
           const { fullContent, aborted } = await processRunnerChunks(
-            runner, snapshot, {}, assistantMsgId, socket,
+            runner, snapshot, {}, assistantMsgId, getSocket,
           )
           if (aborted) return
 
@@ -406,12 +408,12 @@ export async function sessionsRoutes(
           taskStore.create(sessionId, intent)
 
           const capturedSession = { userId: capturedUserId, projectId: capturedProjectId }
-          await publishTaskToManager(producer, sessionId, intent, snapshot, capturedSession, socket, app.log, pool, capturedLocale, capturedGateMode)
+          await publishTaskToManager(producer, sessionId, intent, snapshot, capturedSession, getSocket, app.log, pool, capturedLocale, capturedGateMode)
 
-          socket?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
+          getSocket()?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
         } catch (err) {
           req.log.error({ err, sessionId }, 'Session processing error')
-          socket?.send(JSON.stringify({ type: 'error', content: t('error.processing_error', capturedLocale) }))
+          getSocket()?.send(JSON.stringify({ type: 'error', content: t('error.processing_error', capturedLocale) }))
         } finally {
           processingSessionIds.delete(sessionId)
         }

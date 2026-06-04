@@ -7,7 +7,7 @@ import jwtPlugin from '@fastify/jwt'
 import staticPlugin from '@fastify/static'
 import Anthropic from '@anthropic-ai/sdk'
 import type { WebSocket } from 'ws'
-import type { Config } from './config.js'
+import { DEFAULT_WS_CLEANUP_GRACE_MS, type Config } from './config.js'
 import type { ClaudeRunner } from './claude/runner.interface.js'
 import { parseLocale, type LocalizedRequest } from './i18n/server-i18n.js'
 import { InMemorySessionStore } from './sessions/session.store.js'
@@ -150,7 +150,15 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     pool: dbPool ?? undefined,
     userAuthHook,
   })
-  await app.register(sessionWsRoutes, { store, wsSessions, sessionConsumers, sessionCleanup, authHook, userAuthHook })
+  // Clamp the grace to setTimeout's valid range: NaN/negative falls back to the default,
+  // and oversized values are capped at the 32-bit ceiling so a misconfigured grace can't
+  // silently collapse to ~1ms (Node clamps out-of-range delays) and defeat the feature.
+  const MAX_TIMEOUT_MS = 2_147_483_647
+  const rawGrace = config.wsCleanupGraceMs
+  const wsCleanupGraceMs = typeof rawGrace === 'number' && Number.isFinite(rawGrace) && rawGrace >= 0
+    ? Math.min(rawGrace, MAX_TIMEOUT_MS)
+    : DEFAULT_WS_CLEANUP_GRACE_MS
+  await app.register(sessionWsRoutes, { store, wsSessions, sessionConsumers, sessionCleanup, cleanupGraceMs: wsCleanupGraceMs, authHook, userAuthHook })
 
   if (dbPool) {
     if (authHook) {

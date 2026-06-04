@@ -1,5 +1,12 @@
 import { z } from 'zod'
 
+/**
+ * Grace window (ms) before a disconnected WS session is torn down. A reconnect within
+ * this window (e.g. React StrictMode remount or serverUrl change) keeps the session and
+ * its consumer alive; only an abandoned session is reaped after it elapses.
+ */
+export const DEFAULT_WS_CLEANUP_GRACE_MS = 15_000
+
 const EnvSchema = z.object({
   PORT:                       z.string().default('3000'),
   MODE:                       z.enum(['local', 'remote']).default('local'),
@@ -18,6 +25,9 @@ const EnvSchema = z.object({
   DATABASE_URL:               z.string().optional(),
   SERVE_WEB:                  z.string().optional(),
   GITHUB_TOKEN_ENCRYPTION_KEY: z.string().optional(),
+  WS_CLEANUP_GRACE_MS:        z.string()
+    .regex(/^\d+$/, 'WS_CLEANUP_GRACE_MS must be a non-negative integer (ms)')
+    .default(String(DEFAULT_WS_CLEANUP_GRACE_MS)),
 }).superRefine((env, ctx) => {
   if (env.CLAUDE_MODE === 'api' && !env.ANTHROPIC_API_KEY) {
     ctx.addIssue({ code: 'custom', path: ['ANTHROPIC_API_KEY'],
@@ -62,6 +72,7 @@ export interface Config {
   userJwtSecret?: string
   serveWeb: boolean
   githubTokenKey?: string
+  wsCleanupGraceMs?: number
 }
 
 export function loadConfig(): Config {
@@ -89,5 +100,6 @@ export function loadConfig(): Config {
     userJwtSecret:    env.USER_JWT_SECRET,
     serveWeb:         env.SERVE_WEB === 'true',
     githubTokenKey:   env.GITHUB_TOKEN_ENCRYPTION_KEY,
+    wsCleanupGraceMs: Number.parseInt(env.WS_CLEANUP_GRACE_MS, 10),
   }
 }

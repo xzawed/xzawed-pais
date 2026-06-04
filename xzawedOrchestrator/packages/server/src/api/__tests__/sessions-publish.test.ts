@@ -46,7 +46,7 @@ afterEach(() => {
 describe('publishTaskToManager — projectId null', () => {
   it('WORKSPACE_ROOT 미설정 시 기본 /workspace로 userContext 전달 (register_project 호출 방지)', async () => {
     const producer = makeProducer()
-    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, undefined, makeLog())
+    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, () => undefined, makeLog())
     expect(producer.publish).toHaveBeenCalledOnce()
     const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: { userContext: { userId: string; projectId: string; workspaceRoot: string } } }
     expect(msg.payload.userContext).toEqual({ userId: 'u1', projectId: 'default', workspaceRoot: '/workspace' })
@@ -55,7 +55,7 @@ describe('publishTaskToManager — projectId null', () => {
   it('WORKSPACE_ROOT 설정 시 해당 경로로 userContext 전달', async () => {
     process.env.WORKSPACE_ROOT = '/custom/ws'
     const producer = makeProducer()
-    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, undefined, makeLog())
+    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, () => undefined, makeLog())
     expect(producer.publish).toHaveBeenCalledOnce()
     const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: { userContext: { workspaceRoot: string } } }
     expect(msg.payload.userContext.workspaceRoot).toBe('/custom/ws')
@@ -69,7 +69,7 @@ describe('publishTaskToManager — 파일시스템 루트 차단', () => {
     process.env.WORKSPACE_ROOT = fsRoot
     const producer = makeProducer()
     await expect(
-      publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: 'proj-1' }, undefined, makeLog())
+      publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: 'proj-1' }, () => undefined, makeLog())
     ).rejects.toThrow('WORKSPACE_ROOT must not be filesystem root')
     expect(producer.publish).not.toHaveBeenCalled()
   })
@@ -79,7 +79,7 @@ describe('publishTaskToManager — projectId 있음, pool 없음', () => {
   it('WORKSPACE_ROOT 환경변수를 workspaceRoot로 사용', async () => {
     process.env.WORKSPACE_ROOT = '/env-root'
     const producer = makeProducer()
-    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: 'proj-1' }, undefined, makeLog())
+    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: 'proj-1' }, () => undefined, makeLog())
     const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: { userContext: { workspaceRoot: string; userId: string; projectId: string } } }
     expect(msg.payload.userContext?.workspaceRoot).toBe('/env-root')
     expect(msg.payload.userContext?.userId).toBe('u1')
@@ -90,14 +90,14 @@ describe('publishTaskToManager — projectId 있음, pool 없음', () => {
 describe('publishTaskToManager — gateMode', () => {
   it('gateMode가 주어지면 task_request payload에 포함한다', async () => {
     const producer = makeProducer()
-    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, undefined, makeLog(), undefined, 'ko', 'auto')
+    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, () => undefined, makeLog(), undefined, 'ko', 'auto')
     const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: { gateMode?: string } }
     expect(msg.payload.gateMode).toBe('auto')
   })
 
   it('gateMode가 없으면 payload에 gateMode 키가 없다', async () => {
     const producer = makeProducer()
-    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, undefined, makeLog())
+    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, () => undefined, makeLog())
     const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: Record<string, unknown> }
     expect('gateMode' in msg.payload).toBe(false)
   })
@@ -108,7 +108,7 @@ describe('publishTaskToManager — projectId 있음, pool 있음', () => {
     mockFindByIdAndUser.mockResolvedValueOnce(makeProject('/custom/workspace'))
     const producer = makeProducer()
     const pool = {} as Pool
-    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: 'proj-1' }, undefined, makeLog(), pool)
+    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: 'proj-1' }, () => undefined, makeLog(), pool)
     expect(mockFindByIdAndUser).toHaveBeenCalledWith('proj-1', 'u1')
     const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: { userContext: { workspaceRoot: string } } }
     expect(msg.payload.userContext?.workspaceRoot).toBe('/custom/workspace')
@@ -119,7 +119,7 @@ describe('publishTaskToManager — projectId 있음, pool 있음', () => {
     process.env.WORKSPACE_ROOT = '/fallback-root'
     const producer = makeProducer()
     const pool = {} as Pool
-    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: 'proj-1' }, undefined, makeLog(), pool)
+    await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: 'proj-1' }, () => undefined, makeLog(), pool)
     const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: { userContext: { workspaceRoot: string } } }
     expect(msg.payload.userContext?.workspaceRoot).toBe('/fallback-root')
   })

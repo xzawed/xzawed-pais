@@ -170,7 +170,7 @@ packages/
 - **Vitest 3** + `vitest.config.ts` `projects` API — `unit` (node) + `browser` (playwright/chromium) 두 프로젝트 분리
   - `unit`: `test/**/*.test.ts` + `src/renderer/src/lib/parseAgentSteps.test.ts` (store, main 프로세스, 파서 유닛 테스트)
   - `browser`: `src/renderer/src/__tests__/**/*.browser.test.tsx` (App·Sidebar·ChatView(승인 카드)·WikiPanel·SettingsModal·CommandPalette·GitHubPanel·McpPanel·PluginPanel·detect-locale·app.store 등 컴포넌트·스토어 렌더링)
-  - 총 `pnpm test`: **193건** (app) + **399건** (server, Redis/DB 없으면 15건 skip) + **74건** (ui, jsdom) = **~666건**
+  - 총 `pnpm test`: **193건** (app) + **405건** (server, Redis/DB 없으면 15건 skip → 390 pass) + **74건** (ui, jsdom) = **~672건**
 - **@vitest/browser + playwright** — 실제 Chromium에서 React 컴포넌트 렌더링 검증
 - **@testing-library/react** — 브라우저 모드 렌더링; `afterEach(cleanup)` 명시 필요
 - **@playwright/test** + `playwright._electron` — Electron E2E (`e2e/`, 110건/17 spec 파일, `pnpm test:e2e`)
@@ -190,6 +190,10 @@ packages/
 
 메시지 전송 시 `structureIntent()` 로 Claude API 기반 의도 정제 후 `TaskStore`에 `pending` 상태로 등록.  
 Redis 이벤트 수신에 따라 상태 전이: `pending` → `status_update` → `running` → `task_complete` → `completed` / `error` → `failed`.
+
+### WS 끊김 시 세션 grace 정리 (`session.ws.ts`)
+
+WS `close` 시 세션을 **즉시 파기하지 않고** `WS_CLEANUP_GRACE_MS`(기본 15s) 후로 정리를 지연한다. grace 내 재연결(React StrictMode 재마운트·serverUrl 변경 등)이면 보류 중 teardown을 취소해 세션·`StreamConsumer`를 유지하므로 "Session not found"가 발생하지 않는다. 재연결이 없으면 grace 경과 후 컨슈머 정지 + `sessionCleanup`(store/message/task 삭제)을 수행한다. 보류 타이머는 `pendingCleanups` Map으로 관리하고 `onClose` 훅에서 일괄 정리한다(`timer.unref()`로 종료 차단 안 함). 메시지 처리 경로(`sessions.route.ts`)는 소켓을 1회 캡처하지 않고 `getSocket = () => wsSessions.get(id)` 라이브 조회로 전달 — 재연결 후 새 소켓으로 청크·done·error가 전달되도록 한다. ⚠️ 현재 클라이언트(`useSessionWs`)는 자동 재연결이 없어 순수 네트워크 단절 복구는 별도 후속 작업이 필요하다(grace는 React 재마운트·serverUrl 변경 재연결을 커버).
 
 ### 승인 게이트 UI
 
@@ -229,6 +233,9 @@ CLAUDE_MODE=api                   # api | cli | remote
 
 # 서버 간 연결
 MANAGER_URL=http://localhost:3001 # Manager 서비스 URL
+
+# 세션 WebSocket
+WS_CLEANUP_GRACE_MS=15000         # WS 끊김 후 세션 정리까지 대기하는 grace 기간(ms, 기본 15000)
 
 # 데이터베이스
 DATABASE_URL=                     # SQLite 파일 경로 또는 연결 문자열
