@@ -17,6 +17,13 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v !== 'false'),
+    // 세션 이벤트소싱(기본 false). true면 Postgres append-only 이벤트 로그를 진실원천으로 사용(DATABASE_URL 필요).
+    EVENT_SOURCED_SESSION: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
+    // 아웃박스 릴레이 폴링 주기(ms). 잘못된 값은 거부(양의 정수).
+    MANAGER_OUTBOX_POLL_MS: z.coerce.number().int().positive().default(500),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {
