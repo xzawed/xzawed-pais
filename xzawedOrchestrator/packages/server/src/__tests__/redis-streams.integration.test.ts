@@ -3,7 +3,7 @@ import { Redis } from 'ioredis'
 import { randomUUID } from 'node:crypto'
 import { StreamProducer } from '../streams/producer.js'
 import { StreamConsumer } from '../streams/consumer.js'
-import { closeRedisClient } from '../streams/redis.client.js'
+import { closeRedisClients } from '../streams/redis.client.js'
 import type { ManagerToOrchestratorMessage } from '@xzawed/shared'
 
 const REDIS_URL = process.env['REDIS_URL'] ?? ''
@@ -43,7 +43,7 @@ describe.skipIf(!hasRedis)('Redis Streams Integration', () => {
   afterAll(async () => {
     if (usedKeys.length > 0) await redis.del(...usedKeys)
     await redis.quit()
-    await closeRedisClient()
+    await closeRedisClients()
   })
 
   // ── Scenario 1: StreamProducer publishes a task_request to real Redis ──────

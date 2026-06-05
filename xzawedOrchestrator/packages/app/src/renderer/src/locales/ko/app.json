@@ -50,7 +50,8 @@
     "pipeline_label": "파이프라인",
     "code_copied": "✓ 복사됨",
     "code_copy": "복사",
-    "project_none": "(프로젝트 없음)"
+    "project_none": "(프로젝트 없음)",
+    "info_response_placeholder": "응답을 입력하세요..."
   },
   "mcp": {
     "title": "🔌 MCP 서버",
