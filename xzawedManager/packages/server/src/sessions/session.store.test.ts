@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { SessionStore } from './session.store.js'
 import { DEFAULT_GATE_CONFIG } from '../gates/approval-gate.js'
 
@@ -22,9 +22,9 @@ describe('SessionStore', () => {
       expect(entry?.abortController).toBeInstanceOf(AbortController)
     })
 
-    it('throws when sessionId already exists', () => {
-      store.create('s1')
-      expect(() => store.create('s1')).toThrowError('Session s1 already exists')
+    it('throws when sessionId already exists', async () => {
+      await store.create('s1')
+      await expect(store.create('s1')).rejects.toThrowError('Session s1 already exists')
     })
   })
 
@@ -53,16 +53,16 @@ describe('SessionStore', () => {
       expect(store.get('s1')?.state).toBe('waiting_info')
     })
 
-    it('throws when session is already waiting_info', () => {
-      store.create('s1')
-      store.waitForInfo('s1')
-      expect(() => store.waitForInfo('s1')).toThrowError(
+    it('throws when session is already waiting_info', async () => {
+      await store.create('s1')
+      void store.waitForInfo('s1')
+      await expect(store.waitForInfo('s1')).rejects.toThrowError(
         'Session s1 is already waiting for info',
       )
     })
 
-    it('throws when session does not exist', () => {
-      expect(() => store.waitForInfo('nonexistent')).toThrowError(
+    it('throws when session does not exist', async () => {
+      await expect(store.waitForInfo('nonexistent')).rejects.toThrowError(
         'Session nonexistent not found',
       )
     })
@@ -224,5 +224,50 @@ describe('SessionStore', () => {
       store.setGateOverride('s1', 'plan_task', 'auto')
       expect(store.getGateConfig('s2').overrides['plan_task']).toBeUndefined()
     })
+  })
+})
+
+// ─── event-sourced 경로 ────────────────────────────────────────────────────
+
+function makeFakeEventStore() {
+  const appended: Array<{ type: string; payload: unknown; prevEventId: string | null }> = []
+  let n = 0
+  return {
+    appended,
+    appendSessionEvent: vi.fn(async (input: { type: string; payload: unknown; prevEventId: string | null }) => {
+      appended.push({ type: input.type, payload: input.payload, prevEventId: input.prevEventId })
+      return { eventId: `evt-${n++}` }
+    }),
+  }
+}
+
+describe('SessionStore — event-sourced 경로', () => {
+  it('순차 전이(create→abort→delete)마다 이벤트를 append하고 causation을 연결한다', async () => {
+    const es = makeFakeEventStore()
+    const store = new SessionStore(undefined, es as never)
+    await store.create('s1') // SessionCreated, prevEventId=null → evt-0
+    await store.abort('s1')  // SessionStateChanged(idle), prevEventId='evt-0' → evt-1
+    await store.delete('s1') // SessionDeleted, prevEventId='evt-1' → evt-2
+    expect(es.appended.map((a) => a.type)).toEqual(['SessionCreated', 'SessionStateChanged', 'SessionDeleted'])
+    expect(es.appended[0]?.prevEventId).toBeNull()
+    expect(es.appended[1]?.prevEventId).toBe('evt-0')
+    expect(es.appended[2]?.prevEventId).toBe('evt-1')
+  })
+
+  it('waitForInfo→resolveInfo 전이도 각각 이벤트를 append한다(production: resolveInfo는 별도 메시지로 도착)', async () => {
+    const es = makeFakeEventStore()
+    const store = new SessionStore(undefined, es as never)
+    await store.create('s1')
+    const waitP = store.waitForInfo('s1') // runner가 await — append 완료 후 wait
+    await new Promise((r) => setImmediate(r)) // waitForInfo append 완료까지 양보
+    await store.resolveInfo('s1', 'ans')
+    await waitP
+    expect(es.appended.map((a) => a.type)).toEqual(['SessionCreated', 'SessionStateChanged', 'SessionStateChanged'])
+  })
+
+  it('restoreSession으로 replay 결과를 인메모리 투영에 주입한다', () => {
+    const store = new SessionStore()
+    store.restoreSession('s9', 'running', 'evt-last', 3)
+    expect(store.get('s9')?.state).toBe('running')
   })
 })
