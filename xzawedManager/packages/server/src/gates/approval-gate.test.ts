@@ -78,11 +78,28 @@ describe('parseDecision', () => {
   it('abort', () => {
     expect(parseDecision('{"decision":"abort"}')).toEqual({ kind: 'abort' })
   })
-  it('파싱 불가 문자열은 approve로 fail-open', () => {
-    expect(parseDecision('그냥 진행')).toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: false })
+  it('파싱 불가 문자열은 fail-safe로 needs_human(자동 승인 금지)', () => {
+    const d = parseDecision('그냥 진행')
+    expect(d.kind).toBe('needs_human')
+    expect((d as { reason: string }).reason).toBeTruthy()
   })
-  it('알 수 없는 decision은 approve', () => {
-    expect(parseDecision('{"decision":"xxx"}')).toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: false })
+  it('파싱 불가 문자열은 failSafe=false면 레거시 approve(fail-open)', () => {
+    expect(parseDecision('그냥 진행', false)).toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: false })
+  })
+  it('비객체(JSON 숫자/문자열)는 fail-safe로 needs_human', () => {
+    expect(parseDecision('123').kind).toBe('needs_human')
+    expect(parseDecision('"hello"').kind).toBe('needs_human')
+    expect(parseDecision('123', false)).toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: false })
+  })
+  it('알 수 없는 decision 값은 fail-safe로 needs_human(레거시는 approve)', () => {
+    expect(parseDecision('{"decision":"xxx"}').kind).toBe('needs_human')
+    expect(parseDecision('{"decision":"xxx"}', false))
+      .toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: false })
+  })
+  it('decision 키 누락은 fail-safe로 needs_human(레거시는 approve)', () => {
+    expect(parseDecision('{"foo":1}').kind).toBe('needs_human')
+    expect(parseDecision('{"foo":1}', false))
+      .toEqual({ kind: 'approve', rememberAuto: false, saveToWiki: false })
   })
   it('revise인데 feedback 없으면 빈 문자열', () => {
     expect(parseDecision('{"decision":"revise"}')).toEqual({ kind: 'revise', feedback: '' })

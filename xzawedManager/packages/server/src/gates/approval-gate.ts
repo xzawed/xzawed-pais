@@ -46,6 +46,9 @@ export type GateDecision =
   | { kind: 'approve'; rememberAuto: boolean; saveToWiki: boolean; wikiSummary?: string }
   | { kind: 'revise'; feedback: string }
   | { kind: 'abort' }
+  // fail-safe: 응답이 파싱 불가·비객체·미지 decision일 때 자동 승인 대신 사람 재검토로 에스컬레이션한다.
+  // senario M8(무음 통과 금지)·N1(불확실=실패) — 시스템 결함은 approve가 아니라 needs_human이어야 한다.
+  | { kind: 'needs_human'; reason: string }
 
 const SUMMARY_MAX = 2000
 
@@ -55,27 +58,19 @@ function clampSummary(text: string): string {
 }
 
 /**
- * info_response.answer(JSON)에서 승인 결정을 해석한다. 파싱 불가·미지 값은 approve로 fail-open.
- * approve에 `rememberAuto: true`면 해당 단계를 이후 자동 승인(override=auto)으로 전환한다.
- * approve에 `saveToWiki: true`면 승인된 결정 요약을 도메인 위키에 저장한다(누락 시 false).
- * approve에 `wikiSummary`(비어있지 않은 문자열)가 있으면 PO가 저장 전 편집한 요약으로 채택한다
- * (누락·비문자열·공백뿐이면 생략 → runner가 자동 요약으로 폴백).
+ * 응답이 파싱 불가·비객체·미지 decision일 때의 폴백 결정.
+ * failSafe(기본)면 자동 승인하지 않고 사람 재검토(needs_human)로 에스컬레이션한다.
+ * failSafe=false면 레거시 fail-open(순수 approve)으로 복원한다 — 단, 과거 fail-open이 'decision 키 없는
+ * 객체'에서 rememberAuto/saveToWiki/wikiSummary 같은 부가 플래그를 읽던 동작은 재현하지 않는다(더 보수적).
  */
-export function parseDecision(answer: string): GateDecision {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(answer)
-  } catch {
-    return { kind: 'approve', rememberAuto: false, saveToWiki: false }
-  }
-  if (typeof parsed !== 'object' || parsed === null) return { kind: 'approve', rememberAuto: false, saveToWiki: false }
-  const obj = parsed as Record<string, unknown>
-  const decision = obj['decision']
-  if (decision === 'abort') return { kind: 'abort' }
-  if (decision === 'revise') {
-    const fb = obj['feedback']
-    return { kind: 'revise', feedback: typeof fb === 'string' ? fb : '' }
-  }
+function fallbackDecision(failSafe: boolean, reason: string): GateDecision {
+  return failSafe
+    ? { kind: 'needs_human', reason }
+    : { kind: 'approve', rememberAuto: false, saveToWiki: false }
+}
+
+/** answer 객체에서 approve 결정을 구성한다(rememberAuto·saveToWiki·PO 편집 wikiSummary). */
+function buildApprove(obj: Record<string, unknown>): GateDecision {
   const ws = obj['wikiSummary']
   const wikiSummary = typeof ws === 'string' && ws.trim() !== '' ? clampSummary(ws) : undefined
   return {
@@ -84,6 +79,37 @@ export function parseDecision(answer: string): GateDecision {
     saveToWiki: obj['saveToWiki'] === true,
     ...(wikiSummary !== undefined ? { wikiSummary } : {}),
   }
+}
+
+/**
+ * info_response.answer(JSON)에서 승인 결정을 해석한다.
+ * 정상 결정(approve/revise/abort)은 그대로 해석하고, 파싱 불가·비객체·미지 decision 값은
+ * `failSafe`(기본 true)면 needs_human(자동 승인 금지·사람 재검토)로, false면 레거시 approve(fail-open)로 처리한다.
+ * approve에 `rememberAuto: true`면 해당 단계를 이후 자동 승인(override=auto)으로 전환한다.
+ * approve에 `saveToWiki: true`면 승인된 결정 요약을 도메인 위키에 저장한다(누락 시 false).
+ * approve에 `wikiSummary`(비어있지 않은 문자열)가 있으면 PO가 저장 전 편집한 요약으로 채택한다
+ * (누락·비문자열·공백뿐이면 생략 → runner가 자동 요약으로 폴백).
+ */
+export function parseDecision(answer: string, failSafe = true): GateDecision {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(answer)
+  } catch {
+    return fallbackDecision(failSafe, 'approval response is not valid JSON')
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return fallbackDecision(failSafe, 'approval response is not an object')
+  }
+  const obj = parsed as Record<string, unknown>
+  const decision = obj['decision']
+  if (decision === 'abort') return { kind: 'abort' }
+  if (decision === 'revise') {
+    const fb = obj['feedback']
+    return { kind: 'revise', feedback: typeof fb === 'string' ? fb : '' }
+  }
+  if (decision === 'approve') return buildApprove(obj)
+  // 미지/누락 decision 값 — 시스템 결함으로 간주(자동 승인 금지)
+  return fallbackDecision(failSafe, `unknown approval decision: ${String(decision)}`)
 }
 
 /** 사용자가 승인 판단에 쓸 산출물 요약(텍스트). content 우선, 없으면 전체 직렬화(2000자 상한). */

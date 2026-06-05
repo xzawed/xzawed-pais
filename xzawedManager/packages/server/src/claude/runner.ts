@@ -7,7 +7,7 @@ import type { ManagerToOrchestratorMessage, UISpec, ComponentSpec } from '../typ
 import { ClarificationNeededError, AgentQueryError, GateAbortError } from '../tools/errors.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
 import { isGatedTool, effectiveMode, summarizeOutput, parseDecision, isKnowledgeBearingStage, buildDemoSpec } from '../gates/approval-gate.js'
-import type { GateMode } from '../gates/approval-gate.js'
+import type { GateMode, GateDecision } from '../gates/approval-gate.js'
 import { validateToolInput } from './validate-tool-input.js'
 import type { KnowledgeRepo } from '../db/knowledge.repo.js'
 
@@ -20,9 +20,24 @@ export function parseMaxIterations(raw: string | undefined): number {
   return value
 }
 
+/**
+ * 게이트 상한(재요청·재수정 횟수) 환경변수를 양의 정수로 파싱한다.
+ * NaN(비숫자)·0·음수 등 유효하지 않은 값은 기본값으로 폴백한다 — 잘못된 env가 fail-safe 상한을
+ * 조용히 무력화(예: NaN이면 `n > NaN`이 항상 false라 에스컬레이션이 영영 안 됨)하지 않도록 보장한다.
+ */
+export function parsePositiveInt(raw: string | undefined, fallback: number): number {
+  const value = Number(raw)
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : fallback
+}
+
 const MAX_ITERATIONS = parseMaxIterations(process.env['MANAGER_MAX_ITERATIONS'])
 const MAX_TOKENS = Number(process.env['MANAGER_MAX_TOKENS'] ?? '16384')
-const MAX_GATE_REVISES = Number(process.env['MANAGER_MAX_GATE_REVISES'] ?? '5')
+const MAX_GATE_REVISES = parsePositiveInt(process.env['MANAGER_MAX_GATE_REVISES'], 5)
+// 승인 응답이 파싱 불가·미지(needs_human)일 때 사람에게 재요청하는 최대 횟수. 초과 시 세션 중단(에스컬레이션).
+const MAX_GATE_REASKS = parsePositiveInt(process.env['MANAGER_MAX_GATE_REASKS'], 3)
+// 게이트 fail-safe(기본 true): 파싱 불가·미지 결정은 자동 승인 금지(needs_human 에스컬레이션)·revise 소진도 중단.
+// 'false'면 레거시 fail-open(파싱 불가→approve, revise 소진→마지막 산출물 반환). config.ts MANAGER_GATE_FAILSAFE 참고.
+const GATE_FAILSAFE = process.env['MANAGER_GATE_FAILSAFE'] !== 'false'
 const WIKI_INJECT_LIMIT = Number(process.env['MANAGER_WIKI_INJECT_LIMIT'] ?? '20')
 const CLAUDE_CALL_TIMEOUT_MS = Number(process.env['MANAGER_CLAUDE_TIMEOUT_MS'] ?? '120000')
 
@@ -73,6 +88,8 @@ export class ClaudeRunner {
     private readonly model: string,
     private readonly registry: ToolRegistry,
     private readonly knowledgeRepo?: KnowledgeRepo,
+    // 게이트 fail-safe(기본 = env 기반 GATE_FAILSAFE). 테스트에서 레거시(false) 경로를 모듈 리로드 없이 주입.
+    private readonly failSafe: boolean = GATE_FAILSAFE,
   ) {}
 
   private async publishStatus(
@@ -278,9 +295,80 @@ export class ClaudeRunner {
   }
 
   /**
+   * 승인 요청 info_request 발행(approval 페이로드 + design_ui 데모 UISpec).
+   * notice(재요청 사유)가 있으면 안내 문구로 사용해 '왜 다시 묻는지'를 PO에게 노출한다(needs_human 재요청).
+   */
+  private async publishApprovalRequest(
+    block: Anthropic.ToolUseBlock,
+    result: unknown,
+    summary: string,
+    sessionId: string,
+    producer: StreamProducer,
+    notice?: string,
+  ): Promise<void> {
+    const demoSpec = buildDemoSpec(block.name, result)
+    await producer.publish({
+      sessionId,
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now(),
+      type: 'info_request',
+      payload: {
+        agentId: 'manager',
+        content: notice ?? `'${block.name}' 단계 결과를 검토하고 승인/수정/중단을 선택하세요.`,
+        approval: { stage: block.name, summary, mode: 'manual' },
+        ...(demoSpec ? { uiSpec: demoSpec } : {}),
+      },
+    })
+  }
+
+  /** approve 결정 후처리: rememberAuto override 전환 + saveToWiki 누적(지식성 단계 한정·비차단). */
+  private async handleApprove(
+    decision: Extract<GateDecision, { kind: 'approve' }>,
+    block: Anthropic.ToolUseBlock,
+    summary: string,
+    sessionId: string,
+    producer: StreamProducer,
+    sessionStore: SessionStore,
+    userContext?: UserContext,
+  ): Promise<void> {
+    // '이 단계 앞으로 자동' 선택 시 이후 동일 단계는 게이트 없이 통과(배포는 항상 manual이라 무영향)
+    if (decision.rememberAuto) sessionStore.setGateOverride(sessionId, block.name, 'auto')
+    // PO가 '위키에 저장' 선택 시 승인된 결정 요약을 도메인 위키에 누적.
+    // PO가 저장 전 요약을 편집했으면 그 내용(wikiSummary)을 우선, 없으면 자동 요약을 저장.
+    if (decision.saveToWiki) {
+      const saved = await this.saveApprovedDecision(block.name, decision.wikiSummary ?? summary, userContext)
+      if (saved && userContext?.projectId) {
+        await this.publishKnowledgeChanged(producer, sessionId, userContext.projectId)
+      }
+    }
+  }
+
+  /** 게이트 에스컬레이션: 세션 중단 + GateAbortError로 루프 종료. abort 결정·needs_human cap·revise 소진 공통. */
+  private escalateGate(sessionId: string, stage: string, sessionStore: SessionStore): never {
+    sessionStore.abort(sessionId)
+    throw new GateAbortError(stage)
+  }
+
+  /** needs_human 재요청 횟수가 상한을 넘으면 에스컬레이션(never). 아니면 통과. */
+  private assertReaskWithinCap(reasks: number, stage: string, sessionId: string, sessionStore: SessionStore): void {
+    if (reasks > MAX_GATE_REASKS) this.escalateGate(sessionId, stage, sessionStore)
+  }
+
+  /**
+   * revise 소진 시 처리. fail-safe면 에스컬레이션(never), 레거시면 마지막 산출물을 반환한다.
+   * (호출자는 이 반환값을 그대로 return하여 게이트를 종료한다.)
+   */
+  private onReviseExhausted(result: unknown, stage: string, sessionId: string, sessionStore: SessionStore): unknown {
+    if (this.failSafe) this.escalateGate(sessionId, stage, sessionStore)
+    return result
+  }
+
+  /**
    * 승인 게이트 루프. manual이면 info_request(approval) 발행 후 사용자 응답까지 대기.
-   * approve → result 반환 / revise → 피드백으로 재실행 후 재게이트 / abort → GateAbortError.
-   * 재실행은 MAX_GATE_REVISES회 상한(무한 루프 방지).
+   * approve → result 반환 / revise → 피드백으로 재실행 후 재게이트 / abort → 에스컬레이션.
+   * fail-safe(기본): 파싱 불가·미지 응답(needs_human)은 자동 승인하지 않고 사람에게 재검토 요청(같은 산출물·사유 안내),
+   * MAX_GATE_REASKS 초과 시 에스컬레이션. revise 소진(MAX_GATE_REVISES 초과)도 무음 통과 대신 에스컬레이션.
+   * (레거시 GATE_FAILSAFE=false면 needs_human은 발생하지 않고 revise 소진은 마지막 산출물 반환.)
    */
   private async applyApprovalGate(
     handler: { execute: (i: unknown, s: string, u?: UserContext) => Promise<unknown> },
@@ -293,44 +381,29 @@ export class ClaudeRunner {
   ): Promise<unknown> {
     let result = initialResult
     let revises = 0
+    let reasks = 0
+    let reaskNotice: string | undefined // 직전 needs_human 사유 — 재요청 카드에 안내(M8 무음 통과 금지)
     for (;;) {
       if (effectiveMode(sessionStore.getGateConfig(sessionId), block.name) === 'auto') return result
 
       const summary = summarizeOutput(block.name, result)
-      const demoSpec = buildDemoSpec(block.name, result)
-      await producer.publish({
-        sessionId,
-        messageId: crypto.randomUUID(),
-        timestamp: Date.now(),
-        type: 'info_request',
-        payload: {
-          agentId: 'manager',
-          content: `'${block.name}' 단계 결과를 검토하고 승인/수정/중단을 선택하세요.`,
-          approval: { stage: block.name, summary, mode: 'manual' },
-          ...(demoSpec ? { uiSpec: demoSpec } : {}),
-        },
-      })
-      const decision = parseDecision(await sessionStore.waitForInfo(sessionId))
+      await this.publishApprovalRequest(block, result, summary, sessionId, producer, reaskNotice)
+      reaskNotice = undefined // 소비됨 — 정상 결정 후 재게이트 시에는 일반 안내로 복귀
+      const decision = parseDecision(await sessionStore.waitForInfo(sessionId), this.failSafe)
 
       if (decision.kind === 'approve') {
-        // '이 단계 앞으로 자동' 선택 시 이후 동일 단계는 게이트 없이 통과(배포는 항상 manual이라 무영향)
-        if (decision.rememberAuto) sessionStore.setGateOverride(sessionId, block.name, 'auto')
-        // PO가 '위키에 저장' 선택 시 승인된 결정 요약을 도메인 위키에 누적(지식성 단계 한정·비차단).
-        // PO가 저장 전 요약을 편집했으면 그 내용(wikiSummary)을 우선, 없으면 자동 요약을 저장.
-        if (decision.saveToWiki) {
-          const saved = await this.saveApprovedDecision(block.name, decision.wikiSummary ?? summary, userContext)
-          if (saved && userContext?.projectId) {
-            await this.publishKnowledgeChanged(producer, sessionId, userContext.projectId)
-          }
-        }
+        await this.handleApprove(decision, block, summary, sessionId, producer, sessionStore, userContext)
         return result
       }
-      if (decision.kind === 'abort') {
-        sessionStore.abort(sessionId)
-        throw new GateAbortError(block.name)
+      if (decision.kind === 'abort') this.escalateGate(sessionId, block.name, sessionStore)
+      if (decision.kind === 'needs_human') {
+        // N1 불확실=실패 / M8 무음 통과 금지 — 자동 승인 금지, 같은 산출물로 사유와 함께 사람에게 재요청.
+        this.assertReaskWithinCap(++reasks, block.name, sessionId, sessionStore)
+        reaskNotice = `직전 응답을 해석할 수 없습니다(${decision.reason}). '${block.name}' 결과를 다시 검토해 승인/수정/중단을 선택하세요.`
+        continue // 에이전트 재실행 아님 — 같은 산출물 재검토
       }
-      // revise
-      if (++revises > MAX_GATE_REVISES) return result
+      // revise — 피드백으로 재실행. 소진 시 fail-safe면 에스컬레이션, 레거시면 마지막 산출물 반환.
+      if (++revises > MAX_GATE_REVISES) return this.onReviseExhausted(result, block.name, sessionId, sessionStore)
       const augmented = { ...(block.input as Record<string, unknown>), clarificationContext: decision.feedback }
       result = await handler.execute(augmented, sessionId, userContext)
     }
