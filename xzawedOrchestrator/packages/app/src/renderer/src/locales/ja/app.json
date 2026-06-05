@@ -50,7 +50,8 @@
     "pipeline_label": "パイプライン",
     "code_copied": "✓ コピー済み",
     "code_copy": "コピー",
-    "project_none": "(プロジェクトなし)"
+    "project_none": "(プロジェクトなし)",
+    "info_response_placeholder": "応答を入力してください..."
   },
   "mcp": {
     "title": "🔌 MCPサーバー",

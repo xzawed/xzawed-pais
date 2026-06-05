@@ -17,8 +17,3 @@ export async function closeRedisClients(): Promise<void> {
   }
   clients.clear()
 }
-
-/** @deprecated Use closeRedisClients() */
-export async function closeRedisClient(): Promise<void> {
-  return closeRedisClients()
-}

@@ -286,7 +286,7 @@ export function ChatView(): React.JSX.Element {
                     value={infoResponseValue}
                     onChange={(e) => setInfoResponseValue(e.target.value)}
                     onKeyDown={handleInfoResponseKeyDown}
-                    placeholder="Type your response..."
+                    placeholder={t('chat.info_response_placeholder')}
                     rows={2}
                     className="flex-1 resize-none rounded border border-border bg-bg px-2 py-1.5 text-[12px] text-fg placeholder:text-fg-ghost outline-none focus:border-accent transition-colors"
                   />

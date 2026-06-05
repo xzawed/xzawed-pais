@@ -1,6 +1,6 @@
 import { loadConfig } from './config.js'
 import { buildServer } from './server.js'
-import { closeRedisClient } from './streams/redis.client.js'
+import { closeRedisClients } from './streams/redis.client.js'
 
 try {
   const config = loadConfig()
@@ -12,7 +12,7 @@ try {
     isShuttingDown = true
     await closeAll()
     await app.close()
-    await closeRedisClient()
+    await closeRedisClients()
     process.exit(0)
   }
 

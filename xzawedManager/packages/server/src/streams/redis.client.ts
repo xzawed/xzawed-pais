@@ -15,8 +15,3 @@ export async function closeRedisClients(): Promise<void> {
   await Promise.all([...clients.values()].map((c) => c.quit()))
   clients.clear()
 }
-
-/** @deprecated use closeRedisClients */
-export async function closeRedisClient(): Promise<void> {
-  await closeRedisClients()
-}
