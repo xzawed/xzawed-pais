@@ -90,27 +90,30 @@ export class SessionStore {
   async resolveInfo(sessionId: string, answer: string): Promise<void> {
     const session = this.sessions.get(sessionId)
     if (!session?.infoResolve) return
-    session.infoResolve(answer)
+    const resolve = session.infoResolve
     session.infoResolve = null
     session.infoReject = null
     session.state = 'running'
+    // append를 waiter wake보다 먼저 — runner가 깨어 다음 전이를 일으키기 전에 prevEventId가 진행되도록(causation 레이스 차단)
     await this.appendEvent(session, sessionId, 'SessionStateChanged', { state: 'running' })
+    resolve(answer)
     void this.repo?.updateState(sessionId, 'running').catch(dbErr('updateState(running)', sessionId))
   }
 
   async abort(sessionId: string): Promise<void> {
     const entry = this.sessions.get(sessionId)
     if (!entry) return
-    entry.abortController.abort()
+    entry.abortController.abort() // 동기 — in-flight 취소(테스트가 동기 검사)
     // Replace controller so the session can be reused after abort
     entry.abortController = new AbortController()
-    if (entry.infoReject) {
-      entry.infoReject(new Error('Session aborted'))
-      entry.infoResolve = null
-      entry.infoReject = null
-    }
     entry.state = 'idle'
+    // waiter 핸들 capture·clear는 동기(직후 resolveInfo가 no-op이 되도록), 실제 reject 호출만 append 뒤로
+    const reject = entry.infoReject
+    entry.infoResolve = null
+    entry.infoReject = null
+    // append를 waiter reject보다 먼저 — 깨어난 경로가 다음 전이를 일으키기 전에 prevEventId 진행
     await this.appendEvent(entry, sessionId, 'SessionStateChanged', { state: 'idle' })
+    reject?.(new Error('Session aborted'))
     void this.repo?.updateState(sessionId, 'idle').catch(dbErr('updateState(idle)', sessionId))
   }
 
