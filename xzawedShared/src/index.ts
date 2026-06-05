@@ -10,3 +10,7 @@ export { parseKnowledgeArray, extractKnowledgeViaClaude } from './claude/knowled
 export { runCollaborativeHandle, makeCollaborationContext, createCollaborativeHandler } from './streams/collaboration.js'
 export type { MainOutcome, CollabMessage, MessageBase, CollaborativeAgentDeps } from './streams/collaboration.js'
 export { formatDomainKnowledge } from './prompt/domain-knowledge.js'
+export { EventEnvelopeSchema, makeEnvelope } from './types/event-envelope.js'
+export type { EventEnvelope, EnvelopeParts, EnvelopedMessage } from './types/event-envelope.js'
+export { WorkPackageSchema } from './types/work-package.js'
+export type { WorkPackage } from './types/work-package.js'
