@@ -3,6 +3,7 @@ import {
   DEFAULT_GATE_CONFIG, effectiveMode, isGatedTool,
   summarizeOutput, parseDecision, GATED_TOOLS,
   isKnowledgeBearingStage, KNOWLEDGE_BEARING_STAGES,
+  buildDemoSpec,
 } from './approval-gate.js'
 
 describe('isGatedTool', () => {
@@ -144,5 +145,39 @@ describe('summarizeOutput', () => {
   it('content 없으면 전체 직렬화', () => {
     const s = summarizeOutput('run_tests', { passed: 10, failed: 0 })
     expect(s).toContain('passed')
+  })
+})
+
+describe('buildDemoSpec', () => {
+  it('design_ui 결과의 components를 UISpec으로 병합한다', () => {
+    const result = {
+      components: [{ name: 'Card', description: 'c', props: {} }],
+      uiSpec: { type: 'mockup_viewer', title: 'Demo' },
+      content: '요약 텍스트',
+    }
+    const spec = buildDemoSpec('design_ui', result)
+    expect(spec).toBeDefined()
+    expect(spec?.type).toBe('mockup_viewer')
+    expect(spec?.title).toBe('Demo')
+    expect(spec?.content).toBe('요약 텍스트')
+    expect(spec?.components).toHaveLength(1)
+  })
+  it('content만 있어도 UISpec을 만든다', () => {
+    const spec = buildDemoSpec('design_ui', { uiSpec: { type: 'progress_board' }, content: '3/5', components: [] })
+    expect(spec?.type).toBe('progress_board')
+    expect(spec?.content).toBe('3/5')
+  })
+  it('design_ui가 아니면 undefined', () => {
+    expect(buildDemoSpec('plan_task', { components: [{ name: 'X', description: '', props: {} }] })).toBeUndefined()
+  })
+  it('표시할 내용(components·content)이 없으면 undefined', () => {
+    expect(buildDemoSpec('design_ui', { uiSpec: { type: 'form' }, components: [] })).toBeUndefined()
+  })
+  it('객체가 아닌 결과면 undefined', () => {
+    expect(buildDemoSpec('design_ui', 'oops')).toBeUndefined()
+  })
+  it('알 수 없는 type은 mockup_viewer로 폴백한다', () => {
+    const spec = buildDemoSpec('design_ui', { uiSpec: { type: 'weird' }, content: 'x' })
+    expect(spec?.type).toBe('mockup_viewer')
   })
 })
