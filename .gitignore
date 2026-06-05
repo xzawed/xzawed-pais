@@ -67,3 +67,7 @@ docs/superpowers/plans/
 # 로컬 테스트/개발 전용 HTML 파일
 test-dashboard.html
 .vitest-attachments/
+docs/files.zip
+# senario 사양 패키지 + 반영 분석 + 핸드오프: 메인 repo 미반영. 별도 비공개 repo(xzawed/xzawed-pais-senario)에서 관리.
+# 다른 PC: `git clone git@github.com:xzawed/xzawed-pais-senario.git docs/senario` (docs/senario/HANDOFF.md 참조)
+docs/senario/
