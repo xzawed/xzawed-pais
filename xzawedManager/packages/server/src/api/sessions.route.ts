@@ -30,10 +30,10 @@ export function makeSessionStarter(
     log: { error: (obj: unknown, msg: string) => void }
   },
 ) {
-  return function startManagedSession(sessionId: string): void {
+  return async function startManagedSession(sessionId: string): Promise<void> {
     if (opts.activeConsumers.has(sessionId)) return
 
-    opts.sessionStore.create(sessionId)
+    await opts.sessionStore.create(sessionId)
     opts.watcherEventConsumer?.watchSession(sessionId)
     const consumer = new StreamConsumer(opts.redisUrl)
     opts.activeConsumers.set(sessionId, consumer)
@@ -82,7 +82,7 @@ export function makeSessionStarter(
           } finally {
             opts.watcherEventConsumer?.unwatchSession(sessionId)
             consumer.stop()
-            opts.sessionStore.delete(sessionId)
+            await opts.sessionStore.delete(sessionId)
             opts.activeConsumers.delete(sessionId)
             opts.registry?.releaseAll(sessionId)
           }
@@ -90,19 +90,19 @@ export function makeSessionStarter(
           opts.log.error({ err, sessionId }, 'Unexpected task runner error')
         })
       } else if (msg.type === 'info_response') {
-        opts.sessionStore.resolveInfo(sessionId, msg.payload.answer)
+        await opts.sessionStore.resolveInfo(sessionId, msg.payload.answer)
       } else if (msg.type === 'abort') {
         opts.watcherEventConsumer?.unwatchSession(sessionId)
-        opts.sessionStore.abort(sessionId)
+        await opts.sessionStore.abort(sessionId)
         consumer.stop()
         opts.activeConsumers.delete(sessionId)
-        opts.sessionStore.delete(sessionId)
+        await opts.sessionStore.delete(sessionId)
         opts.registry?.releaseAll(sessionId)
       }
-    }).catch((err: unknown) => {
+    }).catch(async (err: unknown) => {
       opts.log.error({ err, sessionId }, 'StreamConsumer error')
       opts.watcherEventConsumer?.unwatchSession(sessionId)
-      opts.sessionStore.delete(sessionId)
+      await opts.sessionStore.delete(sessionId)
       opts.activeConsumers.delete(sessionId)
     })
   }
