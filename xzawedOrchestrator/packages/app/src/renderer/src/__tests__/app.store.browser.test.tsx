@@ -31,3 +31,17 @@ describe('useAppStore — locale', () => {
     expect(localStorage.getItem('locale')).toBe('ja')
   })
 })
+
+describe('useChatStore — uiSpec 생명주기', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  it('initSession은 이전 세션의 uiSpec을 정리한다(cross-session stale 방지)', async () => {
+    const { useChatStore } = await import('../store/chat.store.js')
+    useChatStore.getState().setUiSpec({ type: 'mockup_viewer', title: '이전 데모' })
+    expect(useChatStore.getState().uiSpec).not.toBeNull()
+    useChatStore.getState().initSession('new-session')
+    expect(useChatStore.getState().uiSpec).toBeNull()
+  })
+})

@@ -1,84 +1,116 @@
 import React from 'react'
 import type { UISpec, UIField, ComponentSpec } from '@xzawed/shared'
+import { useTranslation } from 'react-i18next'
 import { MarkdownContent } from './MarkdownContent.js'
+import { RENDERERS } from './uispec/registry.js'
+import { normalizeName } from './uispec/props.js'
 
 /**
- * 승인 게이트에서 디자인 산출물(UISpec)을 **읽기 전용**으로 미리보여 주는 데모 렌더러.
- * DynamicPanel(대화형 입력)과 달리 상호작용 없이 구조만 보여 준다 — 사용자가 승인 시점에 데모를 검토.
+ * 승인 게이트에서 디자인 산출물(UISpec)을 **읽기 전용**으로 미리보여 주는 Spec 인터프리터.
+ * 구조화된 ComponentSpec 트리를 디자인시스템 기반 styled React로 매핑(HTML 주입 없음).
  */
 
-/** Designer 컴포넌트 트리 노드를 중첩 박스 와이어프레임으로 재귀 렌더(읽기 전용). */
-function ComponentNode({ node }: Readonly<{ node: ComponentSpec }>): React.JSX.Element {
+const MAX_DEPTH = 20
+
+/** 미지원 name 폴백: 점선 박스에 name·description·자식을 표시(graceful degrade). */
+function FallbackNode({ node, children }: Readonly<{ node: ComponentSpec; children: React.ReactNode }>): React.JSX.Element {
   return (
-    <div className="rounded border border-border bg-bg px-2 py-1 flex flex-col gap-0.5">
-      <span className="text-[11px] leading-tight">
-        <span className="font-medium text-fg">{node.name}</span>
-        {node.cssClasses && node.cssClasses.length > 0 && (
-          <span className="ml-1.5 text-[9px] text-fg-ghost">.{node.cssClasses.join('.')}</span>
-        )}
-      </span>
-      {node.description && (
-        <span className="text-[10px] text-fg-ghost">{node.description}</span>
-      )}
-      {node.children && node.children.length > 0 && (
-        <div className="mt-1 flex flex-col gap-1 pl-2 border-l border-border">
-          {node.children.map((child, i) => (
-            <ComponentNode key={`${child.name}-${i}`} node={child} />
-          ))}
-        </div>
-      )}
+    <div className="flex flex-col gap-0.5 rounded border border-dashed border-border bg-bg px-2 py-1">
+      <span className="text-[11px] font-medium text-fg">{node.name}</span>
+      {node.description && <span className="text-[10px] text-fg-ghost">{node.description}</span>}
+      {children && <div className="mt-1 flex flex-col gap-1 border-l border-border pl-2">{children}</div>}
     </div>
   )
 }
-function FieldRow({ field }: Readonly<{ field: UIField }>): React.JSX.Element {
+
+/** ComponentSpec 노드를 레지스트리로 재귀 렌더(깊이 상한으로 순환·악성 스펙 방어). */
+function renderNode(node: ComponentSpec, depth: number): React.ReactNode {
+  if (depth > MAX_DEPTH) return null
+  const children =
+    node.children && node.children.length > 0
+      ? node.children.map((c, i) => <React.Fragment key={`${c.name}-${i}`}>{renderNode(c, depth + 1)}</React.Fragment>)
+      : null
+  const renderer = RENDERERS[normalizeName(node.name)]
+  if (renderer) return renderer(node, children)
+  return <FallbackNode node={node}>{children}</FallbackNode>
+}
+
+/** form fields를 비활성 styled 입력으로 렌더(읽기전용 데모). */
+function FieldControl({ field }: Readonly<{ field: UIField }>): React.JSX.Element {
+  if (field.type === 'textarea') {
+    return (
+      <textarea
+        disabled
+        rows={2}
+        placeholder={field.placeholder ?? ''}
+        className="resize-none rounded border border-border bg-bg px-2 py-1 text-[12px] text-fg placeholder:text-fg-ghost"
+      />
+    )
+  }
+  if (field.type === 'select' || field.type === 'checkbox_group') {
+    return (
+      <select disabled className="rounded border border-border bg-bg px-2 py-1 text-[12px] text-fg">
+        {(field.options ?? []).map((o) => (
+          <option key={o.value}>{o.label}</option>
+        ))}
+      </select>
+    )
+  }
   return (
-    <li className="flex flex-col gap-0.5 rounded border border-border bg-bg px-2 py-1">
-      <span className="text-[11px] text-fg">
-        {field.label}{field.required ? ' *' : ''}
-        <span className="ml-1.5 text-[9px] text-fg-ghost uppercase">{field.type}</span>
+    <input
+      disabled
+      type={field.type === 'number' ? 'number' : 'text'}
+      placeholder={field.placeholder ?? ''}
+      className="rounded border border-border bg-bg px-2 py-1 text-[12px] text-fg placeholder:text-fg-ghost"
+    />
+  )
+}
+
+function FieldInput({ field }: Readonly<{ field: UIField }>): React.JSX.Element {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[11px] text-fg-dim">
+        {field.label}
+        {field.required ? ' *' : ''}
       </span>
-      {field.options && field.options.length > 0 && (
-        <span className="text-[10px] text-fg-ghost">
-          {field.options.map((o) => o.label).join(' · ')}
-        </span>
-      )}
-      {field.placeholder && (
-        <span className="text-[10px] text-fg-ghost italic">{field.placeholder}</span>
-      )}
-    </li>
+      <FieldControl field={field} />
+    </div>
   )
 }
 
 export function UiSpecPreview({ spec }: Readonly<{ spec: UISpec }>): React.JSX.Element {
+  const { t } = useTranslation('app')
+  const hasComponents = !!spec.components && spec.components.length > 0
+  const hasFields = spec.type === 'form' && !!spec.fields && spec.fields.length > 0
+  const hasContent = (spec.type === 'mockup_viewer' || spec.type === 'progress_board') && !!spec.content
+  const empty = !hasComponents && !hasFields && !hasContent
+
   return (
-    <div
-      data-testid="uispec-preview"
-      className="rounded border border-border bg-surface-raised px-2.5 py-2 flex flex-col gap-1.5"
-    >
-      <div className="text-[10px] font-medium text-fg-dim uppercase tracking-wide">
-        {spec.title ?? spec.type}
-      </div>
+    <div data-testid="uispec-preview" className="flex flex-col gap-2 rounded border border-border bg-surface-raised px-2.5 py-2">
+      <div className="text-[10px] font-medium uppercase tracking-wide text-fg-dim">{spec.title ?? spec.type}</div>
 
-      {spec.type === 'form' && (
-        <ul className="flex flex-col gap-1">
-          {(spec.fields ?? []).map((field) => (
-            <FieldRow key={field.id} field={field} />
-          ))}
-        </ul>
-      )}
-
-      {(spec.type === 'mockup_viewer' || spec.type === 'progress_board') && (
-        // content를 마크다운으로 리치 렌더(제목·목록·표·강조·코드) — 단순 raw 텍스트 대신 구조를 시각화.
-        <MarkdownContent content={spec.content ?? ''} />
-      )}
-
-      {/* Designer 컴포넌트 트리(있으면): 중첩 박스 와이어프레임 — 비전의 '구현 전 데모 시연' 풀버전 */}
-      {spec.components && spec.components.length > 0 && (
-        <div data-testid="uispec-components" className="flex flex-col gap-1">
-          {spec.components.map((node, i) => (
-            <ComponentNode key={`${node.name}-${i}`} node={node} />
+      {hasFields && (
+        <div data-testid="uispec-fields" className="flex flex-col gap-2">
+          {spec.fields!.map((f) => (
+            <FieldInput key={f.id} field={f} />
           ))}
         </div>
+      )}
+
+      {hasContent && <MarkdownContent content={spec.content!} />}
+
+      {hasComponents && (
+        <div data-testid="uispec-components" className="flex flex-col gap-2">
+          {spec.components!.map((node, i) => (
+            <React.Fragment key={`${node.name}-${i}`}>{renderNode(node, 0)}</React.Fragment>
+          ))}
+        </div>
+      )}
+
+      {empty && (
+        <span data-testid="uispec-empty" className="text-[11px] text-fg-ghost">
+          {t('chat.demo_preview_empty')}
+        </span>
       )}
     </div>
   )

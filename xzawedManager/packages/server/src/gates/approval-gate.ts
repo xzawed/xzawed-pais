@@ -1,3 +1,5 @@
+import type { UISpec } from '../types/streams.js'
+
 export type GateMode = 'manual' | 'auto'
 
 export interface GateConfig {
@@ -96,4 +98,27 @@ export function summarizeOutput(_stage: string, result: unknown): string {
     text = JSON.stringify(result) ?? ''
   }
   return clampSummary(text)
+}
+
+/**
+ * design_ui 결과에서 승인 카드 데모용 UISpec을 구성한다.
+ * design_ui가 아니거나·객체가 아니거나·표시할 내용(components·content)이 없으면 undefined(첨부 생략).
+ */
+export function buildDemoSpec(stage: string, result: unknown): UISpec | undefined {
+  if (stage !== 'design_ui') return undefined
+  if (typeof result !== 'object' || result === null) return undefined
+  const r = result as Record<string, unknown>
+  const rawSpec = typeof r['uiSpec'] === 'object' && r['uiSpec'] !== null ? (r['uiSpec'] as Record<string, unknown>) : {}
+  const t = rawSpec['type']
+  const type: UISpec['type'] = t === 'form' || t === 'progress_board' ? t : 'mockup_viewer'
+  const components = Array.isArray(r['components']) && r['components'].length > 0 ? (r['components'] as UISpec['components']) : undefined
+  const content =
+    typeof r['content'] === 'string' && r['content'] !== ''
+      ? (r['content'] as string)
+      : typeof rawSpec['content'] === 'string' && rawSpec['content'] !== ''
+        ? (rawSpec['content'] as string)
+        : undefined
+  const title = typeof rawSpec['title'] === 'string' ? (rawSpec['title'] as string) : undefined
+  if (!components && !content) return undefined
+  return { type, ...(title ? { title } : {}), ...(content ? { content } : {}), ...(components ? { components } : {}) }
 }

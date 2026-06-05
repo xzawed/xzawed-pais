@@ -29,7 +29,7 @@
 | 입력 → Manager 전달 | ✅ 완성 | `xzawedOrchestrator/packages/server/src/api/sessions.route.ts:120-131` (`task_request` 발행) |
 | 계획 후 승인 게이트 | ❌ 없음 | `xzawedManager/packages/server/src/tools/redis-agent-handler.ts:101-104` (완료 즉시 `return output`) |
 | 자동 다음 단계 진행 | ⚠️ 게이트 없음 | `xzawedManager/packages/server/src/claude/runner.ts:222-280` (Claude가 다음 도구 자율 선택) |
-| 데모 렌더링 | ⚠️ 저장만 | `xzawedOrchestrator/.../store/chat.store.ts:11-12,85` (uiSpec 저장, 렌더 없음) |
+| 데모 렌더링 | ✅ 구현(P4) | `UiSpecPreview`(Spec 인터프리터)가 design_ui 승인 카드에 정적 목업 렌더 ([P4 설계](2026-06-05-p4-demo-preview-design.md)) |
 | 배포 승인 | ❌ 없음 | — |
 
 재사용 가능 인프라:
@@ -141,6 +141,6 @@ interface GateConfig {
 
 ## 9. 후속 (이 설계 범위 밖, 별도 사이클)
 
-- **A2**: Designer UISpec → 정적 목업 렌더링(데모 시연)을 Orchestrator UI에 표시 + 게이트 연동.
+- **A2** ✅ 구현: Designer UISpec → 정적 목업 렌더링(데모 시연)을 Orchestrator UI에 표시 + 게이트 연동. `UiSpecPreview` Spec 인터프리터 + Manager `buildDemoSpec` 배선 ([P4 설계](2026-06-05-p4-demo-preview-design.md)).
 - **A3**: GitHub 배포(`deploy_project`) 전 승인 게이트.
 - **B**: 오픈소스 VSCode 내장 빌드/실행 환경.
