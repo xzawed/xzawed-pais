@@ -4,7 +4,7 @@ import { getRedisClient } from './redis.client.js'
 const GATEWAY_STREAM = 'orchestrator:to-manager:sessions'
 const GROUP = 'manager-gateway'
 
-export type SessionInitCallback = (sessionId: string) => void
+export type SessionInitCallback = (sessionId: string) => void | Promise<void>
 
 export class SessionGatewayConsumer {
   private running = false
@@ -45,7 +45,7 @@ export class SessionGatewayConsumer {
                   const parsed = JSON.parse(raw) as { sessionId?: unknown }
                   const sessionIdResult = z.string().uuid().safeParse(parsed.sessionId)
                   if (sessionIdResult.success) {
-                    this.onSessionInit(sessionIdResult.data)
+                    await this.onSessionInit(sessionIdResult.data)
                   }
                 }
               }

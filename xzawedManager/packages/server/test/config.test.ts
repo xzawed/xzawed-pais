@@ -48,4 +48,23 @@ describe('loadConfig', () => {
       expect(loadConfig().MANAGER_GATE_FAILSAFE).toBe(true)
     })
   })
+
+  describe('EVENT_SOURCED_SESSION (이벤트소싱 flag)', () => {
+    beforeEach(() => {
+      process.env.ANTHROPIC_API_KEY = 'sk-test-key'
+      process.env.MODE = 'local'
+    })
+    it('미설정이면 기본 false(인메모리 폴백)', () => {
+      delete process.env.EVENT_SOURCED_SESSION
+      expect(loadConfig().EVENT_SOURCED_SESSION).toBe(false)
+    })
+    it("'true'면 true", () => {
+      process.env.EVENT_SOURCED_SESSION = 'true'
+      expect(loadConfig().EVENT_SOURCED_SESSION).toBe(true)
+    })
+    it('MANAGER_OUTBOX_POLL_MS 기본값은 500', () => {
+      delete process.env.MANAGER_OUTBOX_POLL_MS
+      expect(loadConfig().MANAGER_OUTBOX_POLL_MS).toBe(500)
+    })
+  })
 })

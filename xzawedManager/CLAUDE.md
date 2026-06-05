@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 354/357 테스트, 3 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
+현재 상태: **구현 완료 (server 370/375 테스트, 5 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
 **최근 반영(PR-1 게이트 fail-safe)**: 승인 응답이 파싱 불가·비객체·미지 decision이면 자동 승인(fail-open)하지 않고 `needs_human`으로 사람 재검토를 요청한다(같은 산출물·사유 안내, `MAX_GATE_REASKS` 초과 시 세션 중단). revise 소진도 무음 통과 대신 에스컬레이션. `MANAGER_GATE_FAILSAFE=false`로 레거시 fail-open 복원 가능. senario M8(무음 통과 금지)·N1(불확실=실패) 구현.
 
@@ -46,12 +46,12 @@ packages/
         ├── index.ts            # 진입점: Redis consumer 시작
         ├── config.ts           # 환경 변수 검증
         ├── server.ts           # Fastify HTTP (/health, port 3001)
-        ├── streams/            # Redis consumer + producer
+        ├── streams/            # Redis consumer + producer + outbox-relay.ts(아웃박스→Redis 폴링 릴레이)
         ├── claude/runner.ts    # Claude tool-calling 루프 (승인 게이트·위키 주입/저장·AgentQuery 라우팅)
         ├── gates/              # approval-gate.ts: 게이트 모드·대상·결정 파싱
-        ├── db/                 # knowledge.repo.ts(KnowledgeRepo: insertMany·recentByProject 필터·updateById·deleteById) + session.repo.ts + pool.ts + migrations/
+        ├── db/                 # knowledge.repo.ts + session.repo.ts + event-store.ts(이벤트소싱 append+replay) + pool.ts + migrations/(001~006)
         ├── tools/              # ToolHandler 11개 (7 RedisAgent + register-project + switch-project + github-ops* + deploy-project* / *GITHUB_TOKEN 조건부) + agent-tool-map.ts + errors.ts
-        ├── sessions/           # 세션 상태 추적 (session.store.ts: gateConfig·waitForInfo·게이트 override)
+        ├── sessions/           # 세션 상태 추적 (session.store.ts: gateConfig·waitForInfo·게이트 override·EventStore 컴포지션)
         └── api/                # health 라우트 + knowledge.route.ts(GET 비인증·읽기; PATCH/DELETE는 authHook 설정 시 서비스 JWT 필요)
 ```
 
@@ -121,6 +121,18 @@ interface ToolHandler<TInput = unknown, TOutput = unknown> {
   - 위키 주입/저장은 모두 비차단(repo·projectId 없거나 실패 시 작업 계속).
 - **HTTP 라우트**: `GET /projects/:projectId/knowledge`(limit·q·source·category 필터, **비인증·읽기**), `PATCH /:id`(content·category 갱신), `DELETE /:id`. **쓰기(PATCH/DELETE)는 `authHook` 설정 시 서비스 JWT 필요**(#213 defense-in-depth; `SERVICE_JWT_SECRET` 미설정 시 개방·하위호환). PATCH/DELETE는 project_id 가드(repo)로 타 프로젝트 행 변조 차단.
 
+## 세션 이벤트소싱 + 트랜잭셔널 아웃박스 (P0)
+
+dual-write 제거 + 크래시 후 복원의 토대(senario M4/M5/M7). `EVENT_SOURCED_SESSION`(기본 false) flag로 가역. off/no-`DATABASE_URL`이면 기존 인메모리+fire-and-forget 경로 100% 보존.
+
+- **스키마(`006_events_outbox.sql`)**: `manager_events`(append-only 진실원천 — event_id·session_id·event_type·payload·correlation_id·causation_id·idempotency_key·actor(nullable, #6/#7 가역)·occurred_at) + `manager_outbox`(event_id FK·stream·message·published_at). 코드 규약으로 events INSERT만(UPDATE/DELETE 없음).
+- **`db/event-store.ts` `EventStore`**: `appendSessionEvent(input, stream)` — **단일 tx**로 events+outbox INSERT(M5, dual-write 0). 봉투(#239 `makeEnvelope`)로 correlation(=sessionId)·causation(=직전 eventId)·idempotency 채움(M7). `replaySessions()` — 전 이벤트 seq순 fold → 세션별 `{state, lastEventId, count}`.
+- **`streams/outbox-relay.ts` `OutboxRelay`**: `setInterval`(`MANAGER_OUTBOX_POLL_MS`, 기본 500ms) 폴러 — 미발행 outbox(`FOR UPDATE SKIP LOCKED`)를 `StreamProducer.publishRaw`로 `manager:events:{sessionId}`에 발행 후 `published_at` 설정. **at-least-once**(멱등 소비·DLQ는 P1). 실패 시 pending 유지·`attempts++`.
+- **`SessionStore` 컴포지션**: optional `eventStore`. 전이 메서드(create/resolveInfo/abort/delete) **async화** — event-sourced면 `appendEvent` 후 Map(투영) 갱신. `waitForInfo`는 resolver를 await 전 동기 설치(동기 패턴 보존). `restoreSession`으로 replay 결과 주입. 영속 대상=`state`·존재만; AbortController·infoResolve는 휘발 런타임(replay 시 새로 생성).
+- **배선(`server.ts`)**: flag on + `DATABASE_URL`이면 `EventStore` 생성 → 시작 시 `replaySessions()` 복원 → `OutboxRelay.start()`. `closeAll`에서 relay stop.
+- **게이트 연동**: `escalateGate`가 async `abort`를 await(중단 이벤트 기록 후 GateAbortError). narrowing은 abort 분기 `return this.escalateGate(...)`로 보존.
+- **수용기준**: ①상태+이벤트 원자성(append 단일 tx·롤백) ②강제종료 후 replay 복원 ③correlation/causation — 실 pg 통합 테스트(`test/event-sourcing.integration.test.ts`, skip-if-no-DB)로 실증.
+
 ## AgentQuery 교차질의
 
 에이전트가 작업 중 다른 에이전트에게 질의할 수 있다. 하위 에이전트가 `AgentQueryError`(to·question·kind: `active_request` | `cross_check`)를 throw하면 runner가 처리한다.
@@ -142,6 +154,8 @@ SERVICE_JWT_SECRET=      # 선택: 설정 시 JWT 인증 활성화 (32자 이상
 DATABASE_URL=            # 선택: DB 연결 문자열
 MANAGER_GATE_FAILSAFE=   # 선택: 기본 true. 'false'면 승인 게이트 레거시 fail-open 복원
 MANAGER_MAX_GATE_REASKS= # 선택: needs_human 재요청 최대 횟수(기본 3), 초과 시 세션 중단
+EVENT_SOURCED_SESSION=   # 선택: 기본 false. true면 Postgres 이벤트소싱 진실원천 사용(DATABASE_URL 필요)
+MANAGER_OUTBOX_POLL_MS=  # 선택: 아웃박스 릴레이 폴링 주기 ms(기본 500)
 ```
 
 ## 보안 구현 패턴

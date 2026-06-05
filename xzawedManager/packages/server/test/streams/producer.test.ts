@@ -26,6 +26,20 @@ describe('StreamProducer', () => {
     await expect(producer.publish(msg)).rejects.toThrow('null')
   })
 
+  it('publishRaw throws when xadd returns null (at-least-once: 릴레이가 재시도하도록)', async () => {
+    mockXadd.mockResolvedValueOnce(null)
+    const { StreamProducer } = await import('../../src/streams/producer.js')
+    const producer = new StreamProducer('redis://localhost:6379')
+    await expect(producer.publishRaw('manager:events:s1', { hello: 'world' })).rejects.toThrow('null')
+  })
+
+  it('publishRaw가 임의 스트림에 원시 메시지를 발행한다', async () => {
+    const { StreamProducer } = await import('../../src/streams/producer.js')
+    const producer = new StreamProducer('redis://localhost:6379')
+    await producer.publishRaw('manager:events:s1', { a: 1 })
+    expect(mockXadd).toHaveBeenCalledWith('manager:events:s1', '*', 'data', JSON.stringify({ a: 1 }))
+  })
+
   it('publishes to manager:to-orchestrator:{sessionId} stream', async () => {
     const { StreamProducer } = await import('../../src/streams/producer.js')
     const producer = new StreamProducer('redis://localhost:6379')
