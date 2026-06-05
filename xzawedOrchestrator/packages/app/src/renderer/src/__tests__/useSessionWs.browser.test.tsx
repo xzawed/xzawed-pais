@@ -93,6 +93,26 @@ describe('useSessionWs', () => {
     expect(useChatStore.getState().pendingInfoRequest?.approval?.stage).toBe('plan_task')
   })
 
+  test('agent_info_request에 동반된 uiSpec을 store에 반영한다(P4 승인 데모)', () => {
+    useChatStore.setState({ sessionId: 'sess-1' })
+    render(<Harness />)
+    act(() => {
+      captured?.({
+        type: 'agent_info_request',
+        agentId: 'manager',
+        content: 'review',
+        approval: { stage: 'design_ui', summary: 's', mode: 'manual' },
+        uiSpec: { type: 'mockup_viewer', title: 'Demo', components: [{ name: 'Card', description: 'c' }] },
+      } as unknown as WsMessage)
+    })
+    expect(useChatStore.getState().uiSpec).toEqual({
+      type: 'mockup_viewer',
+      title: 'Demo',
+      components: [{ name: 'Card', description: 'c' }],
+    })
+    expect(useChatStore.getState().pendingInfoRequest?.approval?.stage).toBe('design_ui')
+  })
+
   test('knowledge_changed 수신 시 notifyKnowledgeChange로 store에 반영한다(위키 실시간 갱신)', () => {
     useChatStore.setState({ sessionId: 'sess-1' })
     render(<Harness />)
