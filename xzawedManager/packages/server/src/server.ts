@@ -10,7 +10,10 @@ import { StreamConsumer } from './streams/consumer.js'
 import { SessionStore } from './sessions/session.store.js'
 import { SessionRepo } from './db/session.repo.js'
 import { KnowledgeRepo } from './db/knowledge.repo.js'
+import { EventStore } from './db/event-store.js'
+import { OutboxRelay } from './streams/outbox-relay.js'
 import { createPool, runMigrations, closePool } from './db/pool.js'
+import type { Pool } from 'pg'
 import { ToolRegistry } from './tools/registry.js'
 import { ClaudeRunner } from './claude/runner.js'
 import { createPlanTaskHandler } from './tools/plan-task.js'
@@ -49,11 +52,16 @@ export async function buildServer(
 
   let sessionRepo: SessionRepo | undefined
   let knowledgeRepo: KnowledgeRepo | undefined
+  let eventStore: EventStore | undefined
+  let pool: Pool | undefined
   if (config.DATABASE_URL) {
-    const pool = createPool(config.DATABASE_URL)
+    pool = createPool(config.DATABASE_URL)
     await runMigrations(pool)
     sessionRepo = new SessionRepo(pool)
     knowledgeRepo = new KnowledgeRepo(pool)
+    if (config.EVENT_SOURCED_SESSION) eventStore = new EventStore(pool)
+  } else if (config.EVENT_SOURCED_SESSION) {
+    app.log.warn('EVENT_SOURCED_SESSION=true 이지만 DATABASE_URL이 없어 인메모리 폴백으로 동작합니다.')
   }
 
   const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY, maxRetries: 3 })
@@ -80,8 +88,18 @@ export async function buildServer(
 
   const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry, knowledgeRepo)
   const producer = new StreamProducer(config.REDIS_URL)
-  const sessionStore = new SessionStore(sessionRepo)
+  const sessionStore = new SessionStore(sessionRepo, eventStore)
   const activeConsumers = new Map<string, StreamConsumer>()
+
+  // 이벤트소싱 활성 시: 시작 시 이벤트 로그에서 세션 투영 복원 + 아웃박스 릴레이 가동
+  let outboxRelay: OutboxRelay | undefined
+  if (eventStore && pool) {
+    const restored = await eventStore.replaySessions()
+    for (const [sid, s] of restored) sessionStore.restoreSession(sid, s.state, s.lastEventId, s.count)
+    app.log.info(`[event-sourcing] ${restored.size}개 세션 상태 replay 복원`)
+    outboxRelay = new OutboxRelay(pool, producer, config.MANAGER_OUTBOX_POLL_MS)
+    outboxRelay.start()
+  }
 
   const authHook = config.SERVICE_JWT_SECRET ? verifyServiceToken : undefined
 
@@ -145,6 +163,7 @@ export async function buildServer(
   })
 
   const closeAll = async () => {
+    outboxRelay?.stop()
     sessionGateway.stop()
     watcherEventConsumer.stop()
     for (const c of activeConsumers.values()) c.stop()

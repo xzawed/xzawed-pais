@@ -8,10 +8,10 @@ describe('SessionStore', () => {
     expect(store.get('sess-1')?.state).toBe('idle')
   })
 
-  it('throws if session already exists', () => {
+  it('throws if session already exists', async () => {
     const store = new SessionStore()
-    store.create('s1')
-    expect(() => store.create('s1')).toThrow()
+    await store.create('s1')
+    await expect(store.create('s1')).rejects.toThrow()
   })
 
   it('resolves waitForInfo when resolveInfo is called', async () => {
@@ -63,9 +63,9 @@ describe('SessionStore', () => {
     expect(store.getAbortSignal('nonexistent')).toBeUndefined()
   })
 
-  it('waitForInfo throws for unknown session', () => {
+  it('waitForInfo throws for unknown session', async () => {
     const store = new SessionStore()
-    expect(() => store.waitForInfo('nonexistent')).toThrow()
+    await expect(store.waitForInfo('nonexistent')).rejects.toThrow()
   })
 
   it('resolveInfo silently ignores unknown session', () => {
