@@ -461,6 +461,52 @@ describe('ClaudeRunner', () => {
       expect(contents.some((c) => c.includes('Starting design_ui'))).toBe(true)
       expect(contents.some((c) => c.includes('Completed design_ui'))).toBe(true)
     })
+
+    it('design_ui 승인 게이트(manual) publish에 uiSpec(components 포함)을 첨부한다', async () => {
+      mockSessionStore.getGateConfig.mockReturnValue({ defaultMode: 'manual', overrides: {} })
+      mockSessionStore.waitForInfo.mockResolvedValueOnce('{"decision":"approve"}')
+      registry.register({
+        name: 'design_ui',
+        description: '',
+        inputSchema: GATED_SCHEMA,
+        execute: vi.fn().mockResolvedValue({
+          components: [{ name: 'Card', description: 'c', props: {} }],
+          uiSpec: { type: 'mockup_viewer', title: 'Demo' },
+          content: '요약',
+        }),
+      })
+      createFn
+        .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('tu-d', 'design_ui', {})]))
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+
+      await runner.run(baseRunOptions())
+
+      const infoReq = (mockProducer.publish.mock.calls as Array<[{ type: string; payload: Record<string, unknown> }]>)
+        .map((c) => c[0])
+        .find((m) => m.type === 'info_request')
+      expect(infoReq?.payload['uiSpec']).toBeDefined()
+      expect((infoReq?.payload['uiSpec'] as { components: unknown[] }).components).toHaveLength(1)
+      expect((infoReq?.payload['approval'] as { stage: string }).stage).toBe('design_ui')
+    })
+
+    it('design_ui가 아닌 게이트 단계는 uiSpec을 첨부하지 않는다', async () => {
+      mockSessionStore.getGateConfig.mockReturnValue({ defaultMode: 'manual', overrides: {} })
+      mockSessionStore.waitForInfo.mockResolvedValueOnce('{"decision":"approve"}')
+      registry.register({
+        name: 'plan_task', description: '', inputSchema: GATED_SCHEMA,
+        execute: vi.fn().mockResolvedValue({ content: '계획' }),
+      })
+      createFn
+        .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('tu-p', 'plan_task', {})]))
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+
+      await runner.run(baseRunOptions())
+
+      const infoReq = (mockProducer.publish.mock.calls as Array<[{ type: string; payload: Record<string, unknown> }]>)
+        .map((c) => c[0])
+        .find((m) => m.type === 'info_request')
+      expect(infoReq?.payload['uiSpec']).toBeUndefined()
+    })
   })
 
   describe('도구 결과 처리', () => {

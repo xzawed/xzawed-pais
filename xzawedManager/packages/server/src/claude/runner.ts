@@ -6,7 +6,7 @@ import type { UserContext } from '../types/user-context.js'
 import type { ManagerToOrchestratorMessage, UISpec, ComponentSpec } from '../types/streams.js'
 import { ClarificationNeededError, AgentQueryError, GateAbortError } from '../tools/errors.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
-import { isGatedTool, effectiveMode, summarizeOutput, parseDecision, isKnowledgeBearingStage } from '../gates/approval-gate.js'
+import { isGatedTool, effectiveMode, summarizeOutput, parseDecision, isKnowledgeBearingStage, buildDemoSpec } from '../gates/approval-gate.js'
 import type { GateMode } from '../gates/approval-gate.js'
 import { validateToolInput } from './validate-tool-input.js'
 import type { KnowledgeRepo } from '../db/knowledge.repo.js'
@@ -297,6 +297,7 @@ export class ClaudeRunner {
       if (effectiveMode(sessionStore.getGateConfig(sessionId), block.name) === 'auto') return result
 
       const summary = summarizeOutput(block.name, result)
+      const demoSpec = buildDemoSpec(block.name, result)
       await producer.publish({
         sessionId,
         messageId: crypto.randomUUID(),
@@ -306,6 +307,7 @@ export class ClaudeRunner {
           agentId: 'manager',
           content: `'${block.name}' 단계 결과를 검토하고 승인/수정/중단을 선택하세요.`,
           approval: { stage: block.name, summary, mode: 'manual' },
+          ...(demoSpec ? { uiSpec: demoSpec } : {}),
         },
       })
       const decision = parseDecision(await sessionStore.waitForInfo(sessionId))
