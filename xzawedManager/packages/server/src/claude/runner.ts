@@ -344,22 +344,22 @@ export class ClaudeRunner {
   }
 
   /** 게이트 에스컬레이션: 세션 중단 + GateAbortError로 루프 종료. abort 결정·needs_human cap·revise 소진 공통. */
-  private escalateGate(sessionId: string, stage: string, sessionStore: SessionStore): never {
-    sessionStore.abort(sessionId)
+  private async escalateGate(sessionId: string, stage: string, sessionStore: SessionStore): Promise<never> {
+    await sessionStore.abort(sessionId) // abort는 async(이벤트소싱 append) — 중단 이벤트 기록 후 throw
     throw new GateAbortError(stage)
   }
 
   /** needs_human 재요청 횟수가 상한을 넘으면 에스컬레이션(never). 아니면 통과. */
-  private assertReaskWithinCap(reasks: number, stage: string, sessionId: string, sessionStore: SessionStore): void {
-    if (reasks > MAX_GATE_REASKS) this.escalateGate(sessionId, stage, sessionStore)
+  private async assertReaskWithinCap(reasks: number, stage: string, sessionId: string, sessionStore: SessionStore): Promise<void> {
+    if (reasks > MAX_GATE_REASKS) await this.escalateGate(sessionId, stage, sessionStore)
   }
 
   /**
    * revise 소진 시 처리. fail-safe면 에스컬레이션(never), 레거시면 마지막 산출물을 반환한다.
    * (호출자는 이 반환값을 그대로 return하여 게이트를 종료한다.)
    */
-  private onReviseExhausted(result: unknown, stage: string, sessionId: string, sessionStore: SessionStore): unknown {
-    if (this.failSafe) this.escalateGate(sessionId, stage, sessionStore)
+  private async onReviseExhausted(result: unknown, stage: string, sessionId: string, sessionStore: SessionStore): Promise<unknown> {
+    if (this.failSafe) await this.escalateGate(sessionId, stage, sessionStore)
     return result
   }
 
@@ -395,10 +395,10 @@ export class ClaudeRunner {
         await this.handleApprove(decision, block, summary, sessionId, producer, sessionStore, userContext)
         return result
       }
-      if (decision.kind === 'abort') this.escalateGate(sessionId, block.name, sessionStore)
+      if (decision.kind === 'abort') return this.escalateGate(sessionId, block.name, sessionStore)
       if (decision.kind === 'needs_human') {
         // N1 불확실=실패 / M8 무음 통과 금지 — 자동 승인 금지, 같은 산출물로 사유와 함께 사람에게 재요청.
-        this.assertReaskWithinCap(++reasks, block.name, sessionId, sessionStore)
+        await this.assertReaskWithinCap(++reasks, block.name, sessionId, sessionStore)
         reaskNotice = `직전 응답을 해석할 수 없습니다(${decision.reason}). '${block.name}' 결과를 다시 검토해 승인/수정/중단을 선택하세요.`
         continue // 에이전트 재실행 아님 — 같은 산출물 재검토
       }
