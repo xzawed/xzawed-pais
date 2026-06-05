@@ -34,9 +34,10 @@
 ### 명시적 비범위 (후속)
 - **게이트/승인 결정 이벤트소싱** — 후속 슬라이스(WP0 비평 #4 에스컬레이션 부인방지는 별도).
 - **#6 RBAC 강제 · #7 DB 레벨 불변성 트리거** — 미결정. 본 슬라이스는 **가역 스키마**로만 준비(아래 §3).
-- **멱등 소비 · DLQ · lease** — P1(Event Bus + Task Manager).
+- **멱등 소비 · DLQ · lease · 다중 릴레이 동시 클레임** — P1(Event Bus + Task Manager). 본 슬라이스의 OutboxRelay는 **단일 인스턴스 + 재진입 가드** 전제(at-least-once). 다중 릴레이 안전(tx 내 `FOR UPDATE SKIP LOCKED` + `published_at` 선점)은 멱등 소비와 함께 P1.
 - **EventBus 어댑터 · WP 액터 강등** — P1/별도 PR.
 - **휘발 런타임(AbortController·infoResolve/infoReject)의 resumable 복원** — 깊은 P1 관심사. 본 슬라이스는 영속 `state`·세션 존재만 복원.
+- **replay 스냅샷/체크포인트** — 본 슬라이스는 전체 이벤트 full-scan replay. 장기 운영 시 부팅 replay 누적을 피하는 스냅샷/아카이브는 P1.
 
 ## 3. 미결정 의존(#6/#7)에 대한 가역 결정
 
@@ -102,13 +103,14 @@ CREATE INDEX IF NOT EXISTS idx_manager_outbox_pending ON manager_outbox (id) WHE
   - `workflowId = sessionId` · `stepId = ${type}#${perSessionSeq}` · `attemptId = 0`
   - outbox.stream = `manager:events:${sessionId}`, message = `{ envelope, type, payload }`
 - `replaySessions(): Promise<Map<sessionId, SessionState>>` — 전 이벤트를 `seq`순 로드 → 세션별 최종 state로 fold(SessionDeleted면 제거).
-- pg `Pool`에서 `connect()` → tx. **세션별 직전 eventId는 `SessionStore`의 인메모리 투영이 추적**해 `prevEventId`로 전달한다(한 세션의 전이는 단일 consumer/runner가 직렬화하므로 stale 위험 없음). replay 시 fold가 세션별 마지막 eventId도 함께 재구성한다.
+- pg `Pool`에서 `connect()` → tx. **세션별 직전 eventId는 `SessionStore`의 인메모리 투영이 추적**해 `prevEventId`로 전달한다. 한 세션의 전이 직렬화는 두 층으로 보장: ① production은 단일 consumer + runner가 `await waitForInfo`로 블로킹(append 완료 후에만 wait 반환), ② `resolveInfo`·`abort`는 **append를 waiter wake보다 먼저** 실행해, 깨어난 runner가 다음 전이를 일으키기 전에 `prevEventId`가 진행되도록 한다(causation read-modify-write 레이스 차단). waiter 핸들 capture·clear는 동기 유지(직후 호출 no-op 불변식). 완전한 동시 전이 직렬화(per-session 락)는 P1.
 
 ### `streams/outbox-relay.ts` — `OutboxRelay`
 - `setInterval`(`MANAGER_OUTBOX_POLL_MS`, 기본 500ms) 폴러. 각 틱:
-  `SELECT … WHERE published_at IS NULL ORDER BY id LIMIT N FOR UPDATE SKIP LOCKED`
-  → 각 row를 `StreamProducer`로 `stream`에 발행 → `UPDATE published_at = NOW()`.
-- **at-least-once**(멱등 소비는 P1). 발행 실패 시 pending 유지 · `attempts++`(DLQ·알림은 P1).
+  `SELECT … WHERE published_at IS NULL ORDER BY id LIMIT N`
+  → 각 row를 `StreamProducer.publishRaw`로 `stream`에 발행(xadd null 시 throw) → `UPDATE published_at = NOW()`.
+- **재진입 가드**(`polling` 플래그): 느린 발행으로 틱이 겹쳐도 동시 `pollOnce`를 막아 단일 릴레이 내 이중 발행을 차단한다. (tx 밖 `FOR UPDATE SKIP LOCKED`는 락이 즉시 해제되어 무효이므로 미사용 — 다중 릴레이 클레임은 P1.)
+- **at-least-once**(멱등 소비는 P1). 발행 실패·`published_at` UPDATE 실패 시 pending 유지 · `attempts++`(다음 틱 재발행). `stop()`은 진행 중 발행을 드레인하지 않아 종료 직후 미발행 row는 다음 기동 시 재발행될 수 있다(at-least-once 허용). DLQ·알림은 P1.
 - `start()` / `stop()`. `server.ts closeAll`에서 stop.
 
 ### `SessionStore` 확장 (컴포지션)
@@ -144,6 +146,6 @@ CREATE INDEX IF NOT EXISTS idx_manager_outbox_pending ON manager_outbox (id) WHE
 | (3) correlation/causation | 모든 이벤트가 `makeEnvelope`로 correlation/causation 보유. EventStore 단정. |
 
 ## 10. 가역성·롤백
-- `EVENT_SOURCED_SESSION=false`(기본) 또는 no `DATABASE_URL` → 기존 인메모리+fire-and-forget 경로 100% 보존.
+- `EVENT_SOURCED_SESSION=false`(기본) 또는 no `DATABASE_URL` → 기존 인메모리+fire-and-forget 경로 보존. 관측 가능한 상태(Map·state·resolver)는 모두 첫 await 전 동기 실행되어 기존 동기 호출 패턴이 유지된다. 단, 전이 메서드가 async가 되어 best-effort `repo` 미러(`void this.repo?.…`) 호출만 master 대비 한 마이크로태스크 뒤로 밀린다(비차단·미관측 — 기능 영향 없음).
 - 마이그레이션은 additive(`CREATE TABLE IF NOT EXISTS`) — 기존 데이터·테이블 무영향.
 - flag on에서도 `manager_sessions`(기존) 테이블은 그대로 둠(레거시 경로용). 본 슬라이스는 신규 `manager_events`만 진실원천으로 사용.
