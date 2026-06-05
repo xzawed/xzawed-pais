@@ -27,4 +27,25 @@ describe('loadConfig', () => {
     process.env.MODE = 'local'
     expect(() => loadConfig()).toThrow()
   })
+
+  describe('MANAGER_GATE_FAILSAFE (fail-safe 기본값 계약)', () => {
+    beforeEach(() => {
+      process.env.ANTHROPIC_API_KEY = 'sk-test-key'
+      process.env.MODE = 'local'
+    })
+    it('미설정이면 기본 true (fail-safe 기본 보장 — 불확실=실패)', () => {
+      delete process.env.MANAGER_GATE_FAILSAFE
+      expect(loadConfig().MANAGER_GATE_FAILSAFE).toBe(true)
+    })
+    it("'false'면 레거시 fail-open 복원 (false)", () => {
+      process.env.MANAGER_GATE_FAILSAFE = 'false'
+      expect(loadConfig().MANAGER_GATE_FAILSAFE).toBe(false)
+    })
+    it("'false' 외 임의 문자열은 true ('true'·오타 모두 안전 기본으로 수렴)", () => {
+      process.env.MANAGER_GATE_FAILSAFE = 'true'
+      expect(loadConfig().MANAGER_GATE_FAILSAFE).toBe(true)
+      process.env.MANAGER_GATE_FAILSAFE = 'no'
+      expect(loadConfig().MANAGER_GATE_FAILSAFE).toBe(true)
+    })
+  })
 })

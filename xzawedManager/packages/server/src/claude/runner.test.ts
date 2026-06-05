@@ -12,7 +12,7 @@ vi.mock('@anthropic-ai/sdk', () => {
 })
 
 import AnthropicDefault from '@anthropic-ai/sdk'
-import { ClaudeRunner, parseMaxIterations } from './runner.js'
+import { ClaudeRunner, parseMaxIterations, parsePositiveInt } from './runner.js'
 import { ToolRegistry } from '../tools/registry.js'
 import { AgentQueryError, ClarificationNeededError } from '../tools/errors.js'
 import { SessionStore } from '../sessions/session.store.js'
@@ -104,6 +104,24 @@ function baseRunOptions(overrides?: Record<string, unknown>) {
     ...overrides,
   }
 }
+
+describe('parsePositiveInt (게이트 상한 파싱 — NaN/0/음수 방어)', () => {
+  it('유효한 양의 정수는 그대로 반환', () => {
+    expect(parsePositiveInt('3', 5)).toBe(3)
+    expect(parsePositiveInt('10', 5)).toBe(10)
+  })
+  it('미설정(undefined)은 기본값', () => {
+    expect(parsePositiveInt(undefined, 5)).toBe(5)
+  })
+  it('비숫자 문자열은 기본값(NaN→상한 무력화 방지)', () => {
+    expect(parsePositiveInt('abc', 5)).toBe(5)
+  })
+  it('0·음수·빈문자열은 기본값(상한이 0이면 fail-safe 무력화)', () => {
+    expect(parsePositiveInt('0', 5)).toBe(5)
+    expect(parsePositiveInt('-2', 5)).toBe(5)
+    expect(parsePositiveInt('', 5)).toBe(5)
+  })
+})
 
 describe('ClaudeRunner', () => {
   describe('end_turn', () => {
@@ -759,6 +777,186 @@ describe('ClaudeRunner', () => {
       store.resolveInfo('sess-1', JSON.stringify({ decision: 'abort' }))
 
       await expect(runP).rejects.toThrow(/aborted/i)
+    })
+
+    // ── fail-safe(PR-1): 파싱 불가·미지 응답은 자동 승인하지 않는다(M8 무음 통과 금지·N1 불확실=실패) ──
+
+    it('needs_human: 파싱 불가 응답은 자동 승인하지 않고 사람에게 재검토를 요청한다(에이전트 재실행 X)', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn().mockResolvedValue({ content: '계획' })
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      // 파싱 불가 → needs_human → 자동 승인 금지, 같은 산출물로 재요청
+      store.resolveInfo('sess-1', '그냥 진행해줘')
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      // 재요청에 정상 승인으로 응답 → 완료
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve' }))
+      await runP
+
+      expect(exec).toHaveBeenCalledTimes(1) // 같은 산출물 재검토 — 에이전트 재실행 없음
+      const approvals = mockProducer.publish.mock.calls
+        .map((c) => c[0] as { payload?: { approval?: unknown } })
+        .filter((m) => m.payload?.approval)
+      expect(approvals.length).toBeGreaterThanOrEqual(2) // 최초 + 재요청
+    })
+
+    it('needs_human 재요청 카드는 직전 응답을 해석할 수 없다는 사유를 노출한다', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn().mockResolvedValue({ content: '계획' })
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', '아무말') // 파싱 불가 → needs_human
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve' }))
+      await runP
+
+      const contents = mockProducer.publish.mock.calls
+        .map((c) => c[0] as { payload?: { content?: string; approval?: unknown } })
+        .filter((m) => m.payload?.approval)
+        .map((m) => m.payload?.content ?? '')
+      // 최초 카드는 일반 안내, 재요청 카드(2번째)는 해석 실패 사유를 안내해야 한다(reason 무음 폐기 방지)
+      expect(contents.length).toBeGreaterThanOrEqual(2)
+      expect(contents.some((c) => c.includes('해석할 수 없'))).toBe(true)
+    })
+
+    it('needs_human이 MAX_GATE_REASKS를 초과하면 세션을 중단한다(에스컬레이션)', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn().mockResolvedValue({ content: '계획' })
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      // 기본 MAX_GATE_REASKS=3 — 3회까지 재요청, 4번째 파싱 불가 응답에서 에스컬레이션(중단)
+      for (let i = 0; i < 3; i++) {
+        await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+        store.resolveInfo('sess-1', '모르겠어')
+      }
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', '모르겠어') // 4번째 → 에스컬레이션
+
+      await expect(runP).rejects.toThrow(/aborted/i)
+      expect(exec).toHaveBeenCalledTimes(1) // 에이전트 재실행 없이 사람 재요청만 반복
+      expect(createFn).toHaveBeenCalledTimes(1) // 다음 단계 미실행
+    })
+
+    it('revise가 MAX_GATE_REVISES를 초과하면 fail-safe로 세션을 중단한다(무음 통과 금지)', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn().mockResolvedValue({ content: '수정본' })
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      const revise = JSON.stringify({ decision: 'revise', feedback: '또 고쳐' })
+      // 기본 MAX_GATE_REVISES=5 — 5회 재실행 후 6번째 revise에서 소진 → 에스컬레이션(중단)
+      for (let i = 0; i < 5; i++) {
+        await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+        const before = exec.mock.calls.length
+        store.resolveInfo('sess-1', revise)
+        await waitFor(() => exec.mock.calls.length === before + 1) // 피드백으로 재실행됨
+      }
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', revise) // 6번째 → 소진 → 에스컬레이션
+
+      await expect(runP).rejects.toThrow(/aborted/i)
+      expect(exec).toHaveBeenCalledTimes(6) // 최초 1 + 재실행 5(소진 시 재실행 없음)
+    })
+
+    it('needs_human이 정확히 MAX_GATE_REASKS회면 에스컬레이션 없이 승인으로 회복한다(경계)', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn().mockResolvedValue({ content: '계획' })
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      // 기본 MAX_GATE_REASKS=3 — 정확히 3회 재요청은 '초과'가 아니므로 에스컬레이션되지 않는다
+      for (let i = 0; i < 3; i++) {
+        await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+        store.resolveInfo('sess-1', '모르겠음')
+      }
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve' })) // 4번째 응답은 정상 승인 → 회복
+      await runP
+
+      expect(exec).toHaveBeenCalledTimes(1)
+    })
+
+    it('needs_human↔revise 인터리브: 두 카운터가 독립이며 happy-path로 종료된다', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn()
+        .mockResolvedValueOnce({ content: '초안' })
+        .mockResolvedValueOnce({ content: '수정본' })
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      // 1) revise → 피드백으로 재실행(exec 2회)
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'revise', feedback: '보강' }))
+      await waitFor(() => exec.mock.calls.length === 2)
+      // 2) 파싱 불가 → needs_human 재요청(에이전트 재실행 없음)
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', '음...')
+      // 3) 재요청에 approve → 완료(revises·reasks 어느 cap도 조기 트립되지 않음)
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve' }))
+      await runP
+
+      expect(exec).toHaveBeenCalledTimes(2) // 초기1 + revise재실행1, needs_human은 재실행 없음
+    })
+
+    // ── 레거시 fail-open (failSafe=false 주입) — 하위호환 escape hatch 회귀 가드 ──
+
+    it('레거시: 파싱 불가 응답을 needs_human 없이 자동 approve로 통과시킨다', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn().mockResolvedValue({ content: '계획' })
+      const legacyRunner = new ClaudeRunner(client, 'claude-test', registry, undefined, false)
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = legacyRunner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', '그냥 진행') // 파싱 불가 → 레거시는 자동 approve(fail-open)
+      const result = await runP
+
+      expect(result).toBe('done') // 재요청·에스컬레이션 없이 정상 종료
+      expect(exec).toHaveBeenCalledTimes(1)
+    })
+
+    it('레거시: revise 소진 시 에스컬레이션 없이 마지막 산출물을 반환한다', async () => {
+      const store = new SessionStore()
+      store.create('sess-1')
+      const exec = vi.fn().mockResolvedValue({ content: '수정본' })
+      const legacyRunner = new ClaudeRunner(client, 'claude-test', registry, undefined, false)
+      registerPlan(exec)
+      planThenEnd()
+
+      const runP = legacyRunner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+      const revise = JSON.stringify({ decision: 'revise', feedback: '또' })
+      for (let i = 0; i < 5; i++) {
+        await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+        const before = exec.mock.calls.length
+        store.resolveInfo('sess-1', revise)
+        await waitFor(() => exec.mock.calls.length === before + 1)
+      }
+      await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+      store.resolveInfo('sess-1', revise) // 6번째 소진 → 레거시: 마지막 산출물 반환(reject 아님)
+      const result = await runP
+
+      expect(result).toBe('done') // 에스컬레이션(abort) 대신 게이트 통과 후 정상 완료
+      expect(exec).toHaveBeenCalledTimes(6)
     })
   })
 
