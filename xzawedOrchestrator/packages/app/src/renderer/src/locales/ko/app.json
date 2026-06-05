@@ -51,7 +51,8 @@
     "code_copied": "✓ 복사됨",
     "code_copy": "복사",
     "project_none": "(프로젝트 없음)",
-    "info_response_placeholder": "응답을 입력하세요..."
+    "info_response_placeholder": "응답을 입력하세요...",
+    "demo_preview_empty": "미리보기를 표시할 내용이 없습니다"
   },
   "mcp": {
     "title": "🔌 MCP 서버",
