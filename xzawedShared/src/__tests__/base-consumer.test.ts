@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { z } from 'zod'
 import { BaseConsumer, defaultDedupKey } from '../streams/base-consumer.js'
 
@@ -634,6 +634,16 @@ describe('BaseConsumer', () => {
 
   describe('멱등 소비(dedup)', () => {
     const keyById = { key: (m: Message) => m.id } // {id,value} 스키마용 커스텀 추출기
+    afterEach(() => vi.unstubAllEnvs())
+
+    /** 단일 메시지를 1회 delivery하고 stop하는 xreadgroup mock. */
+    function deliverOnce(redis: ReturnType<typeof makeRedis>, consumer: BaseConsumer<Message>, msg: unknown) {
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(msg)]]]]]
+        consumer.stop(); return null
+      })
+    }
 
     it('신규 키는 SETNX 후 핸들러를 1회 호출한다', async () => {
       const redis = makeRedis() // set → 'OK'(신규)
@@ -748,6 +758,115 @@ describe('BaseConsumer', () => {
       })
       await consumer.start('sess-1')
       expect(redis.set).toHaveBeenCalledWith('idem:prefix:sess-1:msg-1', '1', 'EX', 86400, 'NX')
+    })
+
+    it('명시 ttlSec:0이어도 최소 1로 클램프해 EX 0(Redis 거부)을 보내지 않는다', async () => {
+      const redis = makeRedis()
+      const consumer = new BaseConsumer(
+        redis as any, vi.fn().mockResolvedValue(undefined), 'grp', 'c1', 'prefix', MessageSchema,
+        noopSleep, true, 3, { ...keyById, ttlSec: 0 },
+      )
+      deliverOnce(redis, consumer, validMsg)
+      await consumer.start('sess-1')
+      const exArg = (redis.set as ReturnType<typeof vi.fn>).mock.calls[0][3]
+      expect(exArg).toBeGreaterThanOrEqual(1)
+    })
+
+    it('같은 키 2회 delivery면 첫 번째만 처리하고 두 번째는 skip한다(핵심 멱등 보장)', async () => {
+      const claimed = new Set<string>()
+      const redis = makeRedis({
+        set: vi.fn().mockImplementation((k: string) => {
+          if (claimed.has(k)) return Promise.resolve(null) // 이미 존재 → 중복
+          claimed.add(k); return Promise.resolve('OK')      // 신규 claim
+        }),
+      })
+      const handler = vi.fn().mockResolvedValue(undefined)
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 3, keyById,
+      )
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        // 같은 stream 엔트리('1-0', 동일 메시지)를 두 배치에 걸쳐 재전달
+        if (calls < 2) { calls++; return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]] }
+        consumer.stop(); return null
+      })
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledTimes(1) // 첫 delivery만 처리
+      expect(redis.set).toHaveBeenCalledTimes(2) // 두 delivery 모두 SETNX 시도(두 번째 null→skip)
+    })
+
+    it('기본 추출기: messageId 메시지가 SETNX 키로 흐른다(통합 경로)', async () => {
+      const redis = makeRedis()
+      const schema = z.object({ messageId: z.string(), value: z.number() })
+      const consumer = new BaseConsumer(
+        redis as any, vi.fn().mockResolvedValue(undefined), 'grp', 'c1', 'prefix', schema, noopSleep,
+      )
+      deliverOnce(redis, consumer as unknown as BaseConsumer<Message>, { messageId: 'mid-7', value: 1 })
+      await consumer.start('sess-1')
+      expect(redis.set).toHaveBeenCalledWith('idem:prefix:sess-1:mid-7', '1', 'EX', 86400, 'NX')
+    })
+
+    it('기본 추출기: envelope.idempotencyKey가 messageId보다 우선한다(통합 경로)', async () => {
+      const redis = makeRedis()
+      const schema = z.object({
+        messageId: z.string(), envelope: z.object({ idempotencyKey: z.string() }), value: z.number(),
+      })
+      const consumer = new BaseConsumer(
+        redis as any, vi.fn().mockResolvedValue(undefined), 'grp', 'c1', 'prefix', schema, noopSleep,
+      )
+      deliverOnce(redis, consumer as unknown as BaseConsumer<Message>,
+        { messageId: 'mid-7', envelope: { idempotencyKey: 'wf:s:0' }, value: 1 })
+      await consumer.start('sess-1')
+      expect(redis.set).toHaveBeenCalledWith('idem:prefix:sess-1:wf:s:0', '1', 'EX', 86400, 'NX')
+    })
+
+    it('SHARED_IDEM_TTL_SEC 유효 정수면 그 값으로 SETNX한다(env 경로)', async () => {
+      vi.stubEnv('SHARED_IDEM_TTL_SEC', '120')
+      const redis = makeRedis()
+      const consumer = new BaseConsumer(
+        redis as any, vi.fn().mockResolvedValue(undefined), 'grp', 'c1', 'prefix', MessageSchema,
+        noopSleep, true, 3, keyById, // ttlSec 미주입 → env에서 해석
+      )
+      deliverOnce(redis, consumer, validMsg)
+      await consumer.start('sess-1')
+      expect(redis.set).toHaveBeenCalledWith('idem:prefix:sess-1:msg-1', '1', 'EX', 120, 'NX')
+    })
+
+    it('SHARED_IDEM_TTL_SEC가 비숫자면 기본 86400으로 폴백한다(env NaN 방어)', async () => {
+      vi.stubEnv('SHARED_IDEM_TTL_SEC', 'abc')
+      const redis = makeRedis()
+      const consumer = new BaseConsumer(
+        redis as any, vi.fn().mockResolvedValue(undefined), 'grp', 'c1', 'prefix', MessageSchema,
+        noopSleep, true, 3, keyById,
+      )
+      deliverOnce(redis, consumer, validMsg)
+      await consumer.start('sess-1')
+      expect(redis.set).toHaveBeenCalledWith('idem:prefix:sess-1:msg-1', '1', 'EX', 86400, 'NX')
+    })
+
+    it('SHARED_IDEMPOTENT_CONSUME=false면 dedup 미동작(env kill-switch)', async () => {
+      vi.stubEnv('SHARED_IDEMPOTENT_CONSUME', 'false')
+      const redis = makeRedis()
+      const handler = vi.fn().mockResolvedValue(undefined)
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 3, keyById,
+      )
+      deliverOnce(redis, consumer, validMsg)
+      await consumer.start('sess-1')
+      expect(redis.set).not.toHaveBeenCalled()
+      expect(handler).toHaveBeenCalledWith(validMsg)
+    })
+
+    it('SHARED_IDEMPOTENT_CONSUME 미설정이면 기본 ON(env 기본값)', async () => {
+      vi.stubEnv('SHARED_IDEMPOTENT_CONSUME', undefined)
+      const redis = makeRedis()
+      const consumer = new BaseConsumer(
+        redis as any, vi.fn().mockResolvedValue(undefined), 'grp', 'c1', 'prefix', MessageSchema,
+        noopSleep, true, 3, keyById,
+      )
+      deliverOnce(redis, consumer, validMsg)
+      await consumer.start('sess-1')
+      expect(redis.set).toHaveBeenCalled() // 기본 ON
     })
   })
 })

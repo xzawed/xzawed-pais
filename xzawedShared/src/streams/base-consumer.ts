@@ -54,7 +54,8 @@ export class BaseConsumer<TMessage> {
     dedup: DedupOptions<TMessage> = {},
   ) {
     this.idemEnabled = dedup.enabled ?? (process.env['SHARED_IDEMPOTENT_CONSUME'] !== 'false')
-    this.idemTtlSec = dedup.ttlSec ?? parseIdemTtlSec(process.env['SHARED_IDEM_TTL_SEC'])
+    // Math.max(1,·): 명시 ttlSec:0/음수도 최소 1로 클램프(`0 ?? x`는 0이라 env 가드를 우회 → SET EX 0은 Redis가 거부)
+    this.idemTtlSec = Math.max(1, dedup.ttlSec ?? parseIdemTtlSec(process.env['SHARED_IDEM_TTL_SEC']))
     this.dedupKeyFn = dedup.key ?? (defaultDedupKey as (msg: TMessage) => string | null)
   }
 
