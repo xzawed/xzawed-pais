@@ -11,6 +11,11 @@ type Message = z.infer<typeof MessageSchema>
 
 const validMsg: Message = { id: 'msg-1', value: 42 }
 
+/** xadd 호출 인자에서 'data' 필드 값(JSON)을 추출·파싱한다 — MAXLEN 등 인자 위치 변화에 robust. */
+function dlqPayloadOf(call: unknown[]): Record<string, unknown> {
+  return JSON.parse(call[call.indexOf('data') + 1] as string)
+}
+
 function makeRedis(overrides: Record<string, unknown> = {}) {
   // pipeline mock: exec()가 xack 결과 배열을 반환한다
   const makePipeline = () => {
@@ -175,12 +180,38 @@ describe('BaseConsumer', () => {
       expect(handler).toHaveBeenCalledTimes(3) // 기본 maxDeliveries
       const dlqCall = redis.xadd.mock.calls.find((c) => c[0] === 'prefix:sess-1:dlq')
       expect(dlqCall).toBeTruthy()
-      const dlqPayload = JSON.parse(dlqCall![3] as string)
+      const dlqPayload = dlqPayloadOf(dlqCall!)
       expect(dlqPayload.reason).toBe('handler_failed')
       expect(dlqPayload.attempts).toBe(3)
       expect(dlqPayload.sourceStream).toBe('prefix:sess-1')
+      expect(dlqPayload.original).toBe(JSON.stringify(validMsg)) // 원본 보존
+      expect(dlqPayload.error).toBe('handler error')
+      expect(typeof dlqPayload.failedAt).toBe('number')
+      // 백오프: 시도 1·2 실패 후 sleep(500, 1000), 마지막 시도 3 후엔 sleep 없음
+      expect(noopSleep).toHaveBeenCalledTimes(2)
+      expect(noopSleep).toHaveBeenNthCalledWith(1, 500)
+      expect(noopSleep).toHaveBeenNthCalledWith(2, 1000)
       const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
       expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
+    })
+
+    it('maxDeliveries<=0이어도 최소 1회 시도하고 실패 시 DLQ한다(손실 방지)', async () => {
+      const redis = makeRedis()
+      const handler = vi.fn().mockRejectedValue(new Error('fail'))
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 0,
+      )
+
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        consumer.stop()
+        return null
+      })
+
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledTimes(1) // 클램프로 최소 1회
+      expect(redis.xadd).toHaveBeenCalledTimes(1) // 손실 없이 DLQ
     })
 
     it('일시 실패 후 성공하면 재시도하고 DLQ로 보내지 않는다', async () => {
@@ -239,7 +270,9 @@ describe('BaseConsumer', () => {
       expect(handler).not.toHaveBeenCalled()
       const dlqCall = redis.xadd.mock.calls.find((c) => c[0] === 'prefix:sess-1:dlq')
       expect(dlqCall).toBeTruthy()
-      expect(JSON.parse(dlqCall![3] as string).reason).toBe('invalid_schema')
+      const dlqPayload = dlqPayloadOf(dlqCall!)
+      expect(dlqPayload.reason).toBe('invalid_schema')
+      expect(dlqPayload.attempts).toBe(0) // 비재시도성
       const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
       expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
@@ -262,7 +295,9 @@ describe('BaseConsumer', () => {
       expect(handler).not.toHaveBeenCalled()
       const dlqCall = redis.xadd.mock.calls.find((c) => c[0] === 'prefix:sess-1:dlq')
       expect(dlqCall).toBeTruthy()
-      expect(JSON.parse(dlqCall![3] as string).reason).toBe('invalid_schema')
+      const dlqPayload = dlqPayloadOf(dlqCall!)
+      expect(dlqPayload.reason).toBe('invalid_schema')
+      expect(dlqPayload.attempts).toBe(0) // 비재시도성
       const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
       expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
@@ -476,6 +511,35 @@ describe('BaseConsumer', () => {
       expect(handler).toHaveBeenCalledWith(pendingMsg)
       // claimPendingMessages → processMessages → pipeline xack
       expect(redis.pipeline).toHaveBeenCalled()
+      const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '2-0')
+    })
+
+    it('reclaim된 poison 메시지도 maxDeliveries 후 DLQ로 격리한다(무한 reclaim 방지)', async () => {
+      const redis = makeRedis()
+      const handler = vi.fn().mockRejectedValue(new Error('poison'))
+      const pendingMsg: Message = { id: 'pending-bad', value: 7 }
+      redis.xautoclaim.mockResolvedValueOnce([
+        '0-0',
+        [['2-0', ['data', JSON.stringify(pendingMsg)]]],
+        [],
+      ])
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 1,
+      )
+
+      let readCalls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (readCalls++ === 0) consumer.stop()
+        return null
+      })
+
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledWith(pendingMsg)
+      const dlqCall = redis.xadd.mock.calls.find((c) => c[0] === 'prefix:sess-1:dlq')
+      expect(dlqCall).toBeTruthy()
+      expect(dlqPayloadOf(dlqCall!).reason).toBe('handler_failed')
+      // reclaim 메시지도 ack(PEL에서 제거 → 무한 reclaim 방지)
       const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
       expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '2-0')
     })

@@ -9,6 +9,7 @@ const PENDING_CLAIM_COUNT = 10
 const MAX_DELIVERIES_DEFAULT = 3
 const RETRY_BASE_MS = 500
 const RETRY_CAP_MS = 5_000
+const DLQ_MAXLEN = 1_000 // DLQ 스트림 approximate 보존 상한(무한 증가 방지)
 
 export class BaseConsumer<TMessage> {
   private running = false
@@ -119,9 +120,14 @@ export class BaseConsumer<TMessage> {
 
   /** 단일 메시지 처리: parse→retry→DLQ. 절대 throw하지 않는다(배치 비차단·PEL 누수 0). */
   private async handleMessage(stream: string, fields: string[]): Promise<void> {
-    const parsed = await this.parseOrDlq(stream, fields)
-    if (parsed === null) return
-    await this.dispatchWithRetry(stream, parsed.raw, parsed.data)
+    try {
+      const parsed = await this.parseOrDlq(stream, fields)
+      if (parsed === null) return
+      await this.dispatchWithRetry(stream, parsed.raw, parsed.data)
+    } catch (err) {
+      // 최종 안전망 — 내부의 어떤 예외(error 코어션·주입 sleep reject 등)도 배치를 끊지 않는다(never-throws 계약).
+      console.error('[Consumer] handleMessage 예기치 못한 예외 — ack하고 계속:', err)
+    }
   }
 
   /**
@@ -153,12 +159,13 @@ export class BaseConsumer<TMessage> {
 
   /** 유효 메시지를 maxDeliveries회까지 백오프 재시도. 소진 시 handler_failed로 DLQ. */
   private async dispatchWithRetry(stream: string, raw: string, data: TMessage): Promise<void> {
-    for (let attempt = 1; attempt <= this.maxDeliveries; attempt++) {
+    const max = Math.max(1, this.maxDeliveries) // 0·음수 구성에서도 최소 1회 시도 보장(손실 방지)
+    for (let attempt = 1; attempt <= max; attempt++) {
       try {
         await this.onMessage(data)
         return
       } catch (err) {
-        if (attempt >= this.maxDeliveries) {
+        if (attempt >= max) {
           console.error(`[Consumer] 핸들러 ${attempt}회 실패 → DLQ:`, err)
           await this.routeToDlq(stream, raw, 'handler_failed', attempt, err)
           return
@@ -168,18 +175,20 @@ export class BaseConsumer<TMessage> {
     }
   }
 
-  /** poison 메시지를 {stream}:dlq로 격리한다. DLQ 발행 실패는 경고 후 무시(배치 비차단). */
+  /** poison 메시지를 {stream}:dlq로 격리한다. 페이로드 구성·발행 실패 모두 경고 후 무시(배치 비차단). */
   private async routeToDlq(
     stream: string, raw: string, reason: 'handler_failed' | 'invalid_schema',
     attempts: number, error?: unknown,
   ): Promise<void> {
-    const payload = JSON.stringify({
-      original: raw, reason, attempts,
-      ...(error === undefined ? {} : { error: error instanceof Error ? error.message : String(error) }),
-      failedAt: Date.now(), sourceStream: stream,
-    })
     try {
-      await this.redis.xadd(`${stream}:dlq`, '*', 'data', payload)
+      // error 코어션도 try 안에서 — 병리적 thrown 값(throwing getter 등)이 계약을 깨지 않도록
+      const payload = JSON.stringify({
+        original: raw, reason, attempts,
+        ...(error === undefined ? {} : { error: error instanceof Error ? error.message : String(error) }),
+        failedAt: Date.now(), sourceStream: stream,
+      })
+      // DLQ 무한 증가 방지 — approximate MAXLEN(소비자/재처리 도구는 P1 운영)
+      await this.redis.xadd(`${stream}:dlq`, 'MAXLEN', '~', String(DLQ_MAXLEN), '*', 'data', payload)
     } catch (e) {
       console.error(`[Consumer] DLQ 발행 실패(${stream}:dlq) — 메시지 격리 실패:`, e)
     }

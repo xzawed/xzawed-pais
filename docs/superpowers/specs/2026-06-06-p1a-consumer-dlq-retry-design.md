@@ -80,5 +80,7 @@
 
 ## 8. 가역성·영향
 - 기존 동작 대비 변화: poison 메시지가 (ack-drop) 대신 (재시도→DLQ)로 격리됨 — 손실 방지·관측 가능. 정상 메시지 경로는 불변(성공 1회→ack).
-- 추가 Redis 키: DLQ 스트림(세션별, 발행 시에만 생성). 인메모리·DB 변경 없음. feature-flag 불필요(개선이 순방향·안전).
+- 추가 Redis 키: DLQ 스트림(세션별, 발행 시에만 생성, `MAXLEN ~ 1000` 보존 상한). 인메모리·DB 변경 없음. feature-flag 불필요(개선이 순방향·안전).
 - 7개 에이전트 빌드 전 `xzawedShared` 선빌드 필수(기존 gotcha).
+- **비멱등 재시도 주의**: 재시도는 `onMessage`를 처음부터 재실행하므로, 핸들러 부수효과(파일 쓰기·빌드·테스트·커밋)가 멱등하지 않으면 transient 실패 시 최대 `maxDeliveries`회 중복 실행될 수 있다. 멱등 소비(`(workflow_id,step_id,attempt_id)`)는 **P1b**. 본 슬라이스는 '격리'(DLQ)만 담당.
+- **안정성 보강(적대적 리뷰 반영)**: `maxDeliveries<=0` 클램프(`Math.max(1,·)`, 손실 방지), `handleMessage` 최종 try/catch backstop(error 코어션·sleep reject 등 어떤 내부 예외도 배치를 끊지 않음), DLQ `MAXLEN`(무한 증가 방지).
