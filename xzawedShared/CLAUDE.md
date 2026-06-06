@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (99 테스트 통과)**
+**현재 상태: 구현 완료 (110 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -56,6 +56,7 @@ class BaseConsumer<TMessage> {
     sleep?: (ms: number) => Promise<void>, // 테스트용 주입
     ownsRedis?: boolean,             // 기본 true: close() 시 redis.quit()
     maxDeliveries?: number,          // 기본 3: 핸들러 실패 시 재시도 상한
+    dedup?: { enabled?: boolean; ttlSec?: number; key?: (msg: TMessage) => string | null }, // 멱등 소비(M6)
   )
 
   async start(sessionId: string): Promise<void>  // XREADGROUP 루프 시작
@@ -65,9 +66,10 @@ class BaseConsumer<TMessage> {
 
 **동작 세부사항:**
 - `start(sessionId)`: 스트림 `${streamPrefix}:${sessionId}` 구독. Consumer Group 자동 생성 (BUSYGROUP 무시)
-- 메시지 처리(per-message `handleMessage`, **throw 안 함 → 배치 비차단·PEL 누수 0**): `parseOrDlq`(추출·검증) → `dispatchWithRetry`(핸들러 호출) → `xack`
+- 메시지 처리(per-message `handleMessage`, **throw 안 함 → 배치 비차단·PEL 누수 0**): `parseOrDlq`(추출·검증) → `isDuplicate`(멱등 dedup) → `dispatchWithRetry`(핸들러 호출) → `xack`
 - **바운드 재시도 + DLQ**(senario §12 사다리 5단 '격리'): 유효 메시지 핸들러가 throw하면 `maxDeliveries`(기본 3, `Math.max(1,·)` 클램프)회 백오프 재시도, 소진 시 `{streamPrefix}:{sessionId}:dlq`로 격리(`reason:'handler_failed'`·attempts·error, `MAXLEN ~ 1000`) 후 ack. JSON/스키마 무효는 즉시 DLQ(`reason:'invalid_schema'`). 구조적 결함(data 없음·undefined·10MiB 초과)은 ack+skip(DLQ 아님). DLQ 발행(xadd) 실패는 경고 후 진행(비차단). `handleMessage`는 최종 try/catch로 어떤 내부 예외도 흡수(never-throws 계약)
-  - **⚠️ 비멱등 주의**: 재시도는 `onMessage`를 처음부터 재실행하므로, 핸들러 부수효과(파일 쓰기·빌드·테스트 실행·커밋)가 멱등하지 않으면 transient 실패 시 최대 `maxDeliveries`회 중복 실행될 수 있다 — 멱등 소비(`(workflow_id,step_id,attempt_id)`)는 P1b.
+  - **⚠️ 비멱등 주의**: P1a 재시도는 `onMessage`를 처음부터 재실행하므로, 핸들러 부수효과(파일 쓰기·빌드·테스트 실행·커밋)가 멱등하지 않으면 transient 실패 시 최대 `maxDeliveries`회 중복 실행될 수 있다(같은 delivery 내). 별개 *delivery*(재전달·중복발행)의 중복 실행은 아래 멱등 소비로 차단.
+- **멱등 소비(M6, P1b)**: `dispatchWithRetry` 직전 delivery당 1회 `SET idem:{stream}:{key} 1 NX EX {ttl}`. 키=`envelope.idempotencyKey ?? messageId`(`dedup.key`로 주입 가능, 둘 다 없으면 dedup skip). 중복(SETNX null)이면 `onMessage` 없이 skip+ack — 재전달(XAUTOCLAIM)·outbox 중복발행을 effective-exactly-once로 마감. delivery당 1회라 P1a 인-프로세스 재시도는 막지 않음. `SHARED_IDEMPOTENT_CONSUME`(기본 ON·`=false` 가역)·`SHARED_IDEM_TTL_SEC`(기본 86400) env. SETNX 오류는 fail-open(처리 계속·never-throws 보존). ⚠️ 처리 중 크래시는 재전달 skip으로 미완성 작업 유실 가능(핸들러 트랜잭션 멱등은 후속).
 - `xreadgroup` 오류 재시도: 1초부터 최대 30초까지 지수 백오프
 - XAUTOCLAIM(시작 시 1회): 5분 이상 미처리(컨슈머 死) 메시지를 재획득해 동일 `handleMessage` 경로로 처리
 
