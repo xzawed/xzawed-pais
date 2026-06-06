@@ -94,6 +94,12 @@ describe('RedisEventBus — 소비 전송 포트', () => {
     expect(out).toBe(reply)
   })
 
+  it('readGroup: 타임아웃(xreadgroup null)이면 null을 그대로 반환한다', async () => {
+    const redis = makeRedis({ xreadgroup: vi.fn().mockResolvedValue(null) })
+    const out = await new RedisEventBus(redis as never).readGroup('s:1', 'grp', 'c1', { count: 10, blockMs: 1000 })
+    expect(out).toBeNull()
+  })
+
   it('ack: pipeline로 일괄 xack한다', async () => {
     const redis = makeRedis()
     await new RedisEventBus(redis as never).ack('s:1', 'grp', ['1-0', '2-0'])
