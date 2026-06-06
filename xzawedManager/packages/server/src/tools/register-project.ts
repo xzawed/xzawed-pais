@@ -1,7 +1,6 @@
 import { z } from 'zod'
-import { RedisEventBus } from '@xzawed/agent-streams'
-import { getRedisClient } from '../streams/redis.client.js'
 import type { ToolHandler } from './handler.interface.js'
+import { requestProjectReply } from './project-rpc.js'
 
 interface RegisterInput {
   name: string
@@ -19,15 +18,6 @@ const RegisterOutputSchema = z.object({
 })
 
 type RegisterOutput = z.infer<typeof RegisterOutputSchema>
-
-const ProjectResponseSchema = z.object({
-  type: z.string(),
-  sessionId: z.string(),
-  payload: z.unknown(),
-})
-
-const TIMEOUT_MS = 30_000
-const REQUEST_STREAM = 'manager:to-orchestrator:projects'
 
 export function createRegisterProjectHandler(redisUrl: string): ToolHandler<RegisterInput, RegisterOutput> {
   return {
@@ -50,60 +40,19 @@ export function createRegisterProjectHandler(redisUrl: string): ToolHandler<Regi
         throw new Error('register_project: workspaceType=local 시 localPath는 필수입니다')
       }
 
-      const bus = new RedisEventBus(getRedisClient(redisUrl))
-      const responseStream = `orchestrator:to-manager:projects:${sessionId}`
-
-      // Capture stream tip before publishing to avoid missing responses
-      let lastId = await bus.streamTip(responseStream)
-
-      await bus.publish(REQUEST_STREAM, {
-        type: 'register_project_request',
+      return requestProjectReply({
+        redisUrl,
         sessionId,
-        messageId: crypto.randomUUID(),
-        timestamp: Date.now(),
+        requestType: 'register_project_request',
+        responseType: 'register_project_response',
         payload: input,
+        label: 'register_project',
+        parseOutput: (payload) => {
+          const parsed = RegisterOutputSchema.safeParse(payload)
+          if (!parsed.success) throw new Error('register_project: invalid response payload')
+          return parsed.data
+        },
       })
-
-      const deadline = Date.now() + TIMEOUT_MS
-      while (Date.now() < deadline) {
-        const blockMs = Math.min(deadline - Date.now(), 5_000)
-        if (blockMs <= 0) break
-
-        const results = await bus.readFrom(responseStream, lastId, { count: 5, blockMs })
-
-        if (!results) continue
-
-        for (const [, messages] of results) {
-          for (const [msgId, fields] of messages) {
-            lastId = msgId
-            const dataIdx = fields.indexOf('data')
-            if (dataIdx === -1) continue
-            const raw = fields[dataIdx + 1]
-            if (!raw) continue
-
-            let parseResult
-            try {
-              parseResult = ProjectResponseSchema.safeParse(JSON.parse(raw))
-            } catch {
-              continue  // malformed JSON, skip
-            }
-            if (!parseResult.success) continue
-
-            const msg = parseResult.data
-            if (msg.type === 'register_project_response') {
-              const outputParse = RegisterOutputSchema.safeParse(msg.payload)
-              if (!outputParse.success) throw new Error(`register_project: invalid response payload`)
-              return outputParse.data
-            }
-            if (msg.type === 'project_error' && msg.sessionId === sessionId) {
-              const err = (msg.payload as { error?: string }).error ?? 'unknown error'
-              throw new Error(`register_project failed: ${err}`)
-            }
-          }
-        }
-      }
-
-      throw new Error('register_project timed out after 30s')
     },
   }
 }
