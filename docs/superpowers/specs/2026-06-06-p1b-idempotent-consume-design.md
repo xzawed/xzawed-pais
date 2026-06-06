@@ -49,13 +49,13 @@ key = msg.envelope?.idempotencyKey ?? msg.messageId ?? null
 ### 3.3 Redis dedup 저장
 
 ```
-SET idem:{streamPrefix}:{key} 1 NX EX {ttlSec}
+SET idem:{stream}:{key} 1 NX EX {ttlSec}   // stream = {streamPrefix}:{sessionId}
 ```
 
 - **신규(`OK`)** → 키 claim 성공 → `dispatchWithRetry` 진행.
 - **중복(`null`)** → 이미 처리(또는 처리 중)된 delivery → `onMessage` 호출 없이 **skip + ack**.
 - 키는 성공·DLQ 모두 **유지**(TTL 만료까지) → 중복발행·재전달·DLQ된 poison 재유입을 모두 skip.
-- 네임스페이스 `idem:{streamPrefix}:{key}` — 스트림별 분리(`workflow:step:attempt` 키가 스트림 간 충돌하지 않도록).
+- 네임스페이스 `idem:{stream}:{key}`(stream=`{streamPrefix}:{sessionId}`) — **세션-스트림별 분리**. 중복 delivery는 항상 같은 스트림에 오므로 세션 간 키 충돌(예: messageId 외 키)을 원천 차단.
 
 ### 3.4 TTL
 
