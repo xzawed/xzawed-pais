@@ -1,5 +1,7 @@
 import type { Redis } from 'ioredis'
 import type { ZodType } from 'zod'
+import { RedisEventBus } from './event-bus.js'
+import type { StreamConsumerPort } from './event-bus.js'
 
 const INITIAL_RETRY_DELAY_MS = 1_000
 const MAX_RETRY_DELAY_MS = 30_000
@@ -39,6 +41,8 @@ export class BaseConsumer<TMessage> {
   private readonly idemEnabled: boolean
   private readonly idemTtlSec: number
   private readonly dedupKeyFn: (msg: TMessage) => string | null
+  /** 소비 전송 포트(P1c-2). 메시지 경로 Redis 스트림 명령을 위임. dedup set·close quit은 raw redis 유지. */
+  private readonly bus: StreamConsumerPort
 
   constructor(
     private readonly redis: Redis,
@@ -57,6 +61,7 @@ export class BaseConsumer<TMessage> {
     // Math.max(1,·): 명시 ttlSec:0/음수도 최소 1로 클램프(`0 ?? x`는 0이라 env 가드를 우회 → SET EX 0은 Redis가 거부)
     this.idemTtlSec = Math.max(1, dedup.ttlSec ?? parseIdemTtlSec(process.env['SHARED_IDEM_TTL_SEC']))
     this.dedupKeyFn = dedup.key ?? (defaultDedupKey as (msg: TMessage) => string | null)
+    this.bus = new RedisEventBus(this.redis)
   }
 
   async start(sessionId: string): Promise<void> {
@@ -80,13 +85,9 @@ export class BaseConsumer<TMessage> {
    */
   private async claimPendingMessages(stream: string): Promise<void> {
     try {
-      const rawResult = await this.redis.xautoclaim(
-        stream,
-        this.consumerGroup,
-        this.consumerName,
-        PENDING_MIN_IDLE_MS,
-        '0-0',
-        'COUNT', String(PENDING_CLAIM_COUNT),
+      const rawResult = await this.bus.autoclaim(
+        stream, this.consumerGroup, this.consumerName,
+        { minIdleMs: PENDING_MIN_IDLE_MS, count: PENDING_CLAIM_COUNT },
       )
 
       if (!Array.isArray(rawResult) || !Array.isArray(rawResult[1])) return
@@ -100,20 +101,14 @@ export class BaseConsumer<TMessage> {
   }
 
   private async ensureGroup(stream: string): Promise<void> {
-    try {
-      await this.redis.xgroup('CREATE', stream, this.consumerGroup, '$', 'MKSTREAM')
-    } catch (e: unknown) {
-      if (!(e instanceof Error && e.message.includes('BUSYGROUP'))) throw e
-    }
+    await this.bus.ensureGroup(stream, this.consumerGroup)
   }
 
   private async readOnce(stream: string, retryDelay: number): Promise<number> {
     try {
-      const results = await this.redis.xreadgroup(
-        'GROUP', this.consumerGroup, this.consumerName,
-        'COUNT', '10', 'BLOCK', '1000',
-        'STREAMS', stream, '>',
-      ) as unknown as [string, [string, string[]][]][] | null
+      const results = await this.bus.readGroup(
+        stream, this.consumerGroup, this.consumerName, { count: 10, blockMs: 1000 },
+      )
 
       if (results && results.length > 0) {
         await this.processMessages(stream, results[0][1])
@@ -233,35 +228,22 @@ export class BaseConsumer<TMessage> {
   ): Promise<void> {
     try {
       // error 코어션도 try 안에서 — 병리적 thrown 값(throwing getter 등)이 계약을 깨지 않도록
-      const payload = JSON.stringify({
+      // 객체를 그대로 publish에 넘긴다(publish가 JSON.stringify) — 수동 stringify 시 이중 직렬화됨.
+      const dlqMessage = {
         original: raw, reason, attempts,
         ...(error === undefined ? {} : { error: error instanceof Error ? error.message : String(error) }),
         failedAt: Date.now(), sourceStream: stream,
-      })
+      }
       // DLQ 무한 증가 방지 — approximate MAXLEN(소비자/재처리 도구는 P1 운영)
-      await this.redis.xadd(`${stream}:dlq`, 'MAXLEN', '~', String(DLQ_MAXLEN), '*', 'data', payload)
+      await this.bus.publish(`${stream}:dlq`, dlqMessage, { maxlen: DLQ_MAXLEN })
     } catch (e) {
       console.error(`[Consumer] DLQ 발행 실패(${stream}:dlq) — 메시지 격리 실패:`, e)
     }
   }
 
-  /**
-   * 수집된 메시지 ID를 ack한다.
-   * pipeline을 지원하는 클라이언트(실제 ioredis)는 일괄 처리로 Redis RTT를 최소화하고,
-   * pipeline 미지원 클라이언트는 개별 xack로 폴백한다.
-   */
+  /** 수집된 메시지 ID를 ack한다(pipeline 배치 + 폴백은 포트가 담당). */
   private async ackAll(stream: string, ids: string[]): Promise<void> {
-    if (typeof this.redis.pipeline === 'function') {
-      const pipeline = this.redis.pipeline()
-      for (const id of ids) {
-        pipeline.xack(stream, this.consumerGroup, id)
-      }
-      await pipeline.exec()
-      return
-    }
-    for (const id of ids) {
-      await this.redis.xack(stream, this.consumerGroup, id)
-    }
+    await this.bus.ack(stream, this.consumerGroup, ids)
   }
 
   stop(): void {
