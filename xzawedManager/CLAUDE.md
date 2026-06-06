@@ -46,7 +46,7 @@ packages/
         ├── index.ts            # 진입점: Redis consumer 시작
         ├── config.ts           # 환경 변수 검증
         ├── server.ts           # Fastify HTTP (/health, port 3001)
-        ├── streams/            # Redis consumer + producer + outbox-relay.ts(아웃박스→Redis 폴링 릴레이). StreamConsumer·SessionGatewayConsumer·StreamProducer는 전송을 @xzawed/agent-streams RedisEventBus(StreamConsumerPort/EventBus)에 위임(P1c). WatcherEventConsumer는 다중 스트림이라 미위임(후속)
+        ├── streams/            # Redis consumer + producer + outbox-relay.ts(아웃박스→Redis 폴링 릴레이). StreamConsumer·SessionGatewayConsumer(P1c-3)·StreamProducer·WatcherEventConsumer(P1c-4, readGroupMulti 다중스트림)는 전송을 @xzawed/agent-streams RedisEventBus(StreamConsumerPort/EventBus)에 위임. RedisAgentHandler 요청-응답은 후속(RequestReplyPort)
         ├── claude/runner.ts    # Claude tool-calling 루프 (승인 게이트·위키 주입/저장·AgentQuery 라우팅)
         ├── gates/              # approval-gate.ts: 게이트 모드·대상·결정 파싱
         ├── db/                 # knowledge.repo.ts + session.repo.ts + event-store.ts(이벤트소싱 append+replay) + pool.ts + migrations/(001~006)
