@@ -20,6 +20,7 @@ describe('Consumer', () => {
     const redis = {
       xgroup: vi.fn().mockResolvedValue('OK'),
       xack: vi.fn().mockResolvedValue(1),
+      set: vi.fn().mockResolvedValue('OK'),
       xreadgroup: vi.fn(),
     }
     const handler = vi.fn().mockResolvedValue(undefined)
@@ -41,6 +42,7 @@ describe('Consumer', () => {
     const redis = {
       xgroup: vi.fn().mockResolvedValue('OK'),
       xack: vi.fn().mockResolvedValue(1),
+      set: vi.fn().mockResolvedValue('OK'),
       xreadgroup: vi.fn(),
     }
     const handler = vi.fn().mockResolvedValue(undefined)
@@ -64,6 +66,7 @@ describe('Consumer', () => {
     const redis = {
       xgroup: vi.fn().mockResolvedValue('OK'),
       xack: vi.fn().mockResolvedValue(1),
+      set: vi.fn().mockResolvedValue('OK'),
       xreadgroup: vi.fn(),
     }
     const handler = vi.fn()
