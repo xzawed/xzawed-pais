@@ -137,9 +137,11 @@ dual-write 제거 + 크래시 후 복원의 토대(senario M4/M5/M7). `EVENT_SOU
 
 에이전트가 작업 중 다른 에이전트에게 질의할 수 있다. 하위 에이전트가 `AgentQueryError`(to·question·kind: `active_request` | `cross_check`)를 throw하면 runner가 처리한다.
 
-- `resolveAgentTool(err.to)`(`tools/agent-tool-map.ts`, 에이전트명→도구명 매핑)로 대상 도구를 찾아 `{ query, queryKind }`로 실행.
+- `resolveAgentTool(err.to)`(`tools/agent-tool-map.ts`, **답변 가능 6개 에이전트명→도구명 매핑**)로 대상 도구를 찾아 `buildAgentQueryPayload(err)`로 실행.
+- **`buildAgentQueryPayload`(runner.ts)**: 질의 모드는 `query`·`context`만 읽지만(`collaboration.ts`가 `runMain` 미호출), 답변자 `ManagerTo{Agent}MessageSchema`는 요청 모드 필수 필드를 갖는다. 전 답변자(planner·designer·tester·builder·security·developer) 스키마 **필수 필드 합집합**(`context`·`intent`·`priority`·`projectPath`·`target`·`severity`·`artifacts`)을 placeholder로 채워 어느 답변자로 라우팅돼도 `safeParse` 실패(→ invalid_schema DLQ → 120초 타임아웃)를 막는다. Zod object는 미정의 키를 strip하므로 무해. `intent`는 planner/designer `.min(1).max(4000)` 제약에 맞춰 4000자 클램프 + 빈 질문 폴백.
+- **watcher는 교차질의 대상에서 제외**(`AGENT_TO_TOOL`에 미포함): Claude 미사용·답변 불가이고, 라우팅 시 watch_changes 스키마 검증 실패(triggers 필수)로 타임아웃·실제 파일 감시 부작용이 나므로 `resolveAgentTool('watcher')`=undefined → 즉시 `is_error` 거부.
 - 대상 응답을 `clarificationContext`(JSON)로 넘겨 `reExecuteWithContext`로 질의한 에이전트를 재실행.
-- 미지 대상·질의 실패 시 `is_error` tool_result로 폴백(루프 계속).
+- 미지·답변 불가 대상·질의 실패 시 `is_error` tool_result로 폴백(루프 계속).
 
 ## 환경 변수
 

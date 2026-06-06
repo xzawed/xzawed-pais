@@ -403,9 +403,9 @@ describe('ClaudeRunner', () => {
 
       await runner.run(baseRunOptions())
 
-      // 대상(developer)에게 질문이 전달됨
+      // 대상(developer)에게 질문이 전달됨 — query/queryKind + 답변자 스키마가 읽는 context 포함
       expect(developExec).toHaveBeenCalledWith(
-        expect.objectContaining({ query: '재고 표시 가능?', queryKind: 'active_request' }),
+        expect.objectContaining({ query: '재고 표시 가능?', queryKind: 'active_request', context: {} }),
         'sess-1',
         undefined,
       )
@@ -414,6 +414,142 @@ describe('ClaudeRunner', () => {
       expect(designExec.mock.calls[1][0]).toMatchObject({
         clarificationContext: expect.stringContaining('가능'),
       })
+    })
+
+    it('교차질의 라우팅 payload에 답변자 스키마 필수 필드 placeholder를 함께 보낸다', async () => {
+      // 회귀 방지: 라우팅이 {query, queryKind}만 보내면 답변자 BaseConsumer의 safeParse가
+      // 필수 필드(projectPath·target·severity·artifacts·intent·priority·context) 누락으로 실패 →
+      // invalid_schema DLQ → 응답 없음 → 120초 타임아웃. 모든 답변자 스키마의 필수 필드 합집합을
+      // placeholder로 채워 어느 답변자(planner/designer/tester/builder/security)로 라우팅돼도 검증을 통과시킨다.
+      const planExec = vi.fn()
+        .mockRejectedValueOnce(new AgentQueryError('security', '이 인증 흐름 안전한가?', 'cross_check'))
+        .mockResolvedValueOnce({ content: '계획 완료' })
+      const securityExec = vi.fn().mockResolvedValue({ content: '안전함' })
+
+      registry.register({
+        name: 'plan_task', description: '', inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: planExec,
+      } as never)
+      registry.register({
+        name: 'security_audit', description: '', inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: securityExec,
+      } as never)
+
+      createFn
+        .mockResolvedValueOnce(
+          makeMessage('tool_use', [makeToolUseBlock('tu-aq3', 'plan_task', { intent: 'x' })]),
+        )
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('완료')]))
+
+      await runner.run(baseRunOptions())
+
+      expect(securityExec).toHaveBeenCalledTimes(1)
+      const payload = securityExec.mock.calls[0][0] as Record<string, unknown>
+      // 질의 모드 필드
+      expect(payload['query']).toBe('이 인증 흐름 안전한가?')
+      expect(payload['queryKind']).toBe('cross_check')
+      // 답변자 스키마 필수 필드 placeholder (전 답변자 스키마 합집합)
+      expect(payload['context']).toEqual({})
+      expect(payload['projectPath']).toBe('')
+      expect(payload['target']).toBe('development')
+      expect(payload['severity']).toBe('low')
+      expect(payload['artifacts']).toEqual([])
+      expect(payload['intent']).toBe('이 인증 흐름 안전한가?')
+      expect(payload['priority']).toBe('normal')
+    })
+
+    it('교차질의 질문이 4000자를 초과해도 intent placeholder를 4000자로 잘라 보낸다', async () => {
+      // planner/designer의 intent는 z.string().min(1).max(4000). err.question은 상한이 없어
+      // 그대로 intent에 넣으면 4000자 초과 질의가 planner/designer로 라우팅될 때 safeParse 실패
+      // → invalid_schema DLQ → 타임아웃(원래 버그 재발). 4000자로 잘라 통과시킨다.
+      const longQuestion = 'x'.repeat(4500)
+      const designExec = vi.fn()
+        .mockRejectedValueOnce(new AgentQueryError('planner', longQuestion, 'cross_check'))
+        .mockResolvedValueOnce({ content: '디자인 완료' })
+      const planExec = vi.fn().mockResolvedValue({ content: '기획 의견' })
+
+      registry.register({
+        name: 'design_ui', description: '', inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: designExec,
+      } as never)
+      registry.register({
+        name: 'plan_task', description: '', inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: planExec,
+      } as never)
+
+      createFn
+        .mockResolvedValueOnce(
+          makeMessage('tool_use', [makeToolUseBlock('tu-long', 'design_ui', {})]),
+        )
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('완료')]))
+
+      await runner.run(baseRunOptions())
+
+      const intent = (planExec.mock.calls[0][0] as Record<string, unknown>)['intent'] as string
+      expect(intent.length).toBeLessThanOrEqual(4000)
+      expect(intent.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('교차질의 질문이 비어도 intent placeholder는 비지 않게 채운다', async () => {
+      // planner/designer의 intent .min(1) 위반(빈 문자열) 방어 — 빈 질문이어도 DLQ/타임아웃을 막는다.
+      const designExec = vi.fn()
+        .mockRejectedValueOnce(new AgentQueryError('planner', '', 'active_request'))
+        .mockResolvedValueOnce({ content: '디자인 완료' })
+      const planExec = vi.fn().mockResolvedValue({ content: '기획 의견' })
+
+      registry.register({
+        name: 'design_ui', description: '', inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: designExec,
+      } as never)
+      registry.register({
+        name: 'plan_task', description: '', inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: planExec,
+      } as never)
+
+      createFn
+        .mockResolvedValueOnce(
+          makeMessage('tool_use', [makeToolUseBlock('tu-empty', 'design_ui', {})]),
+        )
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('완료')]))
+
+      await runner.run(baseRunOptions())
+
+      const intent = (planExec.mock.calls[0][0] as Record<string, unknown>)['intent'] as string
+      expect(intent.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('답변 불가 에이전트(watcher)로의 교차질의는 디스패치 없이 is_error로 즉시 거부한다', async () => {
+      // watcher는 Claude 미사용·답변 불가(createCollaborativeHandler 미적용). 라우팅하면 watch_changes
+      // 스키마(triggers 필수) 검증 실패 → DLQ → 120초 타임아웃이며, payload에 triggers를 넣으면
+      // 실제 파일 감시를 시작하는 부작용이 발생한다. 따라서 라우팅 단계에서 즉시 거부해야 한다.
+      const designExec = vi.fn()
+        .mockRejectedValueOnce(new AgentQueryError('watcher', '이 파일 감시돼?', 'active_request'))
+      const watchExec = vi.fn().mockResolvedValue({ content: 'should-not-run' })
+
+      registry.register({
+        name: 'design_ui', description: '', inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: designExec,
+      } as never)
+      registry.register({
+        name: 'watch_changes', description: '', inputSchema: { type: 'object', properties: {}, required: [] },
+        execute: watchExec,
+      } as never)
+
+      createFn
+        .mockResolvedValueOnce(
+          makeMessage('tool_use', [makeToolUseBlock('tu-watch', 'design_ui', {})]),
+        )
+        .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('종료')]))
+
+      await runner.run(baseRunOptions())
+
+      // watcher 핸들러는 절대 호출되지 않는다(부작용·타임아웃 방지)
+      expect(watchExec).not.toHaveBeenCalled()
+      const secondCallMessages = createFn.mock.calls[1][0].messages as Anthropic.MessageParam[]
+      const toolResultMsg = secondCallMessages[secondCallMessages.length - 1]
+      const content = toolResultMsg.content as Array<Anthropic.ToolResultBlockParam & { is_error?: boolean }>
+      expect(content[0].is_error).toBe(true)
+      expect(content[0].content).toContain('watcher')
     })
 
     it('알 수 없는 대상 에이전트면 is_error 결과를 반환한다', async () => {
