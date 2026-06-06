@@ -58,7 +58,7 @@ export function detectCycle(graph: TaskGraph): string[][]
 /** Kahn 위상정렬. order=정렬된 id(결정론), cyclic=사이클로 정렬 못한 잔여 id. */
 export function topoSort(graph: TaskGraph): { order: string[]; cyclic: string[] }
 ```
-- **결정론 타이브레이크**: in-degree 0 후보가 여럿이면 (a) `nodes` 삽입 순서 우선, 동순위는 (b) id 사전순. → 같은 입력 항상 같은 order(N4 step-N 토대).
+- **결정론 타이브레이크**: in-degree 0 후보가 여럿이면 **id 사전순**으로 선택(입력 순서 무관 → content-hash id 기준 안정). 같은 그래프 항상 같은 order(N4 step-N 토대). (`buildTaskGraph`의 `nodes` Map은 삽입 순서를 보존하나, 이는 위상정렬 순서와 별개다.)
 - 사이클이면 해당 노드들은 `order`에 안 들어가고 `cyclic`에 모임(throw 안 함).
 
 ### 3.4 readiness (`readiness.ts`)
