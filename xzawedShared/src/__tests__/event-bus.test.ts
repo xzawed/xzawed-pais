@@ -47,3 +47,81 @@ describe('RedisEventBus', () => {
     })
   })
 })
+
+describe('RedisEventBus — 소비 전송 포트', () => {
+  function makePipeline() {
+    const ops: Array<() => Promise<unknown>> = []
+    const p = {
+      xack: vi.fn().mockImplementation(() => { ops.push(() => Promise.resolve(1)); return p }),
+      exec: vi.fn().mockImplementation(() => Promise.resolve(ops.map(() => [null, 1]))),
+    }
+    return p
+  }
+  function makeRedis(overrides: Record<string, unknown> = {}) {
+    return {
+      xgroup: vi.fn().mockResolvedValue('OK'),
+      xreadgroup: vi.fn().mockResolvedValue(null),
+      xack: vi.fn().mockResolvedValue(1),
+      xautoclaim: vi.fn().mockResolvedValue(['0-0', [], []]),
+      pipeline: vi.fn().mockImplementation(makePipeline),
+      ...overrides,
+    }
+  }
+
+  it('ensureGroup: xgroup CREATE(MKSTREAM)를 호출한다', async () => {
+    const redis = makeRedis()
+    await new RedisEventBus(redis as never).ensureGroup('s:1', 'grp')
+    expect(redis.xgroup).toHaveBeenCalledWith('CREATE', 's:1', 'grp', '$', 'MKSTREAM')
+  })
+
+  it('ensureGroup: BUSYGROUP 오류는 무시한다', async () => {
+    const redis = makeRedis({ xgroup: vi.fn().mockRejectedValue(new Error('BUSYGROUP exists')) })
+    await expect(new RedisEventBus(redis as never).ensureGroup('s:1', 'grp')).resolves.toBeUndefined()
+  })
+
+  it('ensureGroup: BUSYGROUP 외 오류는 전파한다', async () => {
+    const redis = makeRedis({ xgroup: vi.fn().mockRejectedValue(new Error('WRONGTYPE')) })
+    await expect(new RedisEventBus(redis as never).ensureGroup('s:1', 'grp')).rejects.toThrow('WRONGTYPE')
+  })
+
+  it('readGroup: xreadgroup을 올바른 인자로 호출하고 결과를 반환한다', async () => {
+    const reply = [['s:1', [['1-0', ['data', '{}']]]]]
+    const redis = makeRedis({ xreadgroup: vi.fn().mockResolvedValue(reply) })
+    const out = await new RedisEventBus(redis as never).readGroup('s:1', 'grp', 'c1', { count: 10, blockMs: 1000 })
+    expect(redis.xreadgroup).toHaveBeenCalledWith(
+      'GROUP', 'grp', 'c1', 'COUNT', '10', 'BLOCK', '1000', 'STREAMS', 's:1', '>',
+    )
+    expect(out).toBe(reply)
+  })
+
+  it('readGroup: 타임아웃(xreadgroup null)이면 null을 그대로 반환한다', async () => {
+    const redis = makeRedis({ xreadgroup: vi.fn().mockResolvedValue(null) })
+    const out = await new RedisEventBus(redis as never).readGroup('s:1', 'grp', 'c1', { count: 10, blockMs: 1000 })
+    expect(out).toBeNull()
+  })
+
+  it('ack: pipeline로 일괄 xack한다', async () => {
+    const redis = makeRedis()
+    await new RedisEventBus(redis as never).ack('s:1', 'grp', ['1-0', '2-0'])
+    const pipe = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+    expect(pipe.xack).toHaveBeenCalledWith('s:1', 'grp', '1-0')
+    expect(pipe.xack).toHaveBeenCalledWith('s:1', 'grp', '2-0')
+    expect(pipe.exec).toHaveBeenCalled()
+  })
+
+  it('ack: pipeline 미지원 시 개별 xack로 폴백한다', async () => {
+    const redis = makeRedis()
+    delete (redis as Record<string, unknown>)['pipeline']
+    await new RedisEventBus(redis as never).ack('s:1', 'grp', ['1-0', '2-0'])
+    expect(redis.xack).toHaveBeenCalledWith('s:1', 'grp', '1-0')
+    expect(redis.xack).toHaveBeenCalledWith('s:1', 'grp', '2-0')
+  })
+
+  it('autoclaim: xautoclaim을 올바른 인자로 호출하고 결과를 반환한다', async () => {
+    const reply = ['0-0', [['2-0', ['data', '{}']]], []]
+    const redis = makeRedis({ xautoclaim: vi.fn().mockResolvedValue(reply) })
+    const out = await new RedisEventBus(redis as never).autoclaim('s:1', 'grp', 'c1', { minIdleMs: 300000, count: 10 })
+    expect(redis.xautoclaim).toHaveBeenCalledWith('s:1', 'grp', 'c1', 300000, '0-0', 'COUNT', '10')
+    expect(out).toBe(reply)
+  })
+})
