@@ -178,6 +178,7 @@ export class RedisAgentHandler<TInput, TOutput>
     // _redis is a cached client from getRedisClient; do not quit it here.
     // Lifecycle is managed by closeRedisClients() at process shutdown.
     this._redis = null
+    this._bus = null // _redis와 동기 리셋 — stale 래퍼 방지(다음 사용 시 현재 클라이언트로 재생성)
     this._notifiedSessions.clear()
   }
 }
