@@ -27,4 +27,23 @@ describe('RedisEventBus', () => {
     const bus = new RedisEventBus(makeRedis(null) as never)
     expect(await bus.publish('s', {})).toBeNull()
   })
+
+  it('메시지를 변형 없이 그대로 직렬화한다(중첩·undefined 필드 표준 JSON 의미)', async () => {
+    const redis = makeRedis()
+    const bus = new RedisEventBus(redis as never)
+    const message = {
+      sessionId: 's1', type: 'plan_complete',
+      payload: { steps: [{ id: 'a' }, { id: 'b' }], note: undefined, uiSpec: { type: 'form', fields: [] } },
+    }
+    await bus.publish('planner:to-manager:s1', message)
+    // EventBus는 전송 전용 — JSON.stringify와 동일(undefined 필드 strip), 변형/이중직렬화 없음
+    expect(redis.xadd).toHaveBeenCalledWith(
+      'planner:to-manager:s1', '*', 'data', JSON.stringify(message),
+    )
+    const sentData = (redis.xadd as ReturnType<typeof vi.fn>).mock.calls[0][3] as string
+    expect(JSON.parse(sentData)).toEqual({
+      sessionId: 's1', type: 'plan_complete',
+      payload: { steps: [{ id: 'a' }, { id: 'b' }], uiSpec: { type: 'form', fields: [] } },
+    })
+  })
 })
