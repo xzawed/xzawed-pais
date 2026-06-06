@@ -20,6 +20,8 @@ export interface StreamConsumerPort extends EventBus {
   ensureGroup(stream: string, group: string): Promise<void>
   /** xreadgroup '>'(신규 메시지). raw 응답 또는 null(타임아웃). */
   readGroup(stream: string, group: string, consumer: string, opts: { count: number; blockMs: number }): Promise<RawStreamReply | null>
+  /** 다중 스트림 xreadgroup(fan-in). ids는 streams와 1:1(길이 불일치는 throw). raw 응답 또는 null. */
+  readGroupMulti(streams: string[], group: string, consumer: string, ids: string[], opts: { count: number; blockMs: number }): Promise<RawStreamReply | null>
   /** xack — pipeline 배치(미지원 시 개별 폴백). */
   ack(stream: string, group: string, ids: string[]): Promise<void>
   /** xautoclaim — 미처리(idle) 메시지 재획득. ioredis raw 응답([cursor, messages, deleted]). */
@@ -52,6 +54,19 @@ export class RedisEventBus implements StreamConsumerPort {
       'GROUP', group, consumer,
       'COUNT', String(opts.count), 'BLOCK', String(opts.blockMs),
       'STREAMS', stream, '>',
+    ) as unknown as Promise<RawStreamReply | null>
+  }
+
+  async readGroupMulti(
+    streams: string[], group: string, consumer: string, ids: string[], opts: { count: number; blockMs: number },
+  ): Promise<RawStreamReply | null> {
+    if (streams.length !== ids.length) {
+      throw new Error('readGroupMulti: streams/ids length mismatch')
+    }
+    return this.redis.xreadgroup(
+      'GROUP', group, consumer,
+      'COUNT', String(opts.count), 'BLOCK', String(opts.blockMs),
+      'STREAMS', ...streams, ...ids,
     ) as unknown as Promise<RawStreamReply | null>
   }
 

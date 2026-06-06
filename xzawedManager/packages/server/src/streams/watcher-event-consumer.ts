@@ -1,3 +1,5 @@
+import { RedisEventBus } from '@xzawed/agent-streams'
+import type { StreamConsumerPort } from '@xzawed/agent-streams'
 import { getRedisClient } from './redis.client.js'
 import type { Redis } from 'ioredis'
 
@@ -19,6 +21,7 @@ type OnFileChanged = (event: FileChangedEvent) => Promise<void>
 export class WatcherEventConsumer {
   private _running = false
   private _redis: Redis | null = null
+  private _bus: StreamConsumerPort | null = null
   private readonly _watchedSessions = new Set<string>()
 
   constructor(
@@ -29,6 +32,12 @@ export class WatcherEventConsumer {
   private get redis(): Redis {
     this._redis ??= getRedisClient(this.redisUrl)
     return this._redis
+  }
+
+  /** 전송 위임용 포트(readGroupMulti·ack). _redis 생명주기와 동기(stop에서 함께 리셋). */
+  private get bus(): StreamConsumerPort {
+    this._bus ??= new RedisEventBus(this.redis)
+    return this._bus
   }
 
   watchSession(sessionId: string): void {
@@ -49,6 +58,7 @@ export class WatcherEventConsumer {
     this._running = false
     this._redis?.disconnect()  // 진행 중인 BLOCK 즉시 중단
     this._redis = null
+    this._bus = null           // redis 교체 시 stale 래퍼 방지(다음 start가 새 클라이언트로 재생성)
   }
 
   private async _ensureGroups(streams: string[]): Promise<void> {
@@ -86,7 +96,7 @@ export class WatcherEventConsumer {
     } catch {
       // 파싱/처리 실패 무시
     } finally {
-      await this.redis.xack(streamKey, CONSUMER_GROUP, msgId)
+      await this.bus.ack(streamKey, CONSUMER_GROUP, [msgId])
     }
   }
 
@@ -103,11 +113,9 @@ export class WatcherEventConsumer {
 
   private async _readOnce(streams: string[], lastIds: string[]): Promise<boolean> {
     await this._ensureGroups(streams)
-    const results = await this.redis.xreadgroup(
-      'GROUP', CONSUMER_GROUP, CONSUMER_NAME,
-      'COUNT', '50', 'BLOCK', String(BLOCK_MS),
-      'STREAMS', ...streams, ...lastIds,
-    ) as [string, [string, string[]][]][] | null
+    const results = await this.bus.readGroupMulti(
+      streams, CONSUMER_GROUP, CONSUMER_NAME, lastIds, { count: 50, blockMs: BLOCK_MS },
+    )
 
     if (results) await this._processResults(results)
     return true
