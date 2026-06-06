@@ -124,4 +124,30 @@ describe('RedisEventBus — 소비 전송 포트', () => {
     expect(redis.xautoclaim).toHaveBeenCalledWith('s:1', 'grp', 'c1', 300000, '0-0', 'COUNT', '10')
     expect(out).toBe(reply)
   })
+
+  it('readGroupMulti: 다중 STREAMS 인자로 xreadgroup을 호출하고 결과를 반환한다', async () => {
+    const reply = [['w:s1', [['1-0', ['data', '{}']]]], ['w:s2', [['2-0', ['data', '{}']]]]]
+    const redis = makeRedis({ xreadgroup: vi.fn().mockResolvedValue(reply) })
+    const out = await new RedisEventBus(redis as never).readGroupMulti(
+      ['w:s1', 'w:s2'], 'grp', 'c1', ['>', '>'], { count: 50, blockMs: 3000 },
+    )
+    expect(redis.xreadgroup).toHaveBeenCalledWith(
+      'GROUP', 'grp', 'c1', 'COUNT', '50', 'BLOCK', '3000', 'STREAMS', 'w:s1', 'w:s2', '>', '>',
+    )
+    expect(out).toBe(reply)
+  })
+
+  it('readGroupMulti: 타임아웃(null)이면 null을 그대로 반환한다', async () => {
+    const redis = makeRedis({ xreadgroup: vi.fn().mockResolvedValue(null) })
+    const out = await new RedisEventBus(redis as never).readGroupMulti(['w:s1'], 'grp', 'c1', ['>'], { count: 50, blockMs: 3000 })
+    expect(out).toBeNull()
+  })
+
+  it('readGroupMulti: streams/ids 길이 불일치는 throw한다(STREAMS 무음 실패 방지)', async () => {
+    const redis = makeRedis()
+    await expect(
+      new RedisEventBus(redis as never).readGroupMulti(['w:s1', 'w:s2'], 'grp', 'c1', ['>'], { count: 50, blockMs: 3000 }),
+    ).rejects.toThrow('length mismatch')
+    expect(redis.xreadgroup).not.toHaveBeenCalled()
+  })
 })
