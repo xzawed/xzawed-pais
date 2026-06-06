@@ -331,6 +331,53 @@ describe('BaseConsumer', () => {
       const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
       expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
+
+    it('배치 중간의 poison 메시지가 나머지 메시지 처리를 막지 않는다', async () => {
+      const redis = makeRedis()
+      const good: Message = { id: 'good', value: 1 }
+      const handler = vi.fn().mockImplementation(async (m: Message) => {
+        if (m.id === 'bad') throw new Error('poison')
+      })
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 1,
+      )
+
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [
+          ['1-0', ['data', JSON.stringify({ id: 'bad', value: 0 })]],
+          ['2-0', ['data', JSON.stringify(good)]],
+        ]]]
+        consumer.stop()
+        return null
+      })
+
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledWith(good) // poison 이후 메시지도 처리됨
+      expect(redis.xadd).toHaveBeenCalledTimes(1) // poison만 DLQ
+      const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '2-0')
+    })
+
+    it('DLQ 발행(xadd)이 실패해도 throw 없이 배치를 계속한다', async () => {
+      const redis = makeRedis({ xadd: vi.fn().mockRejectedValue(new Error('redis down')) })
+      const handler = vi.fn().mockRejectedValue(new Error('poison'))
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 1,
+      )
+
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        consumer.stop()
+        return null
+      })
+
+      await expect(consumer.start('sess-1')).resolves.not.toThrow()
+      const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0') // DLQ 실패해도 ack
+    })
   })
 
   describe('오류 처리 및 재시도', () => {
