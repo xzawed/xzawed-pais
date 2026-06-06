@@ -683,5 +683,71 @@ describe('BaseConsumer', () => {
       expect(handler).toHaveBeenCalledWith(validMsg)
       expect(redis.set).not.toHaveBeenCalled()
     })
+
+    it('SETNX가 throw하면 fail-open으로 처리를 계속한다', async () => {
+      const redis = makeRedis({ set: vi.fn().mockRejectedValue(new Error('redis down')) })
+      const handler = vi.fn().mockResolvedValue(undefined)
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 3, keyById,
+      )
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        consumer.stop(); return null
+      })
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledWith(validMsg) // fail-open
+    })
+
+    it('enabled=false면 키가 있어도 SETNX를 호출하지 않는다', async () => {
+      const redis = makeRedis()
+      const handler = vi.fn().mockResolvedValue(undefined)
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 3,
+        { ...keyById, enabled: false },
+      )
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        consumer.stop(); return null
+      })
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledWith(validMsg)
+      expect(redis.set).not.toHaveBeenCalled()
+    })
+
+    it('P1a 재시도는 dedup에 막히지 않는다(SETNX는 delivery당 1회)', async () => {
+      const redis = makeRedis() // set → 'OK'
+      const handler = vi.fn()
+        .mockRejectedValueOnce(new Error('transient'))
+        .mockResolvedValueOnce(undefined)
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 3, keyById,
+      )
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        consumer.stop(); return null
+      })
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledTimes(2) // 재시도 정상
+      expect(redis.set).toHaveBeenCalledTimes(1) // dedup claim은 1회
+      expect(redis.xadd).not.toHaveBeenCalled() // DLQ 아님
+    })
+
+    it('ttlSec 미지정 시 기본 86400으로 SETNX한다', async () => {
+      const redis = makeRedis()
+      const handler = vi.fn().mockResolvedValue(undefined)
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 3, keyById,
+      )
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        consumer.stop(); return null
+      })
+      await consumer.start('sess-1')
+      expect(redis.set).toHaveBeenCalledWith('idem:prefix:sess-1:msg-1', '1', 'EX', 86400, 'NX')
+    })
   })
 })
