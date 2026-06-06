@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (121 테스트 통과)**
+**현재 상태: 구현 완료 (122 테스트 통과)**
 
 ## 핵심 명령어
 
