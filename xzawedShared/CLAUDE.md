@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (122 테스트 통과)**
+**현재 상태: 구현 완료 (129 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -46,20 +46,26 @@ src/
 
 ## EventBus 패턴 (P1c)
 
-발행 전송 계층 추상화. 직접 `redis.xadd` 호출을 한 곳으로 모아 전송계층을 교체·테스트 가능하게 한다.
+전송 계층(Redis Streams) 추상화. 직접 stream 명령을 한 곳(`RedisEventBus`)으로 모아 교체·테스트 가능하게 한다.
 
 ```typescript
 import { RedisEventBus } from '@xzawed/agent-streams'
-import type { EventBus, PublishOptions } from '@xzawed/agent-streams'
+import type { EventBus, PublishOptions, StreamConsumerPort } from '@xzawed/agent-streams'
 
 const bus = new RedisEventBus(redis)
-await bus.publish(`planner:to-manager:${sessionId}`, message)            // 일반
+// 발행(P1c-1)
+await bus.publish(`planner:to-manager:${sessionId}`, message)             // 일반
 await bus.publish(`watcher:to-manager:${sessionId}`, message, { maxlen: 1000 }) // approximate MAXLEN
+// 소비 전송(P1c-2)
+await bus.ensureGroup(stream, group)                                       // xgroup CREATE(BUSYGROUP 무시)
+const reply = await bus.readGroup(stream, group, consumer, { count: 10, blockMs: 1000 }) // xreadgroup '>'
+await bus.ack(stream, group, ids)                                         // xack(pipeline 배치+폴백)
+await bus.autoclaim(stream, group, consumer, { minIdleMs: 300000, count: 10 }) // xautoclaim
 ```
 
-- `publish(stream, message, opts?)` — message를 JSON 직렬화해 `xadd`. xadd 결과(`string | null`)를 그대로 반환 — **null 정책은 호출자**(매니저 `StreamProducer`는 throw, 에이전트 Producer는 무시)가 결정해 기존 동작을 100% 보존.
-- 7에이전트 `Producer` + 매니저 `StreamProducer`가 직접 xadd 대신 이 어댑터에 위임(외부 API·스트림 키·검증 불변). 매니저 `publishRaw`는 `PublisherLike` 충족 유지 → OutboxRelay 무수정.
-- 전송 전용 — 재시도/DLQ/dedup은 소비자(BaseConsumer) 책임. **소비(subscribe/consume)는 후속 슬라이스에서 `EventBus` 확장.** ⚠️ orchestrator는 `@xzawed/agent-streams` 미의존(별도 스택)이라 범위 밖.
+- **발행(P1c-1)**: `publish(stream, message, opts?)` — JSON 직렬화 후 `xadd`. xadd 결과(`string | null`)를 그대로 반환 — null 정책은 호출자(매니저 `StreamProducer` throw, 에이전트 Producer 무시) 결정. 7에이전트 `Producer`+매니저 `StreamProducer`가 위임(외부 API·키·검증 불변, `PublisherLike` 유지 → OutboxRelay 무수정).
+- **소비 전송(P1c-2, `StreamConsumerPort extends EventBus`)**: `ensureGroup`/`readGroup`/`ack`/`autoclaim` — ioredis raw shape 보존. `BaseConsumer`가 생성자에서 `new RedisEventBus(redis)`를 만들어 `xgroup`/`xreadgroup`/`xack`/`xautoclaim`/DLQ `xadd`를 위임(생성자 시그니처 불변 → 7에이전트 무변경). **오케스트레이션(루프·dedup·재시도·DLQ 판정·never-throws)은 BaseConsumer에 유지**. dedup `set`(멱등 claim)·`close()` `quit()`(생명주기)는 raw redis 유지(후속 정리).
+- ⚠️ orchestrator·매니저 자체 컨슈머·`RedisAgentHandler` 요청-응답은 후속 슬라이스(별도 스택/seam).
 
 ## BaseConsumer 패턴
 
