@@ -237,6 +237,9 @@ describe('BaseConsumer', () => {
 
       await consumer.start('sess-1')
       expect(handler).not.toHaveBeenCalled()
+      const dlqCall = redis.xadd.mock.calls.find((c) => c[0] === 'prefix:sess-1:dlq')
+      expect(dlqCall).toBeTruthy()
+      expect(JSON.parse(dlqCall![3] as string).reason).toBe('invalid_schema')
       const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
       expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
@@ -257,6 +260,9 @@ describe('BaseConsumer', () => {
 
       await consumer.start('sess-1')
       expect(handler).not.toHaveBeenCalled()
+      const dlqCall = redis.xadd.mock.calls.find((c) => c[0] === 'prefix:sess-1:dlq')
+      expect(dlqCall).toBeTruthy()
+      expect(JSON.parse(dlqCall![3] as string).reason).toBe('invalid_schema')
       const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
       expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
@@ -277,6 +283,7 @@ describe('BaseConsumer', () => {
 
       await consumer.start('sess-1')
       expect(handler).not.toHaveBeenCalled()
+      expect(redis.xadd).not.toHaveBeenCalled() // 구조적 결함은 DLQ 미발행(보존할 페이로드 없음)
       const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
       expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
@@ -298,6 +305,7 @@ describe('BaseConsumer', () => {
 
       await consumer.start('sess-1')
       expect(handler).not.toHaveBeenCalled()
+      expect(redis.xadd).not.toHaveBeenCalled()
       const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
       expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
@@ -319,6 +327,7 @@ describe('BaseConsumer', () => {
 
       await consumer.start('sess-1')
       expect(handler).not.toHaveBeenCalled()
+      expect(redis.xadd).not.toHaveBeenCalled()
       const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
       expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
