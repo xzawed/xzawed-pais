@@ -100,6 +100,21 @@ describe('topoSort', () => {
     expect(order).toEqual(['a'])
     expect(cyclic.sort()).toEqual(['b', 'c'])
   })
+
+  it('다이아몬드 의존(a→{b,c}→d)을 안정적으로 정렬한다', () => {
+    const g = buildTaskGraph([
+      wp('a'),
+      wp('b', { dependencies: ['a'] }),
+      wp('c', { dependencies: ['a'] }),
+      wp('d', { dependencies: ['b', 'c'] }),
+    ])
+    expect(topoSort(g)).toEqual({ order: ['a', 'b', 'c', 'd'], cyclic: [] })
+  })
+
+  it('자기참조(a→a)는 order에서 빠지고 cyclic에 들어간다', () => {
+    const g = buildTaskGraph([wp('a', { dependencies: ['a'] }), wp('b')])
+    expect(topoSort(g)).toEqual({ order: ['b'], cyclic: ['a'] })
+  })
 })
 
 describe('isReady / readyNodes', () => {
@@ -153,5 +168,15 @@ describe('isReady / readyNodes', () => {
   it('readyNodes는 같은 입력에 결정론 순서를 낸다', () => {
     const g = buildTaskGraph([wp('z'), wp('a'), wp('m')])
     expect(readyNodes(g)).toEqual(['a', 'm', 'z'])
+  })
+
+  it('cyclic 노드에 의존하는 정상 노드는 readyNodes에서 제외된다', () => {
+    // p→q→p 사이클, z는 cyclic p에 의존 → z도 영원히 ready 불가(order에서 빠짐)
+    const g = buildTaskGraph([
+      wp('p', { dependencies: ['q'] }),
+      wp('q', { dependencies: ['p'] }),
+      wp('z', { dependencies: ['p'] }),
+    ])
+    expect(readyNodes(g)).toEqual([])
   })
 })

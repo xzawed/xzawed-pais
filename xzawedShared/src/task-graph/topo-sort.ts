@@ -3,6 +3,10 @@ import type { TaskGraph } from './task-graph.js'
 /**
  * 사이클에 속한 노드 경로 목록(없으면 []). DFS 백엣지 검출.
  * 사양 §6 "사이클 = 분해 오류"의 순수 탐지부. 수선(llm_break_cycle)은 소비 단계(P1d-2) 책임.
+ *
+ * ⚠️ 탐지 전용: 경로는 발견 순서대로의 노드 목록일 뿐 정규화(회전·중복 제거)하지 않는다.
+ * 동일 논리 사이클이 그래프 빌드 순서에 따라 다른 시작 노드로 표현될 수 있으므로, 소비단에서
+ * 경로를 키로 캐시/비교하지 말 것(결정론이 필요한 order/cyclic/readyNodes는 id 사전순으로 안정).
  */
 export function detectCycle(graph: TaskGraph): string[][] {
   const cycles: string[][] = []
@@ -61,6 +65,7 @@ export function topoSort(graph: TaskGraph): { order: string[]; cyclic: string[] 
     if (added) ready.sort()
   }
 
-  const cyclic = [...graph.nodes.keys()].filter((id) => !order.includes(id))
+  const inOrder = new Set(order)
+  const cyclic = [...graph.nodes.keys()].filter((id) => !inOrder.has(id))
   return { order, cyclic }
 }
