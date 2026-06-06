@@ -3,6 +3,8 @@ import type { AnthropicInputSchema, ToolHandler } from './handler.interface.js'
 import type { UserContext } from '../types/user-context.js'
 import { getRedisClient } from '../streams/redis.client.js'
 import type { Redis } from 'ioredis'
+import { RedisEventBus } from '@xzawed/agent-streams'
+import type { RequestReplyPort } from '@xzawed/agent-streams'
 import { ClarificationNeededError, AgentQueryError } from './errors.js'
 
 const DEFAULT_TIMEOUT_MS = 120_000
@@ -14,6 +16,7 @@ export class RedisAgentHandler<TInput, TOutput>
   implements ToolHandler<TInput, TOutput> {
 
   private _redis: Redis | null = null
+  private _bus: RequestReplyPort | null = null
   private readonly _notifiedSessions = new Set<string>()
 
   constructor(
@@ -31,6 +34,12 @@ export class RedisAgentHandler<TInput, TOutput>
   private get redis(): Redis {
     this._redis ??= getRedisClient(this.redisUrl)
     return this._redis
+  }
+
+  /** RPC 전송 포트(streamTip·publish·readFrom). 캐시 클라이언트 위 1회 생성. */
+  private get bus(): RequestReplyPort {
+    this._bus ??= new RedisEventBus(this.redis)
+    return this._bus
   }
 
   private async ensureSessionStream(requestStream: string): Promise<void> {
@@ -51,10 +60,7 @@ export class RedisAgentHandler<TInput, TOutput>
   }
 
   private async getStreamTip(responseStream: string): Promise<string> {
-    const tip = await this.redis.xrevrange(
-      responseStream, '+', '-', 'COUNT', '1',
-    ) as [string, string[]][]
-    return tip[0]?.[0] ?? '0-0'
+    return this.bus.streamTip(responseStream)
   }
 
   private async publishRequest(
@@ -66,13 +72,13 @@ export class RedisAgentHandler<TInput, TOutput>
     const payload = userContext !== undefined
       ? { ...(input as Record<string, unknown>), userContext }
       : input
-    await this.redis.xadd(requestStream, '*', 'data', JSON.stringify({
+    await this.bus.publish(requestStream, {
       sessionId,
       messageId: crypto.randomUUID(),
       timestamp: Date.now(),
       type: this.requestType,
       payload,
-    }))
+    })
   }
 
   private parseRawMessage(fields: string[]): ParsedMessage | null {
@@ -151,17 +157,11 @@ export class RedisAgentHandler<TInput, TOutput>
       const blockMs = Math.min(deadline - Date.now(), BLOCK_STEP_MS)
       if (blockMs <= 0) break
 
-      const results = await this.redis.xread(
-        'COUNT', '10', 'BLOCK', String(blockMs),
-        'STREAMS', responseStream, lastId,
-      )
+      const results = await this.bus.readFrom(responseStream, lastId, { count: 10, blockMs })
 
       if (!results) continue
 
-      const { lastId: updatedId, output } = this.processStreamResults(
-        results as [string, [string, string[]][]][],
-        lastId,
-      )
+      const { lastId: updatedId, output } = this.processStreamResults(results, lastId)
       lastId = updatedId
       if (output !== null) return output
     }

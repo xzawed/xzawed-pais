@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { RedisEventBus } from '@xzawed/agent-streams'
 import { getRedisClient } from '../streams/redis.client.js'
 import type { ToolHandler } from './handler.interface.js'
 
@@ -40,29 +41,25 @@ export function createSwitchProjectHandler(redisUrl: string): ToolHandler<Switch
         throw new Error('switch_project: projectId 또는 name 중 하나는 필수입니다')
       }
 
-      const redis = getRedisClient(redisUrl)
+      const bus = new RedisEventBus(getRedisClient(redisUrl))
       const responseStream = `orchestrator:to-manager:projects:${sessionId}`
 
-      const tip = await redis.xrevrange(responseStream, '+', '-', 'COUNT', '1') as [string, string[]][]
-      let lastId = tip[0]?.[0] ?? '0-0'
+      let lastId = await bus.streamTip(responseStream)
 
-      await redis.xadd(REQUEST_STREAM, '*', 'data', JSON.stringify({
+      await bus.publish(REQUEST_STREAM, {
         type: 'switch_project_request',
         sessionId,
         messageId: crypto.randomUUID(),
         timestamp: Date.now(),
         payload: input,
-      }))
+      })
 
       const deadline = Date.now() + TIMEOUT_MS
       while (Date.now() < deadline) {
         const blockMs = Math.min(deadline - Date.now(), 5_000)
         if (blockMs <= 0) break
 
-        const results = await redis.xread(
-          'COUNT', '5', 'BLOCK', String(blockMs),
-          'STREAMS', responseStream, lastId,
-        ) as [string, [string, string[]][]][] | null
+        const results = await bus.readFrom(responseStream, lastId, { count: 5, blockMs })
 
         if (!results) continue
 
