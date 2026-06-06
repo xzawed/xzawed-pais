@@ -1,11 +1,14 @@
 import type { Redis } from 'ioredis'
+import { RedisEventBus } from '@xzawed/agent-streams'
 import type { SecurityToManagerMessage } from '../types.js'
 
 export class Producer {
-  constructor(private readonly redis: Redis) {}
+  private readonly bus: RedisEventBus
+  constructor(redis: Redis) {
+    this.bus = new RedisEventBus(redis)
+  }
 
   async publish(sessionId: string, message: SecurityToManagerMessage): Promise<void> {
-    const stream = `security:to-manager:${sessionId}`
-    await this.redis.xadd(stream, '*', 'data', JSON.stringify(message))
+    await this.bus.publish(`security:to-manager:${sessionId}`, message)
   }
 }
