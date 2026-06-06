@@ -10,6 +10,29 @@ const MAX_DELIVERIES_DEFAULT = 3
 const RETRY_BASE_MS = 500
 const RETRY_CAP_MS = 5_000
 const DLQ_MAXLEN = 1_000 // DLQ 스트림 approximate 보존 상한(무한 증가 방지)
+const IDEM_TTL_DEFAULT_SEC = 86_400 // 24h — 최대 재전달 창(XAUTOCLAIM 5분+outbox 폴링)보다 충분히 김
+
+/** dedup 키 추출 옵션. enabled/ttlSec/key 모두 선택 — 미지정 시 env·기본 추출기로 폴백. */
+export interface DedupOptions<TMessage> {
+  enabled?: boolean
+  ttlSec?: number
+  key?: (msg: TMessage) => string | null
+}
+
+/** 기본 dedup 키: envelope.idempotencyKey ?? messageId. 둘 다 없으면 null(해당 메시지 dedup 건너뜀). */
+export function defaultDedupKey(msg: unknown): string | null {
+  const m = msg as { messageId?: unknown; envelope?: { idempotencyKey?: unknown } }
+  const idem = m.envelope?.idempotencyKey
+  if (typeof idem === 'string' && idem.length > 0) return idem
+  if (typeof m.messageId === 'string' && m.messageId.length > 0) return m.messageId
+  return null
+}
+
+/** SHARED_IDEM_TTL_SEC를 양의 정수로 파싱. NaN/0/음수는 기본값(24h)으로 폴백. */
+function parseIdemTtlSec(raw: string | undefined): number {
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : IDEM_TTL_DEFAULT_SEC
+}
 
 export class BaseConsumer<TMessage> {
   private running = false

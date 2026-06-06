@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { z } from 'zod'
-import { BaseConsumer } from '../streams/base-consumer.js'
+import { BaseConsumer, defaultDedupKey } from '../streams/base-consumer.js'
 
 const MessageSchema = z.object({
   id: z.string(),
@@ -37,6 +37,21 @@ function makeRedis(overrides: Record<string, unknown> = {}) {
     ...overrides,
   }
 }
+
+describe('defaultDedupKey', () => {
+  it('envelope.idempotencyKey가 있으면 우선 사용한다', () => {
+    expect(defaultDedupKey({ messageId: 'm1', envelope: { idempotencyKey: 'wf:s:0' } })).toBe('wf:s:0')
+  })
+  it('envelope가 없으면 messageId로 폴백한다', () => {
+    expect(defaultDedupKey({ messageId: 'm1' })).toBe('m1')
+  })
+  it('messageId·envelope 둘 다 없으면 null을 반환한다(dedup skip)', () => {
+    expect(defaultDedupKey({ id: 'x', value: 1 })).toBeNull()
+  })
+  it('빈 문자열 키는 무시하고 null로 본다', () => {
+    expect(defaultDedupKey({ messageId: '', envelope: { idempotencyKey: '' } })).toBeNull()
+  })
+})
 
 describe('BaseConsumer', () => {
   let noopSleep: (ms: number) => Promise<void>
