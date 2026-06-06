@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (80 테스트 통과)**
+**현재 상태: 구현 완료 (97 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -53,7 +53,9 @@ class BaseConsumer<TMessage> {
     consumerName: string,
     streamPrefix: string,            // 예: 'manager:to-tester'
     schema: ZodType<TMessage>,       // safeParse로 메시지 검증
-    sleep?: (ms: number) => Promise<void>  // 테스트용 주입
+    sleep?: (ms: number) => Promise<void>, // 테스트용 주입
+    ownsRedis?: boolean,             // 기본 true: close() 시 redis.quit()
+    maxDeliveries?: number,          // 기본 3: 핸들러 실패 시 재시도 상한
   )
 
   async start(sessionId: string): Promise<void>  // XREADGROUP 루프 시작
@@ -63,9 +65,10 @@ class BaseConsumer<TMessage> {
 
 **동작 세부사항:**
 - `start(sessionId)`: 스트림 `${streamPrefix}:${sessionId}` 구독. Consumer Group 자동 생성 (BUSYGROUP 무시)
-- 메시지 처리: `JSON.parse(raw)` → `schema.safeParse()` → `onMessage()` → `xack` (`try/finally`로 xack 보장)
-- 파싱/검증 실패 시: 경고 로그 출력 후 xack하고 skip (프로세스 중단 없음)
-- 오류 재시도: 1초부터 시작해 최대 30초까지 지수 백오프
+- 메시지 처리(per-message `handleMessage`, **throw 안 함 → 배치 비차단·PEL 누수 0**): `parseOrDlq`(추출·검증) → `dispatchWithRetry`(핸들러 호출) → `xack`
+- **바운드 재시도 + DLQ**(senario §12 사다리 5단 '격리'): 유효 메시지 핸들러가 throw하면 `maxDeliveries`(기본 3)회 백오프 재시도, 소진 시 `{streamPrefix}:{sessionId}:dlq`로 격리(`reason:'handler_failed'`·attempts·error) 후 ack. JSON/스키마 무효는 즉시 DLQ(`reason:'invalid_schema'`). 구조적 결함(data 없음·undefined·10MiB 초과)은 ack+skip(DLQ 아님). DLQ 발행(xadd) 실패는 경고 후 진행(비차단)
+- `xreadgroup` 오류 재시도: 1초부터 최대 30초까지 지수 백오프
+- XAUTOCLAIM(시작 시 1회): 5분 이상 미처리(컨슈머 死) 메시지를 재획득해 동일 `handleMessage` 경로로 처리
 
 ## validateWorkspaceRoot 패턴
 
