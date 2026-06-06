@@ -28,8 +28,16 @@ export interface StreamConsumerPort extends EventBus {
   autoclaim(stream: string, group: string, consumer: string, opts: { minIdleMs: number; count: number }): Promise<unknown>
 }
 
-/** ioredis 기반 EventBus + 소비 전송 포트 구현. 전송 전용(직렬화/스트림 명령 외 로직 없음). */
-export class RedisEventBus implements StreamConsumerPort {
+/** 요청-응답(RPC) 전송 포트. 그룹 소비와 직교(비그룹 xread + tip 상관). publish(요청 xadd)는 EventBus 상속. */
+export interface RequestReplyPort extends EventBus {
+  /** 응답 스트림 최신 엔트리 ID(xrevrange COUNT 1). 비었으면 '0-0'. publish 전 캡처용. */
+  streamTip(stream: string): Promise<string>
+  /** 비그룹 xread BLOCK(fromId 이후). raw 응답 또는 null(타임아웃). */
+  readFrom(stream: string, fromId: string, opts: { count: number; blockMs: number }): Promise<RawStreamReply | null>
+}
+
+/** ioredis 기반 EventBus + 소비 전송 포트 + 요청-응답 포트 구현. 전송 전용(직렬화/스트림 명령 외 로직 없음). */
+export class RedisEventBus implements StreamConsumerPort, RequestReplyPort {
   constructor(private readonly redis: Redis) {}
 
   async publish(stream: string, message: unknown, opts?: PublishOptions): Promise<string | null> {
@@ -84,5 +92,19 @@ export class RedisEventBus implements StreamConsumerPort {
     stream: string, group: string, consumer: string, opts: { minIdleMs: number; count: number },
   ): Promise<unknown> {
     return this.redis.xautoclaim(stream, group, consumer, opts.minIdleMs, '0-0', 'COUNT', String(opts.count))
+  }
+
+  async streamTip(stream: string): Promise<string> {
+    const tip = await this.redis.xrevrange(stream, '+', '-', 'COUNT', '1') as [string, string[]][]
+    return tip[0]?.[0] ?? '0-0'
+  }
+
+  async readFrom(
+    stream: string, fromId: string, opts: { count: number; blockMs: number },
+  ): Promise<RawStreamReply | null> {
+    return this.redis.xread(
+      'COUNT', String(opts.count), 'BLOCK', String(opts.blockMs),
+      'STREAMS', stream, fromId,
+    ) as unknown as RawStreamReply | null
   }
 }

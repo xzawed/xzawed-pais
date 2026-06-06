@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { getRedisClient } from '../streams/redis.client.js'
 import type { ToolHandler } from './handler.interface.js'
+import { requestProjectReply } from './project-rpc.js'
 
 interface RegisterInput {
   name: string
@@ -18,15 +18,6 @@ const RegisterOutputSchema = z.object({
 })
 
 type RegisterOutput = z.infer<typeof RegisterOutputSchema>
-
-const ProjectResponseSchema = z.object({
-  type: z.string(),
-  sessionId: z.string(),
-  payload: z.unknown(),
-})
-
-const TIMEOUT_MS = 30_000
-const REQUEST_STREAM = 'manager:to-orchestrator:projects'
 
 export function createRegisterProjectHandler(redisUrl: string): ToolHandler<RegisterInput, RegisterOutput> {
   return {
@@ -49,64 +40,19 @@ export function createRegisterProjectHandler(redisUrl: string): ToolHandler<Regi
         throw new Error('register_project: workspaceType=local 시 localPath는 필수입니다')
       }
 
-      const redis = getRedisClient(redisUrl)
-      const responseStream = `orchestrator:to-manager:projects:${sessionId}`
-
-      // Capture stream tip before publishing to avoid missing responses
-      const tip = await redis.xrevrange(responseStream, '+', '-', 'COUNT', '1') as [string, string[]][]
-      let lastId = tip[0]?.[0] ?? '0-0'
-
-      await redis.xadd(REQUEST_STREAM, '*', 'data', JSON.stringify({
-        type: 'register_project_request',
+      return requestProjectReply({
+        redisUrl,
         sessionId,
-        messageId: crypto.randomUUID(),
-        timestamp: Date.now(),
+        requestType: 'register_project_request',
+        responseType: 'register_project_response',
         payload: input,
-      }))
-
-      const deadline = Date.now() + TIMEOUT_MS
-      while (Date.now() < deadline) {
-        const blockMs = Math.min(deadline - Date.now(), 5_000)
-        if (blockMs <= 0) break
-
-        const results = await redis.xread(
-          'COUNT', '5', 'BLOCK', String(blockMs),
-          'STREAMS', responseStream, lastId,
-        ) as [string, [string, string[]][]][] | null
-
-        if (!results) continue
-
-        for (const [, messages] of results) {
-          for (const [msgId, fields] of messages) {
-            lastId = msgId
-            const dataIdx = fields.indexOf('data')
-            if (dataIdx === -1) continue
-            const raw = fields[dataIdx + 1]
-            if (!raw) continue
-
-            let parseResult
-            try {
-              parseResult = ProjectResponseSchema.safeParse(JSON.parse(raw))
-            } catch {
-              continue  // malformed JSON, skip
-            }
-            if (!parseResult.success) continue
-
-            const msg = parseResult.data
-            if (msg.type === 'register_project_response') {
-              const outputParse = RegisterOutputSchema.safeParse(msg.payload)
-              if (!outputParse.success) throw new Error(`register_project: invalid response payload`)
-              return outputParse.data
-            }
-            if (msg.type === 'project_error' && msg.sessionId === sessionId) {
-              const err = (msg.payload as { error?: string }).error ?? 'unknown error'
-              throw new Error(`register_project failed: ${err}`)
-            }
-          }
-        }
-      }
-
-      throw new Error('register_project timed out after 30s')
+        label: 'register_project',
+        parseOutput: (payload) => {
+          const parsed = RegisterOutputSchema.safeParse(payload)
+          if (!parsed.success) throw new Error('register_project: invalid response payload')
+          return parsed.data
+        },
+      })
     },
   }
 }

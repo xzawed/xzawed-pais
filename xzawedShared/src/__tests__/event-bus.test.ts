@@ -151,3 +151,30 @@ describe('RedisEventBus — 소비 전송 포트', () => {
     expect(redis.xreadgroup).not.toHaveBeenCalled()
   })
 })
+
+describe('RedisEventBus — 요청-응답(RequestReplyPort)', () => {
+  it('streamTip: xrevrange로 최신 엔트리 ID를 반환한다', async () => {
+    const redis = { xrevrange: vi.fn().mockResolvedValue([['5-0', ['data', '{}']]]) }
+    const id = await new RedisEventBus(redis as never).streamTip('o:to-m:s1')
+    expect(redis.xrevrange).toHaveBeenCalledWith('o:to-m:s1', '+', '-', 'COUNT', '1')
+    expect(id).toBe('5-0')
+  })
+
+  it('streamTip: 빈 스트림이면 0-0을 반환한다(publish 전 캡처 폴백)', async () => {
+    const redis = { xrevrange: vi.fn().mockResolvedValue([]) }
+    expect(await new RedisEventBus(redis as never).streamTip('o:to-m:s1')).toBe('0-0')
+  })
+
+  it('readFrom: 비그룹 xread BLOCK으로 fromId 이후를 읽고 결과를 반환한다', async () => {
+    const reply = [['o:to-m:s1', [['6-0', ['data', '{}']]]]]
+    const redis = { xread: vi.fn().mockResolvedValue(reply) }
+    const out = await new RedisEventBus(redis as never).readFrom('o:to-m:s1', '5-0', { count: 10, blockMs: 5000 })
+    expect(redis.xread).toHaveBeenCalledWith('COUNT', '10', 'BLOCK', '5000', 'STREAMS', 'o:to-m:s1', '5-0')
+    expect(out).toBe(reply)
+  })
+
+  it('readFrom: 타임아웃(null)이면 null을 그대로 반환한다', async () => {
+    const redis = { xread: vi.fn().mockResolvedValue(null) }
+    expect(await new RedisEventBus(redis as never).readFrom('o:to-m:s1', '0-0', { count: 5, blockMs: 1000 })).toBeNull()
+  })
+})

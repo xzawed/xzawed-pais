@@ -1,7 +1,7 @@
 export { BaseConsumer, defaultDedupKey } from './streams/base-consumer.js'
 export type { DedupOptions } from './streams/base-consumer.js'
 export { RedisEventBus } from './streams/event-bus.js'
-export type { EventBus, PublishOptions, StreamConsumerPort, RawStreamReply } from './streams/event-bus.js'
+export type { EventBus, PublishOptions, StreamConsumerPort, RequestReplyPort, RawStreamReply } from './streams/event-bus.js'
 export { validateWorkspaceRoot, resolveWorkspaceRoot } from './workspace-guard.js'
 export { SessionDispatcher } from './streams/session-dispatcher.js'
 export type { ConsumerLike } from './streams/session-dispatcher.js'

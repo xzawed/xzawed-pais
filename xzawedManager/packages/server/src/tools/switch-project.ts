@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { getRedisClient } from '../streams/redis.client.js'
 import type { ToolHandler } from './handler.interface.js'
+import { requestProjectReply } from './project-rpc.js'
 
 interface SwitchInput {
   projectId?: string
@@ -14,15 +14,6 @@ const SwitchOutputSchema = z.object({
 })
 
 type SwitchOutput = z.infer<typeof SwitchOutputSchema>
-
-const ProjectResponseSchema = z.object({
-  type: z.string(),
-  sessionId: z.string(),
-  payload: z.unknown(),
-})
-
-const TIMEOUT_MS = 30_000
-const REQUEST_STREAM = 'manager:to-orchestrator:projects'
 
 export function createSwitchProjectHandler(redisUrl: string): ToolHandler<SwitchInput, SwitchOutput> {
   return {
@@ -40,63 +31,19 @@ export function createSwitchProjectHandler(redisUrl: string): ToolHandler<Switch
         throw new Error('switch_project: projectId 또는 name 중 하나는 필수입니다')
       }
 
-      const redis = getRedisClient(redisUrl)
-      const responseStream = `orchestrator:to-manager:projects:${sessionId}`
-
-      const tip = await redis.xrevrange(responseStream, '+', '-', 'COUNT', '1') as [string, string[]][]
-      let lastId = tip[0]?.[0] ?? '0-0'
-
-      await redis.xadd(REQUEST_STREAM, '*', 'data', JSON.stringify({
-        type: 'switch_project_request',
+      return requestProjectReply({
+        redisUrl,
         sessionId,
-        messageId: crypto.randomUUID(),
-        timestamp: Date.now(),
+        requestType: 'switch_project_request',
+        responseType: 'switch_project_response',
         payload: input,
-      }))
-
-      const deadline = Date.now() + TIMEOUT_MS
-      while (Date.now() < deadline) {
-        const blockMs = Math.min(deadline - Date.now(), 5_000)
-        if (blockMs <= 0) break
-
-        const results = await redis.xread(
-          'COUNT', '5', 'BLOCK', String(blockMs),
-          'STREAMS', responseStream, lastId,
-        ) as [string, [string, string[]][]][] | null
-
-        if (!results) continue
-
-        for (const [, messages] of results) {
-          for (const [msgId, fields] of messages) {
-            lastId = msgId
-            const dataIdx = fields.indexOf('data')
-            if (dataIdx === -1) continue
-            const raw = fields[dataIdx + 1]
-            if (!raw) continue
-
-            let parseResult
-            try {
-              parseResult = ProjectResponseSchema.safeParse(JSON.parse(raw))
-            } catch {
-              continue  // malformed JSON, skip
-            }
-            if (!parseResult.success) continue
-
-            const msg = parseResult.data
-            if (msg.type === 'switch_project_response') {
-              const outputParse = SwitchOutputSchema.safeParse(msg.payload)
-              if (!outputParse.success) throw new Error(`switch_project: invalid response payload`)
-              return outputParse.data
-            }
-            if (msg.type === 'project_error' && msg.sessionId === sessionId) {
-              const err = (msg.payload as { error?: string }).error ?? 'unknown error'
-              throw new Error(`switch_project failed: ${err}`)
-            }
-          }
-        }
-      }
-
-      throw new Error('switch_project timed out after 30s')
+        label: 'switch_project',
+        parseOutput: (payload) => {
+          const parsed = SwitchOutputSchema.safeParse(payload)
+          if (!parsed.success) throw new Error('switch_project: invalid response payload')
+          return parsed.data
+        },
+      })
     },
   }
 }
