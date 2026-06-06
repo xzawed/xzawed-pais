@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (110 테스트 통과)**
+**현재 상태: 구현 완료 (121 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -24,6 +24,7 @@ src/
 ├── workspace-guard.ts           # validateWorkspaceRoot() / resolveWorkspaceRoot() — 파일시스템 루트 거부
 ├── streams/
 │   ├── base-consumer.ts         # BaseConsumer<T> 제네릭 클래스
+│   ├── event-bus.ts             # EventBus 발행 추상화 + RedisEventBus 어댑터
 │   ├── session-dispatcher.ts    # SessionDispatcher — per-session 동적 consumer 팩토리, ConsumerLike
 │   └── collaboration.ts         # 협업 handle 골격 공통화 (runCollaborativeHandle 등)
 ├── claude/
@@ -39,8 +40,26 @@ src/
     ├── agent-query.test.ts      # AgentQuery / parseAgentQuery 테스트
     ├── answer-query.test.ts     # answerViaClaude / callClaudeText 등 테스트
     ├── collaboration.test.ts    # runCollaborativeHandle / createCollaborativeHandler 테스트
+    ├── event-bus.test.ts        # RedisEventBus 테스트
     └── domain-knowledge.test.ts # formatDomainKnowledge 테스트
 ```
+
+## EventBus 패턴 (P1c)
+
+발행 전송 계층 추상화. 직접 `redis.xadd` 호출을 한 곳으로 모아 전송계층을 교체·테스트 가능하게 한다.
+
+```typescript
+import { RedisEventBus } from '@xzawed/agent-streams'
+import type { EventBus, PublishOptions } from '@xzawed/agent-streams'
+
+const bus = new RedisEventBus(redis)
+await bus.publish(`planner:to-manager:${sessionId}`, message)            // 일반
+await bus.publish(`watcher:to-manager:${sessionId}`, message, { maxlen: 1000 }) // approximate MAXLEN
+```
+
+- `publish(stream, message, opts?)` — message를 JSON 직렬화해 `xadd`. xadd 결과(`string | null`)를 그대로 반환 — **null 정책은 호출자**(매니저 `StreamProducer`는 throw, 에이전트 Producer는 무시)가 결정해 기존 동작을 100% 보존.
+- 7에이전트 `Producer` + 매니저 `StreamProducer`가 직접 xadd 대신 이 어댑터에 위임(외부 API·스트림 키·검증 불변). 매니저 `publishRaw`는 `PublisherLike` 충족 유지 → OutboxRelay 무수정.
+- 전송 전용 — 재시도/DLQ/dedup은 소비자(BaseConsumer) 책임. **소비(subscribe/consume)는 후속 슬라이스에서 `EventBus` 확장.** ⚠️ orchestrator는 `@xzawed/agent-streams` 미의존(별도 스택)이라 범위 밖.
 
 ## BaseConsumer 패턴
 

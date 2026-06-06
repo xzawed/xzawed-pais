@@ -32,8 +32,11 @@ export interface PublishOptions {
 
 /** 전송 계층 추상화(발행). 소비(subscribe/consume)는 후속 슬라이스에서 확장. */
 export interface EventBus {
-  /** message를 JSON 직렬화해 stream에 발행(xadd). 스트림 엔트리 ID를 반환한다. */
-  publish(stream: string, message: unknown, opts?: PublishOptions): Promise<string>
+  /**
+   * message를 JSON 직렬화해 stream에 발행(xadd). xadd 결과(스트림 엔트리 ID, 비정상 시 null)를
+   * 그대로 반환 — null 정책은 호출자가 결정(매니저는 throw, 에이전트는 무시). 회귀 0.
+   */
+  publish(stream: string, message: unknown, opts?: PublishOptions): Promise<string | null>
 }
 ```
 
@@ -45,17 +48,16 @@ import type { Redis } from 'ioredis'
 export class RedisEventBus implements EventBus {
   constructor(private readonly redis: Redis) {}
 
-  async publish(stream: string, message: unknown, opts?: PublishOptions): Promise<string> {
+  async publish(stream: string, message: unknown, opts?: PublishOptions): Promise<string | null> {
     const data = JSON.stringify(message)
-    const id = opts?.maxlen !== undefined
-      ? await this.redis.xadd(stream, 'MAXLEN', '~', String(opts.maxlen), '*', 'data', data)
-      : await this.redis.xadd(stream, '*', 'data', data)
-    return id ?? '' // 일반 xadd(비 NOMKSTREAM)는 항상 ID 반환; 타입상 null 대비 '' 폴백
+    return opts?.maxlen !== undefined
+      ? this.redis.xadd(stream, 'MAXLEN', '~', String(opts.maxlen), '*', 'data', data)
+      : this.redis.xadd(stream, '*', 'data', data)
   }
 }
 ```
 
-- 전송 전용: 직렬화 + xadd 외 로직 없음. xadd 실패 시 throw(기존 동일 — 호출자 책임).
+- 전송 전용: 직렬화 + xadd 외 로직 없음. xadd 예외는 전파(기존 동일 — 호출자 책임). null 반환은 호출자 정책(매니저 throw·에이전트 무시)으로 **기존 동작 100% 보존**.
 - Redis 클라이언트는 주입(에이전트는 생성자 주입 인스턴스, 매니저는 `getRedisClient(url)`).
 
 ### 3.3 마이그레이션 (producer seam)
@@ -92,7 +94,7 @@ OutboxRelay → StreamProducer.publishRaw → RedisEventBus.publish       [Publi
 
 - `RedisEventBus.publish`가 일반 xadd 인자(`stream,'*','data',JSON`)로 호출.
 - `maxlen` 옵션 시 `stream,'MAXLEN','~','1000','*','data',JSON`로 호출.
-- 반환값 = xadd ID(예: `'1-0'`), xadd가 null이면 `''`.
+- 반환값 = xadd 결과 그대로(예: `'1-0'`, 비정상 시 `null`).
 - 메시지 JSON 직렬화 정확성(객체 → data 필드 문자열).
 - 각 서비스 producer 기존 테스트는 그대로 통과(회귀 0) — 위임이 동작·스트림 키를 보존.
 
