@@ -41,6 +41,40 @@ const GATE_FAILSAFE = process.env['MANAGER_GATE_FAILSAFE'] !== 'false'
 const WIKI_INJECT_LIMIT = Number(process.env['MANAGER_WIKI_INJECT_LIMIT'] ?? '20')
 const CLAUDE_CALL_TIMEOUT_MS = Number(process.env['MANAGER_CLAUDE_TIMEOUT_MS'] ?? '120000')
 
+/**
+ * 교차질의(AgentQuery)를 답변자 도구로 라우팅할 때 보낼 payload를 만든다.
+ *
+ * 답변자 에이전트의 ManagerTo{Agent}MessageSchema는 요청 모드용 필수 필드를 갖는다:
+ *   planner: intent·context·priority / designer: intent·context /
+ *   tester: projectPath·context / builder: projectPath·target·context /
+ *   security: artifacts·projectPath·severity·context / developer: context.
+ * 질의 모드(@xzawed/agent-streams collaboration.ts)는 `query`·`context`만 읽고 runMain(요청 본문
+ * 필드 사용)은 호출하지 않으므로, 그 외 필드는 검증만 통과시키는 placeholder다(질의 응답엔 미사용).
+ * Zod object는 미정의 키를 strip하므로 해당 필드가 없는 답변자에게는 무해하다.
+ *
+ * 전 답변자 스키마의 **필수 필드 합집합**을 채워, 어느 답변자로 라우팅돼도 BaseConsumer의 safeParse
+ * 실패(→ invalid_schema DLQ → 응답 없음 → 120초 타임아웃)를 막는다.
+ * ⚠️ 모듈 경계상 Manager가 에이전트 스키마를 직접 import할 수 없어 placeholder로 미러링한다 —
+ *    답변자 스키마에 새 필수 필드가 추가되면 이 함수도 갱신해야 한다.
+ */
+function buildAgentQueryPayload(err: AgentQueryError): Record<string, unknown> {
+  return {
+    // 질의 모드가 실제로 읽는 필드
+    query: err.question,
+    queryKind: err.kind,
+    context: {},
+    // 답변자 요청 모드 필수 필드 placeholder (질의 모드에선 미사용 — 스키마 검증 통과 전용)
+    // intent는 planner/designer에서 z.string().min(1).max(4000) — err.question은 상한이 없으므로
+    // 4000자로 클램프하고, 빈 질문이어도 비지 않도록 폴백한다(둘 다 위반 시 원래 DLQ/타임아웃 재발).
+    intent: err.question.slice(0, 4000) || '(query)',
+    priority: 'normal',
+    projectPath: '',
+    target: 'development',
+    severity: 'low',
+    artifacts: [],
+  }
+}
+
 /** knowledge 원소(문자열 또는 {content, category})를 저장용 엔트리로 정규화한다. 유효하지 않으면 null. */
 function toKnowledgeEntry(
   raw: unknown,
@@ -490,7 +524,7 @@ export class ClaudeRunner {
             let queryAnswer: unknown
             try {
               queryAnswer = await targetHandler.execute(
-                { query: err.question, queryKind: err.kind }, sessionId, userContext,
+                buildAgentQueryPayload(err), sessionId, userContext,
               )
             } catch (qErr) {
               const m = qErr instanceof Error ? qErr.message : String(qErr)
