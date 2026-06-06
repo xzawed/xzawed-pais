@@ -96,6 +96,11 @@ describe('WatcherEventConsumer', () => {
       timestamp: 1234567890,
     })
     expect(mockRedis.xack).toHaveBeenCalledWith(streamKey, 'manager-watcher-consumers', '1-0')
+    // P1c-4: 호출부→bus.readGroupMulti→xreadgroup 다중 STREAMS 인자 구성 검증(call-site 회귀 가드)
+    expect(mockRedis.xreadgroup).toHaveBeenCalledWith(
+      'GROUP', 'manager-watcher-consumers', 'manager-watcher-0',
+      'COUNT', '50', 'BLOCK', '3000', 'STREAMS', streamKey, '>',
+    )
   })
 
   it('잘못된 JSON 메시지는 xack 후 스킵한다', async () => {
