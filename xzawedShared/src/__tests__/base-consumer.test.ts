@@ -32,6 +32,7 @@ function makeRedis(overrides: Record<string, unknown> = {}) {
     xack: vi.fn().mockResolvedValue(1),
     xautoclaim: vi.fn().mockResolvedValue(['0-0', [], []]),
     xadd: vi.fn().mockResolvedValue('1-0'),
+    set: vi.fn().mockResolvedValue('OK'),
     quit: vi.fn().mockResolvedValue('OK'),
     pipeline: vi.fn().mockImplementation(makePipeline),
     ...overrides,
@@ -628,6 +629,59 @@ describe('BaseConsumer', () => {
       await consumer.close()
 
       expect(redis.quit).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('멱등 소비(dedup)', () => {
+    const keyById = { key: (m: Message) => m.id } // {id,value} 스키마용 커스텀 추출기
+
+    it('신규 키는 SETNX 후 핸들러를 1회 호출한다', async () => {
+      const redis = makeRedis() // set → 'OK'(신규)
+      const handler = vi.fn().mockResolvedValue(undefined)
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 3,
+        { ...keyById, ttlSec: 100 },
+      )
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        consumer.stop(); return null
+      })
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledWith(validMsg)
+      expect(redis.set).toHaveBeenCalledWith('idem:prefix:sess-1:msg-1', '1', 'EX', 100, 'NX')
+    })
+
+    it('중복 키(SETNX null)면 핸들러를 호출하지 않고 ack한다', async () => {
+      const redis = makeRedis({ set: vi.fn().mockResolvedValue(null) }) // 이미 존재
+      const handler = vi.fn().mockResolvedValue(undefined)
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 3, keyById,
+      )
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        consumer.stop(); return null
+      })
+      await consumer.start('sess-1')
+      expect(handler).not.toHaveBeenCalled()
+      const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
+      expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0') // skip+ack
+    })
+
+    it('키가 null(messageId·envelope 없음)이면 SETNX 없이 처리한다', async () => {
+      const redis = makeRedis()
+      const handler = vi.fn().mockResolvedValue(undefined)
+      // 기본 추출기 사용 → {id,value}엔 messageId/envelope 없음 → null → dedup skip
+      const consumer = new BaseConsumer(redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep)
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        consumer.stop(); return null
+      })
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledWith(validMsg)
+      expect(redis.set).not.toHaveBeenCalled()
     })
   })
 })

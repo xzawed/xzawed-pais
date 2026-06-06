@@ -36,6 +36,9 @@ function parseIdemTtlSec(raw: string | undefined): number {
 
 export class BaseConsumer<TMessage> {
   private running = false
+  private readonly idemEnabled: boolean
+  private readonly idemTtlSec: number
+  private readonly dedupKeyFn: (msg: TMessage) => string | null
 
   constructor(
     private readonly redis: Redis,
@@ -48,7 +51,12 @@ export class BaseConsumer<TMessage> {
       new Promise((r) => setTimeout(r, ms)),
     private readonly ownsRedis: boolean = true,
     private readonly maxDeliveries: number = MAX_DELIVERIES_DEFAULT,
-  ) {}
+    dedup: DedupOptions<TMessage> = {},
+  ) {
+    this.idemEnabled = dedup.enabled ?? (process.env['SHARED_IDEMPOTENT_CONSUME'] !== 'false')
+    this.idemTtlSec = dedup.ttlSec ?? parseIdemTtlSec(process.env['SHARED_IDEM_TTL_SEC'])
+    this.dedupKeyFn = dedup.key ?? (defaultDedupKey as (msg: TMessage) => string | null)
+  }
 
   async start(sessionId: string): Promise<void> {
     if (this.running) throw new Error('BaseConsumer is already running')
@@ -146,6 +154,7 @@ export class BaseConsumer<TMessage> {
     try {
       const parsed = await this.parseOrDlq(stream, fields)
       if (parsed === null) return
+      if (await this.isDuplicate(stream, parsed.data)) return // 중복 delivery → skip(상위에서 ack)
       await this.dispatchWithRetry(stream, parsed.raw, parsed.data)
     } catch (err) {
       // 최종 안전망 — 내부의 어떤 예외(error 코어션·주입 sleep reject 등)도 배치를 끊지 않는다(never-throws 계약).
@@ -178,6 +187,24 @@ export class BaseConsumer<TMessage> {
       return null
     }
     return { raw, data: parsed.data }
+  }
+
+  /**
+   * delivery당 1회 SETNX로 dedup 키를 claim. 이미 존재하면 true(중복 → skip).
+   * 비활성·키 없음·SETNX 오류(fail-open)는 false(처리 계속) — dedup 장애가 처리를 막지 않는다(never-throws).
+   * delivery당 1회만 호출하므로 dispatchWithRetry의 P1a 인-프로세스 재시도는 dedup에 막히지 않는다.
+   */
+  private async isDuplicate(stream: string, data: TMessage): Promise<boolean> {
+    if (!this.idemEnabled) return false
+    const key = this.dedupKeyFn(data)
+    if (key === null) return false
+    try {
+      const res = await this.redis.set(`idem:${stream}:${key}`, '1', 'EX', this.idemTtlSec, 'NX')
+      return res === null // ioredis: 'OK'면 신규(set됨), null이면 이미 존재(중복)
+    } catch (err) {
+      console.error('[Consumer] dedup SETNX 실패 — fail-open(처리 계속):', err)
+      return false
+    }
   }
 
   /** 유효 메시지를 maxDeliveries회까지 백오프 재시도. 소진 시 handler_failed로 DLQ. */
