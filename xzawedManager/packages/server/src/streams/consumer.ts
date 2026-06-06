@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { RedisEventBus } from '@xzawed/agent-streams'
+import type { StreamConsumerPort } from '@xzawed/agent-streams'
 import type { OrchestratorToManagerMessage } from '../types/streams.js'
 import { UserContextSchema } from '../types/user-context.js'
 import { getRedisClient } from './redis.client.js'
@@ -47,16 +49,18 @@ const OrchestratorToManagerMessageSchema = z.union([
 
 export class StreamConsumer {
   private running = false
+  private _bus: StreamConsumerPort | null = null
 
   constructor(private readonly redisUrl: string) {}
 
+  /** getRedisClient는 URL별 캐시 클라이언트 — bus도 1회 생성 후 재사용. */
+  private get bus(): StreamConsumerPort {
+    this._bus ??= new RedisEventBus(getRedisClient(this.redisUrl))
+    return this._bus
+  }
+
   async ensureGroup(sessionId: string): Promise<void> {
-    const redis = getRedisClient(this.redisUrl)
-    try {
-      await redis.xgroup('CREATE', streamKey(sessionId), GROUP, '$', 'MKSTREAM')
-    } catch (err: unknown) {
-      if (!(err instanceof Error && err.message.includes('BUSYGROUP'))) throw err
-    }
+    await this.bus.ensureGroup(streamKey(sessionId), GROUP)
   }
 
   private parseMessage(
@@ -89,11 +93,10 @@ export class StreamConsumer {
     fields: string[],
     sessionId: string,
     handler: MessageHandler,
-    redis: ReturnType<typeof getRedisClient>,
   ): Promise<void> {
     const msg = this.parseMessage(id, fields)
     if (!msg) {
-      await redis.xack(streamKey(sessionId), GROUP, id)
+      await this.bus.ack(streamKey(sessionId), GROUP, [id])
       return
     }
     try {
@@ -101,29 +104,26 @@ export class StreamConsumer {
     } catch (err) {
       console.error(`[StreamConsumer] Handler error for message ${id}:`, err)
     } finally {
-      await redis.xack(streamKey(sessionId), GROUP, id)
+      await this.bus.ack(streamKey(sessionId), GROUP, [id])
     }
   }
 
   async start(sessionId: string, handler: MessageHandler): Promise<void> {
     await this.ensureGroup(sessionId)
     this.running = true
-    const redis = getRedisClient(this.redisUrl)
     const consumerId = `manager-${process.pid}`
 
     while (this.running) {
       try {
-        const results = await redis.xreadgroup(
-          'GROUP', GROUP, consumerId,
-          'COUNT', '10', 'BLOCK', '2000',
-          'STREAMS', streamKey(sessionId), '>'
-        ) as [string, [string, string[]][]][] | null
+        const results = await this.bus.readGroup(
+          streamKey(sessionId), GROUP, consumerId, { count: 10, blockMs: 2000 },
+        )
 
         if (!results) continue
 
         for (const [, entries] of results) {
           for (const [id, fields] of entries) {
-            await this.processEntry(id, fields, sessionId, handler, redis)
+            await this.processEntry(id, fields, sessionId, handler)
           }
         }
       } catch (err) {

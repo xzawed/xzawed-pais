@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { RedisEventBus } from '@xzawed/agent-streams'
+import type { StreamConsumerPort } from '@xzawed/agent-streams'
 import { getRedisClient } from './redis.client.js'
 
 const GATEWAY_STREAM = 'orchestrator:to-manager:sessions'
@@ -8,30 +10,30 @@ export type SessionInitCallback = (sessionId: string) => void | Promise<void>
 
 export class SessionGatewayConsumer {
   private running = false
+  private _bus: StreamConsumerPort | null = null
 
   constructor(
     private readonly redisUrl: string,
     private readonly onSessionInit: SessionInitCallback,
   ) {}
 
+  /** getRedisClient는 URL별 캐시 클라이언트 — bus도 1회 생성 후 재사용. */
+  private get bus(): StreamConsumerPort {
+    this._bus ??= new RedisEventBus(getRedisClient(this.redisUrl))
+    return this._bus
+  }
+
   async start(): Promise<void> {
-    const redis = getRedisClient(this.redisUrl)
-    try {
-      await redis.xgroup('CREATE', GATEWAY_STREAM, GROUP, '$', 'MKSTREAM')
-    } catch (e: unknown) {
-      if (!(e instanceof Error && e.message.includes('BUSYGROUP'))) throw e
-    }
+    await this.bus.ensureGroup(GATEWAY_STREAM, GROUP)
 
     this.running = true
     const consumerId = `manager-gateway-${process.pid}`
 
     while (this.running) {
       try {
-        const results = await redis.xreadgroup(
-          'GROUP', GROUP, consumerId,
-          'COUNT', '10', 'BLOCK', '2000',
-          'STREAMS', GATEWAY_STREAM, '>',
-        ) as [string, [string, string[]][]][] | null
+        const results = await this.bus.readGroup(
+          GATEWAY_STREAM, GROUP, consumerId, { count: 10, blockMs: 2000 },
+        )
 
         if (!results) continue
 
@@ -52,7 +54,7 @@ export class SessionGatewayConsumer {
             } catch {
               // skip malformed messages
             } finally {
-              await redis.xack(GATEWAY_STREAM, GROUP, msgId)
+              await this.bus.ack(GATEWAY_STREAM, GROUP, [msgId])
             }
           }
         }
