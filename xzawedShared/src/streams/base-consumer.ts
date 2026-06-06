@@ -6,6 +6,9 @@ const MAX_RETRY_DELAY_MS = 30_000
 const MAX_MESSAGE_BYTES = 10 * 1024 * 1024 // 10 MiB
 const PENDING_MIN_IDLE_MS = 5 * 60 * 1000  // 5분
 const PENDING_CLAIM_COUNT = 10
+const MAX_DELIVERIES_DEFAULT = 3
+const RETRY_BASE_MS = 500
+const RETRY_CAP_MS = 5_000
 
 export class BaseConsumer<TMessage> {
   private running = false
@@ -20,6 +23,7 @@ export class BaseConsumer<TMessage> {
     private readonly sleep: (ms: number) => Promise<void> = (ms) =>
       new Promise((r) => setTimeout(r, ms)),
     private readonly ownsRedis: boolean = true,
+    private readonly maxDeliveries: number = MAX_DELIVERIES_DEFAULT,
   ) {}
 
   async start(sessionId: string): Promise<void> {
@@ -99,56 +103,85 @@ export class BaseConsumer<TMessage> {
   }
 
   private async processMessages(stream: string, messages: [string, string[]][]) {
-    // xack 대상 ID를 수집해 처리 후 pipeline으로 일괄 확인
+    // xack 대상 ID를 수집해 처리 후 pipeline으로 일괄 확인. handleMessage는 throw하지 않아 배치 비차단.
     const toAck: string[] = []
-
     try {
       for (const [msgId, fields] of messages) {
-        const dataIdx = fields.indexOf('data')
-        if (dataIdx === -1) {
-          console.error('[Consumer] missing data field, skipping')
-          toAck.push(msgId)
-          continue
-        }
-
-        const raw = fields[dataIdx + 1]
-        if (raw === undefined) {
-          console.error('[Consumer] data field has no value, skipping')
-          toAck.push(msgId)
-          continue
-        }
-
-        if (Buffer.byteLength(raw, 'utf8') > MAX_MESSAGE_BYTES) {
-          console.error('[Consumer] message too large, skipping')
-          toAck.push(msgId)
-          continue
-        }
-
-        let parsed: ReturnType<typeof this.schema.safeParse>
-        try {
-          parsed = this.schema.safeParse(JSON.parse(raw))
-        } catch {
-          console.error('[Consumer] JSON parse error, skipping')
-          toAck.push(msgId)
-          continue
-        }
-        if (!parsed.success) {
-          console.error('[Consumer] invalid message, skipping:', parsed.error.issues)
-          toAck.push(msgId)
-          continue
-        }
-
-        try {
-          await this.onMessage(parsed.data)
-        } finally {
-          toAck.push(msgId)
-        }
+        await this.handleMessage(stream, fields)
+        toAck.push(msgId)
       }
     } finally {
-      // onMessage 예외 시에도 수집된 ID를 일괄 xack — PEL 누수 방지
       if (toAck.length > 0) {
         await this.ackAll(stream, toAck)
       }
+    }
+  }
+
+  /** 단일 메시지 처리: parse→retry→DLQ. 절대 throw하지 않는다(배치 비차단·PEL 누수 0). */
+  private async handleMessage(stream: string, fields: string[]): Promise<void> {
+    const parsed = await this.parseOrDlq(stream, fields)
+    if (parsed === null) return
+    await this.dispatchWithRetry(stream, parsed.raw, parsed.data)
+  }
+
+  /**
+   * fields에서 raw를 추출·검증한다. 구조적 결함(data 없음·undefined·과대)은 ack+skip(null 반환),
+   * JSON/스키마 무효는 invalid_schema로 DLQ 후 null 반환, 유효하면 {raw, data} 반환.
+   */
+  private async parseOrDlq(stream: string, fields: string[]): Promise<{ raw: string; data: TMessage } | null> {
+    const dataIdx = fields.indexOf('data')
+    if (dataIdx === -1) { console.error('[Consumer] missing data field, skipping'); return null }
+    const raw = fields[dataIdx + 1]
+    if (raw === undefined) { console.error('[Consumer] data field has no value, skipping'); return null }
+    if (Buffer.byteLength(raw, 'utf8') > MAX_MESSAGE_BYTES) { console.error('[Consumer] message too large, skipping'); return null }
+
+    let parsed: ReturnType<typeof this.schema.safeParse>
+    try {
+      parsed = this.schema.safeParse(JSON.parse(raw))
+    } catch {
+      console.error('[Consumer] JSON parse error → DLQ')
+      await this.routeToDlq(stream, raw, 'invalid_schema', 0)
+      return null
+    }
+    if (!parsed.success) {
+      console.error('[Consumer] invalid message → DLQ:', parsed.error.issues)
+      await this.routeToDlq(stream, raw, 'invalid_schema', 0)
+      return null
+    }
+    return { raw, data: parsed.data }
+  }
+
+  /** 유효 메시지를 maxDeliveries회까지 백오프 재시도. 소진 시 handler_failed로 DLQ. */
+  private async dispatchWithRetry(stream: string, raw: string, data: TMessage): Promise<void> {
+    for (let attempt = 1; attempt <= this.maxDeliveries; attempt++) {
+      try {
+        await this.onMessage(data)
+        return
+      } catch (err) {
+        if (attempt >= this.maxDeliveries) {
+          console.error(`[Consumer] 핸들러 ${attempt}회 실패 → DLQ:`, err)
+          await this.routeToDlq(stream, raw, 'handler_failed', attempt, err)
+          return
+        }
+        await this.sleep(Math.min(RETRY_BASE_MS * 2 ** (attempt - 1), RETRY_CAP_MS))
+      }
+    }
+  }
+
+  /** poison 메시지를 {stream}:dlq로 격리한다. DLQ 발행 실패는 경고 후 무시(배치 비차단). */
+  private async routeToDlq(
+    stream: string, raw: string, reason: 'handler_failed' | 'invalid_schema',
+    attempts: number, error?: unknown,
+  ): Promise<void> {
+    const payload = JSON.stringify({
+      original: raw, reason, attempts,
+      ...(error === undefined ? {} : { error: error instanceof Error ? error.message : String(error) }),
+      failedAt: Date.now(), sourceStream: stream,
+    })
+    try {
+      await this.redis.xadd(`${stream}:dlq`, '*', 'data', payload)
+    } catch (e) {
+      console.error(`[Consumer] DLQ 발행 실패(${stream}:dlq) — 메시지 격리 실패:`, e)
     }
   }
 

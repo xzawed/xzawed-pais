@@ -26,6 +26,7 @@ function makeRedis(overrides: Record<string, unknown> = {}) {
     xreadgroup: vi.fn().mockResolvedValue(null),
     xack: vi.fn().mockResolvedValue(1),
     xautoclaim: vi.fn().mockResolvedValue(['0-0', [], []]),
+    xadd: vi.fn().mockResolvedValue('1-0'),
     quit: vi.fn().mockResolvedValue('OK'),
     pipeline: vi.fn().mockImplementation(makePipeline),
     ...overrides,
@@ -158,24 +159,66 @@ describe('BaseConsumer', () => {
       expect(redis.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
     })
 
-    it('핸들러가 예외를 던져도 xack를 실행한다', async () => {
+    it('핸들러가 maxDeliveries회 실패하면 DLQ로 격리하고 xack한다', async () => {
       const redis = makeRedis()
       const handler = vi.fn().mockRejectedValue(new Error('handler error'))
       const consumer = new BaseConsumer(redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep)
 
       let calls = 0
       redis.xreadgroup.mockImplementation(async () => {
-        if (calls++ === 0) {
-          return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
-        }
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
         consumer.stop()
         return null
       })
 
       await consumer.start('sess-1')
-      expect(redis.pipeline).toHaveBeenCalled()
+      expect(handler).toHaveBeenCalledTimes(3) // 기본 maxDeliveries
+      const dlqCall = redis.xadd.mock.calls.find((c) => c[0] === 'prefix:sess-1:dlq')
+      expect(dlqCall).toBeTruthy()
+      const dlqPayload = JSON.parse(dlqCall![3] as string)
+      expect(dlqPayload.reason).toBe('handler_failed')
+      expect(dlqPayload.attempts).toBe(3)
+      expect(dlqPayload.sourceStream).toBe('prefix:sess-1')
       const pipelineInstance = (redis.pipeline as ReturnType<typeof vi.fn>).mock.results[0].value
       expect(pipelineInstance.xack).toHaveBeenCalledWith('prefix:sess-1', 'grp', '1-0')
+    })
+
+    it('일시 실패 후 성공하면 재시도하고 DLQ로 보내지 않는다', async () => {
+      const redis = makeRedis()
+      const handler = vi.fn()
+        .mockRejectedValueOnce(new Error('transient'))
+        .mockResolvedValueOnce(undefined)
+      const consumer = new BaseConsumer(redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep)
+
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        consumer.stop()
+        return null
+      })
+
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledTimes(2)
+      expect(redis.xadd).not.toHaveBeenCalled()
+    })
+
+    it('maxDeliveries=1이면 재시도 없이 즉시 DLQ한다', async () => {
+      const redis = makeRedis()
+      const handler = vi.fn().mockRejectedValue(new Error('fail'))
+      const consumer = new BaseConsumer(
+        redis as any, handler, 'grp', 'c1', 'prefix', MessageSchema, noopSleep, true, 1,
+      )
+
+      let calls = 0
+      redis.xreadgroup.mockImplementation(async () => {
+        if (calls++ === 0) return [['prefix:sess-1', [['1-0', ['data', JSON.stringify(validMsg)]]]]]
+        consumer.stop()
+        return null
+      })
+
+      await consumer.start('sess-1')
+      expect(handler).toHaveBeenCalledTimes(1)
+      expect(redis.xadd).toHaveBeenCalledTimes(1)
     })
 
     it('스키마 검증 실패 시 핸들러를 호출하지 않고 xack한다', async () => {
