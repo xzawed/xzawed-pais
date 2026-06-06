@@ -37,6 +37,12 @@ export function detectCycle(graph: TaskGraph): string[][] {
 }
 
 /**
+ * id 비교자(UTF-16 코드유닛·로케일 무관) — 같은 환경/다른 환경 모두 동일 순서 보장.
+ * `localeCompare`는 런타임 로케일에 의존해 결정론(N4)을 깰 수 있으므로 의도적으로 미사용.
+ */
+const byId = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
+
+/**
  * Kahn 위상정렬. `order`=위상순서 id(결정론), `cyclic`=사이클로 정렬 못한 잔여 id.
  * 결정론 타이브레이크: in-degree 0 후보가 여럿이면 id 사전순 선택(입력 순서 무관).
  * 사이클이면 throw하지 않고 해당 노드를 cyclic으로 보고(N4 step-N 토대).
@@ -48,7 +54,7 @@ export function topoSort(graph: TaskGraph): { order: string[]; cyclic: string[] 
   }
 
   const order: string[] = []
-  const ready = [...graph.nodes.keys()].filter((id) => inDegree.get(id) === 0).sort()
+  const ready = [...graph.nodes.keys()].filter((id) => inDegree.get(id) === 0).sort(byId)
 
   while (ready.length > 0) {
     const id = ready.shift()! // id 사전순 최소(ready는 정렬 유지)
@@ -62,7 +68,7 @@ export function topoSort(graph: TaskGraph): { order: string[]; cyclic: string[] 
         added = true
       }
     }
-    if (added) ready.sort()
+    if (added) ready.sort(byId)
   }
 
   const inOrder = new Set(order)
