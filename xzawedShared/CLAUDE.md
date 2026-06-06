@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (137 테스트 통과)**
+**현재 상태: 구현 완료 (159 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -33,6 +33,11 @@ src/
 │   └── agent-query.ts           # 에이전트 간 질의 타입·스키마 (AgentQuery 등)
 ├── prompt/
 │   └── domain-knowledge.ts      # formatDomainKnowledge() — 도메인 위키 주입 포매터
+├── task-graph/                  # P1d Task Manager Core (순수 그래프/스케줄링 로직)
+│   ├── task-graph.ts            # TaskGraph 타입 + buildTaskGraph(인접/역인접 인덱스)
+│   ├── topo-sort.ts             # detectCycle(DFS) + topoSort(Kahn·id사전순 결정론)
+│   ├── readiness.ts             # isReady/readyNodes (DoR 가드·주입형 술어)
+│   └── index.ts                 # task-graph 배럴 export
 └── __tests__/
     ├── workspace-guard.test.ts  # validateWorkspaceRoot + resolveWorkspaceRoot 테스트
     ├── base-consumer.test.ts    # BaseConsumer 테스트
@@ -41,8 +46,27 @@ src/
     ├── answer-query.test.ts     # answerViaClaude / callClaudeText 등 테스트
     ├── collaboration.test.ts    # runCollaborativeHandle / createCollaborativeHandler 테스트
     ├── event-bus.test.ts        # RedisEventBus 테스트
-    └── domain-knowledge.test.ts # formatDomainKnowledge 테스트
+    ├── domain-knowledge.test.ts # formatDomainKnowledge 테스트
+    └── task-graph.test.ts       # buildTaskGraph/detectCycle/topoSort/isReady 테스트
 ```
+
+## Task Manager Core 패턴 (P1d-1)
+
+P1d 결정론적 Task Manager의 **순수 계산 코어**(I/O·DB·Redis·부수효과 0). WP 의존성 그래프(DAG)에서 ready 노드를 결정론적으로 산출한다. 영속(P1d-3)·소비(P1d-2)·디스패치(P1d-4)는 후속 슬라이스가 이 코어를 호출.
+
+```typescript
+import { buildTaskGraph, detectCycle, topoSort, isReady, readyNodes } from '@xzawed/agent-streams'
+import type { TaskGraph, ReadinessOptions } from '@xzawed/agent-streams'
+
+const graph = buildTaskGraph(workPackages)          // 인접/역인접 인덱스(중복id·dangling dep throw)
+const cycles = detectCycle(graph)                    // 사이클 경로[](없으면 []) — 수선은 소비단 책임
+const { order, cyclic } = topoSort(graph)            // Kahn 위상정렬(id 사전순 결정론), 사이클은 cyclic 보고
+const ready = readyNodes(graph)                      // ready id[](topo 순서·cyclic 제외)
+```
+
+- **노드 = `WorkPackage` 재사용**(재정의 금지), `TaskGraph` = 불변 컨테이너(nodes·dependencies·dependents).
+- **DoR 가드**(`isReady`): 모든 dependency가 done **AND** 오라클 충족 **AND** 자신이 아직 done 아님. `wp.status`를 읽지 않음(상태머신 드리프트 회피) — done은 `isDone` 술어, 오라클은 `oracleSatisfied` 술어로 주입(기본 `status==='done'`·`oracleRef != null`). P3 Oracle 스키마 도착 시 술어만 교체.
+- **결정론**: 같은 그래프 → 같은 order(타이브레이크 id 사전순, 입력순서 무관). N4 step-N 토대.
 
 ## EventBus 패턴 (P1c)
 
