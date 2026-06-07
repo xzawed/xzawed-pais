@@ -69,8 +69,22 @@ export class TaskGraphRepo {
   ) {}
 
   /** 워크플로 그래프 프로젝션 upsert(재분해 시 version++·graph_dag 교체). */
-  async upsertGraph(_input: PersistGraphInput): Promise<{ version: number }> {
-    throw new Error('not implemented')
+  async upsertGraph(input: PersistGraphInput): Promise<{ version: number }> {
+    const dag = JSON.stringify({ workPackages: input.workPackages })
+    const { rows } = await this.pool.query<{ version: number }>(
+      `INSERT INTO task_graphs (workflow_id, graph_dag, event_id, version, created_at, updated_at)
+         VALUES ($1, $2, $3, 1, NOW(), NOW())
+       ON CONFLICT (workflow_id) DO UPDATE
+         SET graph_dag  = EXCLUDED.graph_dag,
+             event_id   = EXCLUDED.event_id,
+             version    = task_graphs.version + 1,
+             updated_at = NOW()
+       RETURNING version`,
+      [input.workflowId, dag, input.eventId ?? null],
+    )
+    const row = rows[0]
+    if (!row) throw new Error('upsertGraph: no row returned')
+    return { version: row.version }
   }
 
   /** 그래프 조회(graph_dag.workPackages를 WorkPackageSchema 배열로 재검증). 없으면 null. */
