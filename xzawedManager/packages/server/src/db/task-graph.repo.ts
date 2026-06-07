@@ -104,8 +104,19 @@ export class TaskGraphRepo {
   }
 
   /** WP 상태 전이를 append-only 기록(INSERT only). */
-  async appendTransition(_input: WpTransitionInput): Promise<{ seq: number }> {
-    throw new Error('not implemented')
+  async appendTransition(input: WpTransitionInput): Promise<{ seq: number }> {
+    const { rows } = await this.pool.query<{ seq: number | string }>(
+      `INSERT INTO wp_state_log (workflow_id, wp_id, from_state, to_state, event_id, reason, occurred_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING seq`,
+      [
+        input.workflowId, input.wpId, input.fromState ?? null, input.toState,
+        input.eventId ?? null, input.reason ?? null, this.now(),
+      ],
+    )
+    const row = rows[0]
+    if (!row) throw new Error('appendTransition: no row returned')
+    return { seq: Number(row.seq) }
   }
 
   /** WP별 최신 상태(seq 최대). */

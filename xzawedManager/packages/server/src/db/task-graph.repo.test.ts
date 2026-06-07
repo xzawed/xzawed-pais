@@ -67,3 +67,33 @@ describe('TaskGraphRepo.getGraph', () => {
     await expect(new TaskGraphRepo(pool).getGraph('wf-1')).rejects.toThrow()
   })
 })
+
+describe('TaskGraphRepo.appendTransition', () => {
+  it('wp_state_log에 INSERT only로 전이를 기록하고 seq를 Number로 반환한다', async () => {
+    const pool = mockPool({ rows: [{ seq: '5' }] }) // pg BIGSERIAL은 문자열
+    const res = await new TaskGraphRepo(pool, () => 1234).appendTransition({
+      workflowId: 'wf-1', wpId: 'wp-1', toState: 'READY',
+    })
+    const [sql, params] = pool.query.mock.calls[0]
+    expect(sql).toMatch(/INSERT INTO wp_state_log/i)
+    expect(sql).not.toMatch(/UPDATE|DELETE/i)
+    // params: workflow_id, wp_id, from_state, to_state, event_id, reason, occurred_at
+    expect(params).toEqual(['wf-1', 'wp-1', null, 'READY', null, null, 1234])
+    expect(res).toEqual({ seq: 5 })
+  })
+
+  it('fromState·eventId·reason이 있으면 파라미터로 싣는다', async () => {
+    const pool = mockPool({ rows: [{ seq: '6' }] })
+    await new TaskGraphRepo(pool, () => 1).appendTransition({
+      workflowId: 'wf-1', wpId: 'wp-1', fromState: 'DRAFTED', toState: 'READY',
+      eventId: 'evt-2', reason: 'DoR met',
+    })
+    expect(pool.query.mock.calls[0][1]).toEqual(['wf-1', 'wp-1', 'DRAFTED', 'READY', 'evt-2', 'DoR met', 1])
+  })
+
+  it('RETURNING 행이 없으면 throw한다', async () => {
+    const pool = mockPool({ rows: [] })
+    await expect(new TaskGraphRepo(pool).appendTransition({ workflowId: 'wf-1', wpId: 'wp-1', toState: 'READY' }))
+      .rejects.toThrow(/no row returned/i)
+  })
+})
