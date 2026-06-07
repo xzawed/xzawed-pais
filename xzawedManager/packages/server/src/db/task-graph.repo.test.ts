@@ -42,3 +42,28 @@ describe('TaskGraphRepo.upsertGraph', () => {
       .rejects.toThrow(/no row returned/i)
   })
 })
+
+describe('TaskGraphRepo.getGraph', () => {
+  it('행이 없으면 null을 반환한다', async () => {
+    const pool = mockPool({ rows: [] })
+    expect(await new TaskGraphRepo(pool).getGraph('wf-x')).toBeNull()
+  })
+
+  it('graph_dag.workPackages를 WorkPackageSchema로 재검증해 반환한다', async () => {
+    const pool = mockPool({ rows: [{ graph_dag: { workPackages: [wp] }, event_id: 'evt-9', version: 3 }] })
+    const out = await new TaskGraphRepo(pool).getGraph('wf-1')
+    expect(pool.query.mock.calls[0][0]).toMatch(/SELECT graph_dag, event_id, version FROM task_graphs WHERE workflow_id = \$1/i)
+    expect(out).toEqual({ workflowId: 'wf-1', workPackages: [wp], eventId: 'evt-9', version: 3 })
+  })
+
+  it('workPackages가 없으면 빈 배열로 파싱한다', async () => {
+    const pool = mockPool({ rows: [{ graph_dag: {}, event_id: null, version: 1 }] })
+    const out = await new TaskGraphRepo(pool).getGraph('wf-1')
+    expect(out?.workPackages).toEqual([])
+  })
+
+  it('저장 데이터가 WorkPackage 스키마 위반이면 throw한다', async () => {
+    const pool = mockPool({ rows: [{ graph_dag: { workPackages: [{ id: '' }] }, event_id: null, version: 1 }] })
+    await expect(new TaskGraphRepo(pool).getGraph('wf-1')).rejects.toThrow()
+  })
+})

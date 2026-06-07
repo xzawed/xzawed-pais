@@ -88,8 +88,19 @@ export class TaskGraphRepo {
   }
 
   /** 그래프 조회(graph_dag.workPackages를 WorkPackageSchema 배열로 재검증). 없으면 null. */
-  async getGraph(_workflowId: string): Promise<StoredGraph | null> {
-    throw new Error('not implemented')
+  async getGraph(workflowId: string): Promise<StoredGraph | null> {
+    const { rows } = await this.pool.query<{
+      graph_dag: { workPackages?: unknown } | null
+      event_id: string | null
+      version: number
+    }>(
+      `SELECT graph_dag, event_id, version FROM task_graphs WHERE workflow_id = $1`,
+      [workflowId],
+    )
+    const row = rows[0]
+    if (!row) return null
+    const workPackages = workPackagesSchema.parse(row.graph_dag?.workPackages ?? [])
+    return { workflowId, workPackages, eventId: row.event_id, version: row.version }
   }
 
   /** WP 상태 전이를 append-only 기록(INSERT only). */
