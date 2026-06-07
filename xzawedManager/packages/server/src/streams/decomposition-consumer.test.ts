@@ -38,6 +38,13 @@ describe('handleDecompositionEmitted — happy path', () => {
     expect(publish).not.toHaveBeenCalled()
     expect(out).toEqual({ status: 'persisted', version: 1 })
   })
+
+  it('upsertGraph의 version을 그대로 전파한다(재분해 version++)', async () => {
+    const repo = mockRepo(7)
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const out = await handleDecompositionEmitted(msg([wp('a')]), { repo, publish })
+    expect(out).toEqual({ status: 'persisted', version: 7 })
+  })
 })
 
 describe('handleDecompositionEmitted — cycle (결정론 에스컬레이션)', () => {

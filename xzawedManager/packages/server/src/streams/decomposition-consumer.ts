@@ -11,6 +11,8 @@ import {
 import type { TaskGraph } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 
+// 단일 type 스트림(manager:decomposition:{wf})용 스키마 — 다른 type 메시지가 들어오면
+// BaseConsumer가 invalid_schema로 DLQ 격리한다(의도된 동작; P1d-4가 이 스트림을 다중화하면 재검토).
 export const DecompositionEmittedSchema = z.object({
   envelope: EventEnvelopeSchema,
   type: z.literal('decomposition.emitted'),
@@ -35,6 +37,9 @@ export type DecompositionOutcome =
 
 const CONSUMER_GROUP = 'manager-taskgraph-consumers'
 const STREAM_PREFIX = 'manager:decomposition'
+// 입력(manager:decomposition)과 의도적으로 분리된 출력 스트림(자기소비 루프 방지). 세션 이벤트소싱
+// 스트림(session.store.ts)과 네임스페이스를 공유하므로, 다운스트림 소비자(P1d-4/Supervisor)는
+// decomposition.inconsistent를 세션 이벤트와 함께 처리할 수 있어야 한다.
 const defaultInconsistentStream = (workflowId: string): string => `manager:events:${workflowId}`
 
 /** decomposition.inconsistent 이벤트를 인과(causation=원 eventId) 봉투로 출력 스트림에 발행. */
@@ -97,8 +102,8 @@ export class DecompositionConsumer extends BaseConsumer<DecompositionEmittedMess
       `manager-taskgraph-${process.pid}`,
       STREAM_PREFIX,
       // WorkPackageSchema의 .default() 필드 때문에 입력 타입(부분)과 출력 타입(DecompositionEmittedMessage)이
-      // 어긋난다. safeParse는 런타임에 default를 적용해 정확히 출력 타입을 만들므로 출력 타입으로 좁힌다.
-      DecompositionEmittedSchema as unknown as ZodType<DecompositionEmittedMessage>,
+      // 어긋난다. safeParse는 런타임에 default를 적용해 정확히 출력 타입을 만들므로 출력 타입으로 좁힌다(형제 ToolHandler 관례).
+      DecompositionEmittedSchema as ZodType<DecompositionEmittedMessage>,
       sleep,
     )
   }
