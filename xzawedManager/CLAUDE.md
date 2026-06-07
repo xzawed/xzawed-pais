@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 375/380 테스트, 5 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
+현재 상태: **구현 완료 (server 387/395 테스트, 8 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
 **최근 반영(PR-1 게이트 fail-safe)**: 승인 응답이 파싱 불가·비객체·미지 decision이면 자동 승인(fail-open)하지 않고 `needs_human`으로 사람 재검토를 요청한다(같은 산출물·사유 안내, `MAX_GATE_REASKS` 초과 시 세션 중단). revise 소진도 무음 통과 대신 에스컬레이션. `MANAGER_GATE_FAILSAFE=false`로 레거시 fail-open 복원 가능. senario M8(무음 통과 금지)·N1(불확실=실패) 구현.
 
@@ -49,7 +49,7 @@ packages/
         ├── streams/            # Redis consumer + producer + outbox-relay.ts(아웃박스→Redis 폴링 릴레이). StreamConsumer·SessionGatewayConsumer(P1c-3)·StreamProducer·WatcherEventConsumer(P1c-4, readGroupMulti)·RedisAgentHandler·switch-project·register-project(P1c-5, RequestReplyPort RPC 라운드트립)는 전송을 @xzawed/agent-streams RedisEventBus(EventBus/StreamConsumerPort/RequestReplyPort)에 위임. RedisAgentHandler ensureSessionStream(xgroup)·notifyGateway는 잔류(후속)
         ├── claude/runner.ts    # Claude tool-calling 루프 (승인 게이트·위키 주입/저장·AgentQuery 라우팅)
         ├── gates/              # approval-gate.ts: 게이트 모드·대상·결정 파싱
-        ├── db/                 # knowledge.repo.ts + session.repo.ts + event-store.ts(이벤트소싱 append+replay) + pool.ts + migrations/(001~006)
+        ├── db/                 # knowledge.repo.ts + session.repo.ts + event-store.ts(이벤트소싱 append+replay) + task-graph.repo.ts(P1d-3 Task Graph 영속) + pool.ts + migrations/(001~007)
         ├── tools/              # ToolHandler 11개 (7 RedisAgent + register-project + switch-project + github-ops* + deploy-project* / *GITHUB_TOKEN 조건부) + agent-tool-map.ts + errors.ts
         ├── sessions/           # 세션 상태 추적 (session.store.ts: gateConfig·waitForInfo·게이트 override·EventStore 컴포지션)
         └── api/                # health 라우트 + knowledge.route.ts(GET 비인증·읽기; PATCH/DELETE는 authHook 설정 시 서비스 JWT 필요)
@@ -132,6 +132,13 @@ dual-write 제거 + 크래시 후 복원의 토대(senario M4/M5/M7). `EVENT_SOU
 - **배선(`server.ts`)**: flag on + `DATABASE_URL`이면 `EventStore` 생성 → 시작 시 `replaySessions()` 복원 → `OutboxRelay.start()`. `closeAll`에서 relay stop.
 - **게이트 연동**: `escalateGate`가 async `abort`를 await(중단 이벤트 기록 후 GateAbortError). narrowing은 abort 분기 `return this.escalateGate(...)`로 보존.
 - **수용기준**: ①상태+이벤트 원자성(append 단일 tx·롤백) ②강제종료 후 replay 복원 ③correlation/causation — 실 pg 통합 테스트(`test/event-sourcing.integration.test.ts`, skip-if-no-DB)로 실증.
+
+## Task Graph 영속 (P1d-3)
+
+P1d Task Manager의 영속 토대. `EVENT_SOURCED_SESSION`과 무관하게 `runMigrations`가 항상 적용(빈 표는 무해), 소비·디스패치 배선은 후속(P1d-2/4).
+
+- **스키마(`007_task_graphs.sql`)**: `task_graphs`(workflow_id PK·graph_dag JSONB={workPackages}·event_id nullable·version — **가변 프로젝션**, 재분해 시 upsert version++) + `wp_state_log`(seq BIGSERIAL·workflow_id·wp_id·from_state·to_state·event_id·reason·occurred_at — **append-only 전이 로그**, 코드 규약 INSERT만).
+- **`db/task-graph.repo.ts` `TaskGraphRepo`**: `upsertGraph`(ON CONFLICT version++)·`getGraph`(graph_dag.workPackages를 WorkPackageSchema로 재검증)·`appendTransition`(INSERT only)·`latestStates`(DISTINCT ON wp_id seq DESC)·`transitions`(seq ASC). graph_dag는 노드 소스(WorkPackage[])만 저장 — 인접 그래프는 소비자가 `buildTaskGraph`로 파생. pg BIGSERIAL/BIGINT은 문자열 반환이라 `Number()` 변환.
 
 ## AgentQuery 교차질의
 
