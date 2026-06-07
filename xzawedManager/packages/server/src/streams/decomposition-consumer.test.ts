@@ -104,6 +104,16 @@ describe('handleDecompositionEmitted — inconsistentStream override', () => {
   })
 })
 
+describe('handleDecompositionEmitted — upsert 오류 전파(DLQ 경로 보존)', () => {
+  it('upsertGraph 실패는 structural로 삼키지 않고 전파한다(BaseConsumer 재시도/DLQ로 위임)', async () => {
+    const repo = { upsertGraph: vi.fn().mockRejectedValue(new Error('db down')) } as unknown as
+      TaskGraphRepo & { upsertGraph: ReturnType<typeof vi.fn> }
+    const publish = vi.fn().mockResolvedValue('1-0')
+    await expect(handleDecompositionEmitted(msg([wp('a')]), { repo, publish })).rejects.toThrow('db down')
+    expect(publish).not.toHaveBeenCalled() // inconsistent로 오분류되지 않음
+  })
+})
+
 describe('DecompositionConsumer', () => {
   it('생성자가 throw하지 않는다(전송 글루)', () => {
     const repo = mockRepo()
