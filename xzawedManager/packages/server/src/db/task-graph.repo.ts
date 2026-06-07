@@ -120,12 +120,28 @@ export class TaskGraphRepo {
   }
 
   /** WP별 최신 상태(seq 최대). */
-  async latestStates(_workflowId: string): Promise<Map<string, WpStateRecord>> {
-    throw new Error('not implemented')
+  async latestStates(workflowId: string): Promise<Map<string, WpStateRecord>> {
+    const { rows } = await this.pool.query<WpStateRow>(
+      `SELECT DISTINCT ON (wp_id) seq, workflow_id, wp_id, from_state, to_state, event_id, reason, occurred_at
+         FROM wp_state_log
+        WHERE workflow_id = $1
+        ORDER BY wp_id, seq DESC`,
+      [workflowId],
+    )
+    const out = new Map<string, WpStateRecord>()
+    for (const r of rows) out.set(r.wp_id, mapRow(r))
+    return out
   }
 
   /** 한 WP의 전이 이력(seq 오름차순). */
-  async transitions(_workflowId: string, _wpId: string): Promise<WpStateRecord[]> {
-    throw new Error('not implemented')
+  async transitions(workflowId: string, wpId: string): Promise<WpStateRecord[]> {
+    const { rows } = await this.pool.query<WpStateRow>(
+      `SELECT seq, workflow_id, wp_id, from_state, to_state, event_id, reason, occurred_at
+         FROM wp_state_log
+        WHERE workflow_id = $1 AND wp_id = $2
+        ORDER BY seq ASC`,
+      [workflowId, wpId],
+    )
+    return rows.map(mapRow)
   }
 }

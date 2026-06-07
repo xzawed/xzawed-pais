@@ -97,3 +97,35 @@ describe('TaskGraphRepo.appendTransition', () => {
       .rejects.toThrow(/no row returned/i)
   })
 })
+
+describe('TaskGraphRepo.latestStates', () => {
+  it('DISTINCT ON (wp_id) seq DESC로 WP별 최신 상태를 Map으로 반환한다', async () => {
+    const pool = mockPool({ rows: [
+      { seq: '9', workflow_id: 'wf-1', wp_id: 'wp-1', from_state: 'READY', to_state: 'DISPATCHED', event_id: null, reason: null, occurred_at: '200' },
+      { seq: '7', workflow_id: 'wf-1', wp_id: 'wp-2', from_state: null, to_state: 'READY', event_id: null, reason: null, occurred_at: '150' },
+    ] })
+    const out = await new TaskGraphRepo(pool).latestStates('wf-1')
+    expect(pool.query.mock.calls[0][0]).toMatch(/DISTINCT ON \(wp_id\)[\s\S]*ORDER BY wp_id, seq DESC/i)
+    expect(out.get('wp-1')).toEqual({
+      seq: 9, workflowId: 'wf-1', wpId: 'wp-1', fromState: 'READY', toState: 'DISPATCHED',
+      eventId: null, reason: null, occurredAt: 200,
+    })
+    expect(out.get('wp-2')?.toState).toBe('READY')
+    expect(out.size).toBe(2)
+  })
+})
+
+describe('TaskGraphRepo.transitions', () => {
+  it('한 WP의 전이 이력을 seq ASC로 반환한다(BIGINT 문자열→Number)', async () => {
+    const pool = mockPool({ rows: [
+      { seq: '1', workflow_id: 'wf-1', wp_id: 'wp-1', from_state: null, to_state: 'DRAFTED', event_id: null, reason: null, occurred_at: '100' },
+      { seq: '2', workflow_id: 'wf-1', wp_id: 'wp-1', from_state: 'DRAFTED', to_state: 'READY', event_id: 'e1', reason: 'DoR', occurred_at: '110' },
+    ] })
+    const out = await new TaskGraphRepo(pool).transitions('wf-1', 'wp-1')
+    expect(pool.query.mock.calls[0][0]).toMatch(/WHERE workflow_id = \$1 AND wp_id = \$2[\s\S]*ORDER BY seq ASC/i)
+    expect(pool.query.mock.calls[0][1]).toEqual(['wf-1', 'wp-1'])
+    expect(out).toHaveLength(2)
+    expect(out[0]).toMatchObject({ seq: 1, toState: 'DRAFTED', occurredAt: 100 })
+    expect(out[1]).toMatchObject({ seq: 2, fromState: 'DRAFTED', toState: 'READY', eventId: 'e1', reason: 'DoR' })
+  })
+})
