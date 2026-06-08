@@ -1,5 +1,22 @@
 import { describe, it, expect } from 'vitest'
-import { coverageMatrix, contentHashId } from '../decomposition/index.js'
+import { coverageMatrix, contentHashId, mergeKeepInflight } from '../decomposition/index.js'
+import { buildTaskGraph } from '../task-graph/index.js'
+import type { WorkPackage } from '../types/work-package.js'
+
+/** 테스트 WP 생성 헬퍼 — 기본값 채우고 핵심 필드만 override. */
+function wp(id: string, over: Partial<WorkPackage> = {}): WorkPackage {
+  return {
+    id,
+    storyId: 'story-1',
+    owningRole: 'developer',
+    oracleRef: 'oracle-1',
+    acceptanceCriteria: [],
+    dependencies: [],
+    attributionCounters: {},
+    status: 'draft',
+    ...over,
+  }
+}
 
 describe('coverageMatrix', () => {
   it('완전 커버면 갭·중복·unknown 모두 빈 배열', () => {
@@ -127,5 +144,62 @@ describe('contentHashId', () => {
     const withDup = contentHashId({ ...base, acceptanceCriteria: ['a', 'a'] })
     const withoutDup = contentHashId({ ...base, acceptanceCriteria: ['a'] })
     expect(withDup).not.toBe(withoutDup)
+  })
+})
+
+describe('mergeKeepInflight', () => {
+  it('existing에 없는 incoming은 추가', () => {
+    const out = mergeKeepInflight([], [wp('a')])
+    expect(out.map((w) => w.id)).toEqual(['a'])
+  })
+
+  it('미착수(draft/ready) existing은 incoming 버전으로 갱신', () => {
+    const existing = [wp('a', { status: 'ready', acceptanceCriteria: ['old'] })]
+    const incoming = [wp('a', { status: 'draft', acceptanceCriteria: ['new'] })]
+    const out = mergeKeepInflight(existing, incoming)
+    expect(out[0]?.acceptanceCriteria).toEqual(['new'])
+  })
+
+  it('in-flight(in_progress/done) existing은 incoming이 있어도 유지', () => {
+    const existing = [wp('a', { status: 'in_progress', acceptanceCriteria: ['kept'] })]
+    const incoming = [wp('a', { status: 'draft', acceptanceCriteria: ['ignored'] })]
+    const out = mergeKeepInflight(existing, incoming)
+    expect(out[0]?.status).toBe('in_progress')
+    expect(out[0]?.acceptanceCriteria).toEqual(['kept'])
+  })
+
+  it('incoming에서 사라진 not-in-flight existing은 드롭', () => {
+    const out = mergeKeepInflight([wp('a', { status: 'ready' })], [wp('b')])
+    expect(out.map((w) => w.id)).toEqual(['b'])
+  })
+
+  it('incoming에서 사라진 in-flight existing은 보존', () => {
+    const out = mergeKeepInflight([wp('a', { status: 'done' })], [wp('b')])
+    expect(out.map((w) => w.id)).toEqual(['a', 'b'])
+  })
+
+  it('보존된 in-flight 노드의 의존 폐포도 유지(buildTaskGraph 수용 — dangling 0)', () => {
+    const existing = [wp('a', { status: 'done', dependencies: ['dep'] }), wp('dep', { status: 'ready' })]
+    const incoming = [wp('b')]
+    const out = mergeKeepInflight(existing, incoming)
+    expect(out.map((w) => w.id).sort()).toEqual(['a', 'b', 'dep'])
+    expect(() => buildTaskGraph(out)).not.toThrow()
+  })
+
+  it('isInflight 술어 주입 override', () => {
+    const existing = [wp('a', { status: 'draft', acceptanceCriteria: ['kept'] })]
+    const incoming = [wp('a', { status: 'draft', acceptanceCriteria: ['ignored'] })]
+    const out = mergeKeepInflight(existing, incoming, { isInflight: () => true })
+    expect(out[0]?.acceptanceCriteria).toEqual(['kept'])
+  })
+
+  it('출력은 id 사전순 정렬(결정론)', () => {
+    const out = mergeKeepInflight([], [wp('c'), wp('a'), wp('b')])
+    expect(out.map((w) => w.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('빈 existing/빈 incoming 안전', () => {
+    expect(mergeKeepInflight([], [])).toEqual([])
+    expect(mergeKeepInflight([wp('a', { status: 'in_progress' })], []).map((w) => w.id)).toEqual(['a'])
   })
 })
