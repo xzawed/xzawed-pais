@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 479/498 테스트, 19 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
+현재 상태: **구현 완료 (server 502/521 테스트, 19 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
 **최근 반영(PR-1 게이트 fail-safe)**: 승인 응답이 파싱 불가·비객체·미지 decision이면 자동 승인(fail-open)하지 않고 `needs_human`으로 사람 재검토를 요청한다(같은 산출물·사유 안내, `MAX_GATE_REASKS` 초과 시 세션 중단). revise 소진도 무음 통과 대신 에스컬레이션. `MANAGER_GATE_FAILSAFE=false`로 레거시 fail-open 복원 가능. senario M8(무음 통과 금지)·N1(불확실=실패) 구현.
 
@@ -47,7 +47,7 @@ packages/
         ├── config.ts           # 환경 변수 검증
         ├── server.ts           # Fastify HTTP (/health, port 3001)
         ├── streams/            # Redis consumer + producer + outbox-relay.ts(아웃박스→Redis 폴링 릴레이). StreamConsumer·SessionGatewayConsumer(P1c-3)·StreamProducer·WatcherEventConsumer(P1c-4, readGroupMulti)·RedisAgentHandler·switch-project·register-project(P1c-5, RequestReplyPort RPC 라운드트립)는 전송을 @xzawed/agent-streams RedisEventBus(EventBus/StreamConsumerPort/RequestReplyPort)에 위임. RedisAgentHandler ensureSessionStream(xgroup)·notifyGateway는 잔류(후속). DecompositionConsumer(P1d-2, decomposition.emitted→TaskGraph 빌드·영속, 미배선). dispatch.ts(P1d-4 planDispatch 순수+handleDispatch 오케스트레이션, P1d-6 done-set 파생)·lease.ts(P1d-5b planReclaim 순수+handleLeaseSweep)·completion.ts(P1d-6 handleCompletion: 완료→재디스패치)·lease-sweeper.ts(P1d-7 LeaseSweeper 타이머)·supervisor.ts(P1d-7 Supervisor 생명주기·createSupervisor·shouldWireSupervisor·buildCompletionHandler)·dispatch-constants.ts(디스패치/lease/완료 상태·이벤트 상수 단일출처). **P1d-7부터 `TASK_MANAGER_ENABLED`+DATABASE_URL이면 server.ts에 Supervisor 배선(이전 미배선 핸들러 가동)**
-        ├── decompose/          # decompose/(map.ts·producer.ts·trigger.ts) — **P2-2 분해 생산자**: decompose_request→단일 LLM 분해→content-hash WP[]→decomposition.emitted 발행(`MANAGER_DECOMPOSE_ENABLED` flag, off면 회귀 0; Supervisor가 소비)
+        ├── decompose/          # decompose/(map.ts·pipeline.ts·producer.ts·trigger.ts·stages/) — **P2-3a 다단계 분해 생산자**: decompose_request→4단계 LLM 분해(epics→vertical slice→독립 deliverables→roles)→커버리지 매트릭스 보고(로그 전용)→content-hash WP[]→decomposition.emitted 발행(`MANAGER_DECOMPOSE_ENABLED` flag, off면 회귀 0; Supervisor가 소비)
         ├── claude/runner.ts    # Claude tool-calling 루프 (승인 게이트·위키 주입/저장·AgentQuery 라우팅)
         ├── gates/              # approval-gate.ts: 게이트 모드·대상·결정 파싱
         ├── db/                 # knowledge.repo.ts + session.repo.ts + event-store.ts(이벤트소싱 append+replay) + task-graph.repo.ts(P1d-3 Task Graph 영속) + dispatch.repo.ts(P1d-4 디스패치 원자 적재 + P1d-5a lease 획득·dedup·appendWpEvent) + lease.repo.ts(P1d-5b LeaseStore 만료 조회·reclaim·escalate + P1d-6 recordCompletion) + pool.ts + migrations/(001~008)
@@ -64,7 +64,7 @@ packages/
 | `task_request` | Claude tool-calling 루프 시작. `payload.gateMode`(`manual\|auto`) 있으면 세션 기본 승인 모드로 적용(`setGateDefaultMode`) |
 | `info_response` | 대기 중 루프 재개. `answer`가 승인 게이트 응답이면 JSON 결정(`{decision: approve\|revise\|abort, rememberAuto?, saveToWiki?, wikiSummary?, feedback?}`)으로 해석 (`parseDecision`) |
 | `abort` | 루프 즉시 중단 |
-| `decompose_request` | `payload.intent` → flag on(`MANAGER_DECOMPOSE_ENABLED`)이면 단일 LLM 분해→decomposition.emitted 발행(Supervisor 소비). flag off면 분기 무시 |
+| `decompose_request` | `payload.intent` → flag on(`MANAGER_DECOMPOSE_ENABLED`)이면 4단계 LLM 분해→decomposition.emitted 발행(Supervisor 소비). flag off면 분기 무시 |
 
 **발신:** `manager:to-orchestrator:{sessionId}`
 | type | 시점 |
@@ -218,6 +218,7 @@ MANAGER_LEASE_SWEEP_MS=  # 선택: lease 만료 sweep 주기 ms(기본 30000)
 MANAGER_LEASE_VISIBILITY_MS= # 선택: lease 가시성 타임아웃 ms(기본 300000)
 MANAGER_LEASE_MAX_ATTEMPTS=  # 선택: 최대 디스패치 시도, 초과 시 escalate(기본 3)
 MANAGER_DECOMPOSE_ENABLED=   # 선택: 기본 false. true면 decompose_request 분해 생산자 배선(P2-2)
+CLAUDE_TIMEOUT_MS=           # 선택: 단계 LLM 호출 타임아웃 ms(기본 120000). P2-3a 분해 파이프라인 등에서 사용
 ```
 
 ## 보안 구현 패턴

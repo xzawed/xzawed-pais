@@ -133,9 +133,15 @@ export async function buildServer(
     app.log.warn('TASK_MANAGER_ENABLED=true 이지만 DATABASE_URL이 없어 Supervisor를 배선하지 않습니다.')
   }
 
-  // P2-2 분해 생산자(flag on): decompose_request → 단일 LLM 분해 → decomposition.emitted 발행.
+  // P2-3a 다단계 분해 생산자(flag on): decompose_request → 4단계 LLM 분해 → decomposition.emitted 발행.
   const decompose: ProduceDeps | undefined = config.MANAGER_DECOMPOSE_ENABLED
-    ? { claude: client, model: config.CLAUDE_MODEL, publish: (stream, message) => producer.publishRaw(stream, message) }
+    ? {
+        claude: client,
+        model: config.CLAUDE_MODEL,
+        publish: (stream, message) => producer.publishRaw(stream, message),
+        timeoutMs: config.CLAUDE_TIMEOUT_MS,
+        log: (msg, data) => app.log.info(data ?? {}, msg),
+      }
     : undefined
   if (config.MANAGER_DECOMPOSE_ENABLED) {
     app.log.info('[decompose] MANAGER_DECOMPOSE_ENABLED — decompose_request 생산자 배선')
