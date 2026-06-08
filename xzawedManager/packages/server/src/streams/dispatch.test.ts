@@ -148,4 +148,21 @@ describe('handleDispatch', () => {
     await handleDispatch('wf-1', { ...deps, visibilityMs: 9999 })
     expect(recordDispatch).toHaveBeenCalledWith(expect.objectContaining({ visibilityMs: 9999 }))
   })
+
+  it('latestStates에 선행이 DONE이면 후행이 ready로 디스패치된다(P1d-6 완료 unblock)', async () => {
+    const states = new Map([['a', stateRec('a', 'DONE')]])
+    const { deps, recordDispatch } = makeDeps(stored([wp('a'), wp('b', ['a'])]), states)
+    const out = await handleDispatch('wf-1', deps)
+    // a는 DONE(readyNodes 제외)·b는 dep a가 done이라 ready → b만 디스패치
+    expect(out.dispatched.map((x) => x.wpId)).toEqual(['b'])
+    expect(recordDispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('latestStates에 ESCALATED인 WP는 alreadyDispatched로 제외한다', async () => {
+    const states = new Map([['a', stateRec('a', 'ESCALATED')]])
+    const { deps, recordDispatch } = makeDeps(stored([wp('a'), wp('b')]), states)
+    const out = await handleDispatch('wf-1', deps)
+    expect(out.dispatched.map((x) => x.wpId)).toEqual(['b']) // a는 escalated 재디스패치 금지
+    expect(recordDispatch).toHaveBeenCalledTimes(1)
+  })
 })

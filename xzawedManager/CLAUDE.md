@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 435/453 테스트, 18 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
+현재 상태: **구현 완료 (server 443/462 테스트, 19 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
 **최근 반영(PR-1 게이트 fail-safe)**: 승인 응답이 파싱 불가·비객체·미지 decision이면 자동 승인(fail-open)하지 않고 `needs_human`으로 사람 재검토를 요청한다(같은 산출물·사유 안내, `MAX_GATE_REASKS` 초과 시 세션 중단). revise 소진도 무음 통과 대신 에스컬레이션. `MANAGER_GATE_FAILSAFE=false`로 레거시 fail-open 복원 가능. senario M8(무음 통과 금지)·N1(불확실=실패) 구현.
 
@@ -46,10 +46,10 @@ packages/
         ├── index.ts            # 진입점: Redis consumer 시작
         ├── config.ts           # 환경 변수 검증
         ├── server.ts           # Fastify HTTP (/health, port 3001)
-        ├── streams/            # Redis consumer + producer + outbox-relay.ts(아웃박스→Redis 폴링 릴레이). StreamConsumer·SessionGatewayConsumer(P1c-3)·StreamProducer·WatcherEventConsumer(P1c-4, readGroupMulti)·RedisAgentHandler·switch-project·register-project(P1c-5, RequestReplyPort RPC 라운드트립)는 전송을 @xzawed/agent-streams RedisEventBus(EventBus/StreamConsumerPort/RequestReplyPort)에 위임. RedisAgentHandler ensureSessionStream(xgroup)·notifyGateway는 잔류(후속). DecompositionConsumer(P1d-2, decomposition.emitted→TaskGraph 빌드·영속, 미배선). dispatch.ts(P1d-4 planDispatch 순수+handleDispatch 오케스트레이션, 미배선)·lease.ts(P1d-5b planReclaim 순수+handleLeaseSweep)·dispatch-constants.ts(디스패치/lease 상태·이벤트 상수 단일출처)
+        ├── streams/            # Redis consumer + producer + outbox-relay.ts(아웃박스→Redis 폴링 릴레이). StreamConsumer·SessionGatewayConsumer(P1c-3)·StreamProducer·WatcherEventConsumer(P1c-4, readGroupMulti)·RedisAgentHandler·switch-project·register-project(P1c-5, RequestReplyPort RPC 라운드트립)는 전송을 @xzawed/agent-streams RedisEventBus(EventBus/StreamConsumerPort/RequestReplyPort)에 위임. RedisAgentHandler ensureSessionStream(xgroup)·notifyGateway는 잔류(후속). DecompositionConsumer(P1d-2, decomposition.emitted→TaskGraph 빌드·영속, 미배선). dispatch.ts(P1d-4 planDispatch 순수+handleDispatch 오케스트레이션, P1d-6 done-set 파생, 미배선)·lease.ts(P1d-5b planReclaim 순수+handleLeaseSweep)·completion.ts(P1d-6 handleCompletion: 완료→재디스패치)·dispatch-constants.ts(디스패치/lease/완료 상태·이벤트 상수 단일출처)
         ├── claude/runner.ts    # Claude tool-calling 루프 (승인 게이트·위키 주입/저장·AgentQuery 라우팅)
         ├── gates/              # approval-gate.ts: 게이트 모드·대상·결정 파싱
-        ├── db/                 # knowledge.repo.ts + session.repo.ts + event-store.ts(이벤트소싱 append+replay) + task-graph.repo.ts(P1d-3 Task Graph 영속) + dispatch.repo.ts(P1d-4 디스패치 원자 적재 + P1d-5a lease 획득·dedup·appendWpEvent) + lease.repo.ts(P1d-5b LeaseStore 만료 조회·reclaim·escalate) + pool.ts + migrations/(001~008)
+        ├── db/                 # knowledge.repo.ts + session.repo.ts + event-store.ts(이벤트소싱 append+replay) + task-graph.repo.ts(P1d-3 Task Graph 영속) + dispatch.repo.ts(P1d-4 디스패치 원자 적재 + P1d-5a lease 획득·dedup·appendWpEvent) + lease.repo.ts(P1d-5b LeaseStore 만료 조회·reclaim·escalate + P1d-6 recordCompletion) + pool.ts + migrations/(001~008)
         ├── tools/              # ToolHandler 11개 (7 RedisAgent + register-project + switch-project + github-ops* + deploy-project* / *GITHUB_TOKEN 조건부) + agent-tool-map.ts + errors.ts
         ├── sessions/           # 세션 상태 추적 (session.store.ts: gateConfig·waitForInfo·게이트 override·EventStore 컴포지션)
         └── api/                # health 라우트 + knowledge.route.ts(GET 비인증·읽기; PATCH/DELETE는 authHook 설정 시 서비스 JWT 필요)
@@ -165,6 +165,15 @@ P1d Task Manager의 영속 토대. `EVENT_SOURCED_SESSION`과 무관하게 `runM
 - **`handleDispatch`(5a)**: `visibilityMs` 전달·`deduped`는 dispatched 제외·`skipped` 집계.
 - **`db/lease.repo.ts` `LeaseStore`(5b)**: `expiredActiveLeases`(status='active' AND expires_at<now)·`getLease`·원자 `recordReclaim`(lease UPDATE attempt++·새 만료 + wp.dispatched(attempt next) 단일 tx)·`recordEscalation`(status='escalated' + wp.escalated·ESCALATED 전이). `appendWpEvent`(5a) 재사용. **동시 sweep 직렬화**: reclaim=`AND attempt=$expected` **CAS**(reclaim은 status를 active로 유지하므로 status 가드만으론 이중 reclaim 미차단), escalate=status 단방향 전이. escalate는 lease.event_id 미갱신(dispatch provenance 보존).
 - **`streams/lease.ts`(5b)**: `planReclaim(expired, {maxAttempts})` **순수**(nextAttempt<maxAttempts→reclaim / 아니면 escalate)·`handleLeaseSweep(now, {store, maxAttempts?, visibilityMs?})`(expiredActiveLeases→planReclaim→항목별 recordReclaim/Escalation, outcome reclaimed/escalated/skipped). 실제 sweep 타이머 구동은 후속(server.ts 배선). `DEFAULT_MAX_ATTEMPTS=3`·`DEFAULT_VISIBILITY_MS=5분`(env `MANAGER_LEASE_MAX_ATTEMPTS`·`MANAGER_LEASE_VISIBILITY_MS` 오버라이드, 배선 시).
+
+## WP 완료 흐름 (P1d-6)
+
+WP 완료 시 lease release + 완료 전이(DISPATCHED→DONE) + **후행 unblock 재디스패치**로 디스패치 루프(dispatch→lease→complete→re-dispatch)를 닫는다. 미배선 코어(실제 완료 신호·server.ts 배선 후속). PO 결정: DISPATCHED→DONE·lease released·active lease만 완료·handleDispatch 재사용.
+
+- **`LeaseStore.recordCompletion`**: lease `status='released'`(WHERE status='active' 가드·active lease만 완료·동시 완료 직렬화) + `wp.completed`(DISPATCHED→DONE) 단일 tx(`transition` 재사용). lease.event_id 미갱신(provenance).
+- **`streams/completion.ts` `handleCompletion(workflowId, wpId, {leaseStore, dispatch})`**: getLease(비active→skip)→recordCompletion(skip이면 재디스패치 안 함)→`handleDispatch` 재디스패치. outcome `{status, dispatched, eventId?}`.
+- **`handleDispatch` 수정(P1d-6)**: DoR done 판정을 정적 graph_dag status가 아니라 **`latestStates`의 to_state='DONE'에서 파생**(완료가 후행 실제 unblock). `alreadyDispatched`=DISPATCHED∪ESCALATED(escalated 재디스패치 금지). 주입 isDone은 **합성**(DONE 항상 done 보존). **회귀 0**(DONE 없는 기존 경로 동작 불변).
+- ⚠️ **배선 전 해소(스펙 §8)**: WP 생명주기 이벤트(dispatched/completed/escalated)가 같은 (wpId,attempt) 멱등키 공유 → P1d-7 소비자 dedup은 event_id 또는 event_type 포함 필요. recordCompletion stale-attempt(TOCTOU)는 provenance만·active 가드로 무해.
 
 ## AgentQuery 교차질의
 

@@ -2,7 +2,7 @@ import { buildTaskGraph, readyNodes, topoSort } from '@xzawed/agent-streams'
 import type { TaskGraph, ReadinessOptions } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
-import { DRAFTED_STATE, DISPATCHED_STATE, DEFAULT_VISIBILITY_MS } from './dispatch-constants.js'
+import { DRAFTED_STATE, DISPATCHED_STATE, ESCALATED_STATE, DONE_STATE, DEFAULT_VISIBILITY_MS } from './dispatch-constants.js'
 
 export interface DispatchPlanItem {
   wpId: string
@@ -59,18 +59,25 @@ export async function handleDispatch(workflowId: string, deps: DispatchDeps): Pr
   // 사이클/구조오류는 P1d-2가 영속 전 차단하므로 getGraph는 정상 그래프만 보유(불변식).
   const graph = buildTaskGraph(stored.workPackages)
   const states = await deps.repo.latestStates(workflowId)
-  const alreadyDispatched = new Set<string>()
+  const alreadyDispatched = new Set<string>() // DISPATCHED ∪ ESCALATED — 재디스패치 금지
+  const doneSet = new Set<string>()           // DONE — DoR done(완료가 후행 unblock, P1d-6)
   for (const [wpId, rec] of states) {
-    if (rec.toState === DISPATCHED_STATE) alreadyDispatched.add(wpId)
+    if (rec.toState === DISPATCHED_STATE || rec.toState === ESCALATED_STATE) alreadyDispatched.add(wpId)
+    if (rec.toState === DONE_STATE) doneSet.add(wpId)
   }
+  // DoR done 판정을 latestStates(DONE)에서 파생 — 정적 graph_dag status 대신 실제 완료 반영(P1d-6).
+  // 주입 isDone(테스트/P3 oracle)은 **합성**(대체 아님) — DONE 상태는 항상 done으로 유지해 완료-unblock이
+  // 무음으로 끊기지 않게 한다. oracleSatisfied는 done과 직교라 명시 시 override.
+  const injectedDone = deps.readiness?.isDone
+  const readiness: ReadinessOptions = {
+    isDone: injectedDone ? (wp) => doneSet.has(wp.id) || injectedDone(wp) : (wp) => doneSet.has(wp.id),
+  }
+  if (deps.readiness?.oracleSatisfied) readiness.oracleSatisfied = deps.readiness.oracleSatisfied
 
   // skipped = ready ∩ alreadyDispatched. ready와 planDispatch 내부 readyNodes는 같은
   // graph·readiness에 대한 순수·결정론 호출(N4 불변식)이라 결과가 일치 → 차집합 크기로 정확.
-  const ready = readyNodes(graph, deps.readiness)
-  const planOpts: PlanDispatchOptions = deps.readiness
-    ? { alreadyDispatched, readiness: deps.readiness }
-    : { alreadyDispatched }
-  const plan = planDispatch(graph, planOpts)
+  const ready = readyNodes(graph, readiness)
+  const plan = planDispatch(graph, { alreadyDispatched, readiness })
   const skipped = ready.length - plan.length
 
   const visibilityMs = deps.visibilityMs ?? DEFAULT_VISIBILITY_MS

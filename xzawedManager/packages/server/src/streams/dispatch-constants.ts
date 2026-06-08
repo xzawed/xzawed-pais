@@ -19,6 +19,11 @@ export const DISPATCH_ACTOR = 'task-manager'
 export const LEASE_ACTIVE = 'active'
 /** lease 상태 — escalated(상한 초과 사람 에스컬레이션). P1d-5b. */
 export const LEASE_ESCALATED = 'escalated'
+/** lease 상태 — released(WP 완료로 임대 해제). P1d-6. */
+export const LEASE_RELEASED = 'released'
+/** WP 완료 상태(wp_state_log.to_state) + 이벤트 타입. P1d-6. */
+export const DONE_STATE = 'DONE'
+export const WP_COMPLETED_EVENT = 'wp.completed'
 /** WP 에스컬레이션 상태(wp_state_log.to_state) + 이벤트 타입. P1d-5b. */
 export const ESCALATED_STATE = 'ESCALATED'
 export const WP_ESCALATED_EVENT = 'wp.escalated'

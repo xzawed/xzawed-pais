@@ -2,7 +2,8 @@ import type { Pool, PoolClient } from 'pg'
 import type { EventEnvelope } from '@xzawed/agent-streams'
 import { appendWpEvent, wpEnvelope } from './dispatch.repo.js'
 import {
-  LEASE_ACTIVE, LEASE_ESCALATED, DISPATCHED_STATE, WP_DISPATCHED_EVENT, ESCALATED_STATE, WP_ESCALATED_EVENT,
+  LEASE_ACTIVE, LEASE_ESCALATED, LEASE_RELEASED, DISPATCHED_STATE, WP_DISPATCHED_EVENT,
+  ESCALATED_STATE, WP_ESCALATED_EVENT, DONE_STATE, WP_COMPLETED_EVENT,
 } from '../streams/dispatch-constants.js'
 
 export interface LeaseRecord {
@@ -40,8 +41,12 @@ export interface ReclaimInput {
 export interface EscalateInput {
   workflowId: string; wpId: string; attempt: number; stepN: number; causationId?: string | null
 }
+export interface CompleteInput {
+  workflowId: string; wpId: string; attempt: number; stepN: number; causationId?: string | null
+}
 export type ReclaimResult = { status: 'reclaimed'; eventId: string; seq: number } | { status: 'skipped' }
 export type EscalateResult = { status: 'escalated'; eventId: string; seq: number } | { status: 'skipped' }
+export type CompleteResult = { status: 'completed'; eventId: string; seq: number } | { status: 'skipped' }
 
 const LEASE_COLS = 'workflow_id, wp_id, attempt, owner, status, expires_at, step_n, event_id'
 
@@ -126,6 +131,31 @@ export class LeaseStore {
       },
     )
     return res === null ? { status: 'skipped' } : { status: 'escalated', ...res }
+  }
+
+  /**
+   * complete: WP 완료 — lease를 released로 갱신하고 wp.completed(DISPATCHED→DONE)를 적재.
+   * active 가드(status='active'→'released' 단방향)로 active lease인 WP만 완료·동시 완료 직렬화(두 번째 0행 skip).
+   * lease.event_id는 갱신하지 않음(dispatch provenance 보존). attempt·stepN은 호출자가 getLease로 전달.
+   * ⚠️ reclaim과 달리 attempt CAS는 없다(완료는 active만 가드) — getLease 후 동시 reclaim 시 이벤트 payload·
+   * 멱등키의 attempt가 stale일 수 있으나(provenance만), active→released 단방향이 완료를 직렬화해 중복·이중
+   * DONE은 없다. attempt CAS를 넣으면 reclaim 직후 '진짜 끝낸' 완료를 무시할 위험이라 의도적 미적용(P1d-7 재검토).
+   */
+  async recordCompletion(input: CompleteInput): Promise<CompleteResult> {
+    const now = this.now()
+    const env = wpEnvelope(input.workflowId, input.wpId, input.attempt, now, input.causationId)
+    const res = await this.transition(
+      env,
+      `UPDATE wp_leases SET status = $1, updated_at = NOW()
+        WHERE workflow_id = $2 AND wp_id = $3 AND status = $4
+        RETURNING wp_id`,
+      [LEASE_RELEASED, input.workflowId, input.wpId, LEASE_ACTIVE],
+      {
+        workflowId: input.workflowId, wpId: input.wpId, attempt: input.attempt, stepN: input.stepN,
+        eventType: WP_COMPLETED_EVENT, fromState: DISPATCHED_STATE, toState: DONE_STATE, reason: 'completed',
+      },
+    )
+    return res === null ? { status: 'skipped' } : { status: 'completed', ...res }
   }
 
   /**
