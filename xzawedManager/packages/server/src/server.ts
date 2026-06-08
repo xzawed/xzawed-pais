@@ -35,6 +35,7 @@ import { TaskGraphRepo } from './db/task-graph.repo.js'
 import { DispatchStore } from './db/dispatch.repo.js'
 import { LeaseStore } from './db/lease.repo.js'
 import { createSupervisor, shouldWireSupervisor, type Supervisor } from './streams/supervisor.js'
+import type { ProduceDeps } from './decompose/producer.js'
 
 export async function buildServer(
   config: Config,
@@ -132,6 +133,14 @@ export async function buildServer(
     app.log.warn('TASK_MANAGER_ENABLED=true 이지만 DATABASE_URL이 없어 Supervisor를 배선하지 않습니다.')
   }
 
+  // P2-2 분해 생산자(flag on): decompose_request → 단일 LLM 분해 → decomposition.emitted 발행.
+  const decompose: ProduceDeps | undefined = config.MANAGER_DECOMPOSE_ENABLED
+    ? { claude: client, model: config.CLAUDE_MODEL, publish: (stream, message) => producer.publishRaw(stream, message) }
+    : undefined
+  if (config.MANAGER_DECOMPOSE_ENABLED) {
+    app.log.info('[decompose] MANAGER_DECOMPOSE_ENABLED — decompose_request 생산자 배선')
+  }
+
   const authHook = config.SERVICE_JWT_SECRET ? verifyServiceToken : undefined
 
   const watcherEventConsumer = new WatcherEventConsumer(
@@ -180,11 +189,13 @@ export async function buildServer(
     activeConsumers,
     watcherEventConsumer,
     ...(authHook && { authHook }),
+    ...(decompose && { decompose }),
   })
 
   const startManagedSession = makeSessionStarter({
     redisUrl: config.REDIS_URL, runner, producer, sessionStore, activeConsumers,
     watcherEventConsumer,
+    ...(decompose && { decompose }),
     log: { error: (obj, msg) => app.log.error(obj, msg) },
   })
 
