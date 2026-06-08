@@ -1,7 +1,7 @@
 import type { UserContext } from './user-context.js'
 
 export type { UserContext }
-export type OrchestratorMessageType = 'task_request' | 'info_response' | 'abort'
+export type OrchestratorMessageType = 'task_request' | 'info_response' | 'abort' | 'decompose_request'
 export type ManagerMessageType = 'status_update' | 'info_request' | 'task_complete' | 'error' | 'knowledge_changed'
 
 interface BaseMessage {
@@ -32,7 +32,16 @@ export interface AbortMessage extends BaseMessage {
   payload: Record<string, never>
 }
 
-export type OrchestratorToManagerMessage = TaskRequestMessage | InfoResponseMessage | AbortMessage
+export interface DecomposeRequestMessage extends BaseMessage {
+  type: 'decompose_request'
+  payload: { intent: string }
+}
+
+export type OrchestratorToManagerMessage =
+  | TaskRequestMessage
+  | InfoResponseMessage
+  | AbortMessage
+  | DecomposeRequestMessage
 
 /** 승인 게이트 요청 메타 — info_request payload에 실어 Orchestrator UI가 승인/수정/중단을 렌더한다. */
 export interface ApprovalRequest {

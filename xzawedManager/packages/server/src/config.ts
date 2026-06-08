@@ -34,6 +34,12 @@ const configSchema = z
     MANAGER_LEASE_SWEEP_MS: z.coerce.number().int().positive().default(30_000),
     MANAGER_LEASE_VISIBILITY_MS: z.coerce.number().int().positive().default(300_000),
     MANAGER_LEASE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
+    // P2-2 분해 생산자 배선(기본 false). true면 decompose_request → 단일 LLM 분해 → decomposition.emitted
+    // 발행을 sessions.route에 배선(Supervisor가 소비). off면 핸들러 미주입(레거시 회귀 0).
+    MANAGER_DECOMPOSE_ENABLED: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

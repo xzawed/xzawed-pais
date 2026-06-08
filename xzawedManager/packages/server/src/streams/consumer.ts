@@ -41,10 +41,19 @@ const AbortSchema = z.object({
   payload: z.record(z.never()),
 })
 
-const OrchestratorToManagerMessageSchema = z.union([
+const DecomposeRequestSchema = z.object({
+  sessionId: z.string(),
+  messageId: z.string(),
+  timestamp: z.number(),
+  type: z.literal('decompose_request'),
+  payload: z.object({ intent: z.string().min(1) }),
+})
+
+export const OrchestratorToManagerMessageSchema = z.union([
   TaskRequestSchema,
   InfoResponseSchema,
   AbortSchema,
+  DecomposeRequestSchema,
 ])
 
 export class StreamConsumer {

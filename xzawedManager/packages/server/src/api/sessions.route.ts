@@ -8,6 +8,8 @@ import type { ToolRegistry } from '../tools/registry.js'
 import type { OrchestratorToManagerMessage } from '../types/streams.js'
 import { ensureWorkspace } from '../workspace.js'
 import type { WatcherEventConsumer } from '../streams/watcher-event-consumer.js'
+import { handleDecomposeRequest } from '../decompose/trigger.js'
+import type { ProduceDeps } from '../decompose/producer.js'
 
 type RouteHook = (req: FastifyRequest, reply: FastifyReply) => Promise<void>
 
@@ -20,6 +22,8 @@ export interface SessionsRouteOptions {
   activeConsumers?: Map<string, StreamConsumer>
   authHook?: RouteHook
   watcherEventConsumer?: WatcherEventConsumer
+  /** P2-2: 주입되면(flag on) decompose_request를 단일 LLM 분해→발행으로 처리. 미주입이면 분기 무시. */
+  decompose?: ProduceDeps
 }
 
 export function makeSessionStarter(
@@ -27,6 +31,7 @@ export function makeSessionStarter(
     activeConsumers: Map<string, StreamConsumer>
     registry?: ToolRegistry
     watcherEventConsumer?: WatcherEventConsumer
+    decompose?: ProduceDeps
     log: { error: (obj: unknown, msg: string) => void }
   },
 ) {
@@ -91,6 +96,22 @@ export function makeSessionStarter(
         })
       } else if (msg.type === 'info_response') {
         await opts.sessionStore.resolveInfo(sessionId, msg.payload.answer)
+      } else if (msg.type === 'decompose_request' && opts.decompose) {
+        void handleDecomposeRequest(
+          sessionId,
+          msg.payload.intent,
+          opts.decompose,
+          opts.producer,
+          async () => {
+            opts.watcherEventConsumer?.unwatchSession(sessionId)
+            consumer.stop()
+            await opts.sessionStore.delete(sessionId)
+            opts.activeConsumers.delete(sessionId)
+            opts.registry?.releaseAll(sessionId)
+          },
+        ).catch((err: unknown) => {
+          opts.log.error({ err, sessionId }, 'decompose_request handler error')
+        })
       } else if (msg.type === 'abort') {
         opts.watcherEventConsumer?.unwatchSession(sessionId)
         await opts.sessionStore.abort(sessionId)
@@ -120,6 +141,7 @@ export async function sessionsRoute(
     redisUrl, runner, producer, sessionStore, activeConsumers,
     ...(registry !== undefined && { registry }),
     ...(opts.watcherEventConsumer !== undefined && { watcherEventConsumer: opts.watcherEventConsumer }),
+    ...(opts.decompose !== undefined && { decompose: opts.decompose }),
     log: { error: (obj, msg) => app.log.error(obj, msg) },
   })
 
