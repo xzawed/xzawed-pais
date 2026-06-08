@@ -23,6 +23,8 @@ describe('runDecomposition', () => {
     expect(workPackages.every((w) => w.id.startsWith('wp_'))).toBe(true)
     expect(workPackages.every((w) => w.dependencies.length === 0)).toBe(true) // flat (간선 없음)
     expect(coverage.gaps).toEqual(['d2']) // d2는 어느 story도 미주장
+    expect(coverage.overlaps).toEqual([])
+    expect(coverage.unknownClaims).toEqual([])
     expect(() => buildTaskGraph(workPackages)).not.toThrow()
   })
 

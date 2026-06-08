@@ -14,7 +14,13 @@ export interface DecomposeResult {
 
 /** intent 한 줄을 단일 WP로(전체 붕괴 시 최종 안전망). */
 export function fallbackWorkPackages(intent: string): WorkPackage[] {
-  const wp: LlmWorkPackage = { ref: 'wp-1', storyId: 'story-1', owningRole: 'developer', acceptanceCriteria: [intent], dependsOn: [] }
+  const wp: LlmWorkPackage = {
+    ref: 'wp-1',
+    storyId: 'story-1',
+    owningRole: 'developer',
+    acceptanceCriteria: [intent],
+    dependsOn: [],
+  }
   return toWorkPackages([wp])
 }
 
@@ -26,6 +32,7 @@ export async function runDecomposition(intent: string, deps: StageDeps): Promise
   const epics = await identifyEpics(intent, deps)
   const stories = await sliceVertical(epics, intent, deps)
   const deliverables = await deriveDeliverables(intent, deps)
+  // coverage는 stories의 deliverable claim과 독립 인벤토리만 사용 — roles와 무관(순서 변경 무방).
   const coverage = coverageMatrix(
     stories.map((s) => ({ storyId: s.storyId, deliverableIds: s.deliverableIds })),
     deliverables,
