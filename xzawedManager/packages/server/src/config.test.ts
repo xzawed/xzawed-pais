@@ -30,3 +30,33 @@ describe('config CLAUDE_TIMEOUT_MS', () => {
     expect(loadConfig().CLAUDE_TIMEOUT_MS).toBe(5000)
   })
 })
+
+describe('config MANAGER_DECOMPOSE_REPAIR_MAX', () => {
+  let savedMode: string | undefined
+  let savedKey: string | undefined
+
+  beforeEach(() => {
+    savedMode = process.env['MODE']
+    savedKey = process.env['ANTHROPIC_API_KEY']
+    process.env['MODE'] = 'local'
+    process.env['ANTHROPIC_API_KEY'] = 'k'
+  })
+
+  afterEach(() => {
+    if (savedMode !== undefined) process.env['MODE'] = savedMode
+    else delete process.env['MODE']
+    if (savedKey !== undefined) process.env['ANTHROPIC_API_KEY'] = savedKey
+    else delete process.env['ANTHROPIC_API_KEY']
+    delete process.env['MANAGER_DECOMPOSE_REPAIR_MAX']
+  })
+
+  it('기본값 2', () => {
+    delete process.env['MANAGER_DECOMPOSE_REPAIR_MAX']
+    expect(loadConfig().MANAGER_DECOMPOSE_REPAIR_MAX).toBe(2)
+  })
+
+  it('env 값 적용', () => {
+    process.env['MANAGER_DECOMPOSE_REPAIR_MAX'] = '5'
+    expect(loadConfig().MANAGER_DECOMPOSE_REPAIR_MAX).toBe(5)
+  })
+})

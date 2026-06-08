@@ -42,6 +42,8 @@ const configSchema = z
       .transform((v) => v === 'true'),
     // 단계 LLM 호출 타임아웃(ms). P2-3a 분해 파이프라인 등에서 사용. 잘못된 값은 거부(양의 정수).
     CLAUDE_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+    // P4 분해 repair 루프 최대 반복(기본 2). 소진 시 decomposition.inconsistent 에스컬레이션. 양의 정수.
+    MANAGER_DECOMPOSE_REPAIR_MAX: z.coerce.number().int().positive().default(2),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {
