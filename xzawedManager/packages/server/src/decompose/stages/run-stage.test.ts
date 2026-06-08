@@ -41,4 +41,9 @@ describe('runStage', () => {
     const out = await runStage(deps(claude), spec())
     expect(out.items).toEqual(['fb'])
   })
+
+  it('중괄호는 있으나 깨진 JSON이면 fallback', async () => {
+    const out = await runStage(deps(mockClaude('{ broken json }')), spec())
+    expect(out.items).toEqual(['fb'])
+  })
 })

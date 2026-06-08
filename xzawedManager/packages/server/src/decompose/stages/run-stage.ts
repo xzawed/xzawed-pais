@@ -19,13 +19,17 @@ export interface StageSpec<T> {
   fallback: () => T
 }
 
-/** 텍스트에서 최외곽 { .. } 를 추출해 JSON.parse. 실패 시 undefined. */
+/** 텍스트에서 최외곽 { .. } 를 추출해 JSON.parse. 추출 불가·파싱 실패 시 undefined. (배열 루트 응답은 미지원) */
 function extractJson(text: string): unknown {
   const cleaned = stripJsonFences(text)
   const start = cleaned.indexOf('{')
   const end = cleaned.lastIndexOf('}')
   if (start === -1 || end === -1 || end < start) return undefined
-  return JSON.parse(cleaned.slice(start, end + 1))
+  try {
+    return JSON.parse(cleaned.slice(start, end + 1))
+  } catch {
+    return undefined
+  }
 }
 
 /**
