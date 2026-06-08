@@ -10,6 +10,12 @@ function mockDecompose(publish: ProduceDeps['publish']): ProduceDeps {
   return { claude, model: 'm', publish, now: () => 1 }
 }
 
+function stagedDecompose(publish: ProduceDeps['publish'], ...texts: string[]): ProduceDeps {
+  const create = vi.fn()
+  for (const t of texts) create.mockResolvedValueOnce({ content: [{ type: 'text', text: t }] })
+  return { claude: { messages: { create } } as ClaudeLike, model: 'm', publish, now: () => 1, repairMax: 2 }
+}
+
 describe('handleDecomposeRequest', () => {
   it('분해 발행 + task_complete 발행 + cleanup 호출', async () => {
     const emitPublish = vi.fn().mockResolvedValue('1-0')
@@ -34,6 +40,29 @@ describe('handleDecomposeRequest', () => {
     await expect(
       handleDecomposeRequest('sess-2', 'x', failingDecompose, badProducer, cleanup),
     ).rejects.toThrow()
+    expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+
+  it('수렴 실패 시 에스컬레이션 메시지 task_complete', async () => {
+    const emitPublish = vi.fn().mockResolvedValue('1-0')
+    const producerPublish = vi.fn().mockResolvedValue('1-0')
+    const cleanup = vi.fn().mockResolvedValue(undefined)
+    const decompose = stagedDecompose(
+      emitPublish,
+      '{"epics":[{"epicRef":"e1","title":"T"}]}',
+      '{"stories":[{"storyId":"s1","epicRef":"e1","title":"T","deliverableIds":["d1"],"acceptanceCriteria":["x"]}]}',
+      '{"deliverables":["d1","d2"]}',
+      'garbage',
+      'garbage',
+    )
+
+    await handleDecomposeRequest('sess-3', 'build', decompose, { publish: producerPublish }, cleanup)
+
+    const completeMsg = producerPublish.mock.calls[0]![0]
+    expect(completeMsg.type).toBe('task_complete')
+    expect(completeMsg.payload.content).toContain('에스컬레이션')
+    const emitMsg = emitPublish.mock.calls[0]![1]
+    expect(emitMsg.type).toBe('decomposition.inconsistent')
     expect(cleanup).toHaveBeenCalledTimes(1)
   })
 })
