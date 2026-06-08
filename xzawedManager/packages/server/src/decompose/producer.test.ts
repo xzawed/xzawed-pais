@@ -20,7 +20,8 @@ const ROLES = '{"assignments":[{"storyId":"s1","roles":["developer","designer"]}
 describe('produceDecomposition', () => {
   it('4단계 정상 → decomposition.emitted를 올바른 스트림/스키마로 발행', async () => {
     const publish = vi.fn().mockResolvedValue('1-0')
-    const res = await produceDecomposition('build a thing', 'wf-1', deps(stagedClaude(EPICS, STORIES, DELIVS, ROLES), publish))
+    const logSpy = vi.fn()
+    const res = await produceDecomposition('build a thing', 'wf-1', { ...deps(stagedClaude(EPICS, STORIES, DELIVS, ROLES), publish), log: logSpy })
 
     expect(res.emitted).toBe(2) // s1×developer, s1×designer
     expect(publish).toHaveBeenCalledTimes(1)
@@ -32,6 +33,8 @@ describe('produceDecomposition', () => {
     expect(msg.envelope.occurredAt).toBe(1000)
     expect(msg.payload.workPackages).toHaveLength(2)
     expect(msg.payload.workPackages[0].id).toMatch(/^wp_[0-9a-f]{32}$/)
+    expect(logSpy).toHaveBeenCalledWith('[decompose] coverage', { gaps: 0, overlaps: 0, unknownClaims: 0 })
+    expect(msg.payload).not.toHaveProperty('coverage')
   })
 
   it('전 단계 파싱 실패 시 fallback 단일 WP 발행', async () => {

@@ -1,5 +1,5 @@
 import { makeEnvelope } from '@xzawed/agent-streams'
-import type { ClaudeLike } from '@xzawed/agent-streams'
+import type { ClaudeLike, WorkPackage } from '@xzawed/agent-streams'
 import { runDecomposition, fallbackWorkPackages } from './pipeline.js'
 
 /** Supervisor DecompositionConsumer가 구독하는 스트림(manager:decomposition:{channel='main'}). */
@@ -29,7 +29,7 @@ export async function produceDecomposition(
   workflowId: string,
   deps: ProduceDeps,
 ): Promise<{ emitted: number }> {
-  let workPackages
+  let workPackages: WorkPackage[]
   try {
     const result = await runDecomposition(intent, {
       claude: deps.claude,
@@ -42,7 +42,10 @@ export async function produceDecomposition(
       overlaps: result.coverage.overlaps.length,
       unknownClaims: result.coverage.unknownClaims.length,
     })
-  } catch {
+  } catch (err) {
+    deps.log?.('[decompose] runDecomposition threw unexpectedly — falling back', {
+      error: err instanceof Error ? err.message : String(err),
+    })
     workPackages = fallbackWorkPackages(intent)
   }
 
