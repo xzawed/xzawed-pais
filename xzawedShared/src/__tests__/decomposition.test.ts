@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { coverageMatrix } from '../decomposition/index.js'
+import { coverageMatrix, contentHashId } from '../decomposition/index.js'
 
 describe('coverageMatrix', () => {
   it('완전 커버면 갭·중복·unknown 모두 빈 배열', () => {
@@ -89,5 +89,37 @@ describe('coverageMatrix', () => {
       { storyId: 's1', deliverableId: 'dX' },
       { storyId: 's2', deliverableId: 'dY' },
     ])
+  })
+})
+
+describe('contentHashId', () => {
+  const base = { storyId: 's1', owningRole: 'developer', acceptanceCriteria: ['a', 'b'] }
+
+  it('wp_ 접두 + hex 32자 형식', () => {
+    const id = contentHashId(base)
+    expect(id).toMatch(/^wp_[0-9a-f]{32}$/)
+  })
+
+  it('acceptanceCriteria 순서가 달라도 같은 id', () => {
+    const id1 = contentHashId({ ...base, acceptanceCriteria: ['a', 'b'] })
+    const id2 = contentHashId({ ...base, acceptanceCriteria: ['b', 'a'] })
+    expect(id1).toBe(id2)
+  })
+
+  it('같은 입력 반복 시 같은 id(결정론)', () => {
+    expect(contentHashId(base)).toBe(contentHashId({ ...base }))
+  })
+
+  it('storyId 또는 owningRole이 다르면 다른 id', () => {
+    expect(contentHashId(base)).not.toBe(contentHashId({ ...base, storyId: 's2' }))
+    expect(contentHashId(base)).not.toBe(contentHashId({ ...base, owningRole: 'designer' }))
+  })
+
+  it('acceptanceCriteria 내용이 다르면 다른 id', () => {
+    expect(contentHashId(base)).not.toBe(contentHashId({ ...base, acceptanceCriteria: ['a', 'c'] }))
+  })
+
+  it('빈 acceptanceCriteria 허용', () => {
+    expect(contentHashId({ ...base, acceptanceCriteria: [] })).toMatch(/^wp_[0-9a-f]{32}$/)
   })
 })
