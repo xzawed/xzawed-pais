@@ -63,8 +63,11 @@ for (const [wpId, rec] of states) {
   if (rec.toState === DISPATCHED_STATE || rec.toState === ESCALATED_STATE) alreadyDispatched.add(wpId)
   if (rec.toState === DONE_STATE) doneSet.add(wpId)
 }
-const readiness: ReadinessOptions = { isDone: (wp) => doneSet.has(wp.id) }
-if (deps.readiness?.isDone) readiness.isDone = deps.readiness.isDone               // 테스트/P3 override
+// 주입 isDone은 **합성**(대체 아님) — DONE 상태는 항상 done으로 유지(완료-unblock 보존). oracle은 직교.
+const injectedDone = deps.readiness?.isDone
+const readiness: ReadinessOptions = {
+  isDone: injectedDone ? (wp) => doneSet.has(wp.id) || injectedDone(wp) : (wp) => doneSet.has(wp.id),
+}
 if (deps.readiness?.oracleSatisfied) readiness.oracleSatisfied = deps.readiness.oracleSatisfied
 ```
 - `ready = readyNodes(graph, readiness)` / `planDispatch(graph, { alreadyDispatched, readiness })`.
@@ -86,3 +89,10 @@ WP X 완료 → recordCompletion(lease released·X→DONE) → handleDispatch(la
 
 ## 7. 회귀·검증
 handleDispatch 수정(기존 테스트 회귀 0 확인)·LeaseStore +recordCompletion·신규 completion.ts. `cd xzawedManager && pnpm build && pnpm test`. audit·CPD(transition·appendWpEvent 재사용). 적대적 리뷰(완료 가드·done-set 파생·재디스패치 멱등·동시 완료 직렬화·회귀). PR → CI 그린 → squash. CLAUDE.md·메모리 갱신. **다음 P1d-7**(P1d 마지막: 잔여 범위 PO 확인 — 유력 Supervisor 런타임 배선).
+
+## 8. 알려진 한계 (배선 슬라이스 P1d-7에서 해소)
+
+적대적 리뷰(4확정 low)에서 도출된, **미배선이라 현재 미발현이나 배선(소비자/Supervisor) 전 해소**할 잠복 항목.
+
+1. **WP 생명주기 이벤트가 attempt 멱등키를 공유** [리뷰 low·P1d-5b 선례]. `wp.dispatched`·`wp.completed`·`wp.escalated`는 모두 봉투 stepId=`wp-${wpId}`·attemptId=attempt로 멱등키 `{wf}:wp-${wpId}:${attempt}`를 만든다 → **같은 (wpId, attempt)면 이벤트 타입이 달라도 멱등키가 동일**. 모두 `manager:events:{wf}`로 발행되므로, P1d-7에서 이 스트림을 BaseConsumer M6 dedup(`SET idem:{stream}:{key} NX`)으로 소비하면 `wp.completed`가 앞선 `wp.dispatched`의 중복으로 판정돼 skip될 수 있다(manager_events.idempotency_key UNIQUE 아님 — DB는 막지 않음). **해소(배선 전)**: 멱등키에 이벤트 타입 포함(예 stepId=`wp-${wpId}:${eventType}`) 또는 `manager:events` 소비자 dedup을 `event_id` 기반으로. wp.dispatched 자체 멱등(재디스패치 attempt별)은 유지.
+2. **recordCompletion의 stale attempt(TOCTOU)** [리뷰 low·provenance만]. `handleCompletion`이 `getLease`로 읽은 attempt를 전달하고 recordCompletion은 attempt CAS 없이 active만 가드 → getLease 후 동시 reclaim 시 이벤트 attempt가 stale일 수 있다(상태 전이는 정확, provenance만 부정확). active→released 단방향이 완료를 직렬화해 중복·이중 DONE은 없다. attempt CAS를 넣으면 reclaim 직후 '진짜 끝낸' 완료를 무시할 위험이라 **의도적 미적용** — P1d-7 동시 sweep 배선 시 재검토(예: tx 내 UPDATE…RETURNING attempt로 재독).
