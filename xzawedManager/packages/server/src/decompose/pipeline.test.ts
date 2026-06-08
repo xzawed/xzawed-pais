@@ -25,7 +25,7 @@ describe('runDecomposition (P2-3b)', () => {
     if (res.status !== 'ok') return
     expect(res.workPackages).toHaveLength(1)
     expect(res.coverage.gaps).toEqual([])
-    expect(res.singleRoleStoryIds).toEqual(['s1'])
+    expect(res.singleRoleStoryIds).toEqual(['s1']) // ROLES가 s1에 단일 역할만 부여 → 린트 신호
     expect(() => buildTaskGraph(res.workPackages)).not.toThrow()
   })
 
@@ -39,6 +39,14 @@ describe('runDecomposition (P2-3b)', () => {
 
   it('K 소진 → status inconsistent (reason coverage)', async () => {
     const res = await runDecomposition('build', stagedDeps(EPICS, STORY_D1, DELIVS_GAP, 'garbage', 'garbage'), 2)
+    expect(res.status).toBe('inconsistent')
+    if (res.status !== 'inconsistent') return
+    expect(res.reason).toBe('coverage')
+    expect(res.coverage.gaps).toEqual(['d2'])
+  })
+
+  it('repairMax=1 → 1회 repair 후 미수렴이면 inconsistent (루프 상한 증명)', async () => {
+    const res = await runDecomposition('build', stagedDeps(EPICS, STORY_D1, DELIVS_GAP, 'garbage'), 1)
     expect(res.status).toBe('inconsistent')
     if (res.status !== 'inconsistent') return
     expect(res.reason).toBe('coverage')
