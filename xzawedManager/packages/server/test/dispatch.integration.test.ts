@@ -21,6 +21,7 @@ d('디스패치 통합 (pg)', () => {
     await p.query("DELETE FROM manager_outbox WHERE stream LIKE 'manager:events:wf-disp-%'")
     await p.query("DELETE FROM manager_events WHERE session_id LIKE 'wf-disp-%'")
     await p.query("DELETE FROM wp_state_log WHERE workflow_id LIKE 'wf-disp-%'")
+    await p.query("DELETE FROM wp_leases WHERE workflow_id LIKE 'wf-disp-%'")
     await p.query("DELETE FROM task_graphs WHERE workflow_id LIKE 'wf-disp-%'")
   }
   beforeAll(async () => {
@@ -65,6 +66,29 @@ d('디스패치 통합 (pg)', () => {
     const latest = await repo.latestStates(wfId)
     expect(latest.get('a')?.toState).toBe('DISPATCHED')
     expect(latest.get('b')?.toState).toBe('DISPATCHED')
+
+    // P1d-5a: 각 디스패치가 active lease(attempt 0·expires_at)를 획득
+    const leases = await pool.query(
+      `SELECT wp_id, attempt, status, expires_at FROM wp_leases WHERE workflow_id = $1 ORDER BY wp_id`, [wfId],
+    )
+    expect(leases.rows.map((r) => r.wp_id)).toEqual(['a', 'b'])
+    expect(leases.rows.every((r) => r.attempt === 0 && r.status === 'active' && Number(r.expires_at) > 0)).toBe(true)
+  })
+
+  it('같은 (wf, wp)에 recordDispatch를 두 번 하면 두 번째는 lease PK로 deduped된다(§8 #2 DB 레벨 dedup)', async () => {
+    const wfId = `wf-disp-${Date.now()}-dedup`
+    const store = new DispatchStore(pool)
+    const input = { workflowId: wfId, wpId: 'x', stepN: 0, fromState: 'DRAFTED', visibilityMs: 5000 }
+    const first = await store.recordDispatch(input)
+    const second = await store.recordDispatch(input)
+    expect(first.status).toBe('recorded')
+    expect(second.status).toBe('deduped') // lease PK + ON CONFLICT DO NOTHING
+
+    const leases = await pool.query(`SELECT wp_id FROM wp_leases WHERE workflow_id = $1`, [wfId])
+    expect(leases.rows).toHaveLength(1) // lease 1행
+    const ev = await pool.query(
+      `SELECT seq FROM manager_events WHERE session_id = $1 AND event_type = 'wp.dispatched'`, [wfId])
+    expect(ev.rows).toHaveLength(1) // 이벤트 1건(중복 적재 0)
   })
 
   it('멱등: 재실행하면 이미 DISPATCHED인 WP는 skip하고 중복 기록을 만들지 않는다', async () => {

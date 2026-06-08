@@ -14,3 +14,15 @@ export const DISPATCHED_STATE = 'DISPATCHED'
 export const WP_DISPATCHED_EVENT = 'wp.dispatched'
 /** 디스패치 이벤트의 actor(manager_events.actor). */
 export const DISPATCH_ACTOR = 'task-manager'
+
+/** lease 상태(wp_leases.status) — active. P1d-5. */
+export const LEASE_ACTIVE = 'active'
+/** lease 가시성 타임아웃 기본값(ms, 5분). env MANAGER_LEASE_VISIBILITY_MS로 오버라이드(배선 시). */
+export const DEFAULT_VISIBILITY_MS = 300_000
+
+/**
+ * 봉투 stepId 빌더(멱등키 §8 #1) — 멱등키를 위치(step-N)가 아니라 **WP content-hash id**에 고정한다.
+ * 멱등키 = `{wf}:wp-${wpId}:${attempt}` → 재분해(topo order 변경)에 무관·attempt별 구분.
+ * step-N은 이벤트 payload에 표시·정렬용(N4)으로 유지.
+ */
+export const wpStepId = (wpId: string): string => `wp-${wpId}`

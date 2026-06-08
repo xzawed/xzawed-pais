@@ -2,11 +2,11 @@ import { buildTaskGraph, readyNodes, topoSort } from '@xzawed/agent-streams'
 import type { TaskGraph, ReadinessOptions } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
-import { DRAFTED_STATE, DISPATCHED_STATE } from './dispatch-constants.js'
+import { DRAFTED_STATE, DISPATCHED_STATE, DEFAULT_VISIBILITY_MS } from './dispatch-constants.js'
 
 export interface DispatchPlanItem {
   wpId: string
-  /** topoSort.order 인덱스(결정론). 봉투 stepId='step-${stepN}'. */
+  /** topoSort.order 인덱스(결정론). 이벤트 payload·lease.step_n 표시·정렬용(N4); 멱등키 stepId는 wp-${wpId}로 분리(§8 #1). */
   stepN: number
   /** 전이 from_state(초기 디스패치=DRAFTED). */
   fromState: string
@@ -36,6 +36,8 @@ export interface DispatchDeps {
   store: DispatchStore
   /** DoR done/oracle 판정 주입 — planDispatch로 전달(P3 Oracle·완료 done-set seam). */
   readiness?: ReadinessOptions
+  /** lease 가시성 타임아웃(ms). 기본 DEFAULT_VISIBILITY_MS. */
+  visibilityMs?: number
 }
 
 export interface DispatchOutcome {
@@ -71,16 +73,22 @@ export async function handleDispatch(workflowId: string, deps: DispatchDeps): Pr
   const plan = planDispatch(graph, planOpts)
   const skipped = ready.length - plan.length
 
+  const visibilityMs = deps.visibilityMs ?? DEFAULT_VISIBILITY_MS
   const dispatched: DispatchOutcome['dispatched'] = []
+  let deduped = 0
   for (const item of plan) {
-    const { eventId } = await deps.store.recordDispatch({
+    const r = await deps.store.recordDispatch({
       workflowId,
       wpId: item.wpId,
       stepN: item.stepN,
       fromState: item.fromState,
+      attempt: 0,
+      visibilityMs,
       causationId: stored.eventId ?? null,
     })
-    dispatched.push({ wpId: item.wpId, stepN: item.stepN, eventId })
+    // deduped = lease가 이미 존재(동시/재진입). dispatched에서 제외하고 skipped로 집계(§8 #2).
+    if (r.status === 'recorded') dispatched.push({ wpId: item.wpId, stepN: item.stepN, eventId: r.eventId })
+    else deduped += 1
   }
-  return { status: 'dispatched', dispatched, skipped }
+  return { status: 'dispatched', dispatched, skipped: skipped + deduped }
 }
