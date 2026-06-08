@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (162 테스트 통과)**
+**현재 상태: 구현 완료 (192 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -38,6 +38,12 @@ src/
 │   ├── topo-sort.ts             # detectCycle(DFS) + topoSort(Kahn·id사전순 결정론)
 │   ├── readiness.ts             # isReady/readyNodes (DoR 가드·주입형 술어)
 │   └── index.ts                 # task-graph 배럴 export
+├── decomposition/               # P2-1 결정론 분해 코어 (순수 함수·I/O 0)
+│   ├── coverage-matrix.ts       # coverageMatrix — §6 P4 커버리지 매트릭스(gaps·overlaps·unknownClaims)
+│   ├── content-hash.ts          # contentHashId — §6 P7 안정 WP ID(wp_<sha256 32hex>)
+│   ├── stable-merge.ts          # mergeKeepInflight — §6 재진입 병합(in-flight+의존 폐포 보존)
+│   ├── order.ts                 # byId — id 사전순 비교자 공용 헬퍼
+│   └── index.ts                 # decomposition 배럴 export
 └── __tests__/
     ├── workspace-guard.test.ts  # validateWorkspaceRoot + resolveWorkspaceRoot 테스트
     ├── base-consumer.test.ts    # BaseConsumer 테스트
@@ -47,7 +53,8 @@ src/
     ├── collaboration.test.ts    # runCollaborativeHandle / createCollaborativeHandler 테스트
     ├── event-bus.test.ts        # RedisEventBus 테스트
     ├── domain-knowledge.test.ts # formatDomainKnowledge 테스트
-    └── task-graph.test.ts       # buildTaskGraph/detectCycle/topoSort/isReady 테스트
+    ├── task-graph.test.ts       # buildTaskGraph/detectCycle/topoSort/isReady 테스트
+    └── decomposition.test.ts    # coverageMatrix/contentHashId/mergeKeepInflight + 패키지 export 테스트
 ```
 
 ## Task Manager Core 패턴 (P1d-1)
@@ -67,6 +74,24 @@ const ready = readyNodes(graph)                      // ready id[](topo 순서·
 - **노드 = `WorkPackage` 재사용**(재정의 금지), `TaskGraph` = 불변 컨테이너(nodes·dependencies·dependents).
 - **DoR 가드**(`isReady`): 모든 dependency가 done **AND** 오라클 충족 **AND** 자신이 아직 done 아님. `wp.status`를 읽지 않음(상태머신 드리프트 회피) — done은 `isDone` 술어, 오라클은 `oracleSatisfied` 술어로 주입(기본 `status==='done'`·`oracleRef != null`). P3 Oracle 스키마 도착 시 술어만 교체.
 - **결정론**: 같은 그래프 → 같은 order(타이브레이크 id 사전순, 입력순서 무관). N4 step-N 토대.
+
+## 결정론 분해 코어 패턴 (P2-1)
+
+senario §6 분해 파이프라인의 결정론 경계(커버리지 매트릭스·안정 ID·재진입 병합)를 순수 함수로 구현. I/O·LLM 0. LLM 의미 분해(P2-2)가 이 함수들을 단계 사이에서 호출.
+
+```typescript
+import { coverageMatrix, contentHashId, mergeKeepInflight } from '@xzawed/agent-streams'
+import type { StoryCoverage, CoverageMatrix, WpHashInput, MergeOptions } from '@xzawed/agent-streams'
+
+const m = coverageMatrix(stories, deliverables)   // §6 P4 100% 규칙: gaps·overlaps·unknownClaims (데이터 보고, throw 아님)
+const id = contentHashId({ storyId, owningRole, acceptanceCriteria })  // §6 P7 안정 ID: wp_<sha256 32hex>, deps/status 제외(연쇄 안정)
+const merged = mergeKeepInflight(existing, incoming, { isInflight })    // §6 재진입 병합: in-flight+의존 폐포 보존, 출력 buildTaskGraph 수용
+```
+
+- **결정론**: `byId` UTF-16 코드포인트 정렬(`localeCompare` 금지) — 같은 입력 → 같은 출력 보장.
+- **`contentHashId`**: `{storyId, owningRole, acceptanceCriteria}`만 해싱. `status`·`oracleRef`·`dependencies`·`attributionCounters` 제외 — 연쇄 안정(이 필드 변경 시 id 변경 없음).
+- **`mergeKeepInflight`**: 주입형 `isInflight`(기본 `status ∈ {in_progress, blocked, done}`)로 in-flight 판정. 보존 노드의 `existing` 의존 폐포 유지 — dangling 0, `existing`은 유효 그래프 전제. 출력은 `buildTaskGraph` 직접 수용.
+- **`byId`**: `decomposition/order.ts` 공용 — `task-graph/` 등 여러 모듈에서 재사용.
 
 ## EventBus 패턴 (P1c)
 
