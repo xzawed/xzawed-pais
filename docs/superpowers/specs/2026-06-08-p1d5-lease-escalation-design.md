@@ -103,7 +103,8 @@ export interface LeaseRecord {
 }
 export class LeaseStore {
   constructor(pool: Pool, now?: () => number)
-  /** status='active' AND expires_at < now (sweep용, FOR UPDATE SKIP LOCKED·LIMIT). */
+  /** status='active' AND expires_at < now (sweep용, LIMIT). 평문 SELECT(자동커밋)이라 행 잠금 없음 —
+      동시 sweep 직렬화는 후속 UPDATE의 가드(reclaim=attempt CAS, escalate=status 단방향)가 담당. */
   expiredActiveLeases(now: number, limit?: number): Promise<LeaseRecord[]>
   getLease(workflowId: string, wpId: string): Promise<LeaseRecord | null>
   /** reclaim: lease UPDATE(attempt=next·expires_at·active) + wp.dispatched(attempt next) + 전이 + outbox 단일 tx. */
@@ -112,7 +113,7 @@ export class LeaseStore {
   recordEscalation(input: { workflowId, wpId, attempt, stepN, causationId? }): Promise<{ eventId: string; seq: number }>
 }
 ```
-- `recordReclaim`/`recordEscalation`은 `appendWpEvent`(4.2) 재사용. lease UPDATE는 `WHERE workflow_id=$ AND wp_id=$ AND status='active'`(동시 sweep guard — 0행이면 다른 sweep 처리, no-op).
+- `recordReclaim`/`recordEscalation`은 `appendWpEvent`(4.2) 재사용. **동시 sweep 직렬화**(0행이면 `{status:'skipped'}`): **reclaim**은 `WHERE status='active' AND attempt = $expectedAttempt`(=nextAttempt−1) **CAS** — 경쟁한 두 번째 reclaim은 attempt가 이미 증가해 0행 skip(reclaim은 status를 active로 유지하므로 status 가드만으론 부족). **escalate**는 `WHERE status='active'`(status='active'→'escalated' 단방향이라 두 번째는 0행 skip). escalate는 lease.event_id를 갱신하지 않음(dispatch provenance 보존).
 - escalate 상태: wp_state_log `to_state='ESCALATED'`·event `wp.escalated`·lease `status='escalated'`(P1d-5 신규 상수, TEXT 전방호환).
 
 ### 5.2 `planReclaim` 순수 (`streams/lease.ts`)
@@ -133,13 +134,13 @@ export async function handleLeaseSweep(now: number, deps: SweepDeps): Promise<Sw
 `expiredActiveLeases(now)` → `planReclaim` → 항목별 `recordReclaim`(reclaim)·`recordEscalation`(escalate). handleDispatch 대칭(조회·계획·원자 적재 분리).
 
 ### 5.4 5b 테스트
-- `lease.repo.test.ts`(mock pool/client): expiredActiveLeases SQL(status='active' AND expires_at<now·FOR UPDATE SKIP LOCKED); recordReclaim tx(lease UPDATE attempt=next + appendWpEvent 3-INSERT·멱등키 attempt next); recordEscalation tx(status='escalated' + wp.escalated·to_state ESCALATED); ROLLBACK 가드.
+- `lease.repo.test.ts`(mock pool/client): expiredActiveLeases SQL(status='active' AND expires_at<now); recordReclaim tx(lease UPDATE attempt=next + **attempt CAS guard** + appendWpEvent 3-INSERT·멱등키 attempt next); recordEscalation tx(status='escalated' + wp.escalated·to_state ESCALATED); ROLLBACK 가드. 통합: 동시 reclaim(같은 nextAttempt 2회)→두 번째 skipped·중복 wp.dispatched 0(CAS 실증).
 - `lease.test.ts`: planReclaim 순수(attempt<max→reclaim·≥max→escalate·경계 maxAttempts·빈 입력); handleLeaseSweep(mock: 만료 분류→recordReclaim/Escalation 호출·outcome 매핑).
 - 통합 `lease.integration.test.ts`(skip-if-no-DB): dispatch(5a)→lease 행→`expires_at` 과거로 만료 주입→handleLeaseSweep→attempt 1 reclaim(wp.dispatched·lease attempt++)→재만료·재sweep…→maxAttempts 초과 시 escalate(status='escalated'·wp.escalated). `'wf-lease-%'` 스코프 cleanup + beforeAll 선삭제(형제 격리, P1d-4 §8 #3 선례).
 
 ## 6. 멱등·복원력·결정론
 - **§8 #1 해소**: 멱등키 WP+attempt 고정(`{wf}:wp-${wpId}:${attempt}`) — 재분해 무관, attempt별 구분.
-- **§8 #2 해소**: lease PK + ON CONFLICT DO NOTHING(동시 dispatch dedup). reclaim/escalate는 lease UPDATE `WHERE status='active'`(동시 sweep guard).
+- **§8 #2 해소**: lease PK + ON CONFLICT DO NOTHING(동시 dispatch dedup). 동시 sweep 직렬화는 reclaim=attempt CAS·escalate=status 단방향 전이(평문 SELECT엔 행 잠금 없음 — UPDATE 가드가 진실원천 무결성 보장).
 - **at-least-once 발행**: 기존 OutboxRelay(무수정). reclaim의 attempt++ 봉투로 다운스트림 M6 dedup 키 구분.
 - **결정론**: planReclaim 순수. maxAttempts·visibilityMs 주입(env `MANAGER_LEASE_MAX_ATTEMPTS`·`MANAGER_LEASE_VISIBILITY_MS`).
 
