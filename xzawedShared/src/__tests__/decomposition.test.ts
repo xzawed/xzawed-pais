@@ -107,6 +107,18 @@ describe('coverageMatrix', () => {
       { storyId: 's2', deliverableId: 'dY' },
     ])
   })
+
+  it('같은 storyId의 두 객체가 같은 산출물을 주장하면 1 claimant로 집계(overlap 아님)', () => {
+    const m = coverageMatrix(
+      [
+        { storyId: 's1', deliverableIds: ['d1'] },
+        { storyId: 's1', deliverableIds: ['d1'] },
+      ],
+      ['d1'],
+    )
+    expect(m.overlaps).toEqual([])
+    expect(m.gaps).toEqual([])
+  })
 })
 
 describe('contentHashId', () => {
