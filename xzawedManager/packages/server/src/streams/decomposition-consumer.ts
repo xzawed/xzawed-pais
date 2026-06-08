@@ -20,7 +20,7 @@ export const DecompositionEmittedSchema = z.object({
 })
 export type DecompositionEmittedMessage = z.infer<typeof DecompositionEmittedSchema>
 
-export type InconsistentReason = 'cycle' | 'structural'
+export type InconsistentReason = 'cycle' | 'structural' | 'coverage'
 export type Publish = (stream: string, message: Record<string, unknown>) => Promise<unknown>
 
 export interface DecompositionDeps {
