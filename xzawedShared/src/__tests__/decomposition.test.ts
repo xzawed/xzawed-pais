@@ -202,4 +202,24 @@ describe('mergeKeepInflight', () => {
     expect(mergeKeepInflight([], [])).toEqual([])
     expect(mergeKeepInflight([wp('a', { status: 'in_progress' })], []).map((w) => w.id)).toEqual(['a'])
   })
+
+  it('blocked existing은 기본 술어로 in-flight 취급(보존)', () => {
+    const existing = [wp('a', { status: 'blocked', acceptanceCriteria: ['kept'] })]
+    const incoming = [wp('a', { status: 'draft', acceptanceCriteria: ['ignored'] })]
+    const out = mergeKeepInflight(existing, incoming)
+    expect(out[0]?.status).toBe('blocked')
+    expect(out[0]?.acceptanceCriteria).toEqual(['kept'])
+  })
+
+  it('의존 폐포 전이 깊이 3 이상(BFS 다단 재귀)', () => {
+    const existing = [
+      wp('a', { status: 'done', dependencies: ['b'] }),
+      wp('b', { dependencies: ['c'] }),
+      wp('c'),
+    ]
+    const incoming = [wp('x')]
+    const out = mergeKeepInflight(existing, incoming)
+    expect(out.map((w) => w.id).sort()).toEqual(['a', 'b', 'c', 'x'])
+    expect(() => buildTaskGraph(out)).not.toThrow()
+  })
 })

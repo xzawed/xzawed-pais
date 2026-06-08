@@ -17,6 +17,7 @@ const defaultIsInflight = (wp: WorkPackage): boolean => DEFAULT_INFLIGHT_STATUSE
 /**
  * §6 재진입 병합. incoming을 적용하되 existing의 in-flight 노드(+의존 폐포)는 보존(N4: 진행 중 재기록 금지).
  * content-hash id로 동일성 판정. 출력은 항상 buildTaskGraph 수용 가능(dangling 0). 출력 id 정렬.
+ * @param existing 그 자체로 유효한 그래프(dangling dep 없음)여야 한다(전제). 위반 시 보존 노드의 폐포가 불완전해질 수 있다.
  */
 export function mergeKeepInflight(
   existing: WorkPackage[],
@@ -49,7 +50,9 @@ export function mergeKeepInflight(
     }
   }
 
-  // 3) 보존 노드의 existing 의존 폐포 유지(dangling 0). incoming 의존은 incoming 자체 정합.
+  // 3) 보존 노드의 existing 의존 폐포 유지(dangling 0).
+  //    - 의존이 result에 이미 있으면 skip(incoming 버전 우선 — passes 1·2에서 설정됨).
+  //    - 없으면 existing에서 보충(incoming에서 제거된 선행이 보존 노드를 고아로 만들지 않게).
   const queue = preserved.map((w) => w.id)
   while (queue.length > 0) {
     const id = queue.shift()!
