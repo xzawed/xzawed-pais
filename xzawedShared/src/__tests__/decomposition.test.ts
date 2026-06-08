@@ -65,4 +65,29 @@ describe('coverageMatrix', () => {
     )
     expect(a).toEqual(b)
   })
+
+  it('인벤토리에 중복 id가 있어도 1회로 계수(gap 중복 없음)', () => {
+    const m = coverageMatrix([], ['d1', 'd1', 'd2'])
+    expect(m.gaps).toEqual(['d1', 'd2'])
+  })
+
+  it('한 스토리가 known·unknown 산출물을 함께 주장하면 각각 분류', () => {
+    const m = coverageMatrix([{ storyId: 's1', deliverableIds: ['d1', 'dX'] }], ['d1'])
+    expect(m.gaps).toEqual([])
+    expect(m.unknownClaims).toEqual([{ storyId: 's1', deliverableId: 'dX' }])
+  })
+
+  it('unknownClaims는 storyId 우선·deliverableId 차선으로 정렬', () => {
+    const m = coverageMatrix(
+      [
+        { storyId: 's2', deliverableIds: ['dY'] },
+        { storyId: 's1', deliverableIds: ['dX'] },
+      ],
+      [],
+    )
+    expect(m.unknownClaims).toEqual([
+      { storyId: 's1', deliverableId: 'dX' },
+      { storyId: 's2', deliverableId: 'dY' },
+    ])
+  })
 })

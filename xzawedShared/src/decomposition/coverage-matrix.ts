@@ -1,5 +1,4 @@
-/** id 사전순 비교자(UTF-16 코드유닛·로케일 무관, localeCompare 금지 — N4 결정론). */
-const byId = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
+import { byId } from './order.js'
 
 /** 한 Story가 덮는(claim) 산출물 id 목록. */
 export interface StoryCoverage {
@@ -48,11 +47,11 @@ export function coverageMatrix(stories: StoryCoverage[], deliverables: string[])
   const overlaps: Array<{ deliverableId: string; storyIds: string[] }> = []
   for (const did of inventory) {
     const claimants = claims.get(did)
-    const count = claimants?.size ?? 0
-    if (count === 0) gaps.push(did)
-    else if (count >= 2) overlaps.push({ deliverableId: did, storyIds: [...claimants!].sort(byId) })
+    if (!claimants || claimants.size === 0) gaps.push(did)
+    else if (claimants.size >= 2) overlaps.push({ deliverableId: did, storyIds: [...claimants].sort(byId) })
   }
 
+  // 인벤토리는 Set이라 삽입 순서로 순회된다 — 아래 정렬로 출력 결정론을 보장(입력 순서 무관).
   gaps.sort(byId)
   overlaps.sort((a, b) => byId(a.deliverableId, b.deliverableId))
   unknownClaims.sort((a, b) => byId(a.storyId, b.storyId) || byId(a.deliverableId, b.deliverableId))
