@@ -96,8 +96,34 @@ describe('LeaseStore.recordEscalation', () => {
     })
     expect(res).toEqual({ status: 'skipped' })
   })
+})
 
-  it('INSERT 실패 시 ROLLBACK·throw하고 원본 오류를 보존한다', async () => {
+describe('LeaseStore.recordCompletion', () => {
+  it("단일 tx로 lease status='released' UPDATE(active 가드) + wp.completed(DISPATCHED→DONE) 적재 후 COMMIT", async () => {
+    const m = makeTxPool()
+    const res = await new LeaseStore(m.pool, () => 1).recordCompletion({
+      workflowId: 'wf-1', wpId: 'wp-1', attempt: 1, stepN: 2,
+    })
+    const upd = callFor(m.query, /UPDATE wp_leases/i)!
+    expect(upd[1]).toContain('released') // status='released'
+    expect(upd[1]).toContain('active')   // WHERE status='active' 가드(동시 완료 직렬화)
+    const ev = callFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[]
+    expect(ev[2]).toBe('wp.completed')
+    expect(ev[6]).toBe('wf-1:wp-wp-1:1') // 멱등키 attempt
+    const log = callFor(m.query, /INSERT INTO wp_state_log/i)![1] as unknown[]
+    expect(log[3]).toBe('DONE')          // to_state
+    expect(res).toMatchObject({ status: 'completed', seq: 42 })
+  })
+
+  it('lease가 active가 아니면(이미 완료·released 등) {status:skipped}', async () => {
+    const m = makeTxPool({ leaseMiss: true })
+    const res = await new LeaseStore(m.pool, () => 1).recordCompletion({
+      workflowId: 'wf-1', wpId: 'wp-1', attempt: 1, stepN: 0,
+    })
+    expect(res).toEqual({ status: 'skipped' })
+  })
+
+  it('INSERT 실패 시 ROLLBACK·throw하고 원본 오류를 보존한다(공통 transition 가드)', async () => {
     const m = makeTxPool()
     m.query.mockImplementation((sql: string) => {
       if (/UPDATE wp_leases/i.test(sql)) return Promise.resolve({ rows: [{ wp_id: 'wp-1' }] })
@@ -105,8 +131,8 @@ describe('LeaseStore.recordEscalation', () => {
       if (/ROLLBACK/i.test(sql)) return Promise.reject(new Error('rollback-failed'))
       return Promise.resolve({ rows: [] })
     })
-    await expect(new LeaseStore(m.pool, () => 1).recordEscalation({
-      workflowId: 'wf-1', wpId: 'wp-1', attempt: 2, stepN: 0,
+    await expect(new LeaseStore(m.pool, () => 1).recordCompletion({
+      workflowId: 'wf-1', wpId: 'wp-1', attempt: 1, stepN: 0,
     })).rejects.toThrow('original')
     expect(m.release).toHaveBeenCalled()
   })
