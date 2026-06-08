@@ -32,11 +32,13 @@ describe('produceDecomposition (P2-3b)', () => {
     expect(msg.envelope.stepId).toBe('decomposition.emitted')
     expect(msg.payload.workPackages).toHaveLength(2)
     expect(msg.payload).not.toHaveProperty('coverage')
+    expect(logSpy).toHaveBeenCalledWith('[decompose] coverage', expect.objectContaining({ gaps: 0 }))
   })
 
   it('repair 소진 → decomposition.inconsistent 발행·WP 미발행', async () => {
     const publish = vi.fn().mockResolvedValue('1-0')
-    const res = await produceDecomposition('build', 'wf-5', deps(stagedClaude(EPICS, STORY_D1, DELIVS_GAP, 'garbage', 'garbage'), publish))
+    const logSpy = vi.fn()
+    const res = await produceDecomposition('build', 'wf-5', { ...deps(stagedClaude(EPICS, STORY_D1, DELIVS_GAP, 'garbage', 'garbage'), publish), log: logSpy })
 
     expect(res.escalated).toBe(true)
     expect(res.emitted).toBe(0)
@@ -47,6 +49,7 @@ describe('produceDecomposition (P2-3b)', () => {
     expect(msg.envelope.stepId).toBe('decomposition.inconsistent')
     expect(msg.payload.reason).toBe('coverage')
     expect(msg.payload.gaps).toEqual(['d2'])
+    expect(logSpy).toHaveBeenCalledWith('[decompose] coverage unresolved — escalating', expect.objectContaining({ gaps: 1 }))
   })
 
   it('전 단계 파싱 실패 시 fallback 단일 WP 발행(escalated false)', async () => {

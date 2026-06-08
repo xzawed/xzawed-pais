@@ -1,13 +1,11 @@
 import { makeEnvelope } from '@xzawed/agent-streams'
 import type { ClaudeLike, WorkPackage } from '@xzawed/agent-streams'
 import { runDecomposition, fallbackWorkPackages, DEFAULT_REPAIR_MAX, type DecomposeResult } from './pipeline.js'
-import type { InconsistentReason } from '../streams/decomposition-consumer.js'
+import { defaultInconsistentStream, type InconsistentReason } from '../streams/decomposition-consumer.js'
 
 /** Supervisor DecompositionConsumer가 구독하는 스트림(manager:decomposition:{channel='main'}). */
 export const DECOMPOSE_STREAM = 'manager:decomposition:main'
 const DEFAULT_TIMEOUT_MS = 120_000
-/** producer-side 에스컬레이션 출력(consumer defaultInconsistentStream과 동일 규약). */
-const eventsStream = (workflowId: string): string => `manager:events:${workflowId}`
 
 export type DecomposePublish = (stream: string, message: Record<string, unknown>) => Promise<unknown>
 
@@ -68,13 +66,15 @@ export async function produceDecomposition(
     deps.log?.('[decompose] coverage unresolved — escalating', {
       gaps: result.coverage.gaps.length,
       overlaps: result.coverage.overlaps.length,
+      unknownClaims: result.coverage.unknownClaims.length,
     })
     const envelope = makeEnvelope(
       { correlationId: workflowId, causationId: null, workflowId, stepId: 'decomposition.inconsistent', attemptId: 0 },
       deps.now?.(),
     )
     const reason: InconsistentReason = result.reason
-    await deps.publish(eventsStream(workflowId), {
+    // payload는 §6 루프 조건(gaps/overlaps)만 — unknownClaims는 발행 그래프에 무해해 제외(로그로만 관측).
+    await deps.publish(defaultInconsistentStream(workflowId), {
       envelope,
       type: 'decomposition.inconsistent',
       payload: { reason, gaps: result.coverage.gaps, overlaps: result.coverage.overlaps },
