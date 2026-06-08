@@ -32,5 +32,6 @@ export async function identifyEpics(intent: string, deps: StageDeps): Promise<Ep
     schema: EpicsSchema,
     fallback,
   })
-  return data.epics.length > 0 ? data.epics : fallback().epics
+  const epics = data.epics ?? []
+  return epics.length > 0 ? epics : fallback().epics
 }
