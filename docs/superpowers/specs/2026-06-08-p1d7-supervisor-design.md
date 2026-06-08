@@ -82,7 +82,9 @@ export function createSupervisor(redis: Redis, deps: { repo, dispatchStore, leas
 - `createSupervisor`: `DecompositionConsumer`(repo·publish·afterPersisted=handleDispatch) + completion `BaseConsumer`(buildCompletionHandler·CompletionSignalSchema) + `LeaseSweeper` 조립.
 
 ### 3.6 server.ts 배선
-`config.TASK_MANAGER_ENABLED && pool`이면: `RedisEventBus.publish` 바인딩 + repos/stores 생성 → `createSupervisor(redis, {...}, {...})` → `supervisor.start()`. `closeAll`에 `supervisor?.stop()`. no-DB·off면 미생성(현 동작 보존). DATABASE_URL 있고 flag만 off면 핸들러 미배선.
+게이트는 순수 `shouldWireSupervisor(enabled, hasPool)`('wire'|'warn'|'skip')로 결정(테스트 가능). `'wire'`면 `RedisEventBus.publish` 바인딩 + repos/stores 생성 → `createSupervisor(makeRedis, {...}, {...})`(`makeRedis=() => createRedisClient(url)` — 소비자별 전용 연결) → `supervisor.start()`. `'warn'`(flag on·no-pool)이면 경고. `closeAll`에 `supervisor?.stop()`. off면 미생성(현 동작 보존·회귀 0).
+
+**연결 정리**: `createRedisClient` 연결은 비공유라 `clients` Map 밖이므로 별도 `dedicated` Set에 등록 → `closeRedisClients`가 Map+Set 모두 quit(index.ts 종료 `closeAll`→`closeRedisClients`→`exit`으로 우아한 종료·누수 방지). `Supervisor.start`는 `consumer.start()` reject(기동 ensureGroup 등)를 `.catch`로 관측(SessionGateway 배선 선례·unhandledRejection 방지).
 
 ## 4. 데이터 흐름
 (P2 도착 후) decomposition.emitted→`manager:decomposition:main`→소비→영속→디스패치(wp.dispatched + lease). 30s마다 sweep→만료 lease reclaim/escalate. 워커 완료→`manager:completions:main`→소비→handleCompletion(lease release·DONE·후행 재디스패치). 모든 발행은 OutboxRelay 경유(기존).
@@ -94,9 +96,10 @@ export function createSupervisor(redis: Redis, deps: { repo, dispatchStore, leas
 
 ## 6. 테스트 (TDD)
 - **`lease-sweeper.test.ts`**: pollOnce→handleLeaseSweep 호출(now·deps 전달)·재진입 가드(동시 pollOnce 1회)·실패 시 never-throw·start/stop 타이머.
-- **`supervisor.test.ts`**: buildDecompositionHandler(영속 성공→handleDispatch 호출·inconsistent→미호출, mock); buildCompletionHandler(handleCompletion 호출); CompletionSignalSchema 검증; Supervisor.start/stop이 주입 컴포넌트 start/stop 호출.
-- **`decomposition-consumer.test.ts`** +afterPersisted: persisted면 훅 호출·inconsistent면 미호출·훅 미전달 시 불변(회귀).
-- **server.ts**: flag on+pool이면 Supervisor 생성·start, off면 미생성(기존 server 테스트 패턴). 통합은 선택(실 Redis 필요).
+- **`supervisor.test.ts`**: buildCompletionHandler(handleCompletion 호출); CompletionSignalSchema 검증; Supervisor.start/stop이 주입 컴포넌트 start/stop 호출·consumer.start reject 시 throw 안 함(catch); **shouldWireSupervisor**(wire/warn/skip 3분기); **createSupervisor**(makeRedis 2회·Supervisor 반환).
+- **`decomposition-consumer.test.ts`** +`buildDecompositionConsumerHandler`: persisted면 afterPersisted 호출·inconsistent면 미호출·훅 미전달 시 불변(회귀).
+- **`config.test.ts`**: TASK_MANAGER_ENABLED 기본 false·lease env 기본/오버라이드.
+- **server.ts 게이트**: 순수 `shouldWireSupervisor`로 분리해 단위 검증(buildServer 직접 테스트 불요). 실 Redis/DB 경로는 P2 배선 시 통합.
 
 ## 7. 회귀·검증
 flag off 기본이라 회귀 0. DecompositionConsumer 훅 additive. `cd xzawedManager && pnpm build && pnpm test`. audit·CPD. 적대적 리뷰(생명주기·flag 가역·빈 스트림 안전·sweep 재진입·핸들러 합성·회귀). PR → CI 그린(재실행 플레이크 주의) → squash. CLAUDE.md(구조·env·Supervisor 섹션)·메모리 갱신. **P1d 7/7 완료** → 다음 Phase(P2 분해 파이프라인 등).
