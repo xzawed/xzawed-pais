@@ -1,9 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
 import { DispatchStore } from './dispatch.repo.js'
 
-/** seq를 RETURNING하는 wp_state_log INSERT만 seq 행을 돌려주는 mock client/pool. */
-function makeMockPool() {
+/** lease INSERT은 RETURNING wp_id, wp_state_log INSERT은 RETURNING seq를 돌려주는 mock. leaseConflict면 lease 0행. */
+function makeMockPool(opts: { leaseConflict?: boolean } = {}) {
   const query = vi.fn().mockImplementation((sql: string) => {
+    if (/INSERT INTO wp_leases/i.test(sql)) {
+      return Promise.resolve({ rows: opts.leaseConflict ? [] : [{ wp_id: 'wp-1' }], rowCount: opts.leaseConflict ? 0 : 1 })
+    }
     if (/INSERT INTO wp_state_log/i.test(sql)) return Promise.resolve({ rows: [{ seq: '42' }] })
     return Promise.resolve({ rows: [] })
   })
@@ -13,103 +16,115 @@ function makeMockPool() {
   return { pool: { connect } as never, client, query, release, connect }
 }
 
-function callsFor(query: ReturnType<typeof vi.fn>, re: RegExp) {
+function callFor(query: ReturnType<typeof vi.fn>, re: RegExp) {
   return query.mock.calls.find((c) => re.test(String(c[0])))
 }
 
-describe('DispatchStore.recordDispatch', () => {
-  it('단일 트랜잭션으로 manager_events + wp_state_log + manager_outbox를 INSERT하고 COMMIT한다', async () => {
+const base = { workflowId: 'wf-1', wpId: 'wp-1', stepN: 3, fromState: 'DRAFTED', visibilityMs: 5000 }
+
+describe('DispatchStore.recordDispatch (P1d-5a: lease + WP 고정 멱등키)', () => {
+  it('단일 tx로 wp_leases + manager_events + wp_state_log + manager_outbox를 INSERT하고 COMMIT한다', async () => {
     const m = makeMockPool()
-    const res = await new DispatchStore(m.pool, () => 1000).recordDispatch({
-      workflowId: 'wf-1', wpId: 'wp-1', stepN: 0, fromState: 'DRAFTED',
-    })
+    const res = await new DispatchStore(m.pool, () => 1000).recordDispatch(base)
 
     const verbs = m.query.mock.calls.map((c) => String(c[0]).trim().split(/\s+/)[0].toUpperCase())
     expect(verbs[0]).toBe('BEGIN')
     expect(verbs[verbs.length - 1]).toBe('COMMIT')
     const inserts = m.query.mock.calls.filter((c) =>
-      /INSERT INTO (manager_events|wp_state_log|manager_outbox)/i.test(String(c[0])))
-    expect(inserts).toHaveLength(3)
-    expect(res.eventId).toMatch(/[0-9a-f-]{36}/)
-    expect(res.seq).toBe(42) // BIGSERIAL 문자열 → Number
+      /INSERT INTO (wp_leases|manager_events|wp_state_log|manager_outbox)/i.test(String(c[0])))
+    expect(inserts).toHaveLength(4)
+    expect(res).toEqual({ status: 'recorded', eventId: expect.stringMatching(/[0-9a-f-]{36}/), seq: 42 })
     expect(m.release).toHaveBeenCalled()
   })
 
-  it('event_id를 세 INSERT가 공유하고 occurred_at은 봉투 시각으로 일치시킨다', async () => {
+  it('멱등키를 WP id에 고정한다(§8 #1): {wf}:wp-${wpId}:${attempt}', async () => {
     const m = makeMockPool()
-    await new DispatchStore(m.pool, () => 7777).recordDispatch({
-      workflowId: 'wf-1', wpId: 'wp-1', stepN: 2, fromState: 'DRAFTED',
-    })
-    const ev = callsFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[]
-    const log = callsFor(m.query, /INSERT INTO wp_state_log/i)![1] as unknown[]
-    const ob = callsFor(m.query, /INSERT INTO manager_outbox/i)![1] as unknown[]
-
-    const eventId = ev[0]
-    expect(eventId).toMatch(/[0-9a-f-]{36}/)
-    expect(log[4]).toBe(eventId)   // wp_state_log.event_id
-    expect(ob[0]).toBe(eventId)    // manager_outbox.event_id
-    // occurred_at(봉투 시각)을 events·wp_state_log가 공유
-    expect(ev[8]).toBe(7777)       // manager_events.occurred_at
-    expect(log[6]).toBe(7777)      // wp_state_log.occurred_at
+    await new DispatchStore(m.pool, () => 1000).recordDispatch(base)
+    const ev = callFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[]
+    expect(ev[6]).toBe('wf-1:wp-wp-1:0')          // idempotency_key (attempt 기본 0)
+    expect(JSON.parse(ev[3] as string)).toEqual({ wpId: 'wp-1', stepN: 3, attempt: 0 })
   })
 
-  it('봉투 stepId=step-N·idempotencyKey·correlation/actor를 manager_events 파라미터에 싣는다', async () => {
+  it('attempt를 멱등키·payload·lease에 반영한다', async () => {
     const m = makeMockPool()
-    await new DispatchStore(m.pool, () => 1).recordDispatch({
-      workflowId: 'wf-1', wpId: 'wp-1', stepN: 3, fromState: 'DRAFTED', causationId: 'src-evt',
-    })
-    const ev = callsFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[]
-    // [event_id, session_id, event_type, payload, correlation_id, causation_id, idempotency_key, actor, occurred_at]
-    expect(ev[1]).toBe('wf-1')                  // session_id = workflowId
-    expect(ev[2]).toBe('wp.dispatched')         // event_type
-    expect(JSON.parse(ev[3] as string)).toEqual({ wpId: 'wp-1', stepN: 3 })
-    expect(ev[4]).toBe('wf-1')                  // correlation_id = workflowId
-    expect(ev[5]).toBe('src-evt')               // causation_id
-    expect(ev[6]).toBe('wf-1:step-3:0')         // idempotency_key
-    expect(ev[7]).toBe('task-manager')          // actor
+    await new DispatchStore(m.pool, () => 1000).recordDispatch({ ...base, attempt: 2 })
+    const ev = callFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[]
+    expect(ev[6]).toBe('wf-1:wp-wp-1:2')
+    expect(JSON.parse(ev[3] as string)).toMatchObject({ attempt: 2 })
+    const lease = callFor(m.query, /INSERT INTO wp_leases/i)![1] as unknown[]
+    expect(lease[2]).toBe(2)                        // attempt
   })
 
-  it('wp_state_log에 DRAFTED→DISPATCHED 전이를, manager_outbox에 manager:events 스트림·메시지를 싣는다', async () => {
+  it('wp_leases를 ON CONFLICT DO NOTHING으로 획득하고 expires_at=occurredAt+visibilityMs·event_id 공유', async () => {
     const m = makeMockPool()
-    await new DispatchStore(m.pool, () => 1).recordDispatch({
-      workflowId: 'wf-1', wpId: 'wp-1', stepN: 0, fromState: 'DRAFTED',
-    })
-    const log = callsFor(m.query, /INSERT INTO wp_state_log/i)![1] as unknown[]
-    // [workflow_id, wp_id, from_state, to_state, event_id, reason, occurred_at]
-    expect(log[0]).toBe('wf-1')
-    expect(log[1]).toBe('wp-1')
+    await new DispatchStore(m.pool, () => 1000).recordDispatch(base)
+    const leaseCall = callFor(m.query, /INSERT INTO wp_leases/i)!
+    expect(String(leaseCall[0])).toMatch(/ON CONFLICT \(workflow_id, wp_id\) DO NOTHING/i)
+    const lease = leaseCall[1] as unknown[]
+    // [workflow_id, wp_id, attempt, owner, status, expires_at, step_n, event_id]
+    expect(lease[0]).toBe('wf-1')
+    expect(lease[1]).toBe('wp-1')
+    expect(lease[3]).toBeNull()                     // owner 기본 null
+    expect(lease[4]).toBe('active')                 // status
+    expect(lease[5]).toBe(6000)                     // expires_at = 1000 + 5000
+    expect(lease[6]).toBe(3)                        // step_n
+    const eventId = (callFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[])[0]
+    expect(lease[7]).toBe(eventId)                  // lease.event_id = dispatch event_id
+  })
+
+  it('event_id를 events·wp_state_log·outbox가 공유하고 occurred_at은 봉투 시각', async () => {
+    const m = makeMockPool()
+    await new DispatchStore(m.pool, () => 7777).recordDispatch(base)
+    const ev = callFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[]
+    const log = callFor(m.query, /INSERT INTO wp_state_log/i)![1] as unknown[]
+    const ob = callFor(m.query, /INSERT INTO manager_outbox/i)![1] as unknown[]
+    expect(log[4]).toBe(ev[0])
+    expect(ob[0]).toBe(ev[0])
+    expect(ev[8]).toBe(7777)
+    expect(log[6]).toBe(7777)
+  })
+
+  it('wp_state_log에 DRAFTED→DISPATCHED 전이, manager_outbox에 manager:events 스트림·메시지', async () => {
+    const m = makeMockPool()
+    await new DispatchStore(m.pool, () => 1).recordDispatch(base)
+    const log = callFor(m.query, /INSERT INTO wp_state_log/i)![1] as unknown[]
     expect(log[2]).toBe('DRAFTED')
-    expect(log[3]).toBe('DISPATCHED')           // 기본 toState
-
-    const ob = callsFor(m.query, /INSERT INTO manager_outbox/i)![1] as unknown[]
-    expect(ob[1]).toBe('manager:events:wf-1')   // stream
+    expect(log[3]).toBe('DISPATCHED')
+    const ob = callFor(m.query, /INSERT INTO manager_outbox/i)![1] as unknown[]
+    expect(ob[1]).toBe('manager:events:wf-1')
     const msg = JSON.parse(ob[2] as string)
     expect(msg.type).toBe('wp.dispatched')
-    expect(msg.payload).toEqual({ wpId: 'wp-1', stepN: 0 })
-    expect(msg.envelope.idempotencyKey).toBe('wf-1:step-0:0')
+    expect(msg.envelope.idempotencyKey).toBe('wf-1:wp-wp-1:0')
+  })
+
+  it('이미 lease가 있으면(ON CONFLICT 0행) ROLLBACK하고 {status:deduped} 반환·이벤트 미적재(§8 #2)', async () => {
+    const m = makeMockPool({ leaseConflict: true })
+    const res = await new DispatchStore(m.pool, () => 1).recordDispatch(base)
+    expect(res).toEqual({ status: 'deduped' })
+    const verbs = m.query.mock.calls.map((c) => String(c[0]).trim().split(/\s+/)[0].toUpperCase())
+    expect(verbs).toContain('ROLLBACK')
+    expect(verbs).not.toContain('COMMIT')
+    expect(callFor(m.query, /INSERT INTO manager_events/i)).toBeUndefined() // 이벤트 미적재
+    expect(m.release).toHaveBeenCalled()
   })
 
   it('toState override·reason을 반영한다', async () => {
     const m = makeMockPool()
-    await new DispatchStore(m.pool, () => 1).recordDispatch({
-      workflowId: 'wf-1', wpId: 'wp-1', stepN: 0, fromState: 'DRAFTED',
-      toState: 'IN_PROGRESS', reason: 'manual',
-    })
-    const log = callsFor(m.query, /INSERT INTO wp_state_log/i)![1] as unknown[]
+    await new DispatchStore(m.pool, () => 1).recordDispatch({ ...base, toState: 'IN_PROGRESS', reason: 'manual' })
+    const log = callFor(m.query, /INSERT INTO wp_state_log/i)![1] as unknown[]
     expect(log[3]).toBe('IN_PROGRESS')
     expect(log[5]).toBe('manual')
   })
 
-  it('INSERT 실패 시 ROLLBACK하고 throw하며 client를 release한다(부분 기록 0)', async () => {
+  it('INSERT 실패 시 ROLLBACK하고 throw하며 client를 release한다', async () => {
     const m = makeMockPool()
     m.query.mockImplementation((sql: string) => {
       if (/INSERT INTO manager_outbox/i.test(sql)) return Promise.reject(new Error('boom'))
+      if (/INSERT INTO wp_leases/i.test(sql)) return Promise.resolve({ rows: [{ wp_id: 'wp-1' }] })
       if (/INSERT INTO wp_state_log/i.test(sql)) return Promise.resolve({ rows: [{ seq: '1' }] })
       return Promise.resolve({ rows: [] })
     })
-    await expect(new DispatchStore(m.pool, () => 1).recordDispatch({
-      workflowId: 'wf-1', wpId: 'wp-1', stepN: 0, fromState: 'DRAFTED',
-    })).rejects.toThrow('boom')
+    await expect(new DispatchStore(m.pool, () => 1).recordDispatch(base)).rejects.toThrow('boom')
     const verbs = m.query.mock.calls.map((c) => String(c[0]).trim().split(/\s+/)[0].toUpperCase())
     expect(verbs).toContain('ROLLBACK')
     expect(verbs).not.toContain('COMMIT')
@@ -121,12 +136,10 @@ describe('DispatchStore.recordDispatch', () => {
     m.query.mockImplementation((sql: string) => {
       if (/INSERT INTO manager_events/i.test(sql)) return Promise.reject(new Error('original'))
       if (/ROLLBACK/i.test(sql)) return Promise.reject(new Error('rollback-failed'))
+      if (/INSERT INTO wp_leases/i.test(sql)) return Promise.resolve({ rows: [{ wp_id: 'wp-1' }] })
       return Promise.resolve({ rows: [] })
     })
-    // 연결 손상으로 ROLLBACK이 reject해도, 호출자는 'rollback-failed'가 아닌 진짜 원인을 받아야 한다
-    await expect(new DispatchStore(m.pool, () => 1).recordDispatch({
-      workflowId: 'wf-1', wpId: 'wp-1', stepN: 0, fromState: 'DRAFTED',
-    })).rejects.toThrow('original')
+    await expect(new DispatchStore(m.pool, () => 1).recordDispatch(base)).rejects.toThrow('original')
     expect(m.release).toHaveBeenCalled()
   })
 })

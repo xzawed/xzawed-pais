@@ -68,7 +68,7 @@ const stateRec = (wpId: string, toState: string): WpStateRecord => ({
 
 function makeDeps(graph: StoredGraph | null, states: Map<string, WpStateRecord> = new Map()) {
   let n = 0
-  const recordDispatch = vi.fn().mockImplementation(() => Promise.resolve({ eventId: `e${n++}`, seq: n }))
+  const recordDispatch = vi.fn().mockImplementation(() => Promise.resolve({ status: 'recorded', eventId: `e${n++}`, seq: n }))
   const repo = {
     getGraph: vi.fn().mockResolvedValue(graph),
     latestStates: vi.fn().mockResolvedValue(states),
@@ -91,6 +91,7 @@ describe('handleDispatch', () => {
     expect(recordDispatch).toHaveBeenCalledTimes(2)
     expect(recordDispatch).toHaveBeenNthCalledWith(1, expect.objectContaining({
       workflowId: 'wf-1', wpId: 'a', stepN: 0, fromState: 'DRAFTED', causationId: null,
+      attempt: 0, visibilityMs: expect.any(Number),
     }))
     expect(out.status).toBe('dispatched')
     expect(out.skipped).toBe(0)
@@ -129,5 +130,22 @@ describe('handleDispatch', () => {
     const out = await handleDispatch('wf-1', deps)
     expect(recordDispatch).not.toHaveBeenCalled()
     expect(out).toEqual({ status: 'dispatched', dispatched: [], skipped: 1 })
+  })
+
+  it('recordDispatch가 deduped를 반환하면 dispatched에서 제외하고 skipped로 센다(DB 레벨 dedup)', async () => {
+    let n = 0
+    const recordDispatch = vi.fn().mockImplementation(() =>
+      Promise.resolve(n++ === 0 ? { status: 'deduped' } : { status: 'recorded', eventId: 'e1', seq: 1 }))
+    const repo = { getGraph: vi.fn().mockResolvedValue(stored([wp('a'), wp('b')])), latestStates: vi.fn().mockResolvedValue(new Map()) }
+    const deps = { repo, store: { recordDispatch } } as unknown as DispatchDeps
+    const out = await handleDispatch('wf-1', deps)
+    expect(out.dispatched).toEqual([{ wpId: 'b', stepN: 1, eventId: 'e1' }])
+    expect(out.skipped).toBe(1) // 'a'는 deduped
+  })
+
+  it('deps.visibilityMs를 recordDispatch에 전달한다', async () => {
+    const { deps, recordDispatch } = makeDeps(stored([wp('a')]))
+    await handleDispatch('wf-1', { ...deps, visibilityMs: 9999 })
+    expect(recordDispatch).toHaveBeenCalledWith(expect.objectContaining({ visibilityMs: 9999 }))
   })
 })
