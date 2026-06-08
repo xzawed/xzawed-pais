@@ -1,0 +1,71 @@
+import { describe, it, expect, vi } from 'vitest'
+import { planReclaim, handleLeaseSweep, type SweepDeps } from './lease.js'
+import type { LeaseRecord } from '../db/lease.repo.js'
+
+const lease = (wpId: string, attempt: number, over: Partial<LeaseRecord> = {}): LeaseRecord => ({
+  workflowId: 'wf-1', wpId, attempt, owner: null, status: 'active', expiresAt: 0, stepN: 0, eventId: null, ...over,
+})
+
+describe('planReclaim (순수)', () => {
+  it('nextAttempt < maxAttempts면 reclaim, 아니면 escalate', () => {
+    const out = planReclaim([lease('a', 0), lease('b', 1), lease('c', 2)], { maxAttempts: 3 })
+    expect(out).toEqual([
+      { workflowId: 'wf-1', wpId: 'a', stepN: 0, attempt: 0, nextAttempt: 1, action: 'reclaim' },
+      { workflowId: 'wf-1', wpId: 'b', stepN: 0, attempt: 1, nextAttempt: 2, action: 'reclaim' },
+      { workflowId: 'wf-1', wpId: 'c', stepN: 0, attempt: 2, nextAttempt: 3, action: 'escalate' },
+    ])
+  })
+
+  it('빈 입력 → []', () => {
+    expect(planReclaim([], { maxAttempts: 3 })).toEqual([])
+  })
+
+  it('maxAttempts=1이면 attempt 0도 즉시 escalate', () => {
+    expect(planReclaim([lease('a', 0)], { maxAttempts: 1 })[0]?.action).toBe('escalate')
+  })
+
+  it('입력 순서를 보존한다', () => {
+    expect(planReclaim([lease('z', 0), lease('a', 0)], { maxAttempts: 3 }).map((i) => i.wpId)).toEqual(['z', 'a'])
+  })
+})
+
+function makeSweepDeps(expired: LeaseRecord[], extra: Partial<SweepDeps> = {}) {
+  const recordReclaim = vi.fn().mockResolvedValue({ status: 'reclaimed', eventId: 'r1', seq: 1 })
+  const recordEscalation = vi.fn().mockResolvedValue({ status: 'escalated', eventId: 'x1', seq: 2 })
+  const store = { expiredActiveLeases: vi.fn().mockResolvedValue(expired), recordReclaim, recordEscalation }
+  const deps = { store, ...extra } as unknown as SweepDeps
+  return { deps, recordReclaim, recordEscalation, store }
+}
+
+describe('handleLeaseSweep', () => {
+  it('만료 lease를 reclaim/escalate로 분류해 store를 호출하고 outcome을 매핑한다', async () => {
+    const { deps, recordReclaim, recordEscalation } = makeSweepDeps([lease('a', 0), lease('c', 2)], { maxAttempts: 3 })
+    const out = await handleLeaseSweep(1000, deps)
+    expect(recordReclaim).toHaveBeenCalledWith(expect.objectContaining({
+      workflowId: 'wf-1', wpId: 'a', nextAttempt: 1, visibilityMs: expect.any(Number),
+    }))
+    expect(recordEscalation).toHaveBeenCalledWith(expect.objectContaining({ wpId: 'c', attempt: 2 }))
+    expect(out.reclaimed).toEqual([{ workflowId: 'wf-1', wpId: 'a', nextAttempt: 1, eventId: 'r1' }])
+    expect(out.escalated).toEqual([{ workflowId: 'wf-1', wpId: 'c', eventId: 'x1' }])
+    expect(out.skipped).toBe(0)
+  })
+
+  it('recordReclaim이 skipped면 reclaimed에서 제외하고 skipped로 센다(동시 sweep)', async () => {
+    const { deps } = makeSweepDeps([lease('a', 0)], { maxAttempts: 3 })
+    deps.store.recordReclaim = vi.fn().mockResolvedValue({ status: 'skipped' })
+    const out = await handleLeaseSweep(1000, deps)
+    expect(out.reclaimed).toEqual([])
+    expect(out.skipped).toBe(1)
+  })
+
+  it('만료가 없으면 빈 outcome', async () => {
+    const { deps } = makeSweepDeps([])
+    expect(await handleLeaseSweep(1000, deps)).toEqual({ reclaimed: [], escalated: [], skipped: 0 })
+  })
+
+  it('expiredActiveLeases에 sweep now를 전달한다', async () => {
+    const { deps, store } = makeSweepDeps([])
+    await handleLeaseSweep(4242, deps)
+    expect(store.expiredActiveLeases).toHaveBeenCalledWith(4242)
+  })
+})

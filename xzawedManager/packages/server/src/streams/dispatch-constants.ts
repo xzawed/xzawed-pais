@@ -17,8 +17,15 @@ export const DISPATCH_ACTOR = 'task-manager'
 
 /** lease 상태(wp_leases.status) — active. P1d-5. */
 export const LEASE_ACTIVE = 'active'
+/** lease 상태 — escalated(상한 초과 사람 에스컬레이션). P1d-5b. */
+export const LEASE_ESCALATED = 'escalated'
+/** WP 에스컬레이션 상태(wp_state_log.to_state) + 이벤트 타입. P1d-5b. */
+export const ESCALATED_STATE = 'ESCALATED'
+export const WP_ESCALATED_EVENT = 'wp.escalated'
 /** lease 가시성 타임아웃 기본값(ms, 5분). env MANAGER_LEASE_VISIBILITY_MS로 오버라이드(배선 시). */
 export const DEFAULT_VISIBILITY_MS = 300_000
+/** 최대 디스패치 시도(초과 시 escalate). env MANAGER_LEASE_MAX_ATTEMPTS로 오버라이드(배선 시). */
+export const DEFAULT_MAX_ATTEMPTS = 3
 
 /**
  * 봉투 stepId 빌더(멱등키 §8 #1) — 멱등키를 위치(step-N)가 아니라 **WP content-hash id**에 고정한다.
