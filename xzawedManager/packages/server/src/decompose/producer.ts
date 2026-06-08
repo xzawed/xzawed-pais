@@ -36,7 +36,12 @@ export async function produceDecomposition(
       model: deps.model,
       timeoutMs: deps.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     })
-    workPackages = result.workPackages
+    if (result.status === 'ok') {
+      workPackages = result.workPackages
+    } else {
+      deps.log?.('[decompose] coverage inconsistent — falling back', { reason: result.reason })
+      workPackages = fallbackWorkPackages(intent)
+    }
     deps.log?.('[decompose] coverage', {
       gaps: result.coverage.gaps.length,
       overlaps: result.coverage.overlaps.length,
