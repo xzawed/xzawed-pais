@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 394/404 테스트, 10 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
+현재 상태: **구현 완료 (server 416/430 테스트, 14 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
 **최근 반영(PR-1 게이트 fail-safe)**: 승인 응답이 파싱 불가·비객체·미지 decision이면 자동 승인(fail-open)하지 않고 `needs_human`으로 사람 재검토를 요청한다(같은 산출물·사유 안내, `MAX_GATE_REASKS` 초과 시 세션 중단). revise 소진도 무음 통과 대신 에스컬레이션. `MANAGER_GATE_FAILSAFE=false`로 레거시 fail-open 복원 가능. senario M8(무음 통과 금지)·N1(불확실=실패) 구현.
 
@@ -46,10 +46,10 @@ packages/
         ├── index.ts            # 진입점: Redis consumer 시작
         ├── config.ts           # 환경 변수 검증
         ├── server.ts           # Fastify HTTP (/health, port 3001)
-        ├── streams/            # Redis consumer + producer + outbox-relay.ts(아웃박스→Redis 폴링 릴레이). StreamConsumer·SessionGatewayConsumer(P1c-3)·StreamProducer·WatcherEventConsumer(P1c-4, readGroupMulti)·RedisAgentHandler·switch-project·register-project(P1c-5, RequestReplyPort RPC 라운드트립)는 전송을 @xzawed/agent-streams RedisEventBus(EventBus/StreamConsumerPort/RequestReplyPort)에 위임. RedisAgentHandler ensureSessionStream(xgroup)·notifyGateway는 잔류(후속). DecompositionConsumer(P1d-2, decomposition.emitted→TaskGraph 빌드·영속, 미배선)
+        ├── streams/            # Redis consumer + producer + outbox-relay.ts(아웃박스→Redis 폴링 릴레이). StreamConsumer·SessionGatewayConsumer(P1c-3)·StreamProducer·WatcherEventConsumer(P1c-4, readGroupMulti)·RedisAgentHandler·switch-project·register-project(P1c-5, RequestReplyPort RPC 라운드트립)는 전송을 @xzawed/agent-streams RedisEventBus(EventBus/StreamConsumerPort/RequestReplyPort)에 위임. RedisAgentHandler ensureSessionStream(xgroup)·notifyGateway는 잔류(후속). DecompositionConsumer(P1d-2, decomposition.emitted→TaskGraph 빌드·영속, 미배선). dispatch.ts(P1d-4 planDispatch 순수+handleDispatch 오케스트레이션, 미배선)·dispatch-constants.ts(디스패치 상태/이벤트 상수 단일출처)
         ├── claude/runner.ts    # Claude tool-calling 루프 (승인 게이트·위키 주입/저장·AgentQuery 라우팅)
         ├── gates/              # approval-gate.ts: 게이트 모드·대상·결정 파싱
-        ├── db/                 # knowledge.repo.ts + session.repo.ts + event-store.ts(이벤트소싱 append+replay) + task-graph.repo.ts(P1d-3 Task Graph 영속) + pool.ts + migrations/(001~007)
+        ├── db/                 # knowledge.repo.ts + session.repo.ts + event-store.ts(이벤트소싱 append+replay) + task-graph.repo.ts(P1d-3 Task Graph 영속) + dispatch.repo.ts(P1d-4 DispatchStore 디스패치 원자 적재) + pool.ts + migrations/(001~007)
         ├── tools/              # ToolHandler 11개 (7 RedisAgent + register-project + switch-project + github-ops* + deploy-project* / *GITHUB_TOKEN 조건부) + agent-tool-map.ts + errors.ts
         ├── sessions/           # 세션 상태 추적 (session.store.ts: gateConfig·waitForInfo·게이트 override·EventStore 컴포지션)
         └── api/                # health 라우트 + knowledge.route.ts(GET 비인증·읽기; PATCH/DELETE는 authHook 설정 시 서비스 JWT 필요)
@@ -146,6 +146,15 @@ P1d Task Manager의 영속 토대. `EVENT_SOURCED_SESSION`과 무관하게 `runM
 
 - **`streams/decomposition-consumer.ts`**: `handleDecompositionEmitted(msg, {repo, publish, ...})` 순수 핸들러 — `buildTaskGraph`(#253)로 빌드 → **구조오류(중복id·dangling)·사이클(detectCycle)이면** `decomposition.inconsistent` 발행 + 영속 안 함(LLM 수선 없음 — 사양 §6 결정론 경계, 수선은 PM/P2 책임) → **정상이면** `TaskGraphRepo.upsertGraph`(#255). `DecompositionConsumer`는 BaseConsumer 서브클래스(dedup ON·전송 글루).
 - **스트림(잠정)**: 입력 `manager:decomposition:{workflowId}`(group `manager-taskgraph-consumers`), inconsistent 출력 `manager:events:{workflowId}`. P2 배선 시 확정.
+
+## Task Graph 디스패치 (P1d-4)
+
+영속 그래프에서 **ready 노드를 결정론적으로 디스패치**한다(`readyNodes`→`wp.dispatched`·step-N·상태전이 로깅). 생산자·트리거 미도착이라 **런타임 미배선**(코어+테스트만, server.ts 무수정). PO 결정: DRAFTED→DISPATCHED·step-N=topo 인덱스·트랜잭셔널 아웃박스(M5).
+
+- **`streams/dispatch.ts`**: `planDispatch(graph, {alreadyDispatched, readiness?})` **순수** 플래너 — `readyNodes`(DoR) ∩ `!alreadyDispatched`, `topoSort.order` 인덱스로 step-N 부여(상태명 비의존). `handleDispatch(workflowId, {repo, store, readiness?})` 오케스트레이션 — `getGraph`→`latestStates`로 `alreadyDispatched`(toState==='DISPATCHED') 파생→`planDispatch`→항목별 원자 `recordDispatch`. 그래프 없음=noop. handleDecompositionEmitted 대칭.
+- **`db/dispatch.repo.ts` `DispatchStore.recordDispatch`**: **단일 tx**로 `manager_events`(wp.dispatched 진실원천)+`wp_state_log`(DRAFTED→DISPATCHED 전이)+`manager_outbox`(M5)를 INSERT. `manager_outbox.event_id`→`manager_events` FK(006)를 한 tx로 충족. ROLLBACK 가드(연결 손상 시 원본 오류 보존). 기존 `OutboxRelay`가 `manager:events:{wf}`로 at-least-once 발행. EventStore.appendSessionEvent와 동일 메커니즘.
+- **`streams/dispatch-constants.ts`**: `DRAFTED_STATE`·`DISPATCHED_STATE`·`WP_DISPATCHED_EVENT`·`DISPATCH_ACTOR` 단일출처(플래너·repo 공유, contract-drift 회피).
+- **멱등·복원력**: 이미 DISPATCHED인 WP는 `alreadyDispatched`로 제외(per-WP tx라 부분 실패도 latestStates로 resumable). ⚠️ **배선 전 해소(스펙 §8)**: 멱등키 `{wf}:step-N:0`의 위치 의존성(재분해 시 불안정)·단일 직렬 실행 전제(동시성 DB dedup은 P1d-5).
 
 ## AgentQuery 교차질의
 

@@ -182,3 +182,11 @@ finally { client.release() }
 ## 7. 회귀·검증
 
 기존 코드 0줄 수정 → 회귀 0(신규 파일 + 테스트만, server.ts 무배선). `cd xzawedManager && pnpm build && pnpm test`(395 → 유닛 증가, 통합 +조건부 skip). `pnpm audit` 0. CPD `npx jscpd@3.5.10 --config .jscpd.json`(manager_events INSERT 중첩 주시 — 헬퍼 없이 두되 임계 초과 시 NOSONAR/추출 검토). 적대적 리뷰(원자성·롤백·멱등·결정론 step-N·상태명 비의존 플래너·스트림 루프 없음·FK 정합). PR → CI(module-boundaries) 그린 → squash 머지. CLAUDE.md(xzawedManager 구조·P1d-4 섹션)·루트 CLAUDE.md(Manager 행)·HANDOFF·메모리 갱신. **다음 P1d-5 lease/escalation**(디스패치된 WP의 임대·타임아웃·재할당). 잔여 P1d: 5→6→7.
+
+## 8. 알려진 한계 · 후속 과제 (배선 슬라이스 P1d-5/P2에서 해소)
+
+적대적 리뷰(7확정/10기각)에서 도출된, **미배선 슬라이스라 현재 미발현이나 배선 전 해소**할 잠복 항목. 이 슬라이스는 PO 결정(step-N=topo 인덱스·미배선 코어)을 유지하고 한계를 명시하는 데 그친다.
+
+1. **멱등키의 위치 의존성(재분해 시 불안정)** [리뷰 high·실효 latent]. 봉투 멱등키 `{wf}:step-${N}:0`는 step-N(=현재 그래프 `topoSort.order` 인덱스)에 묶인다. `task_graphs`는 가변 프로젝션이라 재분해(version++)로 order가 바뀌면 (a) 같은 WP의 step-N이 이동하거나 (b) 같은 step-N이 다른 WP를 가리킬 수 있어, 다운스트림 M6 dedup이 정당한 디스패치를 거짓 억제할 수 있다. §5의 "같은 그래프 → 같은 step → 같은 멱등키"는 **첫 분해(단일 version)에서만** 성립한다. **해소(배선 전)**: 멱등키를 WP content-hash id에 고정(예: `wp-${wpId}`)하거나 graph version을 포함. step-N은 표시/정렬(N4)용으로 유지하되 dedup 정체성에서 분리. (동일 WP 재디스패치는 `alreadyDispatched`(wp_id 기반 latestStates) 가드로 이미 차단되므로, 위험은 *다른 WP가 같은 슬롯을 점유*하는 경우에 국한.)
+2. **디스패치 멱등은 단일 직렬 실행 전제(동시성 가드 부재)** [리뷰 low]. 멱등은 `handleDispatch` 진입 시점 `latestStates` 스냅샷 → `alreadyDispatched` 필터(비원자 read-then-write)에만 의존한다. `manager_events.idempotency_key`·`wp_state_log`에 DB 레벨 유니크 제약이 없어, 같은 workflowId에 `handleDispatch`가 **동시/재진입** 실행되면 중복 `wp.dispatched`+중복 DISPATCHED 전이가 적재될 수 있다(§5의 effective-exactly-once는 다운스트림 M6 dedup에만 성립, 발행 측 진실원천엔 미보장). 현재는 미배선·단일 OutboxRelay라 불가. **해소(배선 시)**: 워크플로 단위 직렬화(advisory lock/단일 컨슈머) 전제 또는 `manager_events(idempotency_key)` UNIQUE / `wp_state_log` `to_state='DISPATCHED'` 부분 유니크 인덱스 + `ON CONFLICT DO NOTHING`로 DB 레벨 멱등 확보(P1d-5 lease와 함께).
+3. **형제 통합 테스트의 비스코프 cleanup** [리뷰 medium·로컬 한정]. `task-graph-persistence`·`decomposition-consumer`·`event-sourcing` 통합 테스트의 afterAll이 `DELETE FROM ...`(WHERE 없음)을 수행한다. `pool:'forks'` 로컬 병렬에서 디스패치 테스트의 SELECT 어서션 도중 발화하면 간헐 실패 가능(CI는 maxForks=1 직렬이라 안전). 본 슬라이스는 자기 테스트를 `'wf-disp-%'` 스코프 + beforeAll 선삭제로 방어. **후속**: 형제 비스코프 DELETE를 prefix 스코프로 통일.
