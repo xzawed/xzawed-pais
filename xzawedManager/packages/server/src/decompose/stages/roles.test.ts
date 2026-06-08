@@ -32,4 +32,9 @@ describe('assignRoles', () => {
     expect(out.get('s1')).toEqual(['developer'])
     expect(out.get('s2')).toEqual(['developer'])
   })
+
+  it('빈 roles 할당은 무시되고 기본 역할로 보정', async () => {
+    const out = await assignRoles([story('s1')], deps('{"assignments":[{"storyId":"s1","roles":[]}]}'))
+    expect(out.get('s1')).toEqual(['developer'])
+  })
 })
