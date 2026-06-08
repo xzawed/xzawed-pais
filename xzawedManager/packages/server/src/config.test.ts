@@ -1,0 +1,32 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { loadConfig } from './config.js'
+
+describe('config CLAUDE_TIMEOUT_MS', () => {
+  let savedMode: string | undefined
+  let savedKey: string | undefined
+
+  beforeEach(() => {
+    savedMode = process.env['MODE']
+    savedKey = process.env['ANTHROPIC_API_KEY']
+    process.env['MODE'] = 'local'
+    process.env['ANTHROPIC_API_KEY'] = 'k'
+  })
+
+  afterEach(() => {
+    if (savedMode !== undefined) process.env['MODE'] = savedMode
+    else delete process.env['MODE']
+    if (savedKey !== undefined) process.env['ANTHROPIC_API_KEY'] = savedKey
+    else delete process.env['ANTHROPIC_API_KEY']
+    delete process.env['CLAUDE_TIMEOUT_MS']
+  })
+
+  it('기본값 120000', () => {
+    delete process.env['CLAUDE_TIMEOUT_MS']
+    expect(loadConfig().CLAUDE_TIMEOUT_MS).toBe(120000)
+  })
+
+  it('env 값 적용', () => {
+    process.env['CLAUDE_TIMEOUT_MS'] = '5000'
+    expect(loadConfig().CLAUDE_TIMEOUT_MS).toBe(5000)
+  })
+})
