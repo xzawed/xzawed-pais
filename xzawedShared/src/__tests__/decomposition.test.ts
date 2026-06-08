@@ -122,4 +122,10 @@ describe('contentHashId', () => {
   it('빈 acceptanceCriteria 허용', () => {
     expect(contentHashId({ ...base, acceptanceCriteria: [] })).toMatch(/^wp_[0-9a-f]{32}$/)
   })
+
+  it('acceptanceCriteria 중복 항목은 제거하지 않음(중복 포함 시 다른 id)', () => {
+    const withDup = contentHashId({ ...base, acceptanceCriteria: ['a', 'a'] })
+    const withoutDup = contentHashId({ ...base, acceptanceCriteria: ['a'] })
+    expect(withDup).not.toBe(withoutDup)
+  })
 })
