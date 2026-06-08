@@ -223,3 +223,12 @@ describe('mergeKeepInflight', () => {
     expect(() => buildTaskGraph(out)).not.toThrow()
   })
 })
+
+describe('package export', () => {
+  it('루트 배럴에서 3종 함수가 노출된다', async () => {
+    const pkg = await import('../index.js')
+    expect(typeof pkg.coverageMatrix).toBe('function')
+    expect(typeof pkg.contentHashId).toBe('function')
+    expect(typeof pkg.mergeKeepInflight).toBe('function')
+  })
+})
