@@ -90,14 +90,33 @@ export async function handleDecompositionEmitted(
   return { status: 'persisted', version }
 }
 
+/**
+ * 소비 핸들러 빌더: handleDecompositionEmitted(영속/에스컬레이션) → 영속 성공 시 afterPersisted(workflowId).
+ * afterPersisted=디스패치를 주입하면 소비→영속→디스패치를 합성한다(P1d-7 Supervisor). 미전달이면 영속만(P1d-2).
+ */
+export function buildDecompositionConsumerHandler(
+  repo: TaskGraphRepo,
+  publish: Publish,
+  afterPersisted?: (workflowId: string) => Promise<void>,
+): (msg: DecompositionEmittedMessage) => Promise<void> {
+  return async (msg) => {
+    const outcome = await handleDecompositionEmitted(msg, { repo, publish })
+    if (outcome.status === 'persisted' && afterPersisted) {
+      await afterPersisted(msg.envelope.workflowId)
+    }
+  }
+}
+
 /** decomposition.emitted 소비자(전송 글루). 도메인 로직은 handleDecompositionEmitted에 위임. */
 export class DecompositionConsumer extends BaseConsumer<DecompositionEmittedMessage> {
-  constructor(redis: Redis, repo: TaskGraphRepo, publish: Publish, sleep?: (ms: number) => Promise<void>) {
+  constructor(
+    redis: Redis, repo: TaskGraphRepo, publish: Publish,
+    sleep?: (ms: number) => Promise<void>,
+    afterPersisted?: (workflowId: string) => Promise<void>,
+  ) {
     super(
       redis,
-      async (msg) => {
-        await handleDecompositionEmitted(msg, { repo, publish })
-      },
+      buildDecompositionConsumerHandler(repo, publish, afterPersisted),
       CONSUMER_GROUP,
       `manager-taskgraph-${process.pid}`,
       STREAM_PREFIX,

@@ -29,7 +29,12 @@ import { createSwitchProjectHandler } from './tools/switch-project.js'
 import { createDeployProjectHandler } from './tools/deploy-project.js'
 import { SessionGatewayConsumer } from './streams/session-gateway.js'
 import { WatcherEventConsumer } from './streams/watcher-event-consumer.js'
-import { getRedisClient } from './streams/redis.client.js'
+import { getRedisClient, createRedisClient } from './streams/redis.client.js'
+import { RedisEventBus } from '@xzawed/agent-streams'
+import { TaskGraphRepo } from './db/task-graph.repo.js'
+import { DispatchStore } from './db/dispatch.repo.js'
+import { LeaseStore } from './db/lease.repo.js'
+import { createSupervisor, shouldWireSupervisor, type Supervisor } from './streams/supervisor.js'
 
 export async function buildServer(
   config: Config,
@@ -101,6 +106,32 @@ export async function buildServer(
     outboxRelay.start()
   }
 
+  // Task Manager Supervisor 배선(P1d-7): flag on + pool이면 decomposition 소비→디스패치·lease sweep·
+  // completion 소비→재디스패치를 가동. 생산자(P2) 미도착이라 빈 스트림 구독(동작 준비). flag off면 미배선.
+  let supervisor: Supervisor | undefined
+  const supervisorDecision = shouldWireSupervisor(config.TASK_MANAGER_ENABLED, pool !== undefined)
+  if (supervisorDecision === 'wire' && pool) {
+    const bus = new RedisEventBus(createRedisClient(config.REDIS_URL))
+    supervisor = createSupervisor(
+      () => createRedisClient(config.REDIS_URL),
+      {
+        repo: new TaskGraphRepo(pool),
+        dispatchStore: new DispatchStore(pool),
+        leaseStore: new LeaseStore(pool),
+        publish: (stream, message) => bus.publish(stream, message),
+      },
+      {
+        sweepMs: config.MANAGER_LEASE_SWEEP_MS,
+        visibilityMs: config.MANAGER_LEASE_VISIBILITY_MS,
+        maxAttempts: config.MANAGER_LEASE_MAX_ATTEMPTS,
+      },
+    )
+    supervisor.start()
+    app.log.info('[task-manager] Supervisor 가동(decomposition→dispatch · lease sweep · completion→re-dispatch)')
+  } else if (supervisorDecision === 'warn') {
+    app.log.warn('TASK_MANAGER_ENABLED=true 이지만 DATABASE_URL이 없어 Supervisor를 배선하지 않습니다.')
+  }
+
   const authHook = config.SERVICE_JWT_SECRET ? verifyServiceToken : undefined
 
   const watcherEventConsumer = new WatcherEventConsumer(
@@ -163,6 +194,7 @@ export async function buildServer(
   })
 
   const closeAll = async () => {
+    supervisor?.stop()
     outboxRelay?.stop()
     sessionGateway.stop()
     watcherEventConsumer.stop()

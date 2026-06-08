@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   handleDecompositionEmitted,
+  buildDecompositionConsumerHandler,
   DecompositionConsumer,
   type DecompositionEmittedMessage,
 } from './decomposition-consumer.js'
@@ -119,5 +120,36 @@ describe('DecompositionConsumer', () => {
     const repo = mockRepo()
     const publish = vi.fn()
     expect(() => new DecompositionConsumer({} as Redis, repo, publish)).not.toThrow()
+  })
+})
+
+describe('buildDecompositionConsumerHandler (P1d-7 afterPersisted 훅)', () => {
+  it('영속 성공 시 afterPersisted를 workflowId로 호출한다', async () => {
+    const repo = mockRepo(1)
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const afterPersisted = vi.fn().mockResolvedValue(undefined)
+    const handler = buildDecompositionConsumerHandler(repo, publish, afterPersisted)
+    await handler(msg([wp('a'), wp('b', ['a'])]))
+    expect(repo.upsertGraph).toHaveBeenCalled()
+    expect(afterPersisted).toHaveBeenCalledWith('wf-1')
+  })
+
+  it('사이클(inconsistent)이면 afterPersisted를 호출하지 않는다', async () => {
+    const repo = mockRepo()
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const afterPersisted = vi.fn().mockResolvedValue(undefined)
+    const handler = buildDecompositionConsumerHandler(repo, publish, afterPersisted)
+    await handler(msg([wp('a', ['b']), wp('b', ['a'])]))
+    expect(publish).toHaveBeenCalled() // inconsistent
+    expect(repo.upsertGraph).not.toHaveBeenCalled()
+    expect(afterPersisted).not.toHaveBeenCalled()
+  })
+
+  it('afterPersisted 미전달이면 영속만 하고 throw하지 않는다(회귀)', async () => {
+    const repo = mockRepo(1)
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const handler = buildDecompositionConsumerHandler(repo, publish)
+    await expect(handler(msg([wp('a')]))).resolves.toBeUndefined()
+    expect(repo.upsertGraph).toHaveBeenCalled()
   })
 })

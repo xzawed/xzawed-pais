@@ -67,4 +67,32 @@ describe('loadConfig', () => {
       expect(loadConfig().MANAGER_OUTBOX_POLL_MS).toBe(500)
     })
   })
+
+  describe('TASK_MANAGER_ENABLED + lease 설정 (P1d-7 Supervisor)', () => {
+    beforeEach(() => {
+      process.env.ANTHROPIC_API_KEY = 'sk-test-key'
+      process.env.MODE = 'local'
+    })
+    it('TASK_MANAGER_ENABLED 미설정이면 기본 false(미배선)', () => {
+      delete process.env.TASK_MANAGER_ENABLED
+      expect(loadConfig().TASK_MANAGER_ENABLED).toBe(false)
+    })
+    it("TASK_MANAGER_ENABLED='true'면 true", () => {
+      process.env.TASK_MANAGER_ENABLED = 'true'
+      expect(loadConfig().TASK_MANAGER_ENABLED).toBe(true)
+    })
+    it('lease 기본값: sweep 30000·visibility 300000·maxAttempts 3', () => {
+      delete process.env.MANAGER_LEASE_SWEEP_MS
+      delete process.env.MANAGER_LEASE_VISIBILITY_MS
+      delete process.env.MANAGER_LEASE_MAX_ATTEMPTS
+      const c = loadConfig()
+      expect(c.MANAGER_LEASE_SWEEP_MS).toBe(30_000)
+      expect(c.MANAGER_LEASE_VISIBILITY_MS).toBe(300_000)
+      expect(c.MANAGER_LEASE_MAX_ATTEMPTS).toBe(3)
+    })
+    it('lease env 오버라이드를 정수로 파싱한다', () => {
+      process.env.MANAGER_LEASE_SWEEP_MS = '15000'
+      expect(loadConfig().MANAGER_LEASE_SWEEP_MS).toBe(15_000)
+    })
+  })
 })
