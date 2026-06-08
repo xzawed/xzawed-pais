@@ -217,7 +217,7 @@ TASK_MANAGER_ENABLED=    # 선택: 기본 false. true+DATABASE_URL이면 Task Ma
 MANAGER_LEASE_SWEEP_MS=  # 선택: lease 만료 sweep 주기 ms(기본 30000)
 MANAGER_LEASE_VISIBILITY_MS= # 선택: lease 가시성 타임아웃 ms(기본 300000)
 MANAGER_LEASE_MAX_ATTEMPTS=  # 선택: 최대 디스패치 시도, 초과 시 escalate(기본 3)
-MANAGER_DECOMPOSE_ENABLED=   # 선택: 기본 false. true면 decompose_request 분해 생산자 배선(P2-2)
+MANAGER_DECOMPOSE_ENABLED=   # 선택: 기본 false. true면 decompose_request 4단계 LLM 분해 생산자 배선(P2-3a)
 CLAUDE_TIMEOUT_MS=           # 선택: 단계 LLM 호출 타임아웃 ms(기본 120000). P2-3a 분해 파이프라인 등에서 사용
 ```
 
