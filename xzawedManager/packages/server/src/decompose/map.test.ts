@@ -25,7 +25,7 @@ describe('toWorkPackages', () => {
     expect(out[0]?.dependencies).toEqual([])
   })
 
-  it('자기참조(같은 id로 해소되는 의존)는 드롭', () => {
+  it('자기참조(ref 일치) 의존은 드롭', () => {
     const out = toWorkPackages([llm({ ref: 'a', dependsOn: ['a'] })])
     expect(out[0]?.dependencies).toEqual([])
   })
@@ -43,5 +43,16 @@ describe('toWorkPackages', () => {
   it('출력은 buildTaskGraph가 수용(dangling 0)', () => {
     const out = toWorkPackages([llm({ ref: 'a' }), llm({ ref: 'b', storyId: 's2', dependsOn: ['a'] })])
     expect(() => buildTaskGraph(out)).not.toThrow()
+  })
+
+  it('동일 content-hash(충돌) → buildTaskGraph가 duplicate id로 throw', () => {
+    // 다른 ref이나 동일 내용 → 같은 hash → toWorkPackages는 두 WP 모두 반환(hash 중복제거 안 함)
+    const out = toWorkPackages([
+      llm({ ref: 'a', storyId: 's1', owningRole: 'developer', acceptanceCriteria: ['ac'] }),
+      llm({ ref: 'b', storyId: 's1', owningRole: 'developer', acceptanceCriteria: ['ac'] }),
+    ])
+    expect(out).toHaveLength(2)
+    expect(out[0]?.id).toBe(out[1]?.id)
+    expect(() => buildTaskGraph(out)).toThrow(/duplicate work package id/)
   })
 })
