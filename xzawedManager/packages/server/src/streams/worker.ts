@@ -33,15 +33,17 @@ export type WorkerOutcome =
   | { status: 'skipped'; reason: 'wp_not_found' | 'unknown_role' | 'no_handler' }
   | { status: 'failed'; reason: 'agent_error' }
 
-/** WP→에이전트 입력(최소·placeholder 품질). 값은 runner.ts `buildAgentQueryPayload`의 **검증된 union**과 동일 —
- *  5종 답변자(developer/designer/tester/builder/security) safeParse 통과(Zod 잉여 키 strip). intent만 WP 설명으로 교체.
- *  ⚠️ context는 `z.record`(객체), target은 빌더 enum 'development', severity는 'low' — string/storyId면 safeParse 실패. */
+/** WP→에이전트 입력(최소·placeholder 품질). 필수 필드는 runner.ts `buildAgentQueryPayload`의 **검증된 union**과
+ *  같은 타입(5종 safeParse 통과·Zod 잉여 키 strip). intent/plan에 WP 설명을 담는다.
+ *  ⚠️ context는 `z.record`(객체), target은 빌더 enum 'development', severity는 'low'(string/storyId면 safeParse 실패).
+ *  ⚠️ projectPath는 execute 모드에서 실제 파일시스템 검증(`fs.realpath`)을 받는다 — ''는 ENOENT 거부라 '.'(워크스페이스 루트
+ *  상대)로 둔다. 단, 에이전트 cwd≠workspaceRoot 배포에선 '.'도 거부될 수 있다 → 실 워크스페이스 경로 주입은 후속(설계 §6). */
 export function buildWorkerInput(wp: WorkPackage): Record<string, unknown> {
   const acList = wp.acceptanceCriteria.map((a) => `- ${a}`).join('\n')
   const intent = wp.acceptanceCriteria.length
     ? `Implement story ${wp.storyId}.\nAcceptance criteria:\n${acList}`
     : `Implement story ${wp.storyId}.`
-  return { intent, context: {}, priority: 'normal', projectPath: '', target: 'development', severity: 'low', artifacts: [] }
+  return { intent, plan: intent, context: {}, priority: 'normal', projectPath: '.', target: 'development', severity: 'low', artifacts: [] }
 }
 
 /** 워커 배선 판정(순수·D4 패턴): taskWorker flag + 핸들러 주입 둘 다 있어야 배선. */

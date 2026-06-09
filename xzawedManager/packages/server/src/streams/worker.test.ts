@@ -69,9 +69,10 @@ describe('buildWorkerInput / shouldWireWorker', () => {
   it('buildWorkerInput은 AC를 intent에 담고 검증된 union 값을 채움(context=record·target=development·severity=low)', () => {
     const i = buildWorkerInput(wp({ acceptanceCriteria: ['ac1', 'ac2'] })) as Record<string, unknown>
     expect(String(i.intent)).toContain('ac1')
-    // buildAgentQueryPayload(검증된 union)과 동일 — context는 객체(z.record), target/severity는 placeholder enum.
-    expect(i).toMatchObject({ context: {}, priority: 'normal', projectPath: '', target: 'development', severity: 'low', artifacts: [] })
+    // 검증된 union 타입 — context는 객체(z.record), target/severity는 placeholder enum, projectPath는 '.'(execute 모드 fs 검증).
+    expect(i).toMatchObject({ context: {}, priority: 'normal', projectPath: '.', target: 'development', severity: 'low', artifacts: [] })
     expect(typeof i.context).toBe('object')
+    expect(String(i.plan)).toContain('ac1') // developer는 plan을 읽음(빈 plan no-op 방지)
   })
   it('shouldWireWorker 진리표', () => {
     expect(shouldWireWorker(false, true)).toBe(false)
