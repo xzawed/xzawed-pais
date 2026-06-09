@@ -20,7 +20,7 @@ export const DecompositionEmittedSchema = z.object({
 })
 export type DecompositionEmittedMessage = z.infer<typeof DecompositionEmittedSchema>
 
-export type InconsistentReason = 'cycle' | 'structural'
+export type InconsistentReason = 'cycle' | 'structural' | 'coverage'
 export type Publish = (stream: string, message: Record<string, unknown>) => Promise<unknown>
 
 export interface DecompositionDeps {
@@ -40,7 +40,7 @@ const STREAM_PREFIX = 'manager:decomposition'
 // 입력(manager:decomposition)과 의도적으로 분리된 출력 스트림(자기소비 루프 방지). 세션 이벤트소싱
 // 스트림(session.store.ts)과 네임스페이스를 공유하므로, 다운스트림 소비자(P1d-4/Supervisor)는
 // decomposition.inconsistent를 세션 이벤트와 함께 처리할 수 있어야 한다.
-const defaultInconsistentStream = (workflowId: string): string => `manager:events:${workflowId}`
+export const defaultInconsistentStream = (workflowId: string): string => `manager:events:${workflowId}`
 
 /** decomposition.inconsistent 이벤트를 인과(causation=원 eventId) 봉투로 출력 스트림에 발행. */
 async function emitInconsistent(

@@ -11,7 +11,7 @@ export interface Story {
   acceptanceCriteria: string[]
 }
 
-const StoryItemSchema = z.object({
+export const StoryItemSchema = z.object({
   storyId: z.string().min(1),
   epicRef: z.string(),
   title: z.string(),
@@ -19,7 +19,7 @@ const StoryItemSchema = z.object({
   acceptanceCriteria: z.array(z.string()),
 })
 
-const StoriesSchema = z.object({
+export const StoriesSchema = z.object({
   stories: z.array(StoryItemSchema).default([]),
 })
 

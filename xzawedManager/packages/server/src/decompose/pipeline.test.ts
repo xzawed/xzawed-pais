@@ -4,7 +4,7 @@ import type { ClaudeLike } from '@xzawed/agent-streams'
 import { runDecomposition, fallbackWorkPackages } from './pipeline.js'
 import type { StageDeps } from './stages/run-stage.js'
 
-/** 4단계 순서(epics→slice→deliverables→roles)대로 응답을 주는 mock. */
+/** 단계 순서(epics→slice→deliverables→[repair…]→roles)대로 응답하는 mock. */
 function stagedDeps(...texts: string[]): StageDeps {
   const create = vi.fn()
   for (const t of texts) create.mockResolvedValueOnce({ content: [{ type: 'text', text: t }] })
@@ -12,26 +12,53 @@ function stagedDeps(...texts: string[]): StageDeps {
 }
 
 const EPICS = '{"epics":[{"epicRef":"e1","title":"Auth"}]}'
-const STORIES = '{"stories":[{"storyId":"s1","epicRef":"e1","title":"Login","deliverableIds":["d1"],"acceptanceCriteria":["x"]}]}'
-const DELIVS = '{"deliverables":["d1","d2"]}'
-const ROLES = '{"assignments":[{"storyId":"s1","roles":["developer","tester"]}]}'
+const STORY_D1 = '{"stories":[{"storyId":"s1","epicRef":"e1","title":"Login","deliverableIds":["d1"],"acceptanceCriteria":["x"]}]}'
+const DELIVS_D1 = '{"deliverables":["d1"]}'
+const DELIVS_GAP = '{"deliverables":["d1","d2"]}'
+const REPAIR_D1D2 = '{"stories":[{"storyId":"s1","epicRef":"e1","title":"Login","deliverableIds":["d1","d2"],"acceptanceCriteria":["x"]}]}'
+const ROLES = '{"assignments":[{"storyId":"s1","roles":["developer"]}]}'
 
-describe('runDecomposition', () => {
-  it('4단계 정상 → story×role 전개 WP[] + coverage', async () => {
-    const { workPackages, coverage } = await runDecomposition('build', stagedDeps(EPICS, STORIES, DELIVS, ROLES))
-    expect(workPackages).toHaveLength(2) // s1×developer, s1×tester
-    expect(workPackages.every((w) => w.id.startsWith('wp_'))).toBe(true)
-    expect(workPackages.every((w) => w.dependencies.length === 0)).toBe(true) // flat (간선 없음)
-    expect(coverage.gaps).toEqual(['d2']) // d2는 어느 story도 미주장
-    expect(coverage.overlaps).toEqual([])
-    expect(coverage.unknownClaims).toEqual([])
-    expect(() => buildTaskGraph(workPackages)).not.toThrow()
+describe('runDecomposition (P2-3b)', () => {
+  it('첫 수렴(repair 불필요) → status ok + 린트', async () => {
+    const res = await runDecomposition('build', stagedDeps(EPICS, STORY_D1, DELIVS_D1, ROLES))
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok') return
+    expect(res.workPackages).toHaveLength(1)
+    expect(res.coverage.gaps).toEqual([])
+    expect(res.singleRoleStoryIds).toEqual(['s1']) // ROLES가 s1에 단일 역할만 부여 → 린트 신호
+    expect(() => buildTaskGraph(res.workPackages)).not.toThrow()
   })
 
-  it('전 단계 실패 → degrade로 단일 WP·빈 emit 없음', async () => {
-    const { workPackages } = await runDecomposition('do thing', stagedDeps('x', 'y', 'z', 'w'))
-    expect(workPackages).toHaveLength(1)
-    expect(workPackages[0]?.acceptanceCriteria).toEqual(['do thing'])
+  it('repair 1회 후 수렴 → status ok', async () => {
+    const res = await runDecomposition('build', stagedDeps(EPICS, STORY_D1, DELIVS_GAP, REPAIR_D1D2, ROLES))
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok') return
+    expect(res.coverage.gaps).toEqual([])
+    expect(res.workPackages).toHaveLength(1)
+  })
+
+  it('K 소진 → status inconsistent (reason coverage)', async () => {
+    const res = await runDecomposition('build', stagedDeps(EPICS, STORY_D1, DELIVS_GAP, 'garbage', 'garbage'), 2)
+    expect(res.status).toBe('inconsistent')
+    if (res.status !== 'inconsistent') return
+    expect(res.reason).toBe('coverage')
+    expect(res.coverage.gaps).toEqual(['d2'])
+  })
+
+  it('repairMax=1 → 1회 repair 후 미수렴이면 inconsistent (루프 상한 증명)', async () => {
+    const res = await runDecomposition('build', stagedDeps(EPICS, STORY_D1, DELIVS_GAP, 'garbage'), 1)
+    expect(res.status).toBe('inconsistent')
+    if (res.status !== 'inconsistent') return
+    expect(res.reason).toBe('coverage')
+    expect(res.coverage.gaps).toEqual(['d2'])
+  })
+
+  it('deliverables 빈 degrade → 수렴(에스컬레이션 아님) status ok', async () => {
+    const res = await runDecomposition('do thing', stagedDeps('x', 'y', 'z', 'w'))
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok') return
+    expect(res.workPackages).toHaveLength(1)
+    expect(res.workPackages[0]?.acceptanceCriteria).toEqual(['do thing'])
   })
 
   it('fallbackWorkPackages는 intent 단일 WP', () => {

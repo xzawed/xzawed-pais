@@ -140,6 +140,7 @@ export async function buildServer(
         model: config.CLAUDE_MODEL,
         publish: (stream, message) => producer.publishRaw(stream, message),
         timeoutMs: config.CLAUDE_TIMEOUT_MS,
+        repairMax: config.MANAGER_DECOMPOSE_REPAIR_MAX,
         log: (msg, data) => app.log.info(data ?? {}, msg),
       }
     : undefined

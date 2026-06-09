@@ -13,13 +13,16 @@ export async function handleDecomposeRequest(
   cleanup: () => Promise<void>,
 ): Promise<void> {
   try {
-    const { emitted } = await produceDecomposition(intent, sessionId, decompose)
+    const { emitted, escalated } = await produceDecomposition(intent, sessionId, decompose)
+    const content = escalated
+      ? '분해 불일치: 커버리지 수렴 실패 — 사람 검토 필요(에스컬레이션)'
+      : `분해 완료: ${emitted} WP emitted`
     await producer.publish({
       sessionId,
       messageId: crypto.randomUUID(),
       timestamp: Date.now(),
       type: 'task_complete',
-      payload: { agentId: 'manager', content: `분해 완료: ${emitted} WP emitted` },
+      payload: { agentId: 'manager', content },
     })
   } finally {
     await cleanup()
