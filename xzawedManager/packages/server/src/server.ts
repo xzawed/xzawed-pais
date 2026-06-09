@@ -128,6 +128,14 @@ export async function buildServer(
   const oracleStore =
     pool && (config.MANAGER_ORACLE_DOR || config.MANAGER_ORACLE_DRAFT) ? new OracleRepo(pool) : undefined
 
+  // D5: 초안 영속은 decomposition consumer(=Supervisor)가 돌아야 하므로 TASK_MANAGER_ENABLED+DATABASE_URL이 전제다.
+  // DRAFT만 켜고 그 전제가 없으면 producer가 oracleDrafts를 emit해도 소비자 부재로 영속되지 않는다 — 오진 방지 경고.
+  if (config.MANAGER_ORACLE_DRAFT && !(config.TASK_MANAGER_ENABLED && pool)) {
+    app.log.warn(
+      'MANAGER_ORACLE_DRAFT=true 이지만 TASK_MANAGER_ENABLED+DATABASE_URL 전제가 없어 초안 오라클이 영속되지 않습니다(소비자 부재).',
+    )
+  }
+
   // Task Manager Supervisor 배선(P1d-7): flag on + pool이면 decomposition 소비→디스패치·lease sweep·
   // completion 소비→재디스패치를 가동. 생산자(P2) 미도착이라 빈 스트림 구독(동작 준비). flag off면 미배선.
   let supervisor: Supervisor | undefined

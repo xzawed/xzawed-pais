@@ -63,6 +63,18 @@ describe('OracleRepo.approve (P3-2: SELECT FOR UPDATE→전이→UPDATE·pending
     await new OracleRepo(m.pool, () => 1000).approve('o1', 'h1')
     expect(JSON.parse((callFor(m.query, /UPDATE oracles/i)![1] as unknown[])[2] as string)).toEqual(scenarios)
   })
+
+  it('불량 scenarios JSON이면 parse throw→ROLLBACK·UPDATE/events/outbox 미적재·client release(N2)', async () => {
+    // status=pending 가드는 통과하나 scenarios가 OracleScenarioSchema 위반(id 없음) → parse가 tx 내에서 throw.
+    const m = makeMockPool({ selectRows: [{ workflow_id: 'wf1', story_id: 's1', version: 1, status: 'pending', scenarios: [{ title: 'no-id' }] }] })
+    await expect(new OracleRepo(m.pool, () => 1000).approve('o1', 'h1')).rejects.toThrow()
+    expect(callFor(m.query, /ROLLBACK/i)).toBeTruthy()
+    expect(callFor(m.query, /COMMIT/i)).toBeUndefined()
+    expect(callFor(m.query, /UPDATE oracles/i)).toBeUndefined()
+    expect(callFor(m.query, /INSERT INTO manager_events/i)).toBeUndefined()
+    expect(callFor(m.query, /INSERT INTO manager_outbox/i)).toBeUndefined()
+    expect(m.release).toHaveBeenCalled()   // finally의 client.release() 보장
+  })
 })
 
 describe('OracleRepo.upsertDraft (P3-2 멱등)', () => {
