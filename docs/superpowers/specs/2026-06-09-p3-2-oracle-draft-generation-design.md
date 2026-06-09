@@ -81,7 +81,8 @@ export async function draftOracles(stories: Story[], deps: StageDeps): Promise<O
 
 - **`MANAGER_ORACLE_DRAFT`**(기본 `false`·가역): on이면 decompose 파이프라인이 draft 스테이지 실행 + producer가 oracleDrafts emit. off면 `oracleDrafts=[]`·스테이지 미호출·**회귀 0**.
 - **oracleStore 주입(blocker#1 분리)**: `server.ts`는 `pool && (MANAGER_ORACLE_DOR || MANAGER_ORACLE_DRAFT)`이면 `OracleRepo`를 만들어 `createSupervisor`에 주입 → **DRAFT만 켜도 consumer upsert 동작**. `createSupervisor`는 `SupervisorConfig.oracleDor`(=`MANAGER_ORACLE_DOR`)로 satisfied-set 주입·oracleConsumer 배선을 게이트(DoR 게이트는 DOR일 때만).
-- `MANAGER_DECOMPOSE_ENABLED`(분해 생산자)·`TASK_MANAGER_ENABLED`(Supervisor) 전제 위에 얹힘.
+- `MANAGER_DECOMPOSE_ENABLED`(분해 생산자)·`TASK_MANAGER_ENABLED`(Supervisor) 전제 위에 얹힘. **초안 영속은 consumer(=Supervisor)가 돌아야 하므로 `MANAGER_ORACLE_DRAFT`는 `TASK_MANAGER_ENABLED`+`DATABASE_URL`을 실질 전제로 한다**(Codex#2: DRAFT-only·TASK_MANAGER off면 소비자 부재로 미영속 — config 주석·warn 로그로 안내).
+- **OutboxRelay 조건(Codex#3)**: P3-1의 relay 기동 조건에 `|| MANAGER_ORACLE_DRAFT` 추가 — DRAFT-only에서 approve가 만든 `oracle.approved` 아웃박스 잔류 방지.
 - approve 전이는 flag 무관(always-on·additive).
 
 ## 5. 테스트
