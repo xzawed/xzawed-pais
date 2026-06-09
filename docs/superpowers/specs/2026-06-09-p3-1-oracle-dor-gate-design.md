@@ -41,8 +41,7 @@ P2-3(#266까지)로 `decompose_request → 4단계 LLM 분해 → WP DAG → dec
 | `version` | int | 단조 증가, 승인 시 불변 (§6) |
 | `status` | text | `pending`\|`approved`\|`superseded` (§2) |
 | `scenarios` | jsonb | Given-When-Then[] (§3) |
-| `invariants` | jsonb | 속성[] (§4) |
-| `golden_refs` | jsonb | 골든[] (§5) |
+| ~~`invariants`·`golden_refs`~~ | — | **migration 009 미포함** — Phase 4(검증 오라클·골든 diff) 후속. satisfied-set은 scenarios+coverage만 소비 |
 | `coverage` | jsonb | `{acceptance_criterion: [scenario_id]}` (§8) |
 | `provenance` | jsonb | drafted/approved/diff/rationale (§2·M7) |
 | `created_at`·`approved_at`·`approved_by` | timestamptz/text | 감사 |
@@ -105,12 +104,13 @@ handleDispatch                                     → approvedByWorkflow → or
 - `POST /workflows/:workflowId/oracles` — 오라클 생성(pending). body=Oracle 아티팩트(시나리오·coverage·story_id).
 - `PATCH /oracles/:oracleId/approve` — 승인. body=`{approvedBy}`. → `OracleRepo.approve`.
 - `GET /workflows/:workflowId/oracles` — 조회(status 필터).
-- 쓰기(POST/PATCH)는 `authHook` 설정 시 서비스 JWT 필요(#213 패턴). DB 없으면 라우트 미등록(graceful).
+- 쓰기(POST/PATCH)는 `authHook` 설정 시 서비스 JWT 필요(#213 패턴). **repo 미주입(DB 없음) 시 라우트는 등록되되 POST/PATCH는 503·GET은 빈 목록 반환**(knowledgeRoute 패턴·graceful).
 
 ## 6. 플래그 & 가역성
 
 - `MANAGER_ORACLE_DOR`(기본 `false`·가역): off면 `handleDispatch`가 `oracleSatisfied`를 주입하지 않음 → 기본 술어(`oracleRef!=null`)·현행 동작·**회귀 0**. on이면 satisfied-set 주입 + Supervisor에 oracleConsumer 배선.
 - `TASK_MANAGER_ENABLED`+`DATABASE_URL` 전제(Supervisor 배선 조건) 위에 얹힘.
+- **OutboxRelay 기동(필수 결합)**: `oracle.approved`(아웃박스)→Redis 발행은 `EVENT_SOURCED_SESSION`과 독립이므로, `server.ts`는 `EVENT_SOURCED_SESSION || TASK_MANAGER_ENABLED || MANAGER_ORACLE_DOR` 중 하나라도 켜지면 relay를 기동한다(미기동 시 아웃박스 행이 `published_at=NULL`로 잔류 → 재디스패치 불발 → 수용기준 ⑥ 미성립).
 - migration 009는 `runMigrations`로 항상 적용(빈 표 무해).
 
 ## 7. 테스트
@@ -125,9 +125,13 @@ handleDispatch                                     → approvedByWorkflow → or
 
 - **사람 승인 병목**: 오라클 작성·승인은 사람 시간 의존. 이 슬라이스는 메커니즘만 — 비차단(승인 전 dispatch 0이 정상). LLM 초안(P7)이 후속에서 작성 부담을 흡수.
 - **AC 문자열 동일성 단순화**: WP acceptanceCriteria와 oracle coverage 키가 정확히 일치해야 satisfied. 시드 시 동일 문자열 사용 전제. 정식 AC-id 매핑은 후속(불일치 시 미충족=보수적·안전 방향).
+- **human_approved 시드 필요**: `coveredCriteria`는 `status='human_approved'` 시나리오만 계수. POST 시 시나리오 기본 status는 `drafted`이므로, end-to-end(⑥) 검증·운영 시 시드 본문에 `status:'human_approved'` 시나리오를 명시해야 PATCH approve만으로 DoR이 충족된다(자동 transition 경로 없음·LLM 초안 P7 후속).
+- **story당 approved 결정론**: 한 story에 approved 오라클이 다중이면 `approvedByWorkflow`의 `ORDER BY story_id, version`으로 최고 version이 last-wins(§6 supersede 불변식의 결정론 보강). 유니크 제약·자동 supersede는 후속.
 - **전용 스트림**: `oracle.approved`는 전용 `manager:oracle:main`으로 분리(세션 이벤트·decomposition.inconsistent와 격리) → oracleConsumer 단일 type 구독, 타 type 유입 시 invalid_schema DLQ(의도된 격리). `manager_events`(진실원천)에는 그대로 적재되나 발행 outbox 스트림만 전용.
 - **멱등키**: `oracle.approved` 멱등키는 `{wf}:oracle.approved:{oracleId}:{version}` — 동일 승인 재전달은 M6 dedup으로 1회 처리.
 
 ## 9. 완료 정의 (수용 기준)
 
-①migration 009 + OracleRepo(approve 단일 tx) ②순수 oracleSatisfiedSet + 테스트 ③handleDispatch 술어 주입(flag 가역·회귀 0) ④oracleConsumer Supervisor 배선 ⑤oracle API ⑥**end-to-end: 워크플로 분해→story 오라클 시드·승인→해당 WP가 처음으로 dispatch**(통합 테스트 또는 수동 검증) ⑦build·test·jscpd 0·audit 0.
+①migration 009 + OracleRepo(approve 단일 tx) ②순수 oracleSatisfiedSet + 테스트 ③handleDispatch 술어 주입(flag 가역·회귀 0) ④oracleConsumer Supervisor 배선 ⑤oracle API ⑥**end-to-end: 워크플로 분해→story 오라클 시드(`human_approved`)·승인→해당 WP가 처음으로 dispatch** ⑦build·test·jscpd 0·audit 0.
+
+> ⑥ 검증 범위: 현 슬라이스는 분해·주입·소비·승인 tx를 각각 **단위 테스트**로 검증한다. 실 Redis+DB를 묶는 **end-to-end 통합 테스트(skip-if-no-infra)는 강력 권장 후속** — relay 발행 갭 같은 배선 회귀(최종 리뷰에서 발견·수정됨)를 자동 포착한다.

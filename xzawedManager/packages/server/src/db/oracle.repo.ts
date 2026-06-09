@@ -43,8 +43,11 @@ export class OracleRepo {
   }
 
   async approvedByWorkflow(workflowId: string): Promise<ApprovedOracleView[]> {
+    // ORDER BY story_id, version: story당 approved가 다중이면 oracleSatisfiedSet의 last-wins가
+    // 최고 version을 결정론적으로 선택(승인이 이전 버전 supersede하는 §6 불변식의 결정론 보강).
     const { rows } = await this.pool.query<OracleRow>(
-      `SELECT story_id, scenarios, coverage FROM oracles WHERE workflow_id = $1 AND status = $2`,
+      `SELECT story_id, scenarios, coverage FROM oracles WHERE workflow_id = $1 AND status = $2
+       ORDER BY story_id, version`,
       [workflowId, ORACLE_APPROVED],
     )
     return rows.map((r) => ({

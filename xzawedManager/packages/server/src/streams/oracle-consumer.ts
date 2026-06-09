@@ -11,7 +11,7 @@ export const OracleApprovedSchema = z.object({
     oracleId: z.string().min(1),
     workflowId: z.string().min(1),
     storyId: z.string().min(1),
-    version: z.number().int(),
+    version: z.number().int().positive(),
   }),
 })
 export type OracleApprovedMessage = z.infer<typeof OracleApprovedSchema>
