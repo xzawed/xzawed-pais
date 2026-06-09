@@ -158,6 +158,8 @@ export async function buildServer(
         visibilityMs: config.MANAGER_LEASE_VISIBILITY_MS,
         maxAttempts: config.MANAGER_LEASE_MAX_ATTEMPTS,
         oracleDor: config.MANAGER_ORACLE_DOR,
+        // P4-1: 워커 활성(=MANAGER_TASK_WORKER). handlers 맵 주입은 Task 7에서. off면 워커 미배선(회귀 0).
+        taskWorker: config.MANAGER_TASK_WORKER,
       },
     )
     supervisor.start()
