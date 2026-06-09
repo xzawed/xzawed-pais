@@ -67,3 +67,23 @@ describe('runDecomposition (P2-3b)', () => {
     expect(out[0]?.acceptanceCriteria).toEqual(['only this'])
   })
 })
+
+const DRAFT_S1 = '{"scenarios":[{"title":"login ok","given":["g"],"when":"w","then":["t"],"coversCriteria":["x"]}]}'
+
+describe('runDecomposition draftEnabled (P3-2)', () => {
+  it('false면 oracleDrafts=[]', async () => {
+    const r = await runDecomposition('i', stagedDeps(EPICS, STORY_D1, DELIVS_D1, ROLES), 2, false)
+    expect(r.status).toBe('ok')
+    if (r.status !== 'ok') return
+    expect(r.oracleDrafts).toEqual([])
+  })
+
+  it('true면 story별 oracleDrafts 포함(oracleId 없음)', async () => {
+    const r = await runDecomposition('i', stagedDeps(EPICS, STORY_D1, DELIVS_D1, ROLES, DRAFT_S1), 2, true)
+    expect(r.status).toBe('ok')
+    if (r.status !== 'ok') return
+    expect(r.oracleDrafts.length).toBeGreaterThan(0)
+    expect('oracleId' in r.oracleDrafts[0]!).toBe(false)
+    expect(r.oracleDrafts[0]?.storyId).toBe('s1')
+  })
+})

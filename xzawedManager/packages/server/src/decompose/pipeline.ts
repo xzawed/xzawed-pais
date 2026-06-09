@@ -7,13 +7,15 @@ import { deriveDeliverables } from './stages/deliverables.js'
 import { repairStories } from './stages/repair.js'
 import { assignRoles } from './stages/roles.js'
 import { singleRoleStoryIds } from './lint.js'
+import { draftOracles } from './stages/draft-oracles.js'
 import type { StageDeps } from './stages/run-stage.js'
+import type { OracleDraft } from '../db/oracle.types.js'
 
 /** P4 repair 루프 최대 반복(기본). config MANAGER_DECOMPOSE_REPAIR_MAX로 오버라이드. */
 export const DEFAULT_REPAIR_MAX = 2
 
 export type DecomposeResult =
-  | { status: 'ok'; workPackages: WorkPackage[]; coverage: CoverageMatrix; singleRoleStoryIds: string[] }
+  | { status: 'ok'; workPackages: WorkPackage[]; coverage: CoverageMatrix; singleRoleStoryIds: string[]; oracleDrafts: OracleDraft[] }
   | { status: 'inconsistent'; coverage: CoverageMatrix; reason: 'coverage' }
 
 /** intent 한 줄을 단일 WP로(producer 기술-throw 경로 최종 안전망). */
@@ -43,6 +45,7 @@ export async function runDecomposition(
   intent: string,
   deps: StageDeps,
   repairMax: number = DEFAULT_REPAIR_MAX,
+  draftEnabled = false,
 ): Promise<DecomposeResult> {
   const epics = await identifyEpics(intent, deps)
   let stories = await sliceVertical(epics, intent, deps)
@@ -76,5 +79,7 @@ export async function runDecomposition(
   }
   let workPackages = toWorkPackages(llmWps)
   if (workPackages.length === 0) workPackages = fallbackWorkPackages(intent)
-  return { status: 'ok', workPackages, coverage, singleRoleStoryIds: lint }
+  // P3-2: ok 경로 한정 P7 초안(off면 []·회귀 0). draft 실패는 runStage가 흡수(빈→stub)이라 본류 비차단.
+  const oracleDrafts = draftEnabled ? await draftOracles(stories, deps) : []
+  return { status: 'ok', workPackages, coverage, singleRoleStoryIds: lint, oracleDrafts }
 }

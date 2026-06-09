@@ -2,6 +2,7 @@ import { makeEnvelope } from '@xzawed/agent-streams'
 import type { ClaudeLike, WorkPackage } from '@xzawed/agent-streams'
 import { runDecomposition, fallbackWorkPackages, DEFAULT_REPAIR_MAX, type DecomposeResult } from './pipeline.js'
 import { defaultInconsistentStream, type InconsistentReason } from '../streams/decomposition-consumer.js'
+import type { OracleDraft } from '../db/oracle.types.js'
 
 /** Supervisor DecompositionConsumer가 구독하는 스트림(manager:decomposition:{channel='main'}). */
 export const DECOMPOSE_STREAM = 'manager:decomposition:main'
@@ -20,6 +21,8 @@ export interface ProduceDeps {
   now?: () => number
   /** 관측용 로거(coverage·에스컬레이션 보고). 미지정 시 무음. */
   log?: (msg: string, data?: Record<string, unknown>) => void
+  /** P7 초안 생성(MANAGER_ORACLE_DRAFT). server.ts 주입. */
+  draftOracles?: boolean
 }
 
 export interface ProduceResult {
@@ -27,19 +30,25 @@ export interface ProduceResult {
   escalated: boolean
 }
 
-/** decomposition.emitted 발행(ok·fallback 공용). */
-async function emitWorkPackages(deps: ProduceDeps, workflowId: string, workPackages: WorkPackage[]): Promise<void> {
+/** decomposition.emitted 발행(ok·fallback 공용). oracleDrafts는 ok 경로만 채움(기본 []·additive). */
+async function emitWorkPackages(
+  deps: ProduceDeps,
+  workflowId: string,
+  workPackages: WorkPackage[],
+  oracleDrafts: OracleDraft[] = [],
+): Promise<void> {
   const envelope = makeEnvelope(
     { correlationId: workflowId, causationId: null, workflowId, stepId: 'decomposition.emitted', attemptId: 0 },
     deps.now?.(),
   )
-  await deps.publish(DECOMPOSE_STREAM, { envelope, type: 'decomposition.emitted', payload: { workPackages } })
+  await deps.publish(DECOMPOSE_STREAM, { envelope, type: 'decomposition.emitted', payload: { workPackages, oracleDrafts } })
 }
 
 /**
  * intent → 다단계 분해+자가수선(runDecomposition) → status 분기.
- * ok → decomposition.emitted(payload {workPackages} 불변). inconsistent → decomposition.inconsistent
- * (reason 'coverage') 발행·WP 미발행. 기술 throw → fallback 단일 WP emit. coverage·린트는 로그 전용.
+ * ok → decomposition.emitted(payload {workPackages, oracleDrafts}; oracleDrafts는 draft flag 시만 채움).
+ * inconsistent → decomposition.inconsistent(reason 'coverage') 발행·WP 미발행. 기술 throw → fallback 단일 WP
+ * emit(oracleDrafts []). coverage·린트는 로그 전용.
  */
 export async function produceDecomposition(
   intent: string,
@@ -52,6 +61,7 @@ export async function produceDecomposition(
       intent,
       { claude: deps.claude, model: deps.model, timeoutMs: deps.timeoutMs ?? DEFAULT_TIMEOUT_MS },
       deps.repairMax ?? DEFAULT_REPAIR_MAX,
+      deps.draftOracles ?? false,
     )
   } catch (err) {
     deps.log?.('[decompose] runDecomposition threw unexpectedly — falling back', {
@@ -88,6 +98,7 @@ export async function produceDecomposition(
     unknownClaims: result.coverage.unknownClaims.length,
     singleRoleStoryIds: result.singleRoleStoryIds.length,
   })
-  await emitWorkPackages(deps, workflowId, result.workPackages)
+  // ok 경로만 oracleDrafts 전달 — inconsistent/기술 fallback 경로는 기본 [](degraded·blocker#5).
+  await emitWorkPackages(deps, workflowId, result.workPackages, result.oracleDrafts)
   return { emitted: result.workPackages.length, escalated: false }
 }
