@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { OracleRepo } from '../db/oracle.repo.js'
-import { OracleSchema } from '../db/oracle.types.js'
+import { OracleSchema, ORACLE_PENDING } from '../db/oracle.types.js'
 
 type RouteHook = (req: FastifyRequest, reply: FastifyReply) => Promise<void>
 
@@ -19,7 +19,13 @@ export async function oracleRoute(app: FastifyInstance, opts: OracleRouteOptions
     { preHandler: writePre },
     async (req, reply) => {
       if (!opts.oracleRepo) return reply.code(503).send({ error: 'oracle repository unavailable' })
-      const parsed = OracleSchema.safeParse({ ...(req.body as object), workflowId: req.params.workflowId })
+      // 생성=pending 강제: 스프레드 후 status를 덮어써 클라이언트가 status:'approved'로 사람 승인 게이트(PATCH /approve)·
+      // oracle.approved 이벤트 발행을 우회한 채 곧바로 approved를 영속하는 것을 차단(설계 §4·migration 009 DEFAULT pending).
+      const parsed = OracleSchema.safeParse({
+        ...(req.body as object),
+        workflowId: req.params.workflowId,
+        status: ORACLE_PENDING,
+      })
       if (!parsed.success) return reply.code(400).send({ error: 'invalid oracle', detail: parsed.error.issues })
       await opts.oracleRepo.upsert(parsed.data)
       return reply.code(201).send({ oracleId: parsed.data.oracleId })
