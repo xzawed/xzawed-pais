@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildTaskGraph, type WorkPackage } from '@xzawed/agent-streams'
+import { buildTaskGraph, WorkPackageSchema, type WorkPackage } from '@xzawed/agent-streams'
 import { planDispatch, handleDispatch, type DispatchDeps } from './dispatch.js'
 import type { StoredGraph, WpStateRecord } from '../db/task-graph.repo.js'
 
@@ -164,5 +164,25 @@ describe('handleDispatch', () => {
     const out = await handleDispatch('wf-1', deps)
     expect(out.dispatched.map((x) => x.wpId)).toEqual(['b']) // a는 escalated 재디스패치 금지
     expect(recordDispatch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('handleDispatch + oracleStore 주입 (P3-1)', () => {
+  const wps = [
+    WorkPackageSchema.parse({ id: 'a', storyId: 's1', owningRole: 'dev', oracleRef: null, acceptanceCriteria: ['ac1'] }),
+    WorkPackageSchema.parse({ id: 'b', storyId: 's2', owningRole: 'dev', oracleRef: null, acceptanceCriteria: ['ac1'] }),
+  ]
+  const repo = { getGraph: vi.fn().mockResolvedValue({ workPackages: wps, eventId: null }), latestStates: vi.fn().mockResolvedValue(new Map()) }
+  const store = { recordDispatch: vi.fn().mockImplementation((i: { wpId: string }) => Promise.resolve({ status: 'recorded', eventId: `e-${i.wpId}`, seq: 1 })) }
+
+  it('oracleStore 주입 시 satisfied WP만 디스패치(s1만 승인)', async () => {
+    const oracleStore = { approvedByWorkflow: vi.fn().mockResolvedValue([{ storyId: 's1', coveredCriteria: new Set(['ac1']) }]) }
+    const out = await handleDispatch('wf1', { repo: repo as never, store: store as never, oracleStore: oracleStore as never })
+    expect(out.dispatched.map((d) => d.wpId)).toEqual(['a']) // s2는 오라클 없어 미충족
+  })
+
+  it('oracleStore 없으면 기본 술어(oracleRef!=null)로 0건(flag off 회귀)', async () => {
+    const out = await handleDispatch('wf1', { repo: repo as never, store: store as never })
+    expect(out.dispatched).toEqual([])
   })
 })
