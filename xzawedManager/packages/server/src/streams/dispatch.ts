@@ -3,6 +3,8 @@ import type { TaskGraph, ReadinessOptions, ApprovedOracleView, WorkPackage } fro
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
 import { DRAFTED_STATE, DISPATCHED_STATE, ESCALATED_STATE, DONE_STATE, DEFAULT_VISIBILITY_MS } from './dispatch-constants.js'
+import { publishDispatchSignal } from './dispatch-signal.js'
+import type { Publish } from './decomposition-consumer.js'
 
 export interface DispatchPlanItem {
   wpId: string
@@ -43,6 +45,9 @@ export interface DispatchDeps {
   oracleStore?: OracleStore
   /** lease 가시성 타임아웃(ms). 기본 DEFAULT_VISIBILITY_MS. */
   visibilityMs?: number
+  /** P4-1: 주입 시 recordDispatch 후 wp.dispatch_signal 발행(워커 트리거). 미주입이면 무발행(회귀 0). */
+  publish?: Publish
+  now?: () => number
 }
 
 export interface DispatchOutcome {
@@ -119,8 +124,10 @@ export async function handleDispatch(workflowId: string, deps: DispatchDeps): Pr
       causationId: stored.eventId ?? null,
     })
     // deduped = lease가 이미 존재(동시/재진입). dispatched에서 제외하고 skipped로 집계(§8 #2).
-    if (r.status === 'recorded') dispatched.push({ wpId: item.wpId, stepN: item.stepN, eventId: r.eventId })
-    else deduped += 1
+    if (r.status === 'recorded') {
+      dispatched.push({ wpId: item.wpId, stepN: item.stepN, eventId: r.eventId })
+      if (deps.publish) await publishDispatchSignal(deps.publish, workflowId, item.wpId, 0, deps.now?.())
+    } else deduped += 1
   }
   return { status: 'dispatched', dispatched, skipped: skipped + deduped }
 }
