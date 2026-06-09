@@ -109,10 +109,24 @@ export async function buildServer(
   // 아웃박스 릴레이: 아웃박스를 쓰는 어떤 기능이라도 켜지면 가동. Task Manager 디스패치(wp.dispatched)·
   // P3-1 oracle.approved 발행은 EVENT_SOURCED_SESSION과 독립이므로 relay 기동을 그와 분리한다 — 미기동 시
   // 아웃박스 행이 published_at=NULL로 영구 잔류해 재디스패치가 트리거되지 않는다.
-  if (pool && (config.EVENT_SOURCED_SESSION || config.TASK_MANAGER_ENABLED || config.MANAGER_ORACLE_DOR)) {
+  // D3: MANAGER_ORACLE_DRAFT 포함 — DRAFT-only에서 사람이 approve 시 생기는 oracle.approved 아웃박스가
+  // published_at=NULL로 잔류하지 않도록 relay를 함께 가동(approve 전이는 flag 무관 always-on).
+  if (
+    pool &&
+    (config.EVENT_SOURCED_SESSION ||
+      config.TASK_MANAGER_ENABLED ||
+      config.MANAGER_ORACLE_DOR ||
+      config.MANAGER_ORACLE_DRAFT)
+  ) {
     outboxRelay = new OutboxRelay(pool, producer, config.MANAGER_OUTBOX_POLL_MS)
     outboxRelay.start()
   }
+
+  // P3-2: oracleStore는 DOR||DRAFT일 때 한 번만 생성해 Supervisor(consumer upsert·satisfied-set)와
+  // oracleRoute(작성·승인·조회)에 공유한다(중복 OracleRepo 제거). DoR 게이트(satisfied-set·oracleConsumer)는
+  // createSupervisor가 config.oracleDor로 분리 — DRAFT만 켜면 영속만, DoR off.
+  const oracleStore =
+    pool && (config.MANAGER_ORACLE_DOR || config.MANAGER_ORACLE_DRAFT) ? new OracleRepo(pool) : undefined
 
   // Task Manager Supervisor 배선(P1d-7): flag on + pool이면 decomposition 소비→디스패치·lease sweep·
   // completion 소비→재디스패치를 가동. 생산자(P2) 미도착이라 빈 스트림 구독(동작 준비). flag off면 미배선.
@@ -127,12 +141,15 @@ export async function buildServer(
         dispatchStore: new DispatchStore(pool),
         leaseStore: new LeaseStore(pool),
         publish: (stream, message) => bus.publish(stream, message),
-        ...(config.MANAGER_ORACLE_DOR && { oracleStore: new OracleRepo(pool) }),
+        // DOR||DRAFT 공유 oracleStore. createSupervisor가 config.oracleDor로 DoR 게이트(satisfied-set·
+        // oracleConsumer) 활성 여부를 분리 — DRAFT만 켜면 decompositionConsumer가 upsertDraft만 수행.
+        ...(oracleStore && { oracleStore }),
       },
       {
         sweepMs: config.MANAGER_LEASE_SWEEP_MS,
         visibilityMs: config.MANAGER_LEASE_VISIBILITY_MS,
         maxAttempts: config.MANAGER_LEASE_MAX_ATTEMPTS,
+        oracleDor: config.MANAGER_ORACLE_DOR,
       },
     )
     supervisor.start()
@@ -150,6 +167,8 @@ export async function buildServer(
         timeoutMs: config.CLAUDE_TIMEOUT_MS,
         repairMax: config.MANAGER_DECOMPOSE_REPAIR_MAX,
         log: (msg, data) => app.log.info(data ?? {}, msg),
+        // P3-2: ok 경로에서 draft 스테이지 실행 → oracleDrafts emit(off면 []·회귀 0).
+        draftOracles: config.MANAGER_ORACLE_DRAFT,
       }
     : undefined
   if (config.MANAGER_DECOMPOSE_ENABLED) {
@@ -195,9 +214,10 @@ export async function buildServer(
   await app.register(healthRoute)
   // 쓰기 경로(PATCH/DELETE)에만 서비스 토큰 요구(authHook). GET은 개방 유지.
   await app.register(knowledgeRoute, { ...(knowledgeRepo && { knowledgeRepo }), ...(authHook && { authHook }) })
-  // P3-1 Oracle DoR 게이트(flag on + pool): 작성·승인·조회 라우트. 쓰기는 authHook 설정 시 보호.
+  // P3-1/P3-2 Oracle 라우트(DOR||DRAFT·pool 시 공유 oracleStore): 작성·승인·조회. 쓰기는 authHook 설정 시 보호.
+  // DRAFT-only에서도 API approve가 가능해야 drafted→human_approved 전이 + oracle.approved 아웃박스가 닫힌다.
   await app.register(oracleRoute, {
-    ...(config.MANAGER_ORACLE_DOR && pool && { oracleRepo: new OracleRepo(pool) }),
+    ...(oracleStore && { oracleRepo: oracleStore }),
     ...(authHook && { authHook }),
   })
   await app.register(sessionsRoute, {

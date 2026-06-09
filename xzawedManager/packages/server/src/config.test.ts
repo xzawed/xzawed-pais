@@ -90,3 +90,33 @@ describe('MANAGER_ORACLE_DOR flag', () => {
     expect(loadConfig().MANAGER_ORACLE_DOR).toBe(true)
   })
 })
+
+describe('MANAGER_ORACLE_DRAFT flag', () => {
+  let savedMode: string | undefined
+  let savedKey: string | undefined
+
+  beforeEach(() => {
+    savedMode = process.env['MODE']
+    savedKey = process.env['ANTHROPIC_API_KEY']
+    process.env['MODE'] = 'local'
+    process.env['ANTHROPIC_API_KEY'] = 'k'
+  })
+
+  afterEach(() => {
+    if (savedMode !== undefined) process.env['MODE'] = savedMode
+    else delete process.env['MODE']
+    if (savedKey !== undefined) process.env['ANTHROPIC_API_KEY'] = savedKey
+    else delete process.env['ANTHROPIC_API_KEY']
+    delete process.env['MANAGER_ORACLE_DRAFT']
+  })
+
+  it('기본 false', () => {
+    delete process.env['MANAGER_ORACLE_DRAFT']
+    expect(loadConfig().MANAGER_ORACLE_DRAFT).toBe(false)
+  })
+
+  it("'true'면 true", () => {
+    process.env['MANAGER_ORACLE_DRAFT'] = 'true'
+    expect(loadConfig().MANAGER_ORACLE_DRAFT).toBe(true)
+  })
+})

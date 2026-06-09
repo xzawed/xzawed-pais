@@ -1,7 +1,7 @@
 import type { Redis } from 'ioredis'
 import { z, type ZodType } from 'zod'
 import { BaseConsumer, EventEnvelopeSchema } from '@xzawed/agent-streams'
-import { DecompositionConsumer, type Publish } from './decomposition-consumer.js'
+import { DecompositionConsumer, type Publish, type DecompositionDeps } from './decomposition-consumer.js'
 import { handleDispatch, type DispatchDeps, type OracleStore } from './dispatch.js'
 import { buildOracleApprovedHandler, OracleApprovedSchema, type OracleApprovedMessage } from './oracle-consumer.js'
 import { handleCompletion } from './completion.js'
@@ -102,13 +102,22 @@ export interface SupervisorDeps {
   dispatchStore: DispatchStore
   leaseStore: LeaseStore
   publish: Publish
-  /** P3-1: 주입 시 dispatch에 satisfied-set·oracle.approved 소비자 배선(MANAGER_ORACLE_DOR). */
-  oracleStore?: OracleStore
+  /** P3-1 dispatch satisfied-set(approvedByWorkflow) + P3-2 consumer upsertDraft 둘 다 노출(blocker#2).
+   *  DOR||DRAFT일 때 server.ts가 OracleRepo 주입. DRAFT만 켜도 decompositionConsumer가 upsert로 사용. */
+  oracleStore?: OracleStore & NonNullable<DecompositionDeps['oracleStore']>
 }
 export interface SupervisorConfig {
   sweepMs: number
   visibilityMs: number
   maxAttempts: number
+  /** P3-2: DoR 게이트(satisfied-set 주입·oracleConsumer) 활성(=MANAGER_ORACLE_DOR).
+   *  consumer upsertDraft는 oracleStore 유무로만 동작(DRAFT만 켜도 영속·blocker#1 분리). */
+  oracleDor: boolean
+}
+
+/** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
+export function shouldWireOracleConsumer(oracleDor: boolean, hasOracleStore: boolean): boolean {
+  return oracleDor && hasOracleStore
 }
 
 /**
@@ -116,9 +125,12 @@ export interface SupervisorConfig {
  * + LeaseSweeper. 두 소비자는 xreadgroup BLOCK이 서로를 직렬화하지 않도록 **각자 전용 Redis 연결**을 받는다.
  */
 export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, config: SupervisorConfig): Supervisor {
+  // DoR 게이트 활성(satisfied-set 주입) = MANAGER_ORACLE_DOR && oracleStore 주입. DRAFT만 켜면 dorActive=false라
+  // dispatch는 기본 술어로 동작하지만, decompositionConsumer는 oracleStore를 받아 upsertDraft만 수행(blocker#1 분리).
+  const dorActive = config.oracleDor && deps.oracleStore !== undefined
   const dispatch: DispatchDeps = {
     repo: deps.repo, store: deps.dispatchStore, visibilityMs: config.visibilityMs,
-    ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
+    ...(dorActive && { oracleStore: deps.oracleStore }),
   }
 
   const decompositionConsumer = new DecompositionConsumer(
@@ -126,6 +138,7 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     async (workflowId) => {
       await handleDispatch(workflowId, dispatch)
     },
+    deps.oracleStore, // upsertDraft용 — DRAFT만 켜도 영속(blocker#1)
   )
 
   const completionConsumer = new BaseConsumer<CompletionSignalMessage>(
@@ -142,7 +155,9 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     config.sweepMs,
   )
 
-  const oracleConsumer = deps.oracleStore
+  // oracle.approved 소비자는 DoR 게이트(oracleDor)일 때만 배선(D4 순수 게이트). DRAFT-only면 미배선
+  // (drafted 영속만·DoR 비활성). dorActive와 동치이나 순수 함수로 분리해 테스트 가능(toBeDefined만으론 미생성 검증 불가).
+  const oracleConsumer = shouldWireOracleConsumer(config.oracleDor, deps.oracleStore !== undefined)
     ? new BaseConsumer<OracleApprovedMessage>(
         makeRedis(),
         buildOracleApprovedHandler(dispatch),
