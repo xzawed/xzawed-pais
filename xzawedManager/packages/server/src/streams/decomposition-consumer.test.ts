@@ -20,7 +20,7 @@ const env = (over: Partial<EventEnvelope> = {}): EventEnvelope => ({
 })
 
 const msg = (workPackages: WorkPackage[], over: Partial<EventEnvelope> = {}): DecompositionEmittedMessage => ({
-  envelope: env(over), type: 'decomposition.emitted', payload: { workPackages },
+  envelope: env(over), type: 'decomposition.emitted', payload: { workPackages, oracleDrafts: [] },
 })
 
 function mockRepo(version = 1) {
@@ -115,11 +115,95 @@ describe('handleDecompositionEmitted — upsert 오류 전파(DLQ 경로 보존)
   })
 })
 
+describe('handleDecompositionEmitted — oracleDrafts upsert (P3-2)', () => {
+  const draft = {
+    storyId: 's1',
+    scenarios: [{ id: 's1-sc1', title: '', given: [], when: '', thenSteps: [], status: 'drafted' as const }],
+    coverage: { ac1: ['s1-sc1'] },
+  }
+  const msgWithDrafts = (drafts: typeof draft[]): DecompositionEmittedMessage => ({
+    envelope: env(), type: 'decomposition.emitted', payload: { workPackages: [wp('a')], oracleDrafts: drafts },
+  })
+
+  it('oracleStore 주입 + oracleDrafts 있으면 upsertDraft(workflowId·storyId 위임·oracleId 미조립)', async () => {
+    const repo = mockRepo(1)
+    const oracleStore = { upsertDraft: vi.fn().mockResolvedValue(undefined) }
+    const out = await handleDecompositionEmitted(msgWithDrafts([draft]), {
+      repo, publish: vi.fn(), oracleStore,
+    })
+    expect(out).toEqual({ status: 'persisted', version: 1 })
+    expect(oracleStore.upsertDraft).toHaveBeenCalledWith({
+      workflowId: 'wf-1', storyId: 's1', scenarios: draft.scenarios, coverage: draft.coverage,
+    })
+  })
+
+  it('여러 draft를 각각 upsertDraft로 위임한다(upsertGraph 성공 후)', async () => {
+    const repo = mockRepo(1)
+    const oracleStore = { upsertDraft: vi.fn().mockResolvedValue(undefined) }
+    await handleDecompositionEmitted(
+      msgWithDrafts([draft, { ...draft, storyId: 's2' }]),
+      { repo, publish: vi.fn(), oracleStore },
+    )
+    expect(repo.upsertGraph).toHaveBeenCalled()
+    expect(oracleStore.upsertDraft).toHaveBeenCalledTimes(2)
+  })
+
+  it('oracleStore 미주입이면 upsert 안 함(회귀 0·persisted)', async () => {
+    const repo = mockRepo(1)
+    const out = await handleDecompositionEmitted(msgWithDrafts([draft]), { repo, publish: vi.fn() })
+    expect(out).toEqual({ status: 'persisted', version: 1 })
+  })
+
+  it('oracleStore 주입돼도 oracleDrafts 비면 upsertDraft 미호출', async () => {
+    const repo = mockRepo(1)
+    const oracleStore = { upsertDraft: vi.fn().mockResolvedValue(undefined) }
+    await handleDecompositionEmitted(msgWithDrafts([]), { repo, publish: vi.fn(), oracleStore })
+    expect(oracleStore.upsertDraft).not.toHaveBeenCalled()
+  })
+
+  it('inconsistent(사이클)이면 upsertDraft 미호출(영속 실패→오라클 미적재)', async () => {
+    const repo = mockRepo()
+    const oracleStore = { upsertDraft: vi.fn().mockResolvedValue(undefined) }
+    const cyc: DecompositionEmittedMessage = {
+      envelope: env(), type: 'decomposition.emitted',
+      payload: { workPackages: [wp('a', ['b']), wp('b', ['a'])], oracleDrafts: [draft] },
+    }
+    const out = await handleDecompositionEmitted(cyc, { repo, publish: vi.fn(), oracleStore })
+    expect(out.status).toBe('inconsistent')
+    expect(oracleStore.upsertDraft).not.toHaveBeenCalled()
+  })
+})
+
+describe('buildDecompositionConsumerHandler — oracleStore 위임 (P3-2)', () => {
+  it('oracleStore를 전달하면 영속 후 upsertDraft 호출', async () => {
+    const repo = mockRepo(1)
+    const oracleStore = { upsertDraft: vi.fn().mockResolvedValue(undefined) }
+    const msgWithDrafts: DecompositionEmittedMessage = {
+      envelope: env(), type: 'decomposition.emitted',
+      payload: {
+        workPackages: [wp('a')],
+        oracleDrafts: [{ storyId: 's1', scenarios: [{ id: 's1-sc1', title: '', given: [], when: '', thenSteps: [], status: 'drafted' }], coverage: {} }],
+      },
+    }
+    const handler = buildDecompositionConsumerHandler(repo, vi.fn(), undefined, oracleStore)
+    await handler(msgWithDrafts)
+    expect(oracleStore.upsertDraft).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('DecompositionConsumer', () => {
   it('생성자가 throw하지 않는다(전송 글루)', () => {
     const repo = mockRepo()
     const publish = vi.fn()
     expect(() => new DecompositionConsumer({} as Redis, repo, publish)).not.toThrow()
+  })
+
+  it('oracleStore 6번째 인자를 받아도 throw하지 않는다(P3-2)', () => {
+    const repo = mockRepo()
+    const oracleStore = { upsertDraft: vi.fn() }
+    expect(
+      () => new DecompositionConsumer({} as Redis, repo, vi.fn(), undefined, undefined, oracleStore),
+    ).not.toThrow()
   })
 })
 

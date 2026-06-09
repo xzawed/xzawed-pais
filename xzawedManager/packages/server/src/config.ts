@@ -50,6 +50,14 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // P3-2 Oracle 초안 생성(기본 false). true면 decompose가 draft 스테이지 실행 + producer가 oracleDrafts emit
+    // + consumer upsert(oracleStore는 DOR||DRAFT로 주입). off면 oracleDrafts=[]·회귀 0.
+    // ⚠️D5: 초안이 영속되려면 소비자(=Supervisor)가 돌아야 하므로 TASK_MANAGER_ENABLED+DATABASE_URL이 실질 전제다.
+    //   DRAFT만 켜고 TASK_MANAGER off면 초안이 emit돼도 소비자 부재로 영속되지 않는다.
+    MANAGER_ORACLE_DRAFT: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

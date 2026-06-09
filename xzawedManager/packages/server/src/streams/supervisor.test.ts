@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import {
   buildCompletionHandler, CompletionSignalSchema, Supervisor, createSupervisor, shouldWireSupervisor,
+  shouldWireOracleConsumer,
 } from './supervisor.js'
 import type { LeaseStore } from '../db/lease.repo.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -75,7 +76,7 @@ describe('createSupervisor', () => {
         leaseStore: {} as unknown as LeaseStore,
         publish: vi.fn(),
       },
-      { sweepMs: 30_000, visibilityMs: 5000, maxAttempts: 3 },
+      { sweepMs: 30_000, visibilityMs: 5000, maxAttempts: 3, oracleDor: false },
     )
     expect(makeRedis).toHaveBeenCalledTimes(2)
     expect(sup).toBeInstanceOf(Supervisor)
@@ -96,5 +97,31 @@ describe('Supervisor + oracleConsumer (P3-1)', () => {
   it('oracleConsumer 미주입이면 start/stop이 throw하지 않음(flag off)', () => {
     const sup = new Supervisor({ decompositionConsumer: fake(), completionConsumer: fake(), leaseSweeper: { start: vi.fn(), stop: vi.fn() } })
     expect(() => { sup.start(); sup.stop() }).not.toThrow()
+  })
+})
+
+describe('shouldWireOracleConsumer (D4 순수 게이트)', () => {
+  it('oracleDor·hasOracleStore 둘 다 true여야 true(나머지 false)', () => {
+    expect(shouldWireOracleConsumer(false, true)).toBe(false)
+    expect(shouldWireOracleConsumer(true, false)).toBe(false)
+    expect(shouldWireOracleConsumer(false, false)).toBe(false)
+    expect(shouldWireOracleConsumer(true, true)).toBe(true)
+  })
+})
+
+describe('createSupervisor oracleDor 게이트 (P3-2)', () => {
+  const makeRedis = () => ({}) as unknown as Redis
+  const baseDeps = {
+    repo: {} as unknown as TaskGraphRepo,
+    dispatchStore: {} as unknown as DispatchStore,
+    leaseStore: {} as unknown as LeaseStore,
+    publish: vi.fn(),
+    oracleStore: { upsertDraft: vi.fn(), approvedByWorkflow: vi.fn() } as never,
+  }
+  it('oracleStore 주입 + oracleDor=false면 조립 성공(consumer upsert용·oracleConsumer 미배선)', () => {
+    expect(createSupervisor(makeRedis, baseDeps, { sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: false })).toBeInstanceOf(Supervisor)
+  })
+  it('oracleDor=true면 조립 성공(satisfied-set+oracleConsumer)', () => {
+    expect(createSupervisor(makeRedis, baseDeps, { sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: true })).toBeInstanceOf(Supervisor)
   })
 })

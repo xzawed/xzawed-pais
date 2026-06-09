@@ -32,7 +32,23 @@ describe('produceDecomposition (P2-3b)', () => {
     expect(msg.envelope.stepId).toBe('decomposition.emitted')
     expect(msg.payload.workPackages).toHaveLength(2)
     expect(msg.payload).not.toHaveProperty('coverage')
+    expect(msg.payload.oracleDrafts).toEqual([]) // P3-2: draftOracles 미주입(기본) → 빈 배열 additive
     expect(logSpy).toHaveBeenCalledWith('[decompose] coverage', expect.objectContaining({ gaps: 0 }))
+  })
+
+  it('draftOracles=true면 ok 경로 payload에 oracleDrafts 포함(oracleId 없음)', async () => {
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const DRAFT_S1 = '{"scenarios":[{"title":"ok","given":["g"],"when":"w","then":["t"],"coversCriteria":["x"]}]}'
+    const res = await produceDecomposition('build a thing', 'wf-d', {
+      ...deps(stagedClaude(EPICS, STORY_D1, DELIVS_D1, ROLES, DRAFT_S1), publish),
+      draftOracles: true,
+    })
+    expect(res.escalated).toBe(false)
+    const msg = publish.mock.calls[0]![1]
+    expect(msg.type).toBe('decomposition.emitted')
+    expect(msg.payload.oracleDrafts).toHaveLength(1)
+    expect(msg.payload.oracleDrafts[0].storyId).toBe('s1')
+    expect(msg.payload.oracleDrafts[0]).not.toHaveProperty('oracleId')
   })
 
   it('repair 소진 → decomposition.inconsistent 발행·WP 미발행', async () => {

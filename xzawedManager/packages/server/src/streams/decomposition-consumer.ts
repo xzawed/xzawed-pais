@@ -10,13 +10,19 @@ import {
 } from '@xzawed/agent-streams'
 import type { TaskGraph } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
+import { OracleDraftSchema } from '../db/oracle.types.js'
+import type { OracleScenario } from '../db/oracle.types.js'
 
 // 단일 type 스트림(manager:decomposition:{wf})용 스키마 — 다른 type 메시지가 들어오면
 // BaseConsumer가 invalid_schema로 DLQ 격리한다(의도된 동작; P1d-4가 이 스트림을 다중화하면 재검토).
 export const DecompositionEmittedSchema = z.object({
   envelope: EventEnvelopeSchema,
   type: z.literal('decomposition.emitted'),
-  payload: z.object({ workPackages: z.array(WorkPackageSchema) }),
+  payload: z.object({
+    workPackages: z.array(WorkPackageSchema),
+    // P3-2: 초안 오라클(additive·off면 producer가 []로 발행). consumer가 upsertDraft로 영속.
+    oracleDrafts: z.array(OracleDraftSchema).default([]),
+  }),
 })
 export type DecompositionEmittedMessage = z.infer<typeof DecompositionEmittedSchema>
 
@@ -29,6 +35,15 @@ export interface DecompositionDeps {
   /** inconsistent 출력 스트림 키 빌더(기본 manager:events:{workflowId}). */
   inconsistentStream?: (workflowId: string) => string
   now?: () => number
+  /** P3-2: 주입 시 oracleDrafts를 pending 오라클로 upsert(oracleId는 repo가 workflowId로 파생·D2). */
+  oracleStore?: {
+    upsertDraft: (input: {
+      workflowId: string
+      storyId: string
+      scenarios: OracleScenario[]
+      coverage: Record<string, string[]>
+    }) => Promise<void>
+  }
 }
 
 export type DecompositionOutcome =
@@ -87,6 +102,18 @@ export async function handleDecompositionEmitted(
     workPackages: wps,
     eventId: msg.envelope.eventId,
   })
+  // P3-2: 초안 오라클 pending 영속(멱등 upsertDraft). oracleId는 repo가 workflowId로 파생(D2 — 단일 출처).
+  // 미주입/빈 배열이면 skip(회귀 0). upsertGraph 성공 후에만 — 영속 실패 시 오라클 미적재.
+  if (deps.oracleStore && msg.payload.oracleDrafts.length > 0) {
+    for (const d of msg.payload.oracleDrafts) {
+      await deps.oracleStore.upsertDraft({
+        workflowId,
+        storyId: d.storyId,
+        scenarios: d.scenarios,
+        coverage: d.coverage,
+      })
+    }
+  }
   return { status: 'persisted', version }
 }
 
@@ -98,9 +125,10 @@ export function buildDecompositionConsumerHandler(
   repo: TaskGraphRepo,
   publish: Publish,
   afterPersisted?: (workflowId: string) => Promise<void>,
+  oracleStore?: DecompositionDeps['oracleStore'],
 ): (msg: DecompositionEmittedMessage) => Promise<void> {
   return async (msg) => {
-    const outcome = await handleDecompositionEmitted(msg, { repo, publish })
+    const outcome = await handleDecompositionEmitted(msg, { repo, publish, ...(oracleStore && { oracleStore }) })
     if (outcome.status === 'persisted' && afterPersisted) {
       await afterPersisted(msg.envelope.workflowId)
     }
@@ -113,10 +141,11 @@ export class DecompositionConsumer extends BaseConsumer<DecompositionEmittedMess
     redis: Redis, repo: TaskGraphRepo, publish: Publish,
     sleep?: (ms: number) => Promise<void>,
     afterPersisted?: (workflowId: string) => Promise<void>,
+    oracleStore?: DecompositionDeps['oracleStore'],
   ) {
     super(
       redis,
-      buildDecompositionConsumerHandler(repo, publish, afterPersisted),
+      buildDecompositionConsumerHandler(repo, publish, afterPersisted, oracleStore),
       CONSUMER_GROUP,
       `manager-taskgraph-${process.pid}`,
       STREAM_PREFIX,
