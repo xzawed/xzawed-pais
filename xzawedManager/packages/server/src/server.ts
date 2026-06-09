@@ -142,6 +142,13 @@ export async function buildServer(
   const supervisorDecision = shouldWireSupervisor(config.TASK_MANAGER_ENABLED, pool !== undefined)
   if (supervisorDecision === 'wire' && pool) {
     const bus = new RedisEventBus(createRedisClient(config.REDIS_URL))
+    // P4-1: 실행 워커가 owningRole로 자율 호출할 에이전트 핸들러(tool명→handler). 답변 가능 5종(watcher 제외).
+    const WORKER_TOOL_NAMES = ['develop_code', 'design_ui', 'run_tests', 'build_project', 'security_audit'] as const
+    const workerHandlers: Record<string, { execute(input: unknown, sessionId: string): Promise<unknown> }> = {}
+    for (const t of WORKER_TOOL_NAMES) {
+      const h = registry.get(t)
+      if (h) workerHandlers[t] = h
+    }
     supervisor = createSupervisor(
       () => createRedisClient(config.REDIS_URL),
       {
@@ -152,13 +159,15 @@ export async function buildServer(
         // DOR||DRAFT 공유 oracleStore. createSupervisor가 config.oracleDor로 DoR 게이트(satisfied-set·
         // oracleConsumer) 활성 여부를 분리 — DRAFT만 켜면 decompositionConsumer가 upsertDraft만 수행.
         ...(oracleStore && { oracleStore }),
+        // P4-1: MANAGER_TASK_WORKER on이면 워커 핸들러 맵 주입 → createSupervisor가 워커 배선. off면 미주입(회귀 0).
+        ...(config.MANAGER_TASK_WORKER && { handlers: workerHandlers }),
       },
       {
         sweepMs: config.MANAGER_LEASE_SWEEP_MS,
         visibilityMs: config.MANAGER_LEASE_VISIBILITY_MS,
         maxAttempts: config.MANAGER_LEASE_MAX_ATTEMPTS,
         oracleDor: config.MANAGER_ORACLE_DOR,
-        // P4-1: 워커 활성(=MANAGER_TASK_WORKER). handlers 맵 주입은 Task 7에서. off면 워커 미배선(회귀 0).
+        // P4-1: 워커 활성(=MANAGER_TASK_WORKER). off면 handlers 미주입·shouldWireWorker=false → 워커 미배선(회귀 0).
         taskWorker: config.MANAGER_TASK_WORKER,
       },
     )
