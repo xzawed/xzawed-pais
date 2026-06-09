@@ -2,7 +2,8 @@ import type { Redis } from 'ioredis'
 import { z, type ZodType } from 'zod'
 import { BaseConsumer, EventEnvelopeSchema } from '@xzawed/agent-streams'
 import { DecompositionConsumer, type Publish } from './decomposition-consumer.js'
-import { handleDispatch, type DispatchDeps } from './dispatch.js'
+import { handleDispatch, type DispatchDeps, type OracleStore } from './dispatch.js'
+import { buildOracleApprovedHandler, OracleApprovedSchema, type OracleApprovedMessage } from './oracle-consumer.js'
 import { handleCompletion } from './completion.js'
 import { LeaseSweeper } from './lease-sweeper.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -11,6 +12,8 @@ import type { LeaseStore } from '../db/lease.repo.js'
 
 const COMPLETION_GROUP = 'manager-completion-consumers'
 const COMPLETION_PREFIX = 'manager:completions'
+const ORACLE_GROUP = 'manager-oracle-consumers'
+const ORACLE_PREFIX = 'manager:oracle'
 const DEFAULT_CHANNEL = 'main'
 
 /** 워커 완료 신호(잠정 — 생산자 도착 시 확정). workflowId는 봉투, wpId는 payload. */
@@ -50,6 +53,8 @@ export interface SupervisorComponents {
   decompositionConsumer: ConsumerLike
   completionConsumer: ConsumerLike
   leaseSweeper: SweeperLike
+  /** P3-1: oracle.approved 소비자(주입 시만 배선·flag off면 미주입). */
+  oracleConsumer?: ConsumerLike
 }
 
 /**
@@ -71,12 +76,16 @@ export class Supervisor {
     this.components.completionConsumer.start(this.channel).catch((err: unknown) => {
       console.error('[supervisor] completion consumer 시작 실패:', err)
     })
+    this.components.oracleConsumer?.start(this.channel).catch((err: unknown) => {
+      console.error('[supervisor] oracle consumer 시작 실패:', err)
+    })
     this.components.leaseSweeper.start()
   }
 
   stop(): void {
     this.components.decompositionConsumer.stop()
     this.components.completionConsumer.stop()
+    this.components.oracleConsumer?.stop()
     this.components.leaseSweeper.stop()
   }
 }
@@ -93,6 +102,8 @@ export interface SupervisorDeps {
   dispatchStore: DispatchStore
   leaseStore: LeaseStore
   publish: Publish
+  /** P3-1: 주입 시 dispatch에 satisfied-set·oracle.approved 소비자 배선(MANAGER_ORACLE_DOR). */
+  oracleStore?: OracleStore
 }
 export interface SupervisorConfig {
   sweepMs: number
@@ -105,7 +116,10 @@ export interface SupervisorConfig {
  * + LeaseSweeper. 두 소비자는 xreadgroup BLOCK이 서로를 직렬화하지 않도록 **각자 전용 Redis 연결**을 받는다.
  */
 export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, config: SupervisorConfig): Supervisor {
-  const dispatch: DispatchDeps = { repo: deps.repo, store: deps.dispatchStore, visibilityMs: config.visibilityMs }
+  const dispatch: DispatchDeps = {
+    repo: deps.repo, store: deps.dispatchStore, visibilityMs: config.visibilityMs,
+    ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
+  }
 
   const decompositionConsumer = new DecompositionConsumer(
     makeRedis(), deps.repo, deps.publish, undefined,
@@ -128,5 +142,16 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     config.sweepMs,
   )
 
-  return new Supervisor({ decompositionConsumer, completionConsumer, leaseSweeper })
+  const oracleConsumer = deps.oracleStore
+    ? new BaseConsumer<OracleApprovedMessage>(
+        makeRedis(),
+        buildOracleApprovedHandler(dispatch),
+        ORACLE_GROUP,
+        `manager-oracle-${process.pid}`,
+        ORACLE_PREFIX,
+        OracleApprovedSchema as ZodType<OracleApprovedMessage>,
+      )
+    : undefined
+
+  return new Supervisor({ decompositionConsumer, completionConsumer, leaseSweeper, ...(oracleConsumer && { oracleConsumer }) })
 }
