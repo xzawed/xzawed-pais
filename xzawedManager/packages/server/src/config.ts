@@ -58,6 +58,12 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // P4-1 실행 워커(기본 false). true면 dispatch/reclaim이 wp.dispatch_signal 발행 + WorkerConsumer 배선
+    // → dispatch된 WP를 owningRole 에이전트로 자율 실행. 전제: TASK_MANAGER_ENABLED + DATABASE_URL(Supervisor·getGraph).
+    MANAGER_TASK_WORKER: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {
