@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 515/534 테스트, 19 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
+현재 상태: **구현 완료 (server 539/558 테스트, 19 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
 **최근 반영(PR-1 게이트 fail-safe)**: 승인 응답이 파싱 불가·비객체·미지 decision이면 자동 승인(fail-open)하지 않고 `needs_human`으로 사람 재검토를 요청한다(같은 산출물·사유 안내, `MAX_GATE_REASKS` 초과 시 세션 중단). revise 소진도 무음 통과 대신 에스컬레이션. `MANAGER_GATE_FAILSAFE=false`로 레거시 fail-open 복원 가능. senario M8(무음 통과 금지)·N1(불확실=실패) 구현.
 
@@ -46,14 +46,14 @@ packages/
         ├── index.ts            # 진입점: Redis consumer 시작
         ├── config.ts           # 환경 변수 검증
         ├── server.ts           # Fastify HTTP (/health, port 3001)
-        ├── streams/            # Redis consumer + producer + outbox-relay.ts(아웃박스→Redis 폴링 릴레이). StreamConsumer·SessionGatewayConsumer(P1c-3)·StreamProducer·WatcherEventConsumer(P1c-4, readGroupMulti)·RedisAgentHandler·switch-project·register-project(P1c-5, RequestReplyPort RPC 라운드트립)는 전송을 @xzawed/agent-streams RedisEventBus(EventBus/StreamConsumerPort/RequestReplyPort)에 위임. RedisAgentHandler ensureSessionStream(xgroup)·notifyGateway는 잔류(후속). DecompositionConsumer(P1d-2, decomposition.emitted→TaskGraph 빌드·영속, 미배선). dispatch.ts(P1d-4 planDispatch 순수+handleDispatch 오케스트레이션, P1d-6 done-set 파생)·lease.ts(P1d-5b planReclaim 순수+handleLeaseSweep)·completion.ts(P1d-6 handleCompletion: 완료→재디스패치)·lease-sweeper.ts(P1d-7 LeaseSweeper 타이머)·supervisor.ts(P1d-7 Supervisor 생명주기·createSupervisor·shouldWireSupervisor·buildCompletionHandler)·dispatch-constants.ts(디스패치/lease/완료 상태·이벤트 상수 단일출처). **P1d-7부터 `TASK_MANAGER_ENABLED`+DATABASE_URL이면 server.ts에 Supervisor 배선(이전 미배선 핸들러 가동)**
+        ├── streams/            # Redis consumer + producer + outbox-relay.ts(아웃박스→Redis 폴링 릴레이). StreamConsumer·SessionGatewayConsumer(P1c-3)·StreamProducer·WatcherEventConsumer(P1c-4, readGroupMulti)·RedisAgentHandler·switch-project·register-project(P1c-5, RequestReplyPort RPC 라운드트립)는 전송을 @xzawed/agent-streams RedisEventBus(EventBus/StreamConsumerPort/RequestReplyPort)에 위임. RedisAgentHandler ensureSessionStream(xgroup)·notifyGateway는 잔류(후속). DecompositionConsumer(P1d-2, decomposition.emitted→TaskGraph 빌드·영속, 미배선). dispatch.ts(P1d-4 planDispatch 순수+handleDispatch 오케스트레이션, P1d-6 done-set 파생, **P3-1 oracleStore 주입→satisfied-set DoR**)·lease.ts(P1d-5b planReclaim 순수+handleLeaseSweep)·completion.ts(P1d-6 handleCompletion: 완료→재디스패치)·oracle-consumer.ts(P3-1 buildOracleApprovedHandler·OracleApprovedSchema: oracle.approved→재디스패치)·lease-sweeper.ts(P1d-7 LeaseSweeper 타이머)·supervisor.ts(P1d-7 Supervisor 생명주기·createSupervisor·shouldWireSupervisor·buildCompletionHandler, **P3-1 oracleConsumer 조건부 배선**)·dispatch-constants.ts(디스패치/lease/완료 상태·이벤트 상수 단일출처). **P1d-7부터 `TASK_MANAGER_ENABLED`+DATABASE_URL이면 server.ts에 Supervisor 배선(이전 미배선 핸들러 가동)**
         ├── decompose/          # decompose/(map.ts·pipeline.ts·producer.ts·trigger.ts·stages/) — **P2-3a 다단계 분해 생산자**: decompose_request→4단계 LLM 분해(epics→vertical slice→독립 deliverables→roles)→커버리지 매트릭스 보고(로그 전용)·**P4 repair 루프(K회·수렴 시 진행·소진 시 decomposition.inconsistent 에스컬레이션)**·**세로슬라이스 소프트 린트(로그)**→content-hash WP[]→decomposition.emitted 발행(`MANAGER_DECOMPOSE_ENABLED` flag, off면 회귀 0; Supervisor가 소비)
         ├── claude/runner.ts    # Claude tool-calling 루프 (승인 게이트·위키 주입/저장·AgentQuery 라우팅)
         ├── gates/              # approval-gate.ts: 게이트 모드·대상·결정 파싱
-        ├── db/                 # knowledge.repo.ts + session.repo.ts + event-store.ts(이벤트소싱 append+replay) + task-graph.repo.ts(P1d-3 Task Graph 영속) + dispatch.repo.ts(P1d-4 디스패치 원자 적재 + P1d-5a lease 획득·dedup·appendWpEvent) + lease.repo.ts(P1d-5b LeaseStore 만료 조회·reclaim·escalate + P1d-6 recordCompletion) + pool.ts + migrations/(001~008)
+        ├── db/                 # knowledge.repo.ts + session.repo.ts + event-store.ts(이벤트소싱 append+replay) + task-graph.repo.ts(P1d-3 Task Graph 영속) + dispatch.repo.ts(P1d-4 디스패치 원자 적재 + P1d-5a lease 획득·dedup·appendWpEvent) + lease.repo.ts(P1d-5b LeaseStore 만료 조회·reclaim·escalate + P1d-6 recordCompletion) + oracle.types.ts(P3-1 OracleSchema·OracleScenarioSchema·coveredCriteria) + oracle.repo.ts(P3-1 OracleRepo: approve 단일 tx·approvedByWorkflow·upsert·listByWorkflow) + pool.ts + migrations/(001~009)
         ├── tools/              # ToolHandler 11개 (7 RedisAgent + register-project + switch-project + github-ops* + deploy-project* / *GITHUB_TOKEN 조건부) + agent-tool-map.ts + errors.ts
         ├── sessions/           # 세션 상태 추적 (session.store.ts: gateConfig·waitForInfo·게이트 override·EventStore 컴포지션)
-        └── api/                # health 라우트 + knowledge.route.ts(GET 비인증·읽기; PATCH/DELETE는 authHook 설정 시 서비스 JWT 필요)
+        └── api/                # health 라우트 + knowledge.route.ts(GET 비인증·읽기; PATCH/DELETE는 authHook 설정 시 서비스 JWT 필요) + oracle.route.ts(P3-1 POST 생성·PATCH approve·GET 조회; 쓰기는 authHook 설정 시 보호)
 ```
 
 ## Redis Streams 인터페이스
@@ -188,6 +188,19 @@ P1d-1~6의 핵심 핸들러를 `Supervisor`로 묶어 server.ts에 **flag(`TASK_
 - **스트림(잠정)**: 입력 `manager:decomposition:main`·`manager:completions:main`(shared 단일·workflowId는 봉투). P2 배선 시 확정.
 - **데이터 흐름**: decomposition→영속→디스패치(wp.dispatched+lease) / 30s sweep→만료 reclaim/escalate / completion→lease release·DONE·후행 재디스패치. 발행은 OutboxRelay 경유.
 
+## Oracle DoR 게이트 (P3-1)
+
+P2-3 분해로 영속된 WP가 `oracleRef=null`이라 `readyNodes=∅`·디스패치 0인 블로커를, **사람이 승인한 Oracle을 DoR 게이트에 반영**해 `ready→dispatched`를 처음으로 연다. `MANAGER_ORACLE_DOR`(기본 false) flag 뒤로 가역 — off면 기본 술어(`oracleRef!=null`)·회귀 0. 설계 스펙 [2026-06-09-p3-1-oracle-dor-gate-design.md](../../docs/superpowers/specs/2026-06-09-p3-1-oracle-dor-gate-design.md).
+
+- **migration 009 `oracles`**: `oracle_id` PK·`workflow_id`·`story_id`·`version`·`status`(pending/approved/superseded)·`scenarios` JSONB·`coverage` JSONB(`{acceptance_criterion: [scenario_id]}`)·`approved_at`·`approved_by` — **가변 프로젝션**(진실원천은 manager_events `oracle.approved`). `idx_oracles_workflow_status`로 조회.
+- **`db/oracle.types.ts`**: `OracleSchema`·`OracleScenarioSchema`(zod·기본값)·상수(`ORACLE_APPROVED_EVENT='oracle.approved'`·`ORACLE_STREAM='manager:oracle:main'`·`SCENARIO_APPROVED='human_approved'` 등)·`coveredCriteria(scenarios, coverage)`(§8: ≥1 human_approved 시나리오가 덮는 AC 집합→`ApprovedOracleView` 변환용).
+- **`db/oracle.repo.ts` `OracleRepo`**: `approve(oracleId, approvedBy)` — **단일 tx**로 oracles UPDATE(status=approved, `status<>approved` 가드·0행이면 null) + `manager_events`(oracle.approved 진실원천) + `manager_outbox`(M5) INSERT 후 COMMIT(`DispatchStore.recordDispatch` 패턴·safeRollback). 멱등키 `{wf}:oracle.approved:{oracleId}:{version}`. `approvedByWorkflow`(satisfied-set 입력 `ApprovedOracleView[]`)·`upsert`(ON CONFLICT version++)·`listByWorkflow`.
+- **`handleDispatch` 오라클 주입**: `DispatchDeps.oracleStore` 주입 시 디스패치마다 `approvedByWorkflow`로 approved 오라클 조회→`oracleSatisfiedSet`(shared 순수 코어)으로 satisfied-set 산출→`readiness.oracleSatisfied = (wp) => set.has(wp.id)` 주입(기본 술어 대체, **pull** 모델). 미주입(flag off)이면 정적 readiness 또는 기본 술어 — 회귀 0.
+- **`streams/oracle-consumer.ts`**: `OracleApprovedSchema`(envelope+type+payload)·`buildOracleApprovedHandler(dispatch)` — `oracle.approved` 소비 시 `handleDispatch(envelope.workflowId, dispatch)`로 **재디스패치**(satisfied-set이 새 승인 반영). completion 핸들러 대칭.
+- **Supervisor 배선**: `SupervisorComponents.oracleConsumer`(optional)·`SupervisorDeps.oracleStore`(optional). `createSupervisor`가 `oracleStore` 주입 시에만 dispatch deps에 합류 + `BaseConsumer`(group `manager-oracle-consumers`·prefix `manager:oracle`)로 oracleConsumer 조건부 생성→start/stop 배선. 미주입이면 throw 안 함(flag off).
+- **`api/oracle.route.ts`**: `POST /workflows/:workflowId/oracles`(upsert·201)·`PATCH /oracles/:oracleId/approve`(approvedBy 필수→400, 미존재/이미 approved→404, 성공→200 `{ok, eventId}`)·`GET /workflows/:workflowId/oracles`(status 필터·repo 없으면 빈 목록). 쓰기는 `authHook` 설정 시 서비스 JWT 보호.
+- **`server.ts` 배선**: `MANAGER_ORACLE_DOR`+`pool`이면 `createSupervisor`에 `oracleStore: new OracleRepo(pool)` 합류 + `oracleRoute`에 `oracleRepo` 주입. flag off면 미배선.
+
 ## AgentQuery 교차질의
 
 에이전트가 작업 중 다른 에이전트에게 질의할 수 있다. 하위 에이전트가 `AgentQueryError`(to·question·kind: `active_request` | `cross_check`)를 throw하면 runner가 처리한다.
@@ -220,6 +233,7 @@ MANAGER_LEASE_MAX_ATTEMPTS=  # 선택: 최대 디스패치 시도, 초과 시 es
 MANAGER_DECOMPOSE_ENABLED=   # 선택: 기본 false. true면 decompose_request 4단계 LLM 분해 생산자 배선(P2-3a)
 CLAUDE_TIMEOUT_MS=           # 선택: 단계 LLM 호출 타임아웃 ms(기본 120000). P2-3a 분해 파이프라인 등에서 사용
 MANAGER_DECOMPOSE_REPAIR_MAX=   # 선택: P4 repair 루프 최대 반복(기본 2). 소진 시 decomposition.inconsistent 에스컬레이션
+MANAGER_ORACLE_DOR=             # 선택: 기본 false. true+DATABASE_URL이면 디스패치 시 approved 오라클로 satisfied-set 주입 + oracle.approved 소비자 배선 + oracle API 등록(P3-1)
 ```
 
 ## 보안 구현 패턴

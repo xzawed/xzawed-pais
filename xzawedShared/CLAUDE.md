@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (192 테스트 통과)**
+**현재 상태: 구현 완료 (197 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -37,6 +37,7 @@ src/
 │   ├── task-graph.ts            # TaskGraph 타입 + buildTaskGraph(인접/역인접 인덱스)
 │   ├── topo-sort.ts             # detectCycle(DFS) + topoSort(Kahn·id사전순 결정론)
 │   ├── readiness.ts             # isReady/readyNodes (DoR 가드·주입형 술어)
+│   ├── oracle-dor.ts            # P3-1 oracleSatisfiedSet + ApprovedOracleView (§8 DoR satisfied-set)
 │   └── index.ts                 # task-graph 배럴 export
 ├── decomposition/               # P2-1 결정론 분해 코어 (순수 함수·I/O 0)
 │   ├── coverage-matrix.ts       # coverageMatrix — §6 P4 커버리지 매트릭스(gaps·overlaps·unknownClaims)
@@ -54,6 +55,7 @@ src/
     ├── event-bus.test.ts        # RedisEventBus 테스트
     ├── domain-knowledge.test.ts # formatDomainKnowledge 테스트
     ├── task-graph.test.ts       # buildTaskGraph/detectCycle/topoSort/isReady 테스트
+    ├── oracle-dor.test.ts       # oracleSatisfiedSet (§8 DoR satisfied-set) 테스트
     └── decomposition.test.ts    # coverageMatrix/contentHashId/mergeKeepInflight + 패키지 export 테스트
 ```
 
@@ -72,8 +74,23 @@ const ready = readyNodes(graph)                      // ready id[](topo 순서·
 ```
 
 - **노드 = `WorkPackage` 재사용**(재정의 금지), `TaskGraph` = 불변 컨테이너(nodes·dependencies·dependents).
-- **DoR 가드**(`isReady`): 모든 dependency가 done **AND** 오라클 충족 **AND** 자신이 아직 done 아님. `wp.status`를 읽지 않음(상태머신 드리프트 회피) — done은 `isDone` 술어, 오라클은 `oracleSatisfied` 술어로 주입(기본 `status==='done'`·`oracleRef != null`). P3 Oracle 스키마 도착 시 술어만 교체.
+- **DoR 가드**(`isReady`): 모든 dependency가 done **AND** 오라클 충족 **AND** 자신이 아직 done 아님. `wp.status`를 읽지 않음(상태머신 드리프트 회피) — done은 `isDone` 술어, 오라클은 `oracleSatisfied` 술어로 주입(기본 `status==='done'`·`oracleRef != null`). **P3-1 도착**: `oracleSatisfiedSet`(아래)이 산출한 집합으로 `oracleSatisfied = (wp) => set.has(wp.id)` 술어를 교체(Manager `handleDispatch`가 주입).
 - **결정론**: 같은 그래프 → 같은 order(타이브레이크 id 사전순, 입력순서 무관). N4 step-N 토대.
+
+### Oracle DoR satisfied-set (P3-1, `task-graph/oracle-dor.ts`)
+
+§8 DoR 게이트의 순수 코어. 사람 승인 오라클로 어느 WP가 디스패치 가능한지(satisfied) 결정론적으로 산출(I/O·DB 0). Manager `OracleRepo.approvedByWorkflow`가 `ApprovedOracleView[]`를 만들어 주입.
+
+```typescript
+import { oracleSatisfiedSet } from '@xzawed/agent-streams'
+import type { ApprovedOracleView } from '@xzawed/agent-streams'
+
+// ApprovedOracleView = { storyId, coveredCriteria: Set<string> } — ≥1 human_approved 시나리오가 덮는 AC 집합(repo 산출)
+const satisfied = oracleSatisfiedSet(workPackages, approvedOracles) // Set<wpId>
+```
+
+- WP satisfied ⇔ `storyId` 바인딩 approved 오라클 존재 **AND** `wp.acceptanceCriteria` 전부가 그 오라클 `coveredCriteria`에 포함. 빈 AC는 오라클 존재 시 vacuously true.
+- story당 approved 오라클 1개 불변식(승인이 이전 버전 supersede); 다중이면 마지막 우선. 입력 순서 무관(결정론).
 
 ## 결정론 분해 코어 패턴 (P2-1)
 
