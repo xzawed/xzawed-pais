@@ -44,6 +44,12 @@ const configSchema = z
     CLAUDE_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
     // P4 분해 repair 루프 최대 반복(기본 2). 소진 시 decomposition.inconsistent 에스컬레이션. 양의 정수.
     MANAGER_DECOMPOSE_REPAIR_MAX: z.coerce.number().int().positive().default(2),
+    // P3-1 Oracle DoR 게이트(기본 false). true+DATABASE_URL이면 디스패치 시 approved 오라클로 satisfied-set
+    // 주입 + Supervisor에 oracle.approved 소비자 배선 + oracle API 등록. off면 기본 술어(oracleRef!=null)·회귀 0.
+    MANAGER_ORACLE_DOR: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

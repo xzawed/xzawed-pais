@@ -34,6 +34,8 @@ import { RedisEventBus } from '@xzawed/agent-streams'
 import { TaskGraphRepo } from './db/task-graph.repo.js'
 import { DispatchStore } from './db/dispatch.repo.js'
 import { LeaseStore } from './db/lease.repo.js'
+import { OracleRepo } from './db/oracle.repo.js'
+import { oracleRoute } from './api/oracle.route.js'
 import { createSupervisor, shouldWireSupervisor, type Supervisor } from './streams/supervisor.js'
 import type { ProduceDeps } from './decompose/producer.js'
 
@@ -120,6 +122,7 @@ export async function buildServer(
         dispatchStore: new DispatchStore(pool),
         leaseStore: new LeaseStore(pool),
         publish: (stream, message) => bus.publish(stream, message),
+        ...(config.MANAGER_ORACLE_DOR && { oracleStore: new OracleRepo(pool) }),
       },
       {
         sweepMs: config.MANAGER_LEASE_SWEEP_MS,
@@ -187,6 +190,11 @@ export async function buildServer(
   await app.register(healthRoute)
   // 쓰기 경로(PATCH/DELETE)에만 서비스 토큰 요구(authHook). GET은 개방 유지.
   await app.register(knowledgeRoute, { ...(knowledgeRepo && { knowledgeRepo }), ...(authHook && { authHook }) })
+  // P3-1 Oracle DoR 게이트(flag on + pool): 작성·승인·조회 라우트. 쓰기는 authHook 설정 시 보호.
+  await app.register(oracleRoute, {
+    ...(config.MANAGER_ORACLE_DOR && pool && { oracleRepo: new OracleRepo(pool) }),
+    ...(authHook && { authHook }),
+  })
   await app.register(sessionsRoute, {
     redisUrl: config.REDIS_URL,
     runner,
