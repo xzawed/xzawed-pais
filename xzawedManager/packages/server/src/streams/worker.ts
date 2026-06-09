@@ -33,14 +33,15 @@ export type WorkerOutcome =
   | { status: 'skipped'; reason: 'wp_not_found' | 'unknown_role' | 'no_handler' }
   | { status: 'failed'; reason: 'agent_error' }
 
-/** WP→에이전트 입력(최소·placeholder 품질). 답변자 스키마 필수 필드 합집합(buildAgentQueryPayload와 동일 union)이라
- *  어느 에이전트(developer/designer/tester/builder/security)로 가도 safeParse 통과(Zod가 잉여 키 strip). */
+/** WP→에이전트 입력(최소·placeholder 품질). 값은 runner.ts `buildAgentQueryPayload`의 **검증된 union**과 동일 —
+ *  5종 답변자(developer/designer/tester/builder/security) safeParse 통과(Zod 잉여 키 strip). intent만 WP 설명으로 교체.
+ *  ⚠️ context는 `z.record`(객체), target은 빌더 enum 'development', severity는 'low' — string/storyId면 safeParse 실패. */
 export function buildWorkerInput(wp: WorkPackage): Record<string, unknown> {
   const acList = wp.acceptanceCriteria.map((a) => `- ${a}`).join('\n')
   const intent = wp.acceptanceCriteria.length
     ? `Implement story ${wp.storyId}.\nAcceptance criteria:\n${acList}`
     : `Implement story ${wp.storyId}.`
-  return { intent, context: intent, priority: 'normal', projectPath: '.', target: wp.storyId, severity: 'medium', artifacts: [] }
+  return { intent, context: {}, priority: 'normal', projectPath: '', target: 'development', severity: 'low', artifacts: [] }
 }
 
 /** 워커 배선 판정(순수·D4 패턴): taskWorker flag + 핸들러 주입 둘 다 있어야 배선. */
@@ -48,10 +49,12 @@ export function shouldWireWorker(taskWorker: boolean, hasHandlers: boolean): boo
   return taskWorker && hasHandlers
 }
 
-async function publishCompletion(deps: WorkerDeps, workflowId: string, wpId: string): Promise<void> {
+/** 완료 신호 발행. attemptId=신호의 attempt(reclaim 재완료가 dedup에 막히지 않도록 — :0 하드코딩 시
+ *  dedup-claim 후 크래시한 완료가 attempt++ 재완료를 같은 키로 차단). handleCompletion은 lease-active 가드로 멱등. */
+async function publishCompletion(deps: WorkerDeps, workflowId: string, wpId: string, attempt: number): Promise<void> {
   const now = deps.now?.() ?? Date.now()
   const envelope = makeEnvelope(
-    { correlationId: workflowId, causationId: null, workflowId, stepId: `${WP_COMPLETION}:${wpId}`, attemptId: 0 },
+    { correlationId: workflowId, causationId: null, workflowId, stepId: `${WP_COMPLETION}:${wpId}`, attemptId: attempt },
     now,
   )
   await deps.publish(deps.completionStream ?? DEFAULT_COMPLETION_STREAM, { envelope, type: WP_COMPLETION, payload: { wpId } })
@@ -77,7 +80,7 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
   } catch {
     return { status: 'failed', reason: 'agent_error' } // 신호 미발행 → lease 타임아웃 reclaim
   }
-  await publishCompletion(deps, workflowId, wpId)
+  await publishCompletion(deps, workflowId, wpId, msg.payload.attempt)
   return { status: 'completed', wpId }
 }
 

@@ -136,6 +136,14 @@ export async function buildServer(
     )
   }
 
+  // P4-1 D5: 실행 워커는 Supervisor(decomposition·dispatch) + getGraph가 전제이므로 TASK_MANAGER_ENABLED+DATABASE_URL 필요.
+  // 전제 없이 MANAGER_TASK_WORKER만 켜면 워커가 배선되지 않아 dispatch된 WP가 실행되지 않는다 — 오진 방지 경고.
+  if (config.MANAGER_TASK_WORKER && !(config.TASK_MANAGER_ENABLED && pool)) {
+    app.log.warn(
+      'MANAGER_TASK_WORKER=true 이지만 TASK_MANAGER_ENABLED+DATABASE_URL 전제가 없어 실행 워커가 배선되지 않습니다(WP 미실행).',
+    )
+  }
+
   // Task Manager Supervisor 배선(P1d-7): flag on + pool이면 decomposition 소비→디스패치·lease sweep·
   // completion 소비→재디스패치를 가동. 생산자(P2) 미도착이라 빈 스트림 구독(동작 준비). flag off면 미배선.
   let supervisor: Supervisor | undefined

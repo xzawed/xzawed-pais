@@ -28,6 +28,13 @@ describe('handleWpDispatchSignal', () => {
     expect(stream).toBe('manager:completions:main')
     expect(msg).toMatchObject({ type: 'wp.completion', payload: { wpId: 'a' } })
   })
+  it('완료 신호 멱등키는 신호 attempt를 반영(reclaim 재완료 dedup 회피)', async () => {
+    const d = deps()
+    await handleWpDispatchSignal(sig('a', 2), d)
+    const [, msg] = (d.publish as ReturnType<typeof vi.fn>).mock.calls[0]!
+    expect(msg.envelope.attemptId).toBe(2)
+    expect(msg.envelope.idempotencyKey).toBe('wf1:wp.completion:a:2')
+  })
   it('WP 미발견 → skipped:wp_not_found·무발행', async () => {
     const d = deps({ repo: { getGraph: vi.fn().mockResolvedValue({ workPackages: [], eventId: null, version: 1 }) } as never })
     expect(await handleWpDispatchSignal(sig(), d)).toEqual({ status: 'skipped', reason: 'wp_not_found' })
@@ -59,10 +66,12 @@ describe('handleWpDispatchSignal', () => {
 })
 
 describe('buildWorkerInput / shouldWireWorker', () => {
-  it('buildWorkerInput은 AC를 intent에 담고 합집합 필드 채움', () => {
+  it('buildWorkerInput은 AC를 intent에 담고 검증된 union 값을 채움(context=record·target=development·severity=low)', () => {
     const i = buildWorkerInput(wp({ acceptanceCriteria: ['ac1', 'ac2'] })) as Record<string, unknown>
     expect(String(i.intent)).toContain('ac1')
-    expect(i).toMatchObject({ priority: 'normal', projectPath: '.', target: 's1', severity: 'medium', artifacts: [] })
+    // buildAgentQueryPayload(검증된 union)과 동일 — context는 객체(z.record), target/severity는 placeholder enum.
+    expect(i).toMatchObject({ context: {}, priority: 'normal', projectPath: '', target: 'development', severity: 'low', artifacts: [] })
+    expect(typeof i.context).toBe('object')
   })
   it('shouldWireWorker 진리표', () => {
     expect(shouldWireWorker(false, true)).toBe(false)
