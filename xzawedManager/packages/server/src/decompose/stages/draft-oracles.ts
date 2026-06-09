@@ -10,7 +10,7 @@ const DraftScenarioSchema = z.object({
   title: z.string().default(''),
   given: z.array(z.string()).default([]),
   when: z.string().default(''),
-  then: z.array(z.string()).default([]),
+  thenSteps: z.array(z.string()).default([]),
   coversCriteria: z.array(z.string()).default([]),
 })
 const DraftScenariosSchema = z.object({ scenarios: z.array(DraftScenarioSchema).default([]) })
@@ -19,7 +19,7 @@ const MAX_TOKENS = 2048
 export const DRAFT_SYSTEM_PROMPT = `You draft Given-When-Then acceptance SCENARIOS (oracle drafts) for a user story.
 
 Return ONLY valid JSON:
-{ "scenarios": [ { "title": "...", "given": ["..."], "when": "...", "then": ["..."], "coversCriteria": ["<exact acceptance criterion text>"] } ] }
+{ "scenarios": [ { "title": "...", "given": ["..."], "when": "...", "thenSteps": ["..."], "coversCriteria": ["<exact acceptance criterion text>"] } ] }
 
 - Behavior-first: observable terms only (no implementation/code words).
 - Every acceptance criterion MUST be covered by >=1 scenario via "coversCriteria" (use the EXACT criterion text).
@@ -32,9 +32,10 @@ Return ONLY valid JSON:
 export async function draftOracles(stories: Story[], deps: StageDeps): Promise<OracleDraft[]> {
   const drafts: OracleDraft[] = []
   for (const story of stories) {
+    const acList = story.acceptanceCriteria.map((a) => `- ${a}`).join('\n')
     const data = await runStage(deps, {
       system: DRAFT_SYSTEM_PROMPT,
-      user: `Story: ${story.title}\nAcceptance criteria:\n${story.acceptanceCriteria.map((a) => `- ${a}`).join('\n')}`,
+      user: `Story: ${story.title}\nAcceptance criteria:\n${acList}`,
       maxTokens: MAX_TOKENS,
       schema: DraftScenariosSchema,
       fallback: () => ({ scenarios: [] }),
@@ -45,7 +46,7 @@ export async function draftOracles(stories: Story[], deps: StageDeps): Promise<O
     let n = 0
     for (const sc of (data.scenarios ?? []).slice(0, MAX_SCENARIOS_PER_STORY)) {
       const id = `${story.storyId}-sc${++n}`
-      scenarios.push({ id, title: sc.title ?? '', given: sc.given ?? [], when: sc.when ?? '', then: sc.then ?? [], status: 'drafted' })
+      scenarios.push({ id, title: sc.title ?? '', given: sc.given ?? [], when: sc.when ?? '', thenSteps: sc.thenSteps ?? [], status: 'drafted' })
       for (const ac of sc.coversCriteria ?? []) {
         if (!acSet.has(ac)) continue
         const ids = coverage[ac] ?? []
@@ -56,7 +57,7 @@ export async function draftOracles(stories: Story[], deps: StageDeps): Promise<O
     for (const ac of story.acceptanceCriteria) {
       if (!coverage[ac]?.length) {
         const id = `${story.storyId}-sc${++n}`
-        scenarios.push({ id, title: ac, given: [], when: '', then: [ac], status: 'drafted' })
+        scenarios.push({ id, title: ac, given: [], when: '', thenSteps: [ac], status: 'drafted' })
         coverage[ac] = [id]
       }
     }

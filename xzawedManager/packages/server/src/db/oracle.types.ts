@@ -12,10 +12,11 @@ export const ORACLE_STREAM = 'manager:oracle:main'
 export const OracleScenarioSchema = z.object({
   id: z.string().min(1),
   title: z.string().default(''),
-  /** Given-When-Then(behavior-first). 사람 검토용 — satisfied-set은 status+coverage만 소비. */
+  /** Gherkin Given-When-Then(behavior-first). 사람 검토용 — satisfied-set은 status+coverage만 소비.
+   *  thenSteps=Gherkin 'Then' 절. 속성명 `then`은 객체를 thenable로 만들어(await/Promise 오인) 피한다. */
   given: z.array(z.string()).default([]),
   when: z.string().default(''),
-  then: z.array(z.string()).default([]),
+  thenSteps: z.array(z.string()).default([]),
   status: z.enum(['drafted', 'human_approved', 'rejected']).default('drafted'),
 })
 export type OracleScenario = z.infer<typeof OracleScenarioSchema>

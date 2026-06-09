@@ -43,20 +43,20 @@ Supervisor consumer (DB):
 ```ts
 export interface OracleDraft {       // ← oracleId 없음(consumer가 workflowId로 파생, blocker#3)
   storyId: string
-  scenarios: OracleScenario[]        // status:'drafted', given/when/then 포함
+  scenarios: OracleScenario[]        // status:'drafted', given/when/thenSteps 포함
   coverage: Record<string, string[]> // acceptance_criterion → [scenarioId]
 }
 export async function draftOracles(stories: Story[], deps: StageDeps): Promise<OracleDraft[]>
 ```
 
 - story별 `runStage`(callClaudeText→JSON→safeParse→fallback) 1회 — LLM이 그 story의 `acceptanceCriteria`를 덮는 Given-When-Then 시나리오 초안 + coverage 생성.
-- **커버리지 보장**: LLM 미커버 AC마다 **stub 시나리오**(`{id, title:AC, given:[], when:'', then:[AC], status:'drafted'}`) 합성. `runStage` fallback(LLM 실패) = 빈 → story의 AC별 stub 1개.
+- **커버리지 보장**: LLM 미커버 AC마다 **stub 시나리오**(`{id, title:AC, given:[], when:'', thenSteps:[AC], status:'drafted'}`) 합성. `runStage` fallback(LLM 실패) = 빈 → story의 AC별 stub 1개.
 - **payload 상한(blocker#7)**: story당 LLM 시나리오 ≤ `MAX_SCENARIOS_PER_STORY`(8)로 절단(stub은 AC 수로 자연 유계). 과대 분해 시 메시지 10MiB 한계 방어.
 - 결정론: scenario id = `{storyId}-sc{n}`(순번, oracle JSONB 내부 스코프라 워크플로 충돌 무관). **oracleId는 producer가 부여하지 않음** — consumer가 `oracle-{workflowId}-{storyId}`로 파생.
 
 ### 3.2 스키마 (additive)
 
-- **`OracleScenarioSchema` 확장**(`db/oracle.types.ts`): `given`·`then` `z.array(z.string()).default([])`·`when` `z.string().default('')` 추가. **satisfied-set은 status+coverage만 소비** — given/when/then은 사람 검토용. P3-1 회귀 0(전부 기본값).
+- **`OracleScenarioSchema` 확장**(`db/oracle.types.ts`): `given`·`thenSteps` `z.array(z.string()).default([])`·`when` `z.string().default('')` 추가(Gherkin 'Then'은 속성명 `then`이 객체를 thenable로 만들어 await/Promise 오인 위험이라 `thenSteps`로 명명 — SonarCloud no-thenable). **satisfied-set은 status+coverage만 소비** — given/when/thenSteps는 사람 검토용. P3-1 회귀 0(전부 기본값).
 - **`OracleDraftSchema`**: `{ storyId, scenarios: OracleScenarioSchema[], coverage }` (oracleId 없음).
 - **`DecompositionEmittedSchema` payload**: `{ workPackages, oracleDrafts: z.array(OracleDraftSchema).default([]) }` — additive. **z.infer 출력 타입에 `oracleDrafts`가 항상 존재**하므로 **기존 타입드 픽스처(`msg()` 등)에 `oracleDrafts: []`를 채워 컴파일 유지**(blocker#9).
 
@@ -88,7 +88,7 @@ export async function draftOracles(stories: Story[], deps: StageDeps): Promise<O
 ## 5. 테스트
 
 - **`draftOracles`**(StageDeps mock): 커버리지 완전(모든 AC) · LLM 미커버 AC stub · LLM 실패 fallback(AC별 stub) · 시나리오 상한 절단 · 결정론(scenario id).
-- **스키마**: given/when/then 기본값 · OracleDraft(oracleId 없음) 파싱.
+- **스키마**: given/when/thenSteps 기본값 · OracleDraft(oracleId 없음) 파싱.
 - **`OracleRepo.upsertDraft`**(mock pool): pending INSERT · ON CONFLICT 멱등 갱신(version 불변) · approved 보존(WHERE status='pending').
 - **`OracleRepo.approve`**(mock pool): SELECT FOR UPDATE→전이→UPDATE 단일 tx · drafted→human_approved 일괄 · rejected/human_approved 불변 · drafted 없으면 no-op · **status≠pending(approved·superseded·미존재)이면 null·이벤트 미적재** · 멱등키 · **기존 outbox 스트림 단언 보존**(권고#1).
 - **`handleDecompositionEmitted`**: oracleDrafts 있으면 upsertDraft 호출(oracleId 파생 검증) · 미주입/빈 배열 skip · TaskGraph 영속 회귀 0 · **타입드 픽스처 oracleDrafts 채움**(blocker#9).
@@ -107,7 +107,7 @@ export async function draftOracles(stories: Story[], deps: StageDeps): Promise<O
 
 ## 7. 완료 정의 (수용 기준)
 
-①`draftOracles`(커버리지 보장·상한·fallback)+테스트 ②스키마 additive(given/when/then·OracleDraft·payload)+회귀 0 ③pipeline/producer flag(ok만 채움) ④consumer `upsertDraft`(멱등·oracleId 파생) ⑤`approve` 전이(pending 가드·무조건 전이·no-op 안전) ⑥`MANAGER_ORACLE_DRAFT` flag + oracleStore 분리 배선 ⑦DB-level 통합 테스트(영속→승인→DoR 충족) ⑧**문서 최신화: CLAUDE.md(root/manager)·README.md·`docs/`·AGENTS.md(존재 시)**(blocker#11·전역 규칙) ⑨build·test·jscpd 0·audit 0.
+①`draftOracles`(커버리지 보장·상한·fallback)+테스트 ②스키마 additive(given/when/thenSteps·OracleDraft·payload)+회귀 0 ③pipeline/producer flag(ok만 채움) ④consumer `upsertDraft`(멱등·oracleId 파생) ⑤`approve` 전이(pending 가드·무조건 전이·no-op 안전) ⑥`MANAGER_ORACLE_DRAFT` flag + oracleStore 분리 배선 ⑦DB-level 통합 테스트(영속→승인→DoR 충족) ⑧**문서 최신화: CLAUDE.md(root/manager)·README.md·`docs/`·AGENTS.md(존재 시)**(blocker#11·전역 규칙) ⑨build·test·jscpd 0·audit 0.
 
 ## 8. Codex 검증 반영 (2026-06-09)
 

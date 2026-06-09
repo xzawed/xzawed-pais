@@ -22,7 +22,7 @@ describe.skipIf(!url)('P3-2 오라클 루프 통합(영속→승인→DoR)', () 
       await repo.upsertDraft({
         workflowId: wf,
         storyId: 's1',
-        scenarios: [{ id: 's1-sc1', title: '', given: [], when: '', then: [], status: 'drafted' }],
+        scenarios: [{ id: 's1-sc1', title: '', given: [], when: '', thenSteps: [], status: 'drafted' }],
         coverage: { ac1: ['s1-sc1'] },
       })
 

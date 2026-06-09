@@ -118,7 +118,7 @@ describe('handleDecompositionEmitted — upsert 오류 전파(DLQ 경로 보존)
 describe('handleDecompositionEmitted — oracleDrafts upsert (P3-2)', () => {
   const draft = {
     storyId: 's1',
-    scenarios: [{ id: 's1-sc1', title: '', given: [], when: '', then: [], status: 'drafted' as const }],
+    scenarios: [{ id: 's1-sc1', title: '', given: [], when: '', thenSteps: [], status: 'drafted' as const }],
     coverage: { ac1: ['s1-sc1'] },
   }
   const msgWithDrafts = (drafts: typeof draft[]): DecompositionEmittedMessage => ({
@@ -182,7 +182,7 @@ describe('buildDecompositionConsumerHandler — oracleStore 위임 (P3-2)', () =
       envelope: env(), type: 'decomposition.emitted',
       payload: {
         workPackages: [wp('a')],
-        oracleDrafts: [{ storyId: 's1', scenarios: [{ id: 's1-sc1', title: '', given: [], when: '', then: [], status: 'drafted' }], coverage: {} }],
+        oracleDrafts: [{ storyId: 's1', scenarios: [{ id: 's1-sc1', title: '', given: [], when: '', thenSteps: [], status: 'drafted' }], coverage: {} }],
       },
     }
     const handler = buildDecompositionConsumerHandler(repo, vi.fn(), undefined, oracleStore)

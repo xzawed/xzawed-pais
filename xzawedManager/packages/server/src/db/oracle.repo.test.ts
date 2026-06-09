@@ -45,9 +45,9 @@ describe('OracleRepo.approve (P3-2: SELECT FOR UPDATE→전이→UPDATE·pending
 
   it('drafted→human_approved 일괄 전이, rejected/human_approved 불변', async () => {
     const scenarios = [
-      { id: 'a', title: '', given: [], when: '', then: [], status: 'drafted' },
-      { id: 'b', title: '', given: [], when: '', then: [], status: 'human_approved' },
-      { id: 'c', title: '', given: [], when: '', then: [], status: 'rejected' },
+      { id: 'a', title: '', given: [], when: '', thenSteps: [], status: 'drafted' },
+      { id: 'b', title: '', given: [], when: '', thenSteps: [], status: 'human_approved' },
+      { id: 'c', title: '', given: [], when: '', thenSteps: [], status: 'rejected' },
     ]
     const m = makeMockPool({ scenarios })
     await new OracleRepo(m.pool, () => 1000).approve('o1', 'h1')
@@ -58,7 +58,7 @@ describe('OracleRepo.approve (P3-2: SELECT FOR UPDATE→전이→UPDATE·pending
   })
 
   it('drafted 없으면 scenarios 불변(no-op)', async () => {
-    const scenarios = [{ id: 'a', title: '', given: [], when: '', then: [], status: 'human_approved' }]
+    const scenarios = [{ id: 'a', title: '', given: [], when: '', thenSteps: [], status: 'human_approved' }]
     const m = makeMockPool({ scenarios })
     await new OracleRepo(m.pool, () => 1000).approve('o1', 'h1')
     expect(JSON.parse((callFor(m.query, /UPDATE oracles/i)![1] as unknown[])[2] as string)).toEqual(scenarios)
@@ -83,7 +83,7 @@ describe('OracleRepo.upsertDraft (P3-2 멱등)', () => {
     const pool = { query } as never
     await new OracleRepo(pool).upsertDraft({
       workflowId: 'wf1', storyId: 's1',
-      scenarios: [{ id: 's1-sc1', title: '', given: [], when: '', then: [], status: 'drafted' }],
+      scenarios: [{ id: 's1-sc1', title: '', given: [], when: '', thenSteps: [], status: 'drafted' }],
       coverage: { ac1: ['s1-sc1'] },
     })
     const sql = String(query.mock.calls[0]![0])
@@ -101,7 +101,7 @@ describe('OracleRepo.upsertDraft (P3-2 멱등)', () => {
   it('scenarios·coverage를 JSON 직렬화해 바인딩', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const pool = { query } as never
-    const scenarios = [{ id: 's2-sc1', title: 't', given: ['g'], when: 'w', then: ['x'], status: 'drafted' as const }]
+    const scenarios = [{ id: 's2-sc1', title: 't', given: ['g'], when: 'w', thenSteps: ['x'], status: 'drafted' as const }]
     const coverage = { acA: ['s2-sc1'] }
     await new OracleRepo(pool).upsertDraft({ workflowId: 'wf2', storyId: 's2', scenarios, coverage })
     const args = query.mock.calls[0]![1] as unknown[]

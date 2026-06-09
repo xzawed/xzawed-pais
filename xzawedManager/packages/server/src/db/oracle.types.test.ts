@@ -22,7 +22,7 @@ describe('coveredCriteria', () => {
 
 describe('P3-2 스키마', () => {
   it('OracleScenario given/when/then 기본값(P3-1 회귀 0)', () => {
-    expect(OracleScenarioSchema.parse({ id: 'sc1' })).toMatchObject({ id: 'sc1', status: 'drafted', given: [], when: '', then: [] })
+    expect(OracleScenarioSchema.parse({ id: 'sc1' })).toMatchObject({ id: 'sc1', status: 'drafted', given: [], when: '', thenSteps: [] })
   })
   it('OracleDraftSchema는 oracleId 없이 storyId·scenarios·coverage', () => {
     const d = OracleDraftSchema.parse({ storyId: 's1', scenarios: [{ id: 's1-sc1' }], coverage: { ac1: ['s1-sc1'] } })

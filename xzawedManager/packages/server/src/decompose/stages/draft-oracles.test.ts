@@ -9,7 +9,7 @@ const story = (over: Partial<Story> = {}): Story => ({ storyId: over.storyId ?? 
 
 describe('draftOracles', () => {
   it('oracleId를 부여하지 않고 모든 AC를 덮음(scenarioId 결정론)', async () => {
-    const text = JSON.stringify({ scenarios: [{ title: 'h', given: ['g'], when: 'w', then: ['t'], coversCriteria: ['ac1', 'ac2'] }] })
+    const text = JSON.stringify({ scenarios: [{ title: 'h', given: ['g'], when: 'w', thenSteps: ['t'], coversCriteria: ['ac1', 'ac2'] }] })
     const [d] = await draftOracles([story()], deps(mockClaude(text)))
     expect('oracleId' in d).toBe(false)
     expect(d.storyId).toBe('s1')
@@ -19,7 +19,7 @@ describe('draftOracles', () => {
   it('미커버 AC는 stub으로 보장', async () => {
     const [d] = await draftOracles([story()], deps(mockClaude(JSON.stringify({ scenarios: [{ title: 'a', coversCriteria: ['ac1'] }] }))))
     expect(d.coverage.ac2).toHaveLength(1)
-    expect(d.scenarios.find((s) => s.id === d.coverage.ac2[0])).toMatchObject({ status: 'drafted', then: ['ac2'] })
+    expect(d.scenarios.find((s) => s.id === d.coverage.ac2[0])).toMatchObject({ status: 'drafted', thenSteps: ['ac2'] })
   })
   it('LLM 실패 시 AC별 stub fallback', async () => {
     const claude: ClaudeLike = { messages: { create: vi.fn().mockRejectedValue(new Error('x')) } }
