@@ -2,10 +2,11 @@ import { describe, it, expect, vi } from 'vitest'
 import { OracleRepo } from './oracle.repo.js'
 import { oracleIdFor } from './oracle.types.js'
 
-function makeMockPool(opts: { updateRows?: unknown[] } = {}) {
+function makeMockPool(opts: { selectRows?: unknown[]; scenarios?: unknown[] } = {}) {
+  const defaultRow = { workflow_id: 'wf1', story_id: 's1', version: 1, status: 'pending', scenarios: opts.scenarios ?? [] }
   const query = vi.fn().mockImplementation((sql: string) => {
-    if (/UPDATE oracles/i.test(sql)) return Promise.resolve({ rows: opts.updateRows ?? [{ workflow_id: 'wf1', story_id: 's1', version: 1 }] })
-    if (/SELECT .* FROM oracles/i.test(sql)) return Promise.resolve({ rows: [] })
+    if (/SELECT .* FROM oracles/i.test(sql)) return Promise.resolve({ rows: opts.selectRows ?? [defaultRow] })
+    if (/UPDATE oracles/i.test(sql)) return Promise.resolve({ rows: [] })
     return Promise.resolve({ rows: [] })
   })
   const release = vi.fn()
@@ -15,37 +16,52 @@ function makeMockPool(opts: { updateRows?: unknown[] } = {}) {
 }
 const callFor = (q: ReturnType<typeof vi.fn>, re: RegExp) => q.mock.calls.find((c) => re.test(String(c[0])))
 
-describe('OracleRepo.approve', () => {
-  it('단일 tx로 oracles UPDATE + manager_events + manager_outbox INSERT 후 COMMIT', async () => {
+describe('OracleRepo.approve (P3-2: SELECT FOR UPDATE→전이→UPDATE·pending 가드)', () => {
+  it('단일 tx로 SELECT FOR UPDATE + UPDATE + events + outbox 후 COMMIT, outbox 스트림=manager:oracle:main', async () => {
     const m = makeMockPool()
-    const res = await new OracleRepo(m.pool, () => 1000).approve('o1', 'human-1')
+    const res = await new OracleRepo(m.pool, () => 1000).approve('o1', 'h1')
     const verbs = m.query.mock.calls.map((c) => String(c[0]).trim().split(/\s+/)[0].toUpperCase())
     expect(verbs[0]).toBe('BEGIN')
     expect(verbs[verbs.length - 1]).toBe('COMMIT')
-    expect(callFor(m.query, /INSERT INTO manager_events/i)).toBeTruthy()
-    expect(callFor(m.query, /INSERT INTO manager_outbox/i)).toBeTruthy()
+    expect(callFor(m.query, /SELECT .* FROM oracles .* FOR UPDATE/i)).toBeTruthy()
+    const ob = callFor(m.query, /INSERT INTO manager_outbox/i)![1] as unknown[]
+    expect(ob[1]).toBe('manager:oracle:main')   // 권고#1 outbox 단언 보존
     expect(res).toEqual({ eventId: expect.stringMatching(/[0-9a-f-]{36}/) })
   })
 
-  it('멱등키를 {wf}:oracle.approved:{oracleId}:{version}로 고정', async () => {
-    const m = makeMockPool({ updateRows: [{ workflow_id: 'wf1', story_id: 's1', version: 3 }] })
-    await new OracleRepo(m.pool, () => 1000).approve('o1', 'human-1')
-    const ev = callFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[]
-    expect(ev[6]).toBe('wf1:oracle.approved:o1:3') // idempotency_key
+  it('멱등키 {wf}:oracle.approved:{id}:{ver}(version=SELECT row)', async () => {
+    const m = makeMockPool({ selectRows: [{ workflow_id: 'wf1', story_id: 's1', version: 3, status: 'pending', scenarios: [] }] })
+    await new OracleRepo(m.pool, () => 1000).approve('o1', 'h1')
+    expect((callFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[])[6]).toBe('wf1:oracle.approved:o1:3')
   })
 
-  it('outbox 스트림은 manager:oracle:main', async () => {
-    const m = makeMockPool()
-    await new OracleRepo(m.pool, () => 1000).approve('o1', 'human-1')
-    const ob = callFor(m.query, /INSERT INTO manager_outbox/i)![1] as unknown[]
-    expect(ob[1]).toBe('manager:oracle:main')
+  it('status≠pending(approved·superseded·미존재)이면 null·이벤트 미적재(blocker#8)', async () => {
+    for (const rows of [[], [{ workflow_id: 'wf1', story_id: 's1', version: 1, status: 'approved', scenarios: [] }], [{ workflow_id: 'wf1', story_id: 's1', version: 1, status: 'superseded', scenarios: [] }]]) {
+      const m = makeMockPool({ selectRows: rows })
+      expect(await new OracleRepo(m.pool, () => 1).approve('o1', 'h')).toBeNull()
+      expect(callFor(m.query, /INSERT INTO manager_events/i)).toBeUndefined()
+    }
   })
 
-  it('미존재·이미 approved(UPDATE 0행)면 null 반환·이벤트 미적재', async () => {
-    const m = makeMockPool({ updateRows: [] })
-    const res = await new OracleRepo(m.pool, () => 1000).approve('missing', 'human-1')
-    expect(res).toBeNull()
-    expect(callFor(m.query, /INSERT INTO manager_events/i)).toBeUndefined()
+  it('drafted→human_approved 일괄 전이, rejected/human_approved 불변', async () => {
+    const scenarios = [
+      { id: 'a', title: '', given: [], when: '', then: [], status: 'drafted' },
+      { id: 'b', title: '', given: [], when: '', then: [], status: 'human_approved' },
+      { id: 'c', title: '', given: [], when: '', then: [], status: 'rejected' },
+    ]
+    const m = makeMockPool({ scenarios })
+    await new OracleRepo(m.pool, () => 1000).approve('o1', 'h1')
+    const written = JSON.parse((callFor(m.query, /UPDATE oracles/i)![1] as unknown[])[2] as string) as Array<{ id: string; status: string }>
+    expect(written.find((s) => s.id === 'a')?.status).toBe('human_approved')
+    expect(written.find((s) => s.id === 'b')?.status).toBe('human_approved')
+    expect(written.find((s) => s.id === 'c')?.status).toBe('rejected')
+  })
+
+  it('drafted 없으면 scenarios 불변(no-op)', async () => {
+    const scenarios = [{ id: 'a', title: '', given: [], when: '', then: [], status: 'human_approved' }]
+    const m = makeMockPool({ scenarios })
+    await new OracleRepo(m.pool, () => 1000).approve('o1', 'h1')
+    expect(JSON.parse((callFor(m.query, /UPDATE oracles/i)![1] as unknown[])[2] as string)).toEqual(scenarios)
   })
 })
 
