@@ -51,7 +51,7 @@ P2-3(#266까지)로 `decompose_request → 4단계 LLM 분해 → WP DAG → dec
 
 **`db/oracle.repo.ts` `OracleRepo`**:
 - `upsert(oracle)` — 생성/수정(status `pending`). ON CONFLICT version++.
-- `approve(oracleId, approvedBy)` — **단일 tx**: `oracles` status=`approved`·approved_at/by 갱신 + `manager_events`(`oracle.approved`, payload `{oracleId, workflowId, storyId, version}`) + `manager_outbox`(stream=`manager:events:{workflowId}`). [dispatch.repo.ts](../../../xzawedManager/packages/server/src/db/dispatch.repo.ts)의 `appendWpEvent`/`recordDispatch` 트랜잭셔널 아웃박스 패턴 재사용(ROLLBACK 가드·연결 손상 시 원본 오류 보존).
+- `approve(oracleId, approvedBy)` — **단일 tx**: `oracles` status=`approved`·approved_at/by 갱신 + `manager_events`(`oracle.approved`, payload `{oracleId, workflowId, storyId, version}`) + `manager_outbox`(stream=`manager:oracle:main` — Supervisor `:main` 채널 소비 모델, workflowId는 봉투). [dispatch.repo.ts](../../../xzawedManager/packages/server/src/db/dispatch.repo.ts)의 `appendWpEvent`/`recordDispatch` 트랜잭셔널 아웃박스 패턴 재사용(ROLLBACK 가드·연결 손상 시 원본 오류 보존).
 - `approvedByWorkflow(workflowId): ApprovedOracle[]` — 디스패치 시 satisfied-set 계산용. status=`approved`만.
 
 Oracle 아티팩트는 Zod 스키마(`OracleSchema`)로 검증 — ORACLE_SCHEMA §2~§5 구조.
@@ -84,14 +84,14 @@ readiness 주입: `readyNodes(graph, { isDone, oracleSatisfied: (wp) => set.has(
 
 - **[dispatch.ts](../../../xzawedManager/packages/server/src/streams/dispatch.ts) `handleDispatch`**: `DispatchDeps`에 `oracleStore: { approvedByWorkflow }` 추가. graph 로드 후 `approvedByWorkflow(workflowId)`→`oracleSatisfiedSet`→`planDispatch`에 `oracleSatisfied` 주입(기존 done-set `isDone`과 **합성**). flag off면 주입 생략(기본 술어·현행).
 - **[supervisor.ts](../../../xzawedManager/packages/server/src/streams/supervisor.ts)**: `completionConsumer`와 동일 패턴 `oracleConsumer`(BaseConsumer · `oracle.approved` 스키마 구독 · **전용 Redis 연결** makeRedis로 xreadgroup BLOCK 직렬화 회피) 추가 → 핸들러가 `handleDispatch(workflowId, dispatch)`. `createSupervisor`가 `OracleRepo`를 dispatch deps에 주입. `Supervisor.start/stop`에 oracleConsumer 포함.
-- 스트림(잠정): `oracle.approved`는 `manager:events:{workflowId}`(decomposition.inconsistent·세션 이벤트와 네임스페이스 공유) 발행 → oracleConsumer는 전용 그룹 `manager-oracle-consumers`. P2 배선 확정 시 재검토.
+- 스트림(잠정): `oracle.approved`는 **전용 스트림 `manager:oracle:main`**(decomposition/completion `:main` 채널 모델 동일·workflowId는 봉투) 발행 → oracleConsumer 전용 그룹 `manager-oracle-consumers`. P2 배선 확정 시 재검토.
 
 ## 4. 데이터 흐름
 
 ```
 [사람] POST /oracles (story별 시나리오 시드)        → oracles(status=pending)
 [사람] PATCH /oracles/:id/approve                  → oracles(approved) + manager_events(oracle.approved) + outbox  [단일 tx]
-OutboxRelay (500ms)                                → manager:events:{wf} 발행
+OutboxRelay (500ms)                                → manager:oracle:main 발행
 Supervisor.oracleConsumer (oracle.approved)        → handleDispatch(wf)
 handleDispatch                                     → approvedByWorkflow → oracleSatisfiedSet → readyNodes(oracleSatisfied 주입)
                                                    → 충족·미디스패치 WP → recordDispatch(wp.dispatched + lease) → DISPATCHED
@@ -125,7 +125,7 @@ handleDispatch                                     → approvedByWorkflow → or
 
 - **사람 승인 병목**: 오라클 작성·승인은 사람 시간 의존. 이 슬라이스는 메커니즘만 — 비차단(승인 전 dispatch 0이 정상). LLM 초안(P7)이 후속에서 작성 부담을 흡수.
 - **AC 문자열 동일성 단순화**: WP acceptanceCriteria와 oracle coverage 키가 정확히 일치해야 satisfied. 시드 시 동일 문자열 사용 전제. 정식 AC-id 매핑은 후속(불일치 시 미충족=보수적·안전 방향).
-- **이벤트 네임스페이스 공유**: `oracle.approved`가 `manager:events:{wf}`에 세션 이벤트·decomposition.inconsistent와 공존 — 전용 consumer group으로 분리, 타 type은 invalid_schema DLQ(의도된 격리).
+- **전용 스트림**: `oracle.approved`는 전용 `manager:oracle:main`으로 분리(세션 이벤트·decomposition.inconsistent와 격리) → oracleConsumer 단일 type 구독, 타 type 유입 시 invalid_schema DLQ(의도된 격리). `manager_events`(진실원천)에는 그대로 적재되나 발행 outbox 스트림만 전용.
 - **멱등키**: `oracle.approved` 멱등키는 `{wf}:oracle.approved:{oracleId}:{version}` — 동일 승인 재전달은 M6 dedup으로 1회 처리.
 
 ## 9. 완료 정의 (수용 기준)
