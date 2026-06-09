@@ -2,7 +2,8 @@ import type { Pool, PoolClient } from 'pg'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import type { ApprovedOracleView } from '@xzawed/agent-streams'
 import {
-  OracleScenarioSchema, coveredCriteria, ORACLE_APPROVED, ORACLE_APPROVED_EVENT, ORACLE_ACTOR, ORACLE_STREAM,
+  OracleScenarioSchema, coveredCriteria, oracleIdFor,
+  ORACLE_APPROVED, ORACLE_APPROVED_EVENT, ORACLE_ACTOR, ORACLE_STREAM,
 } from './oracle.types.js'
 import type { Oracle, OracleScenario } from './oracle.types.js'
 
@@ -32,6 +33,20 @@ export class OracleRepo {
          scenarios = EXCLUDED.scenarios, coverage = EXCLUDED.coverage`,
       [oracle.oracleId, oracle.workflowId, oracle.storyId, oracle.version, oracle.status,
         JSON.stringify(oracle.scenarios), JSON.stringify(oracle.coverage)],
+    )
+  }
+
+  /** P3-2 초안 영속(멱등): oracleId=oracleIdFor(wf,storyId)로 pending INSERT. ON CONFLICT는 pending일 때만 덮어씀
+   *  (version 불변→재시도/재분해 인플레 방지·blocker#6; approved/superseded는 WHERE로 보존·D1 oracleId 단일출처). */
+  async upsertDraft(input: { workflowId: string; storyId: string; scenarios: OracleScenario[]; coverage: Record<string, string[]> }): Promise<void> {
+    const oracleId = oracleIdFor(input.workflowId, input.storyId)
+    await this.pool.query(
+      `INSERT INTO oracles (oracle_id, workflow_id, story_id, version, status, scenarios, coverage)
+         VALUES ($1,$2,$3,1,'pending',$4,$5)
+       ON CONFLICT (oracle_id) DO UPDATE SET
+         scenarios = EXCLUDED.scenarios, coverage = EXCLUDED.coverage, status = 'pending'
+         WHERE oracles.status = 'pending'`,
+      [oracleId, input.workflowId, input.storyId, JSON.stringify(input.scenarios), JSON.stringify(input.coverage)],
     )
   }
 
