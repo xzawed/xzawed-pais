@@ -167,6 +167,40 @@ describe('handleDispatch', () => {
   })
 })
 
+// ── P4-1 트리거 신호 발행 ────────────────────────────────────────
+// 기존 makeDeps 패턴을 복제·추출: ready WP 'a' 1개·latestStates 빈·recordDispatch는 주입 결과 반환.
+function makeDispatchDepsOneReady(over: { recordResult?: { status: string; eventId?: string; seq?: number } } = {}) {
+  const recordResult = over.recordResult ?? { status: 'recorded', eventId: 'e0', seq: 1 }
+  const recordDispatch = vi.fn().mockResolvedValue(recordResult)
+  const repo = {
+    getGraph: vi.fn().mockResolvedValue(stored([wp('a')])),
+    latestStates: vi.fn().mockResolvedValue(new Map()),
+  }
+  return { repo, store: { recordDispatch } } as unknown as DispatchDeps
+}
+
+describe('handleDispatch 트리거 신호 (P4-1)', () => {
+  it('publish 주입 시 recordDispatch(recorded) 후 wp.dispatch_signal 발행(attempt=0)', async () => {
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const deps = makeDispatchDepsOneReady()
+    await handleDispatch('wf1', { ...deps, publish })
+    const call = publish.mock.calls.find((c) => c[0] === 'manager:dispatched:main')
+    expect(call).toBeTruthy()
+    expect(call![1]).toMatchObject({ type: 'wp.dispatch_signal', payload: { wpId: 'a', attempt: 0 } })
+  })
+  it('publish 미주입이면 신호 없음(회귀 0)', async () => {
+    const deps = makeDispatchDepsOneReady()
+    const out = await handleDispatch('wf1', deps)
+    expect(out.dispatched.length).toBeGreaterThan(0) // 디스패치는 정상
+  })
+  it('deduped면 신호 없음', async () => {
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const deps = makeDispatchDepsOneReady({ recordResult: { status: 'deduped' } })
+    await handleDispatch('wf1', { ...deps, publish })
+    expect(publish.mock.calls.find((c) => c[0] === 'manager:dispatched:main')).toBeUndefined()
+  })
+})
+
 describe('handleDispatch + oracleStore 주입 (P3-1)', () => {
   const wps = [
     WorkPackageSchema.parse({ id: 'a', storyId: 's1', owningRole: 'dev', oracleRef: null, acceptanceCriteria: ['ac1'] }),

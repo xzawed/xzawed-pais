@@ -1,5 +1,7 @@
 import type { LeaseRecord, LeaseStore } from '../db/lease.repo.js'
 import { DEFAULT_MAX_ATTEMPTS, DEFAULT_VISIBILITY_MS } from './dispatch-constants.js'
+import { publishDispatchSignal } from './dispatch-signal.js'
+import type { Publish } from './decomposition-consumer.js'
 
 export interface ReclaimItem {
   workflowId: string
@@ -34,6 +36,8 @@ export interface SweepDeps {
   maxAttempts?: number
   /** reclaim 시 새 lease 만료(ms). 기본 DEFAULT_VISIBILITY_MS. */
   visibilityMs?: number
+  /** P4-1: 주입 시 reclaim 후 wp.dispatch_signal 발행(워커 재실행 트리거). 미주입이면 무발행. */
+  publish?: Publish
 }
 
 export interface SweepOutcome {
@@ -61,8 +65,10 @@ export async function handleLeaseSweep(now: number, deps: SweepDeps): Promise<Sw
       const r = await deps.store.recordReclaim({
         workflowId: item.workflowId, wpId: item.wpId, nextAttempt: item.nextAttempt, stepN: item.stepN, visibilityMs,
       })
-      if (r.status === 'reclaimed') reclaimed.push({ workflowId: item.workflowId, wpId: item.wpId, nextAttempt: item.nextAttempt, eventId: r.eventId })
-      else skipped += 1
+      if (r.status === 'reclaimed') {
+        reclaimed.push({ workflowId: item.workflowId, wpId: item.wpId, nextAttempt: item.nextAttempt, eventId: r.eventId })
+        if (deps.publish) await publishDispatchSignal(deps.publish, item.workflowId, item.wpId, item.nextAttempt, now)
+      } else skipped += 1
     } else {
       const r = await deps.store.recordEscalation({
         workflowId: item.workflowId, wpId: item.wpId, attempt: item.attempt, stepN: item.stepN,

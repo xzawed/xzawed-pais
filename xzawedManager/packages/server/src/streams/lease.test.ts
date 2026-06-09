@@ -69,3 +69,26 @@ describe('handleLeaseSweep', () => {
     expect(store.expiredActiveLeases).toHaveBeenCalledWith(4242)
   })
 })
+
+describe('handleLeaseSweep 트리거 신호 (P4-1)', () => {
+  it('publish 주입 시 reclaim 후 wp.dispatch_signal 발행(attempt=nextAttempt)', async () => {
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const { deps } = makeSweepDeps([lease('a', 0)], { maxAttempts: 3, publish })
+    await handleLeaseSweep(1000, deps)
+    const call = publish.mock.calls.find((c) => c[0] === 'manager:dispatched:main')
+    expect(call?.[1]).toMatchObject({ type: 'wp.dispatch_signal', payload: { wpId: 'a', attempt: 1 } })
+  })
+
+  it('escalate면 신호 없음', async () => {
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const { deps } = makeSweepDeps([lease('a', 2)], { maxAttempts: 3, publish }) // nextAttempt=3 >= maxAttempts → escalate
+    await handleLeaseSweep(1000, deps)
+    expect(publish.mock.calls.find((c) => c[0] === 'manager:dispatched:main')).toBeUndefined()
+  })
+
+  it('publish 미주입이면 신호 없음(회귀 0)', async () => {
+    const { deps } = makeSweepDeps([lease('a', 0)], { maxAttempts: 3 })
+    const out = await handleLeaseSweep(1000, deps)
+    expect(out.reclaimed.length).toBe(1)
+  })
+})

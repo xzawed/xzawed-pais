@@ -6,6 +6,7 @@ import { handleDispatch, type DispatchDeps, type OracleStore } from './dispatch.
 import { buildOracleApprovedHandler, OracleApprovedSchema, type OracleApprovedMessage } from './oracle-consumer.js'
 import { handleCompletion } from './completion.js'
 import { LeaseSweeper } from './lease-sweeper.js'
+import { WorkerConsumer, shouldWireWorker, type AgentExecutor } from './worker.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
 import type { LeaseStore } from '../db/lease.repo.js'
@@ -55,6 +56,8 @@ export interface SupervisorComponents {
   leaseSweeper: SweeperLike
   /** P3-1: oracle.approved 소비자(주입 시만 배선·flag off면 미주입). */
   oracleConsumer?: ConsumerLike
+  /** P4-1: wp.dispatch_signal 소비자(taskWorker+handlers 주입 시만 배선). */
+  workerConsumer?: ConsumerLike
 }
 
 /**
@@ -79,6 +82,9 @@ export class Supervisor {
     this.components.oracleConsumer?.start(this.channel).catch((err: unknown) => {
       console.error('[supervisor] oracle consumer 시작 실패:', err)
     })
+    this.components.workerConsumer?.start(this.channel).catch((err: unknown) => {
+      console.error('[supervisor] worker consumer 시작 실패:', err)
+    })
     this.components.leaseSweeper.start()
   }
 
@@ -86,6 +92,7 @@ export class Supervisor {
     this.components.decompositionConsumer.stop()
     this.components.completionConsumer.stop()
     this.components.oracleConsumer?.stop()
+    this.components.workerConsumer?.stop()
     this.components.leaseSweeper.stop()
   }
 }
@@ -105,6 +112,8 @@ export interface SupervisorDeps {
   /** P3-1 dispatch satisfied-set(approvedByWorkflow) + P3-2 consumer upsertDraft 둘 다 노출(blocker#2).
    *  DOR||DRAFT일 때 server.ts가 OracleRepo 주입. DRAFT만 켜도 decompositionConsumer가 upsert로 사용. */
   oracleStore?: OracleStore & NonNullable<DecompositionDeps['oracleStore']>
+  /** P4-1: tool명→에이전트 핸들러(server.ts가 registry.get으로 주입). 주입+taskWorker면 워커 배선. */
+  handlers?: Record<string, AgentExecutor>
 }
 export interface SupervisorConfig {
   sweepMs: number
@@ -113,6 +122,8 @@ export interface SupervisorConfig {
   /** P3-2: DoR 게이트(satisfied-set 주입·oracleConsumer) 활성(=MANAGER_ORACLE_DOR).
    *  consumer upsertDraft는 oracleStore 유무로만 동작(DRAFT만 켜도 영속·blocker#1 분리). */
   oracleDor: boolean
+  /** P4-1: 실행 워커(WorkerConsumer 배선 + dispatch/reclaim 신호 발행) 활성(=MANAGER_TASK_WORKER). */
+  taskWorker: boolean
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
@@ -128,9 +139,13 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
   // DoR 게이트 활성(satisfied-set 주입) = MANAGER_ORACLE_DOR && oracleStore 주입. DRAFT만 켜면 dorActive=false라
   // dispatch는 기본 술어로 동작하지만, decompositionConsumer는 oracleStore를 받아 upsertDraft만 수행(blocker#1 분리).
   const dorActive = config.oracleDor && deps.oracleStore !== undefined
+  // P4-1: taskWorker flag + 핸들러 주입 둘 다 있어야 워커 배선(순수 게이트). 배선 시 dispatch/reclaim이
+  // wp.dispatch_signal을 발행하고 WorkerConsumer가 이를 소비. off면 publish 미주입 → 신호 미발행(회귀 0).
+  const workerActive = shouldWireWorker(config.taskWorker, deps.handlers !== undefined)
   const dispatch: DispatchDeps = {
     repo: deps.repo, store: deps.dispatchStore, visibilityMs: config.visibilityMs,
     ...(dorActive && { oracleStore: deps.oracleStore }),
+    ...(workerActive && { publish: deps.publish }),
   }
 
   const decompositionConsumer = new DecompositionConsumer(
@@ -151,7 +166,10 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
   )
 
   const leaseSweeper = new LeaseSweeper(
-    { store: deps.leaseStore, maxAttempts: config.maxAttempts, visibilityMs: config.visibilityMs },
+    {
+      store: deps.leaseStore, maxAttempts: config.maxAttempts, visibilityMs: config.visibilityMs,
+      ...(workerActive && { publish: deps.publish }),
+    },
     config.sweepMs,
   )
 
@@ -168,5 +186,19 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
       )
     : undefined
 
-  return new Supervisor({ decompositionConsumer, completionConsumer, leaseSweeper, ...(oracleConsumer && { oracleConsumer }) })
+  // P4-1: 워커 소비자는 taskWorker+handlers 주입 시만 배선. 완료 발행 스트림을 completionConsumer 구독 스트림과
+  // 단일 출처(COMPLETION_PREFIX:DEFAULT_CHANNEL)로 일치(드리프트 0). makeRedis()를 워커용으로 1회 더 호출
+  // (소비자별 전용 연결·BLOCK 직렬화 회피·기존 패턴).
+  const workerConsumer = workerActive && deps.handlers
+    ? new WorkerConsumer(makeRedis(), {
+        repo: deps.repo, handlers: deps.handlers, publish: deps.publish,
+        completionStream: `${COMPLETION_PREFIX}:${DEFAULT_CHANNEL}`,
+      })
+    : undefined
+
+  return new Supervisor({
+    decompositionConsumer, completionConsumer, leaseSweeper,
+    ...(oracleConsumer && { oracleConsumer }),
+    ...(workerConsumer && { workerConsumer }),
+  })
 }

@@ -76,7 +76,7 @@ describe('createSupervisor', () => {
         leaseStore: {} as unknown as LeaseStore,
         publish: vi.fn(),
       },
-      { sweepMs: 30_000, visibilityMs: 5000, maxAttempts: 3, oracleDor: false },
+      { sweepMs: 30_000, visibilityMs: 5000, maxAttempts: 3, oracleDor: false, taskWorker: false },
     )
     expect(makeRedis).toHaveBeenCalledTimes(2)
     expect(sup).toBeInstanceOf(Supervisor)
@@ -119,9 +119,28 @@ describe('createSupervisor oracleDor 게이트 (P3-2)', () => {
     oracleStore: { upsertDraft: vi.fn(), approvedByWorkflow: vi.fn() } as never,
   }
   it('oracleStore 주입 + oracleDor=false면 조립 성공(consumer upsert용·oracleConsumer 미배선)', () => {
-    expect(createSupervisor(makeRedis, baseDeps, { sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: false })).toBeInstanceOf(Supervisor)
+    expect(createSupervisor(makeRedis, baseDeps, { sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: false, taskWorker: false })).toBeInstanceOf(Supervisor)
   })
   it('oracleDor=true면 조립 성공(satisfied-set+oracleConsumer)', () => {
-    expect(createSupervisor(makeRedis, baseDeps, { sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: true })).toBeInstanceOf(Supervisor)
+    expect(createSupervisor(makeRedis, baseDeps, { sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: true, taskWorker: false })).toBeInstanceOf(Supervisor)
+  })
+})
+
+describe('createSupervisor worker 배선 (P4-1)', () => {
+  const makeRedis = () => ({}) as unknown as Redis
+  const handlers = { develop_code: { execute: vi.fn() } }
+  const base = {
+    repo: {} as unknown as TaskGraphRepo,
+    dispatchStore: {} as unknown as DispatchStore,
+    leaseStore: {} as unknown as LeaseStore,
+    publish: vi.fn(),
+  }
+  const cfg = (over: Partial<{ taskWorker: boolean }> = {}) =>
+    ({ sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: false, taskWorker: false, ...over })
+  it('taskWorker=false면 worker 미배선이어도 조립 성공', () => {
+    expect(createSupervisor(makeRedis, base, cfg())).toBeInstanceOf(Supervisor)
+  })
+  it('taskWorker=true + handlers 주입이면 조립 성공(worker 배선)', () => {
+    expect(createSupervisor(makeRedis, { ...base, handlers }, cfg({ taskWorker: true }))).toBeInstanceOf(Supervisor)
   })
 })
