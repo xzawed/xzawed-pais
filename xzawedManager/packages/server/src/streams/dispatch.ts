@@ -1,5 +1,5 @@
-import { buildTaskGraph, readyNodes, topoSort } from '@xzawed/agent-streams'
-import type { TaskGraph, ReadinessOptions } from '@xzawed/agent-streams'
+import { buildTaskGraph, readyNodes, topoSort, oracleSatisfiedSet } from '@xzawed/agent-streams'
+import type { TaskGraph, ReadinessOptions, ApprovedOracleView, WorkPackage } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
 import { DRAFTED_STATE, DISPATCHED_STATE, ESCALATED_STATE, DONE_STATE, DEFAULT_VISIBILITY_MS } from './dispatch-constants.js'
@@ -31,11 +31,16 @@ export function planDispatch(graph: TaskGraph, opts: PlanDispatchOptions = {}): 
     .map((id) => ({ wpId: id, stepN: order.indexOf(id), fromState: DRAFTED_STATE }))
 }
 
+export interface OracleStore {
+  approvedByWorkflow(workflowId: string): Promise<ApprovedOracleView[]>
+}
 export interface DispatchDeps {
   repo: TaskGraphRepo
   store: DispatchStore
   /** DoR done/oracle 판정 주입 — planDispatch로 전달(P3 Oracle·완료 done-set seam). */
   readiness?: ReadinessOptions
+  /** P3-1: 주입 시 디스패치마다 approved 오라클로 satisfied-set 산출→oracleSatisfied 주입(기본 술어 대체). */
+  oracleStore?: OracleStore
   /** lease 가시성 타임아웃(ms). 기본 DEFAULT_VISIBILITY_MS. */
   visibilityMs?: number
 }
@@ -46,6 +51,32 @@ export interface DispatchOutcome {
   dispatched: Array<{ wpId: string; stepN: number; eventId: string }>
   /** ready였으나 이미 디스패치돼 제외된 노드 수. */
   skipped: number
+}
+
+/**
+ * DoR readiness를 조립한다(P1d-6 done-set 파생 + P3-1 oracle satisfied-set 주입).
+ * isDone은 latestStates의 DONE을 항상 포함하고 주입 isDone과 **합성**(완료-unblock 보존).
+ * oracleStore 주입 시 approved 오라클로 satisfied-set을 산출해 oracleSatisfied를 주입(기본 술어 대체);
+ * 미주입이면 정적 readiness.oracleSatisfied(테스트)만 전달 — flag off 회귀 0.
+ */
+async function buildReadiness(
+  workflowId: string,
+  deps: DispatchDeps,
+  workPackages: WorkPackage[],
+  doneSet: ReadonlySet<string>,
+): Promise<ReadinessOptions> {
+  const injectedDone = deps.readiness?.isDone
+  const readiness: ReadinessOptions = {
+    isDone: injectedDone ? (wp) => doneSet.has(wp.id) || injectedDone(wp) : (wp) => doneSet.has(wp.id),
+  }
+  if (deps.oracleStore) {
+    const approved = await deps.oracleStore.approvedByWorkflow(workflowId)
+    const satisfied = oracleSatisfiedSet(workPackages, approved)
+    readiness.oracleSatisfied = (wp) => satisfied.has(wp.id)
+  } else if (deps.readiness?.oracleSatisfied) {
+    readiness.oracleSatisfied = deps.readiness.oracleSatisfied
+  }
+  return readiness
 }
 
 /**
@@ -65,14 +96,8 @@ export async function handleDispatch(workflowId: string, deps: DispatchDeps): Pr
     if (rec.toState === DISPATCHED_STATE || rec.toState === ESCALATED_STATE) alreadyDispatched.add(wpId)
     if (rec.toState === DONE_STATE) doneSet.add(wpId)
   }
-  // DoR done 판정을 latestStates(DONE)에서 파생 — 정적 graph_dag status 대신 실제 완료 반영(P1d-6).
-  // 주입 isDone(테스트/P3 oracle)은 **합성**(대체 아님) — DONE 상태는 항상 done으로 유지해 완료-unblock이
-  // 무음으로 끊기지 않게 한다. oracleSatisfied는 done과 직교라 명시 시 override.
-  const injectedDone = deps.readiness?.isDone
-  const readiness: ReadinessOptions = {
-    isDone: injectedDone ? (wp) => doneSet.has(wp.id) || injectedDone(wp) : (wp) => doneSet.has(wp.id),
-  }
-  if (deps.readiness?.oracleSatisfied) readiness.oracleSatisfied = deps.readiness.oracleSatisfied
+  // DoR done/oracle 판정을 헬퍼로 조립(P1d-6 done-set 합성 + P3-1 oracle satisfied-set).
+  const readiness = await buildReadiness(workflowId, deps, stored.workPackages, doneSet)
 
   // skipped = ready ∩ alreadyDispatched. ready와 planDispatch 내부 readyNodes는 같은
   // graph·readiness에 대한 순수·결정론 호출(N4 불변식)이라 결과가 일치 → 차집합 크기로 정확.

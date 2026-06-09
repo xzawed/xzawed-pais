@@ -81,3 +81,20 @@ describe('createSupervisor', () => {
     expect(sup).toBeInstanceOf(Supervisor)
   })
 })
+
+describe('Supervisor + oracleConsumer (P3-1)', () => {
+  const fake = () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn() })
+  it('start/stop이 oracleConsumer를 포함(주입 시)', () => {
+    const oracleConsumer = fake()
+    const sup = new Supervisor({
+      decompositionConsumer: fake(), completionConsumer: fake(), leaseSweeper: { start: vi.fn(), stop: vi.fn() }, oracleConsumer,
+    })
+    sup.start(); sup.stop()
+    expect(oracleConsumer.start).toHaveBeenCalled()
+    expect(oracleConsumer.stop).toHaveBeenCalled()
+  })
+  it('oracleConsumer 미주입이면 start/stop이 throw하지 않음(flag off)', () => {
+    const sup = new Supervisor({ decompositionConsumer: fake(), completionConsumer: fake(), leaseSweeper: { start: vi.fn(), stop: vi.fn() } })
+    expect(() => { sup.start(); sup.stop() }).not.toThrow()
+  })
+})
