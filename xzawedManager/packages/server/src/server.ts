@@ -144,6 +144,19 @@ export async function buildServer(
     )
   }
 
+  // P4b-1: 검증 게이트는 워커가 배선돼야 의미가 있다 — 전제 없이 켜면 무동작. 오진 방지 경고.
+  if (config.MANAGER_WP_VERIFY && !config.MANAGER_TASK_WORKER) {
+    app.log.warn('MANAGER_WP_VERIFY=true 이지만 MANAGER_TASK_WORKER가 꺼져 있어 검증 게이트가 동작하지 않습니다.')
+  }
+  // P4b-1: 검증 게이트는 develop_code WP당 에이전트 호출을 최대 3회(실행+빌드+테스트, 각 120s)로 늘린다 —
+  // lease 가시성 창이 그보다 짧으면 건강한 검증 도중 lease가 만료돼 false reclaim·중복 신호가 발생한다
+  // (스테일 신호는 워커 DONE 가드가 흡수하나 reclaim 자체가 낭비). 가시성 하한 경고.
+  if (config.MANAGER_WP_VERIFY && config.MANAGER_LEASE_VISIBILITY_MS < 360_000) {
+    app.log.warn(
+      `MANAGER_WP_VERIFY=true 인데 MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms < 360000ms(에이전트 타임아웃 120s×3) — 검증 도중 lease 만료로 false reclaim 위험. 가시성 상향 권장.`,
+    )
+  }
+
   // Task Manager Supervisor 배선(P1d-7): flag on + pool이면 decomposition 소비→디스패치·lease sweep·
   // completion 소비→재디스패치를 가동. 생산자(P2) 미도착이라 빈 스트림 구독(동작 준비). flag off면 미배선.
   let supervisor: Supervisor | undefined
@@ -177,6 +190,8 @@ export async function buildServer(
         oracleDor: config.MANAGER_ORACLE_DOR,
         // P4-1: 워커 활성(=MANAGER_TASK_WORKER). off면 handlers 미주입·shouldWireWorker=false → 워커 미배선(회귀 0).
         taskWorker: config.MANAGER_TASK_WORKER,
+        // P4b-1: 워커 검증 게이트(=MANAGER_WP_VERIFY). off면 워커 동작 P4a-2와 동일(회귀 0).
+        wpVerify: config.MANAGER_WP_VERIFY,
       },
     )
     supervisor.start()

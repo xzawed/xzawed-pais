@@ -7,6 +7,8 @@ import type { UserContext } from '../types/user-context.js'
 import type { Publish } from './decomposition-consumer.js'
 import { WpDispatchSignalSchema, type WpDispatchSignalMessage } from './dispatch-signal.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
+import { verifyWp, publishVerificationFailed } from './verify.js'
+import { DONE_STATE, ESCALATED_STATE } from './dispatch-constants.js'
 
 const WORKER_GROUP = 'manager-worker-consumers'
 const STREAM_PREFIX = 'manager:dispatched'
@@ -20,7 +22,8 @@ export interface AgentExecutor {
 }
 
 export interface WorkerDeps {
-  repo: Pick<TaskGraphRepo, 'getGraph'>
+  /** P4b-1: latestStates는 verifyEnabled 시 스테일 신호(DONE/ESCALATED WP) skip 가드에 사용. */
+  repo: Pick<TaskGraphRepo, 'getGraph' | 'latestStates'>
   /** tool명(resolveAgentTool 결과) → 핸들러. server.ts가 registry.get으로 주입. */
   handlers: Record<string, AgentExecutor>
   publish: Publish
@@ -28,12 +31,16 @@ export interface WorkerDeps {
   completionStream?: string
   buildInput?: (wp: WorkPackage, userContext?: UserContext) => unknown
   now?: () => number
+  /** P4b-1: 검증 게이트(=MANAGER_WP_VERIFY). on이면 완료 발행 전 verifyWp fail-closed 판정 —
+   *  실패 시 완료 미발행(lease 백스톱이 reclaim→escalate) + wp.verification.failed 관측 이벤트. */
+  verifyEnabled?: boolean
 }
 
 export type WorkerOutcome =
   | { status: 'completed'; wpId: string }
-  | { status: 'skipped'; reason: 'wp_not_found' | 'unknown_role' | 'no_handler' }
+  | { status: 'skipped'; reason: 'wp_not_found' | 'unknown_role' | 'no_handler' | 'stale_signal' }
   | { status: 'failed'; reason: 'agent_error' }
+  | { status: 'verification_failed'; wpId: string; reason: string }
 
 /** WP→에이전트 입력. 필수 필드는 runner.ts `buildAgentQueryPayload`의 **검증된 union**과
  *  같은 타입(5종 safeParse 통과·Zod 잉여 키 strip). intent/plan에 WP 설명을 담는다.
@@ -85,12 +92,39 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
   if (!tool) return { status: 'skipped', reason: 'unknown_role' }
   const handler = deps.handlers[tool]
   if (!handler) return { status: 'skipped', reason: 'no_handler' }
+  // P4b-1 스테일 신호 가드: 검증 게이트는 WP당 처리 시간을 최대 3×120s로 늘려 lease 가시성 창을 넘을 수
+  // 있고, 그때 false reclaim이 남긴 attempt-N 신호가 이미 DONE된 WP를 통째로 재실행해 워크스페이스를
+  // 재변형한다 — 실행 전 최신 상태가 DONE/ESCALATED면 skip. flag off 경로는 P4-1 동작 보존(조회 0).
+  if (deps.verifyEnabled) {
+    const states = await deps.repo.latestStates(workflowId)
+    const current = states.get(wpId)?.toState
+    if (current === DONE_STATE || current === ESCALATED_STATE) {
+      return { status: 'skipped', reason: 'stale_signal' }
+    }
+  }
   const userContext = stored?.userContext ?? undefined
   const input = (deps.buildInput ?? buildWorkerInput)(wp, userContext)
+  let result: unknown
   try {
-    await handler.execute(input, workflowId, userContext)
+    result = await handler.execute(input, workflowId, userContext)
   } catch {
     return { status: 'failed', reason: 'agent_error' } // 신호 미발행 → lease 타임아웃 reclaim
+  }
+  // P4b-1 검증 게이트: trivial(무예외=성공)을 실행 ground truth fail-closed 판정으로 교체(N1).
+  // 실패 = 완료 미발행(lease 백스톱 reclaim→escalate·N5) + 관측 이벤트(best-effort 추적용).
+  if (deps.verifyEnabled) {
+    const verdict = await verifyWp(tool, wp, result, {
+      handlers: deps.handlers, buildInput: deps.buildInput ?? buildWorkerInput, userContext, workflowId,
+      attempt: msg.payload.attempt,
+    })
+    if (!verdict.ok) {
+      try {
+        await publishVerificationFailed(deps.publish, workflowId, wpId, msg.payload.attempt, verdict.reason, deps.now?.())
+      } catch (err) {
+        console.error('[worker] wp.verification.failed 발행 실패(완료 부재가 reclaim 보장):', err)
+      }
+      return { status: 'verification_failed', wpId, reason: verdict.reason }
+    }
   }
   await publishCompletion(deps, workflowId, wpId, msg.payload.attempt)
   return { status: 'completed', wpId }

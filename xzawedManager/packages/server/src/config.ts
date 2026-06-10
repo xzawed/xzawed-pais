@@ -64,6 +64,15 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // P4b-1 워커 검증 게이트(기본 false). true면 워커가 완료 발행 전 실행 ground truth 검증을 fail-closed로
+    // 수행(결과-근거 판정 + develop_code 파생 빌드·테스트 재실행). 실패 시 완료 미발행 → lease 백스톱이
+    // reclaim→escalate. 전제: MANAGER_TASK_WORKER(워커 자체가 배선돼야 의미).
+    // ⚠️ 검증은 WP당 처리 시간을 최대 3×120s=360s로 늘린다 — MANAGER_LEASE_VISIBILITY_MS(기본 300s)를
+    //   360s 이상으로 상향하지 않으면 건강한 검증 도중 lease 만료(false reclaim)가 발생할 수 있다(server.ts 경고).
+    MANAGER_WP_VERIFY: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

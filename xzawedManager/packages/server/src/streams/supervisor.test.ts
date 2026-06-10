@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import {
   buildCompletionHandler, CompletionSignalSchema, Supervisor, createSupervisor, shouldWireSupervisor,
-  shouldWireOracleConsumer,
+  shouldWireOracleConsumer, buildWorkerConsumerDeps,
 } from './supervisor.js'
 import type { LeaseStore } from '../db/lease.repo.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -142,5 +142,31 @@ describe('createSupervisor worker 배선 (P4-1)', () => {
   })
   it('taskWorker=true + handlers 주입이면 조립 성공(worker 배선)', () => {
     expect(createSupervisor(makeRedis, { ...base, handlers }, cfg({ taskWorker: true }))).toBeInstanceOf(Supervisor)
+  })
+  it('wpVerify=true + worker 배선이면 조립 성공(검증 게이트 스레딩·P4b-1)', () => {
+    expect(
+      createSupervisor(makeRedis, { ...base, handlers }, { ...cfg({ taskWorker: true }), wpVerify: true }),
+    ).toBeInstanceOf(Supervisor)
+  })
+})
+
+describe('buildWorkerConsumerDeps (P4b-1 — wpVerify 스레딩 행동 검증)', () => {
+  const d = {
+    repo: {} as unknown as TaskGraphRepo,
+    publish: vi.fn(),
+    handlers: { develop_code: { execute: vi.fn() } },
+  }
+  const base = { sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: false, taskWorker: true }
+  it('wpVerify=true → verifyEnabled=true', () => {
+    expect(buildWorkerConsumerDeps(d, { ...base, wpVerify: true }).verifyEnabled).toBe(true)
+  })
+  it('wpVerify=false → verifyEnabled=false', () => {
+    expect(buildWorkerConsumerDeps(d, { ...base, wpVerify: false }).verifyEnabled).toBe(false)
+  })
+  it('wpVerify 미지정(레거시 config) → verifyEnabled=false(기본 off)', () => {
+    expect(buildWorkerConsumerDeps(d, base).verifyEnabled).toBe(false)
+  })
+  it('완료 스트림은 completion 소비자 구독 스트림과 단일 출처로 일치', () => {
+    expect(buildWorkerConsumerDeps(d, base).completionStream).toBe('manager:completions:main')
   })
 })

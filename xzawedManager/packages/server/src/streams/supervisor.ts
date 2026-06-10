@@ -6,7 +6,7 @@ import { handleDispatch, type DispatchDeps, type OracleStore } from './dispatch.
 import { buildOracleApprovedHandler, OracleApprovedSchema, type OracleApprovedMessage } from './oracle-consumer.js'
 import { handleCompletion } from './completion.js'
 import { LeaseSweeper } from './lease-sweeper.js'
-import { WorkerConsumer, shouldWireWorker, type AgentExecutor } from './worker.js'
+import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
 import type { LeaseStore } from '../db/lease.repo.js'
@@ -124,11 +124,28 @@ export interface SupervisorConfig {
   oracleDor: boolean
   /** P4-1: 실행 워커(WorkerConsumer 배선 + dispatch/reclaim 신호 발행) 활성(=MANAGER_TASK_WORKER). */
   taskWorker: boolean
+  /** P4b-1: 워커 검증 게이트(완료 발행 전 fail-closed 실 검증) 활성(=MANAGER_WP_VERIFY, 기본 off). */
+  wpVerify?: boolean
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
 export function shouldWireOracleConsumer(oracleDor: boolean, hasOracleStore: boolean): boolean {
   return oracleDor && hasOracleStore
+}
+
+/** P4b-1: WorkerConsumer deps 조립(순수·D4) — wpVerify→verifyEnabled 스레딩을 행동 단언 가능하게 분리.
+ *  instanceOf 단언만으로는 이 한 줄의 누락(undefined→off)이 무음 fail-open 퇴행이 되는 것을 잡지 못한다. */
+export function buildWorkerConsumerDeps(
+  deps: Pick<SupervisorDeps, 'repo' | 'publish'> & { handlers: Record<string, AgentExecutor> },
+  config: SupervisorConfig,
+): WorkerDeps {
+  return {
+    repo: deps.repo,
+    handlers: deps.handlers,
+    publish: deps.publish,
+    completionStream: `${COMPLETION_PREFIX}:${DEFAULT_CHANNEL}`,
+    verifyEnabled: config.wpVerify === true,
+  }
 }
 
 /**
@@ -190,10 +207,10 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
   // 단일 출처(COMPLETION_PREFIX:DEFAULT_CHANNEL)로 일치(드리프트 0). makeRedis()를 워커용으로 1회 더 호출
   // (소비자별 전용 연결·BLOCK 직렬화 회피·기존 패턴).
   const workerConsumer = workerActive && deps.handlers
-    ? new WorkerConsumer(makeRedis(), {
-        repo: deps.repo, handlers: deps.handlers, publish: deps.publish,
-        completionStream: `${COMPLETION_PREFIX}:${DEFAULT_CHANNEL}`,
-      })
+    ? new WorkerConsumer(
+        makeRedis(),
+        buildWorkerConsumerDeps({ repo: deps.repo, publish: deps.publish, handlers: deps.handlers }, config),
+      )
     : undefined
 
   return new Supervisor({
