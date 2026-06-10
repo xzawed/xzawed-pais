@@ -78,4 +78,42 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
       await closePool()
     }
   })
+
+  it('검증 게이트(P4b-1): tester 실패 결과 → 완료 미발행·DONE 미전이·lease active 유지(백스톱 보존)', async () => {
+    const pool = createPool(url!)
+    try {
+      await runMigrations(pool)
+      const repo = new TaskGraphRepo(pool)
+      const store = new DispatchStore(pool)
+      const leaseStore = new LeaseStore(pool)
+      const wf = `wf-ew-vf-${Date.now()}`
+      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'tester', oracleRef: null, acceptanceCriteria: [], dependencies: [], attributionCounters: {}, status: 'draft' }
+      await repo.upsertGraph({ workflowId: wf, workPackages: [a], eventId: null })
+      await store.recordDispatch({ workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED', attempt: 0, visibilityMs: 60000 })
+
+      const published: Array<{ stream: string; msg: { type: string } }> = []
+      const out = await handleWpDispatchSignal(
+        { envelope: { eventId: '1', correlationId: wf, causationId: null, workflowId: wf, stepId: 'wp.dispatch_signal:a', attemptId: 0, idempotencyKey: `${wf}:wp.dispatch_signal:a:0`, occurredAt: 1 }, type: 'wp.dispatch_signal', payload: { wpId: 'a', attempt: 0 } },
+        {
+          repo,
+          handlers: { run_tests: { execute: vi.fn().mockResolvedValue({ success: false, failed: 2 }) } },
+          publish: async (stream, msg) => { published.push({ stream, msg: msg as never }); return '1-0' },
+          verifyEnabled: true,
+        },
+      )
+      expect(out.status).toBe('verification_failed')
+      // 완료 미발행 — 관측 이벤트(wp.verification.failed)만
+      expect(published.some((p) => p.msg.type === 'wp.completion')).toBe(false)
+      expect(published.some((p) => p.msg.type === 'wp.verification.failed')).toBe(true)
+      // lease가 active로 남아 reclaim→escalate 백스톱 경로가 살아 있다
+      const lease = await leaseStore.getLease(wf, 'a')
+      expect(lease?.status).toBe('active')
+      // wp_state_log에 DONE 전이 없음(DISPATCHED 유지)
+      const states = await repo.latestStates(wf)
+      expect(states.get('a')?.toState).toBe('DISPATCHED')
+    } finally {
+      await cleanup(pool)
+      await closePool()
+    }
+  })
 })
