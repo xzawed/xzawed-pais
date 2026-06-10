@@ -70,6 +70,22 @@ export interface VerifyDeps {
 export const verifySessionId = (workflowId: string, wpId: string, attempt: number, suffix?: string): string =>
   `${workflowId}-verify-${wpId}-${attempt}${suffix ? `-${suffix}` : ''}`
 
+/** conformance 에이전트 1회 실행(입력 빌드 포함)을 never-throw로 감싸 결과 또는 fail verdict 반환.
+ *  buildInput·execute 모두 try 안에서 수행해 어떤 throw도 fail-closed verdict로 변환(N1). */
+async function execConformanceStep(
+  deps: VerifyDeps, wp: WorkPackage, extra: Record<string, unknown>, tool: string, suffix: string,
+): Promise<{ ok: true; result: unknown } | { ok: false; reason: string }> {
+  const handler = deps.handlers[tool]
+  if (!handler) return { ok: false, reason: `conformance: ${tool} 핸들러 미주입` }
+  try {
+    const input = { ...deps.buildInput(wp, deps.userContext), ...extra }
+    const result = await handler.execute(input, verifySessionId(deps.workflowId, wp.id, deps.attempt, suffix), deps.userContext)
+    return { ok: true, result }
+  } catch (err) {
+    return { ok: false, reason: `conformance: ${tool} 실행 실패 — ${err instanceof Error ? err.message : String(err)}` }
+  }
+}
+
 /**
  * P4b-2 conformance 채널: develop_code WP의 story 승인 오라클을 독립 develop_code 호출이 실행 테스트로 작성하고
  * Tester가 실행해 그 결과로 판정. never-throw·fail-closed(불확실=실패, N1). 미주입/미활성/오라클 부재면 skip(ok).
@@ -86,32 +102,23 @@ async function runConformanceCheck(wp: WorkPackage, deps: VerifyDeps): Promise<V
   if (!deps.userContext?.workspaceRoot) {
     return { ok: false, reason: 'conformance: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)' }
   }
-  const author = deps.handlers['develop_code']
-  const runner = deps.handlers['run_tests']
-  if (!author || !runner) return { ok: false, reason: 'conformance: develop_code/run_tests 핸들러 미주입' }
+  if (!deps.handlers['develop_code'] || !deps.handlers['run_tests']) {
+    return { ok: false, reason: 'conformance: develop_code/run_tests 핸들러 미주입' }
+  }
 
   // ① 독립 develop_code 호출(격리 세션)이 conformance 테스트 작성 — 구현 호출과 분리된 컨텍스트(N6).
-  const authorInput = { ...deps.buildInput(wp, deps.userContext), plan: buildConformanceAuthorPlan(wp, oracle.scenarios) }
-  let authorResult: unknown
-  try {
-    authorResult = await author.execute(authorInput, verifySessionId(deps.workflowId, wp.id, deps.attempt, 'conf-author'), deps.userContext)
-  } catch (err) {
-    return { ok: false, reason: `conformance: author 실행 실패 — ${err instanceof Error ? err.message : String(err)}` }
-  }
-  const rawArtifacts = (authorResult as { artifacts?: unknown }).artifacts
+  const authored = await execConformanceStep(deps, wp, { plan: buildConformanceAuthorPlan(wp, oracle.scenarios) }, 'develop_code', 'conf-author')
+  if (!authored.ok) return authored
+  const authorResult = authored.result as { artifacts?: unknown } | null | undefined
+  const rawArtifacts = authorResult?.artifacts
   const artifacts = Array.isArray(rawArtifacts) ? rawArtifacts.filter((a): a is string => typeof a === 'string') : []
   const testFiles = selectConformanceTestFiles(artifacts, wp.id)
   if (testFiles.length === 0) return { ok: false, reason: 'conformance: author가 테스트 파일 미생성(fail-closed)' }
 
   // ② Tester가 그 파일만 실행(격리 세션) → 결과-근거 판정 재사용.
-  const runInput = { ...deps.buildInput(wp, deps.userContext), testFiles }
-  let runResult: unknown
-  try {
-    runResult = await runner.execute(runInput, verifySessionId(deps.workflowId, wp.id, deps.attempt, 'conf-run'), deps.userContext)
-  } catch (err) {
-    return { ok: false, reason: `conformance: 실행 실패 — ${err instanceof Error ? err.message : String(err)}` }
-  }
-  return judgePrimaryResult('run_tests', runResult)
+  const ran = await execConformanceStep(deps, wp, { testFiles }, 'run_tests', 'conf-run')
+  if (!ran.ok) return ran
+  return judgePrimaryResult('run_tests', ran.result)
 }
 
 /**
