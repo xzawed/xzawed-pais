@@ -17,7 +17,7 @@ const ORACLE_GROUP = 'manager-oracle-consumers'
 const ORACLE_PREFIX = 'manager:oracle'
 const DEFAULT_CHANNEL = 'main'
 
-/** 워커 완료 신호(잠정 — 생산자 도착 시 확정). workflowId는 봉투, wpId는 payload. */
+/** 워커 완료 신호(생산자=P4-1 실행 워커 worker.ts). workflowId는 봉투, wpId는 payload. */
 export const CompletionSignalSchema = z.object({
   envelope: EventEnvelopeSchema,
   type: z.literal('wp.completion'),

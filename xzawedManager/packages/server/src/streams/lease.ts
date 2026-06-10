@@ -49,7 +49,7 @@ export interface SweepOutcome {
 
 /**
  * lease 만료 sweep: expiredActiveLeases → planReclaim → 항목별 원자 recordReclaim/recordEscalation.
- * handleDispatch 대칭(조회·계획·원자 적재 분리). 실제 타이머 구동은 후속(server.ts 배선).
+ * handleDispatch 대칭(조회·계획·원자 적재 분리). 타이머 구동은 LeaseSweeper가 담당(P1d-7 server.ts 배선).
  */
 export async function handleLeaseSweep(now: number, deps: SweepDeps): Promise<SweepOutcome> {
   const maxAttempts = deps.maxAttempts ?? DEFAULT_MAX_ATTEMPTS
