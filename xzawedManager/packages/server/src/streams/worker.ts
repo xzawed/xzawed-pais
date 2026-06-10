@@ -29,7 +29,7 @@ export interface WorkerDeps {
   publish: Publish
   /** 완료 신호 스트림(기본 manager:completions:main; createSupervisor가 COMPLETION_PREFIX:channel 주입). */
   completionStream?: string
-  buildInput?: (wp: WorkPackage, userContext?: UserContext) => unknown
+  buildInput?: (wp: WorkPackage, userContext?: UserContext) => Record<string, unknown>
   now?: () => number
   /** P4b-1: 검증 게이트(=MANAGER_WP_VERIFY). on이면 완료 발행 전 verifyWp fail-closed 판정 —
    *  실패 시 완료 미발행(lease 백스톱이 reclaim→escalate) + wp.verification.failed 관측 이벤트. */

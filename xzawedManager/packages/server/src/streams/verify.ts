@@ -4,6 +4,7 @@ import type { WorkPackage } from '@xzawed/agent-streams'
 import type { UserContext } from '../types/user-context.js'
 import { defaultInconsistentStream, type Publish } from './decomposition-consumer.js'
 import type { AgentExecutor } from './worker.js'
+import { buildConformanceAuthorPlan, selectConformanceTestFiles, type ConformanceOracleStore } from './conformance.js'
 
 export const WP_VERIFICATION_FAILED = 'wp.verification.failed'
 /** 관측 이벤트 reason 상한 — 에이전트 오류 메시지 폭주가 페이로드를 키우지 않도록. */
@@ -50,20 +51,68 @@ export interface VerifyDeps {
   /** tool명→핸들러(워커 deps.handlers 재사용 — server.ts 5종 맵). */
   handlers: Record<string, AgentExecutor>
   /** 체크 입력 생성(워커 buildWorkerInput 재사용 — 5종 union 검증 경로). */
-  buildInput: (wp: WorkPackage, userContext?: UserContext) => unknown
+  buildInput: (wp: WorkPackage, userContext?: UserContext) => Record<string, unknown>
   /** exactOptionalPropertyTypes: 워커가 `stored?.userContext ?? undefined`를 그대로 넘긴다. */
   userContext?: UserContext | undefined
   workflowId: string
   /** 신호의 attempt — 체크 세션 격리 키에 포함(attempt 간 좀비 응답 교차 귀속 차단). */
   attempt: number
+  /** P4b-2: 승인 오라클 조회 포트(주입 + conformanceEnabled + develop_code면 conformance 채널 동작). */
+  oracleStore?: ConformanceOracleStore
+  /** P4b-2: conformance 채널 활성(=MANAGER_WP_CONFORMANCE && oracleStore 주입). */
+  conformanceEnabled?: boolean
 }
 
 /** 검증 체크 전용 세션 키. RedisAgentHandler의 응답 매칭은 무상관(스트림 위치+type뿐)이라 워크플로 공유
  *  세션에서는 타임아웃된 이전 체크의 좀비 응답이 다음 attempt의 판정으로 오귀속될 수 있다(N1 false-pass) —
  *  (wpId, attempt)별 사설 응답 스트림으로 격리해 구조적으로 차단한다. 게이트웨이 notify는 sessionId를
  *  페이로드로 전달하므로 임의 키가 기존 메커니즘으로 동작한다. */
-export const verifySessionId = (workflowId: string, wpId: string, attempt: number): string =>
-  `${workflowId}-verify-${wpId}-${attempt}`
+export const verifySessionId = (workflowId: string, wpId: string, attempt: number, suffix?: string): string =>
+  `${workflowId}-verify-${wpId}-${attempt}${suffix ? `-${suffix}` : ''}`
+
+/**
+ * P4b-2 conformance 채널: develop_code WP의 story 승인 오라클을 독립 develop_code 호출이 실행 테스트로 작성하고
+ * Tester가 실행해 그 결과로 판정. never-throw·fail-closed(불확실=실패, N1). 미주입/미활성/오라클 부재면 skip(ok).
+ */
+async function runConformanceCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
+  if (!deps.conformanceEnabled || !deps.oracleStore) return { ok: true }
+  let oracle: Awaited<ReturnType<ConformanceOracleStore['approvedOracleForStory']>>
+  try {
+    oracle = await deps.oracleStore.approvedOracleForStory(deps.workflowId, wp.storyId)
+  } catch (err) {
+    return { ok: false, reason: `conformance: 오라클 조회 실패 — ${err instanceof Error ? err.message : String(err)}` }
+  }
+  if (!oracle) return { ok: true } // 승인 오라클 없음 → skip(회귀 0)
+  if (!deps.userContext?.workspaceRoot) {
+    return { ok: false, reason: 'conformance: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)' }
+  }
+  const author = deps.handlers['develop_code']
+  const runner = deps.handlers['run_tests']
+  if (!author || !runner) return { ok: false, reason: 'conformance: develop_code/run_tests 핸들러 미주입' }
+
+  // ① 독립 develop_code 호출(격리 세션)이 conformance 테스트 작성 — 구현 호출과 분리된 컨텍스트(N6).
+  const authorInput = { ...deps.buildInput(wp, deps.userContext), plan: buildConformanceAuthorPlan(wp, oracle.scenarios) }
+  let authorResult: unknown
+  try {
+    authorResult = await author.execute(authorInput, verifySessionId(deps.workflowId, wp.id, deps.attempt, 'conf-author'), deps.userContext)
+  } catch (err) {
+    return { ok: false, reason: `conformance: author 실행 실패 — ${err instanceof Error ? err.message : String(err)}` }
+  }
+  const rawArtifacts = (authorResult as { artifacts?: unknown }).artifacts
+  const artifacts = Array.isArray(rawArtifacts) ? rawArtifacts.filter((a): a is string => typeof a === 'string') : []
+  const testFiles = selectConformanceTestFiles(artifacts, wp.id)
+  if (testFiles.length === 0) return { ok: false, reason: 'conformance: author가 테스트 파일 미생성(fail-closed)' }
+
+  // ② Tester가 그 파일만 실행(격리 세션) → 결과-근거 판정 재사용.
+  const runInput = { ...deps.buildInput(wp, deps.userContext), testFiles }
+  let runResult: unknown
+  try {
+    runResult = await runner.execute(runInput, verifySessionId(deps.workflowId, wp.id, deps.attempt, 'conf-run'), deps.userContext)
+  } catch (err) {
+    return { ok: false, reason: `conformance: 실행 실패 — ${err instanceof Error ? err.message : String(err)}` }
+  }
+  return judgePrimaryResult('run_tests', runResult)
+}
 
 /**
  * WP 검증(P4b-1 correctness 채널 골격): ①결과-근거 판정 ②파생 체크 실 재실행(fail-fast).
@@ -95,6 +144,7 @@ export async function verifyWp(
     const verdict = judgePrimaryResult(check, checkResult)
     if (!verdict.ok) return verdict
   }
+  if (tool === 'develop_code') return runConformanceCheck(wp, deps)
   return { ok: true }
 }
 
