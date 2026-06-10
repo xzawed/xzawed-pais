@@ -144,6 +144,11 @@ export async function buildServer(
     )
   }
 
+  // P4b-1: 검증 게이트는 워커가 배선돼야 의미가 있다 — 전제 없이 켜면 무동작. 오진 방지 경고.
+  if (config.MANAGER_WP_VERIFY && !config.MANAGER_TASK_WORKER) {
+    app.log.warn('MANAGER_WP_VERIFY=true 이지만 MANAGER_TASK_WORKER가 꺼져 있어 검증 게이트가 동작하지 않습니다.')
+  }
+
   // Task Manager Supervisor 배선(P1d-7): flag on + pool이면 decomposition 소비→디스패치·lease sweep·
   // completion 소비→재디스패치를 가동. 생산자(P2) 미도착이라 빈 스트림 구독(동작 준비). flag off면 미배선.
   let supervisor: Supervisor | undefined
@@ -177,6 +182,8 @@ export async function buildServer(
         oracleDor: config.MANAGER_ORACLE_DOR,
         // P4-1: 워커 활성(=MANAGER_TASK_WORKER). off면 handlers 미주입·shouldWireWorker=false → 워커 미배선(회귀 0).
         taskWorker: config.MANAGER_TASK_WORKER,
+        // P4b-1: 워커 검증 게이트(=MANAGER_WP_VERIFY). off면 워커 동작 P4a-2와 동일(회귀 0).
+        wpVerify: config.MANAGER_WP_VERIFY,
       },
     )
     supervisor.start()

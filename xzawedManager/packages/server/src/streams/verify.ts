@@ -51,7 +51,8 @@ export interface VerifyDeps {
   handlers: Record<string, AgentExecutor>
   /** 체크 입력 생성(워커 buildWorkerInput 재사용 — 5종 union 검증 경로). */
   buildInput: (wp: WorkPackage, userContext?: UserContext) => unknown
-  userContext?: UserContext
+  /** exactOptionalPropertyTypes: 워커가 `stored?.userContext ?? undefined`를 그대로 넘긴다. */
+  userContext?: UserContext | undefined
   workflowId: string
 }
 
