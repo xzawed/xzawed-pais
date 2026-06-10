@@ -4,7 +4,8 @@ import { EventStore } from '../src/db/event-store.js'
 import { SessionStore } from '../src/sessions/session.store.js'
 import type { Pool } from 'pg'
 
-const url = process.env['DATABASE_URL']
+// CI(turborepo 잡)는 TEST_DATABASE_URL을 주입 — 게이트 통일(Orchestrator migrate.integration 패턴)
+const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL']
 const d = url ? describe : describe.skip
 
 d('event-sourcing 통합 (pg)', () => {
@@ -14,13 +15,15 @@ d('event-sourcing 통합 (pg)', () => {
     await runMigrations(pool)
   })
   afterAll(async () => {
-    await pool.query('DELETE FROM manager_outbox')
-    await pool.query('DELETE FROM manager_events')
+    // 'es-it%' prefix 스코프 정리 — 비스코프 DELETE는 병렬 실행 중인 형제 통합 테스트의
+    // manager_events/outbox 행을 지워 간헐 실패를 만든다(P1d-4 §8.3). FK 순서: outbox → events.
+    await pool.query("DELETE FROM manager_outbox WHERE stream LIKE 'manager:events:es-it%'")
+    await pool.query("DELETE FROM manager_events WHERE session_id LIKE 'es-it%'")
     await closePool()
   })
 
   it('수용기준2: 이벤트 주입 후 새 인스턴스 replay로 state 복원', async () => {
-    const sid = `it-${Date.now()}`
+    const sid = `es-it-${Date.now()}`
     const writer = new SessionStore(undefined, new EventStore(pool))
     await writer.create(sid)
     const p = writer.waitForInfo(sid)
@@ -36,7 +39,7 @@ d('event-sourcing 통합 (pg)', () => {
   })
 
   it('수용기준1·3: append가 events+outbox 원자적 기록 + correlation/causation 보유', async () => {
-    const sid = `it2-${Date.now()}`
+    const sid = `es-it2-${Date.now()}`
     await new SessionStore(undefined, new EventStore(pool)).create(sid)
     const ev = await pool.query('SELECT * FROM manager_events WHERE session_id=$1', [sid])
     const ob = await pool.query('SELECT * FROM manager_outbox WHERE event_id=$1', [ev.rows[0].event_id])

@@ -8,7 +8,8 @@ import { handleCompletion } from '../src/streams/completion.js'
 import type { WorkPackage } from '@xzawed/agent-streams'
 import type { Pool } from 'pg'
 
-const url = process.env['DATABASE_URL']
+// CI(turborepo 잡)는 TEST_DATABASE_URL을 주입 — 게이트 통일(Orchestrator migrate.integration 패턴)
+const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL']
 const d = url ? describe : describe.skip
 
 const wp = (id: string, deps: string[] = []): WorkPackage => ({

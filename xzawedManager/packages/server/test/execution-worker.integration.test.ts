@@ -7,7 +7,18 @@ import { handleCompletion } from '../src/streams/completion.js'
 import { handleWpDispatchSignal } from '../src/streams/worker.js'
 import type { WorkPackage } from '@xzawed/agent-streams'
 
-const url = process.env['DATABASE_URL']
+// CI(turborepo 잡)는 TEST_DATABASE_URL을 주입 — 게이트 통일(Orchestrator migrate.integration 패턴)
+const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL']
+
+/** 'wf-ew-%' prefix 스코프 정리 — 잔여 행 누적·형제 통합 테스트와의 병렬 간섭 방지(FK 순서: outbox→events). */
+async function cleanup(pool: import('pg').Pool): Promise<void> {
+  await pool.query("DELETE FROM manager_outbox WHERE stream LIKE 'manager:events:wf-ew-%'").catch(() => undefined)
+  await pool.query("DELETE FROM manager_events WHERE session_id LIKE 'wf-ew-%'").catch(() => undefined)
+  await pool.query("DELETE FROM wp_state_log WHERE workflow_id LIKE 'wf-ew-%'").catch(() => undefined)
+  await pool.query("DELETE FROM wp_leases WHERE workflow_id LIKE 'wf-ew-%'").catch(() => undefined)
+  await pool.query("DELETE FROM task_graphs WHERE workflow_id LIKE 'wf-ew-%'").catch(() => undefined)
+}
+
 describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료→재디스패치)', () => {
   it('워커가 WP를 실행→wp.completion→handleCompletion이 DONE·후행 unblock', async () => {
     const pool = createPool(url!)
@@ -16,7 +27,7 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
       const repo = new TaskGraphRepo(pool)
       const store = new DispatchStore(pool)
       const leaseStore = new LeaseStore(pool)
-      const wf = `wf-${Date.now()}`
+      const wf = `wf-ew-${Date.now()}`
       const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: [], dependencies: [], attributionCounters: {}, status: 'draft' }
       await repo.upsertGraph({ workflowId: wf, workPackages: [a], eventId: null })
       await store.recordDispatch({ workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED', attempt: 0, visibilityMs: 60000 })
@@ -36,6 +47,7 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
       const states = await repo.latestStates(wf)
       expect(states.get('a')?.toState).toBe('DONE')
     } finally {
+      await cleanup(pool)
       await closePool()
     }
   })
@@ -45,7 +57,7 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
     try {
       await runMigrations(pool)
       const repo = new TaskGraphRepo(pool)
-      const wf = `wf-uc-${Date.now()}`
+      const wf = `wf-ew-uc-${Date.now()}`
       const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
       const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' }
       await repo.upsertGraph({ workflowId: wf, workPackages: [a], eventId: null, userContext: uc })
@@ -62,6 +74,7 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
       expect(out).toEqual({ status: 'completed', wpId: 'a' })
       expect(exec).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/workspace/p1' }), wf, uc)
     } finally {
+      await cleanup(pool)
       await closePool()
     }
   })
