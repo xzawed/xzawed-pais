@@ -4,7 +4,8 @@ import { TaskGraphRepo } from '../src/db/task-graph.repo.js'
 import type { WorkPackage } from '@xzawed/agent-streams'
 import type { Pool } from 'pg'
 
-const url = process.env['DATABASE_URL']
+// CI(turborepo 잡)는 TEST_DATABASE_URL을 주입 — 게이트 통일(Orchestrator migrate.integration 패턴)
+const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL']
 const d = url ? describe : describe.skip
 
 const wp = (id: string, deps: string[] = []): WorkPackage => ({
@@ -19,13 +20,14 @@ d('task-graph 영속 통합 (pg)', () => {
     await runMigrations(pool)
   })
   afterAll(async () => {
-    await pool.query('DELETE FROM wp_state_log')
-    await pool.query('DELETE FROM task_graphs')
+    // 'wf-tgp-%' prefix 스코프 정리 — 비스코프 DELETE는 병렬 형제 통합 테스트의 행을 지운다(P1d-4 §8.3).
+    await pool.query("DELETE FROM wp_state_log WHERE workflow_id LIKE 'wf-tgp-%'")
+    await pool.query("DELETE FROM task_graphs WHERE workflow_id LIKE 'wf-tgp-%'")
     await closePool()
   })
 
   it('upsertGraph → getGraph 라운드트립이 WorkPackage 배열을 보존한다', async () => {
-    const wfId = `wf-${Date.now()}-a`
+    const wfId = `wf-tgp-${Date.now()}-a`
     const repo = new TaskGraphRepo(pool)
     const { version } = await repo.upsertGraph({ workflowId: wfId, workPackages: [wp('wp-1'), wp('wp-2', ['wp-1'])] })
     expect(version).toBe(1)
@@ -36,7 +38,7 @@ d('task-graph 영속 통합 (pg)', () => {
   })
 
   it('재분해 시 같은 workflow_id를 upsert하면 version++·graph_dag 교체', async () => {
-    const wfId = `wf-${Date.now()}-b`
+    const wfId = `wf-tgp-${Date.now()}-b`
     const repo = new TaskGraphRepo(pool)
     await repo.upsertGraph({ workflowId: wfId, workPackages: [wp('wp-1')] })
     const second = await repo.upsertGraph({ workflowId: wfId, workPackages: [wp('wp-1'), wp('wp-9')], eventId: null })
@@ -47,7 +49,7 @@ d('task-graph 영속 통합 (pg)', () => {
   })
 
   it('userContext 라운드트립(githubRepo 중첩 포함) + 재분해가 userContext 없이 오면 null 교체(P4a-2 스펙 §6)', async () => {
-    const wfId = `wf-${Date.now()}-uc`
+    const wfId = `wf-tgp-${Date.now()}-uc`
     const repo = new TaskGraphRepo(pool)
     const uc = {
       userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1',
@@ -63,7 +65,7 @@ d('task-graph 영속 통합 (pg)', () => {
   })
 
   it('appendTransition 다중 → transitions seq ASC, latestStates는 WP별 최신', async () => {
-    const wfId = `wf-${Date.now()}-c`
+    const wfId = `wf-tgp-${Date.now()}-c`
     const repo = new TaskGraphRepo(pool)
     await repo.appendTransition({ workflowId: wfId, wpId: 'wp-1', toState: 'DRAFTED' })
     await repo.appendTransition({ workflowId: wfId, wpId: 'wp-1', fromState: 'DRAFTED', toState: 'READY' })

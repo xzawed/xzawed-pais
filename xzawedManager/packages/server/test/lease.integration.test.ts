@@ -5,7 +5,8 @@ import { LeaseStore } from '../src/db/lease.repo.js'
 import { handleLeaseSweep } from '../src/streams/lease.js'
 import type { Pool } from 'pg'
 
-const url = process.env['DATABASE_URL']
+// CI(turborepo 잡)는 TEST_DATABASE_URL을 주입 — 게이트 통일(Orchestrator migrate.integration 패턴)
+const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL']
 const d = url ? describe : describe.skip
 
 d('lease sweep 통합 (pg)', () => {
