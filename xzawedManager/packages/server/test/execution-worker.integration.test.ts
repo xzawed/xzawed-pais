@@ -6,7 +6,22 @@ import { LeaseStore } from '../src/db/lease.repo.js'
 import { handleCompletion } from '../src/streams/completion.js'
 import { handleLeaseSweep } from '../src/streams/lease.js'
 import { handleWpDispatchSignal } from '../src/streams/worker.js'
+import { OracleRepo } from '../src/db/oracle.repo.js'
+import { oracleIdFor } from '../src/db/oracle.types.js'
 import type { WorkPackage } from '@xzawed/agent-streams'
+
+/** dispatch_signal 메시지(봉투 verbose 반복 제거). attempt 멱등키는 worker가 읽지 않으나 계약 형태 보존. */
+function dispatchSignal(wf: string, wpId: string, attempt: number) {
+  return {
+    envelope: {
+      eventId: '1', correlationId: wf, causationId: null, workflowId: wf,
+      stepId: `wp.dispatch_signal:${wpId}`, attemptId: attempt,
+      idempotencyKey: `${wf}:wp.dispatch_signal:${wpId}:${attempt}`, occurredAt: 1,
+    },
+    type: 'wp.dispatch_signal' as const,
+    payload: { wpId, attempt },
+  }
+}
 
 /** sweep을 이 워크플로로 스코프 — expiredActiveLeases는 전역 조회라 병렬 형제 테스트의 lease를 reclaim하면 안 된다. */
 function scopedLeaseStore(store: LeaseStore, workflowId: string): LeaseStore {
@@ -23,13 +38,16 @@ function scopedLeaseStore(store: LeaseStore, workflowId: string): LeaseStore {
 // CI(turborepo 잡)는 TEST_DATABASE_URL을 주입 — 게이트 통일(Orchestrator migrate.integration 패턴)
 const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL']
 
-/** 'wf-ew-%' prefix 스코프 정리 — 잔여 행 누적·형제 통합 테스트와의 병렬 간섭 방지(FK 순서: outbox→events). */
+/** 'wf-ew-%' prefix 스코프 정리 — 잔여 행 누적·형제 통합 테스트와의 병렬 간섭 방지(FK 순서: outbox→events).
+ *  outbox는 event_id 소유권(event의 session_id prefix)으로 삭제 — oracle.approved outbox는 스트림이
+ *  'manager:oracle:main'이라 stream LIKE로는 안 잡혀 events 삭제 시 FK 위반이 된다(P4b-2 conformance 테스트). */
 async function cleanup(pool: import('pg').Pool): Promise<void> {
-  await pool.query("DELETE FROM manager_outbox WHERE stream LIKE 'manager:events:wf-ew-%'").catch(() => undefined)
+  await pool.query("DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id LIKE 'wf-ew-%')").catch(() => undefined)
   await pool.query("DELETE FROM manager_events WHERE session_id LIKE 'wf-ew-%'").catch(() => undefined)
   await pool.query("DELETE FROM wp_state_log WHERE workflow_id LIKE 'wf-ew-%'").catch(() => undefined)
   await pool.query("DELETE FROM wp_leases WHERE workflow_id LIKE 'wf-ew-%'").catch(() => undefined)
   await pool.query("DELETE FROM task_graphs WHERE workflow_id LIKE 'wf-ew-%'").catch(() => undefined)
+  await pool.query("DELETE FROM oracles WHERE workflow_id LIKE 'wf-ew-%'").catch(() => undefined)
 }
 
 describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료→재디스패치)', () => {
@@ -170,6 +188,110 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
       const states = await repo.latestStates(wf)
       expect(states.get('a')?.toState).toBe('DONE')
       expect((await leaseStore.getLease(wf, 'a'))?.status).toBe('released')
+    } finally {
+      await cleanup(pool)
+      await closePool()
+    }
+  })
+
+  it('conformance(P4b-2): 사람 승인 오라클 → develop_code가 conformance 테스트 작성 → run_tests 통과 → DONE', async () => {
+    const pool = createPool(url!)
+    try {
+      await runMigrations(pool)
+      const repo = new TaskGraphRepo(pool)
+      const store = new DispatchStore(pool)
+      const leaseStore = new LeaseStore(pool)
+      const oracleRepo = new OracleRepo(pool)
+      const wf = `wf-ew-cf-${Date.now()}`
+      const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
+      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' }
+      await repo.upsertGraph({ workflowId: wf, workPackages: [a], eventId: null, userContext: uc })
+      await store.recordDispatch({ workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED', attempt: 0, visibilityMs: 60000 })
+
+      // 사람 승인 오라클: upsertDraft(drafted) → approve(drafted→human_approved·status approved)
+      await oracleRepo.upsertDraft({
+        workflowId: wf, storyId: 's1',
+        scenarios: [{ id: 's1-sc1', title: 'AC1 동작', given: ['초기 상태'], when: '실행', thenSteps: ['AC1 충족'], status: 'drafted' }],
+        coverage: { AC1: ['s1-sc1'] },
+      })
+      await oracleRepo.approve(oracleIdFor(wf, 's1'), 'human-po')
+
+      const develop = vi.fn().mockResolvedValue({ artifacts: ['.xzawed/conformance/a.test.ts'] })
+      const runTests = vi.fn().mockResolvedValue({ success: true, passed: 1, failed: 0 })
+      const build = vi.fn().mockResolvedValue({ success: true })
+      const published: Array<{ msg: { type: string } }> = []
+      const out = await handleWpDispatchSignal(dispatchSignal(wf, 'a', 0), {
+        repo,
+        handlers: { develop_code: { execute: develop }, run_tests: { execute: runTests }, build_project: { execute: build } },
+        publish: async (_s, msg) => { published.push({ msg: msg as never }); return '1-0' },
+        verifyEnabled: true,
+        oracleStore: oracleRepo,
+        conformanceEnabled: true,
+      })
+      expect(out).toEqual({ status: 'completed', wpId: 'a' })
+      expect(published.some((p) => p.msg.type === 'wp.completion')).toBe(true)
+      // develop_code는 primary 실행 + conformance author로 2회 호출(독립 author 컨텍스트·N6)
+      expect(develop).toHaveBeenCalledTimes(2)
+      // conformance-run은 author가 작성한 테스트 파일만 격리 세션(conf-run)으로 실행
+      expect(runTests).toHaveBeenCalledWith(
+        expect.objectContaining({ testFiles: ['.xzawed/conformance/a.test.ts'] }),
+        expect.stringContaining('conf-run'),
+        uc,
+      )
+      const c = await handleCompletion(wf, 'a', { leaseStore, dispatch: { repo, store } })
+      expect(c.status).toBe('completed')
+      expect((await repo.latestStates(wf)).get('a')?.toState).toBe('DONE')
+    } finally {
+      await cleanup(pool)
+      await closePool()
+    }
+  })
+
+  it('conformance(P4b-2): conformance 테스트 실행 실패 → 완료 미발행 → lease sweep reclaim(백스톱)', async () => {
+    const pool = createPool(url!)
+    try {
+      await runMigrations(pool)
+      const repo = new TaskGraphRepo(pool)
+      const store = new DispatchStore(pool)
+      const leaseStore = new LeaseStore(pool)
+      const oracleRepo = new OracleRepo(pool)
+      const wf = `wf-ew-cff-${Date.now()}`
+      const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
+      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' }
+      await repo.upsertGraph({ workflowId: wf, workPackages: [a], eventId: null, userContext: uc })
+      await store.recordDispatch({ workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED', attempt: 0, visibilityMs: 60000 })
+      await oracleRepo.upsertDraft({
+        workflowId: wf, storyId: 's1',
+        scenarios: [{ id: 's1-sc1', title: 'AC1 동작', given: [], when: '실행', thenSteps: ['AC1 충족'], status: 'drafted' }],
+        coverage: { AC1: ['s1-sc1'] },
+      })
+      await oracleRepo.approve(oracleIdFor(wf, 's1'), 'human-po')
+
+      // run_tests: 파생 체크(testFiles 없음)는 통과시켜 ②를 지나 conformance까지 도달, conformance-run(testFiles 있음)만 실패시킨다.
+      const runTests = vi.fn().mockImplementation((input: unknown) =>
+        Promise.resolve((input as { testFiles?: unknown }).testFiles ? { success: false, failed: 1 } : { success: true, failed: 0 }),
+      )
+      const published: Array<{ stream: string; msg: { type: string; payload?: { attempt?: number } } }> = []
+      const publish = async (stream: string, msg: unknown): Promise<string> => { published.push({ stream, msg: msg as never }); return '1-0' }
+      const out = await handleWpDispatchSignal(dispatchSignal(wf, 'a', 0), {
+        repo,
+        handlers: {
+          develop_code: { execute: vi.fn().mockResolvedValue({ artifacts: ['.xzawed/conformance/a.test.ts'] }) },
+          run_tests: { execute: runTests },
+          build_project: { execute: vi.fn().mockResolvedValue({ success: true }) },
+        },
+        publish,
+        verifyEnabled: true,
+        oracleStore: oracleRepo,
+        conformanceEnabled: true,
+      })
+      expect(out.status).toBe('verification_failed')
+      expect(published.some((p) => p.msg.type === 'wp.completion')).toBe(false)
+      expect(published.some((p) => p.msg.type === 'wp.verification.failed')).toBe(true)
+      // 백스톱: lease 만료 후 sweep이 reclaim(attempt 1)·dispatch_signal 재발행
+      const sweep = await handleLeaseSweep(Date.now() + 120_000, { store: scopedLeaseStore(leaseStore, wf), publish })
+      expect(sweep.reclaimed).toEqual([expect.objectContaining({ workflowId: wf, wpId: 'a', nextAttempt: 1 })])
+      expect((await repo.latestStates(wf)).get('a')?.toState).toBe('DISPATCHED')
     } finally {
       await cleanup(pool)
       await closePool()

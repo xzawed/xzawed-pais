@@ -125,8 +125,11 @@ export async function buildServer(
   // P3-2: oracleStore는 DOR||DRAFT일 때 한 번만 생성해 Supervisor(consumer upsert·satisfied-set)와
   // oracleRoute(작성·승인·조회)에 공유한다(중복 OracleRepo 제거). DoR 게이트(satisfied-set·oracleConsumer)는
   // createSupervisor가 config.oracleDor로 분리 — DRAFT만 켜면 영속만, DoR off.
+  // P4b-2: conformance 채널도 approvedOracleForStory(=OracleRepo)를 필요로 하므로 생성 조건에 WP_CONFORMANCE 추가.
   const oracleStore =
-    pool && (config.MANAGER_ORACLE_DOR || config.MANAGER_ORACLE_DRAFT) ? new OracleRepo(pool) : undefined
+    pool && (config.MANAGER_ORACLE_DOR || config.MANAGER_ORACLE_DRAFT || config.MANAGER_WP_CONFORMANCE)
+      ? new OracleRepo(pool)
+      : undefined
 
   // D5: 초안 영속은 decomposition consumer(=Supervisor)가 돌아야 하므로 TASK_MANAGER_ENABLED+DATABASE_URL이 전제다.
   // DRAFT만 켜고 그 전제가 없으면 producer가 oracleDrafts를 emit해도 소비자 부재로 영속되지 않는다 — 오진 방지 경고.
@@ -154,6 +157,24 @@ export async function buildServer(
   if (config.MANAGER_WP_VERIFY && config.MANAGER_LEASE_VISIBILITY_MS < 360_000) {
     app.log.warn(
       `MANAGER_WP_VERIFY=true 인데 MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms < 360000ms(에이전트 타임아웃 120s×3) — 검증 도중 lease 만료로 false reclaim 위험. 가시성 상향 권장.`,
+    )
+  }
+
+  // P4b-2: conformance 채널은 verifyWp 안에서만 동작하므로 MANAGER_WP_VERIFY가 꺼져 있으면 무동작(무음 no-op).
+  // 전제 없이 켜면 사용자가 오라클 검증을 기대하나 아무 일도 일어나지 않으므로 오진 방지 경고(검증 게이트 패턴 연장).
+  if (config.MANAGER_WP_CONFORMANCE && !config.MANAGER_WP_VERIFY) {
+    app.log.warn('MANAGER_WP_CONFORMANCE=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 conformance 채널이 동작하지 않습니다(verifyWp 미경유).')
+  }
+  // P4b-2: conformance는 approvedOracleForStory(=OracleRepo)를 필요로 한다 — pool 없거나 oracleStore 부재면
+  // conformance가 항상 skip된다(설계 결정 #5: 채널 부재 ≠ 불확실, brick 안 함). 전역 설정 결함 가시화.
+  if (config.MANAGER_WP_CONFORMANCE && !oracleStore) {
+    app.log.warn('MANAGER_WP_CONFORMANCE=true 이지만 oracleStore(DATABASE_URL+OracleRepo)가 없어 conformance가 항상 skip됩니다.')
+  }
+  // P4b-2: conformance는 develop_code WP당 에이전트 호출을 최대 4회(실행+빌드+테스트+author+conformance-run, 각 120s)로
+  // 늘린다 — 가시성 창이 600s보다 짧으면 검증 도중 lease 만료(false reclaim) 위험이 더 커진다. 가시성 하한 경고.
+  if (config.MANAGER_WP_CONFORMANCE && config.MANAGER_LEASE_VISIBILITY_MS < 600_000) {
+    app.log.warn(
+      `MANAGER_WP_CONFORMANCE=true 인데 MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms < 600000ms(에이전트 타임아웃 120s×최대 5단계) — conformance 검증 도중 lease 만료로 false reclaim 위험. 가시성 상향 권장.`,
     )
   }
 
@@ -192,6 +213,9 @@ export async function buildServer(
         taskWorker: config.MANAGER_TASK_WORKER,
         // P4b-1: 워커 검증 게이트(=MANAGER_WP_VERIFY). off면 워커 동작 P4a-2와 동일(회귀 0).
         wpVerify: config.MANAGER_WP_VERIFY,
+        // P4b-2: conformance 채널(=MANAGER_WP_CONFORMANCE). off면 P4b-1 검증과 바이트 동일(회귀 0).
+        // buildWorkerConsumerDeps가 oracleStore 동반 시에만 conformanceEnabled=true로 게이트(검증 우회 무음 방지).
+        wpConformance: config.MANAGER_WP_CONFORMANCE,
       },
     )
     supervisor.start()

@@ -73,6 +73,16 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // P4b-2 conformance 채널(기본 false). true면 develop_code WP 검증에 사람 승인 오라클 GWT 시나리오를
+    // 실행 ground truth로 소비하는 채널을 추가한다(독립 develop_code 호출이 테스트 작성→Tester 실행→결과 판정·N1/N6).
+    // 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY(verifyWp 경로) + OracleRepo(=MANAGER_ORACLE_DOR||MANAGER_ORACLE_DRAFT).
+    // ⚠️ conformance는 develop_code WP당 에이전트 호출을 최대 4회(실행+빌드+테스트+author+conformance-run)로 늘린다 —
+    //   MANAGER_LEASE_VISIBILITY_MS(기본 300s)를 600s 이상으로 상향하지 않으면 검증 중 lease 만료(false reclaim)
+    //   위험이 더 커진다(server.ts 경고).
+    MANAGER_WP_CONFORMANCE: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {
