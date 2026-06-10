@@ -36,6 +36,19 @@ describe('TaskGraphRepo.upsertGraph', () => {
     expect(res).toEqual({ version: 2 })
   })
 
+  it('userContext가 있으면 graph_dag JSON에 함께 직렬화한다(P4a-2)', async () => {
+    const pool = mockPool({ rows: [{ version: 1 }] })
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
+    await new TaskGraphRepo(pool).upsertGraph({ workflowId: 'wf-1', workPackages: [wp], userContext: uc })
+    expect(JSON.parse(pool.query.mock.calls[0][1][1] as string)).toEqual({ workPackages: [wp], userContext: uc })
+  })
+
+  it('userContext가 null이면 graph_dag에 키 자체를 만들지 않는다', async () => {
+    const pool = mockPool({ rows: [{ version: 1 }] })
+    await new TaskGraphRepo(pool).upsertGraph({ workflowId: 'wf-1', workPackages: [wp], userContext: null })
+    expect(JSON.parse(pool.query.mock.calls[0][1][1] as string)).toEqual({ workPackages: [wp] })
+  })
+
   it('RETURNING 행이 없으면 throw한다(부분 실패 방어)', async () => {
     const pool = mockPool({ rows: [] })
     await expect(new TaskGraphRepo(pool).upsertGraph({ workflowId: 'wf-1', workPackages: [wp] }))
@@ -49,17 +62,31 @@ describe('TaskGraphRepo.getGraph', () => {
     expect(await new TaskGraphRepo(pool).getGraph('wf-x')).toBeNull()
   })
 
-  it('graph_dag.workPackages를 WorkPackageSchema로 재검증해 반환한다', async () => {
+  it('graph_dag.workPackages를 WorkPackageSchema로 재검증해 반환한다(레거시 행은 userContext null)', async () => {
     const pool = mockPool({ rows: [{ graph_dag: { workPackages: [wp] }, event_id: 'evt-9', version: 3 }] })
     const out = await new TaskGraphRepo(pool).getGraph('wf-1')
     expect(pool.query.mock.calls[0][0]).toMatch(/SELECT graph_dag, event_id, version FROM task_graphs WHERE workflow_id = \$1/i)
-    expect(out).toEqual({ workflowId: 'wf-1', workPackages: [wp], eventId: 'evt-9', version: 3 })
+    expect(out).toEqual({ workflowId: 'wf-1', workPackages: [wp], eventId: 'evt-9', version: 3, userContext: null })
   })
 
   it('workPackages가 없으면 빈 배열로 파싱한다', async () => {
     const pool = mockPool({ rows: [{ graph_dag: {}, event_id: null, version: 1 }] })
     const out = await new TaskGraphRepo(pool).getGraph('wf-1')
     expect(out?.workPackages).toEqual([])
+  })
+
+  it('저장된 userContext를 라운드트립으로 반환한다(P4a-2)', async () => {
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
+    const pool = mockPool({ rows: [{ graph_dag: { workPackages: [wp], userContext: uc }, event_id: null, version: 1 }] })
+    const out = await new TaskGraphRepo(pool).getGraph('wf-1')
+    expect(out?.userContext).toEqual(uc)
+  })
+
+  it('손상된 userContext는 throw 대신 null(tolerant — 디스패치 경로 보호)', async () => {
+    const pool = mockPool({ rows: [{ graph_dag: { workPackages: [wp], userContext: { bogus: 1 } }, event_id: null, version: 1 }] })
+    const out = await new TaskGraphRepo(pool).getGraph('wf-1')
+    expect(out?.userContext).toBeNull()
+    expect(out?.workPackages).toEqual([wp]) // workPackages 파싱은 영향 없음
   })
 
   it('저장 데이터가 WorkPackage 스키마 위반이면 throw한다', async () => {

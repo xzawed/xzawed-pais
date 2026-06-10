@@ -23,10 +23,21 @@ describe('handleWpDispatchSignal', () => {
     const d = deps()
     const out = await handleWpDispatchSignal(sig(), d)
     expect(out).toEqual({ status: 'completed', wpId: 'a' })
-    expect((d.handlers.develop_code.execute as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(expect.any(Object), 'wf1')
+    // userContext 미영속 그래프 → 3번째 인자 undefined(P4-1 동작 보존)
+    expect((d.handlers.develop_code.execute as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(expect.any(Object), 'wf1', undefined)
     const [stream, msg] = (d.publish as ReturnType<typeof vi.fn>).mock.calls[0]!
     expect(stream).toBe('manager:completions:main')
     expect(msg).toMatchObject({ type: 'wp.completion', payload: { wpId: 'a' } })
+  })
+  it('그래프에 userContext가 영속돼 있으면 execute 3번째 인자 + 입력 projectPath로 주입(P4a-2)', async () => {
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
+    const exec = vi.fn().mockResolvedValue({})
+    const d = deps({
+      repo: { getGraph: vi.fn().mockResolvedValue({ workPackages: [wp()], eventId: 'e1', version: 1, userContext: uc }) } as never,
+      handlers: { develop_code: { execute: exec } },
+    })
+    expect((await handleWpDispatchSignal(sig(), d)).status).toBe('completed')
+    expect(exec).toHaveBeenCalledWith(expect.objectContaining({ projectPath: '/workspace/p1' }), 'wf1', uc)
   })
   it('완료 신호 멱등키는 신호 attempt를 반영(reclaim 재완료 dedup 회피)', async () => {
     const d = deps()
@@ -69,10 +80,15 @@ describe('buildWorkerInput / shouldWireWorker', () => {
   it('buildWorkerInput은 AC를 intent에 담고 검증된 union 값을 채움(context=record·target=development·severity=low)', () => {
     const i = buildWorkerInput(wp({ acceptanceCriteria: ['ac1', 'ac2'] })) as Record<string, unknown>
     expect(String(i.intent)).toContain('ac1')
-    // 검증된 union 타입 — context는 객체(z.record), target/severity는 placeholder enum, projectPath는 '.'(execute 모드 fs 검증).
+    // 검증된 union 타입 — context는 객체(z.record), target/severity는 placeholder enum, projectPath는 '.'(폴백·P4-1 보존).
     expect(i).toMatchObject({ context: {}, priority: 'normal', projectPath: '.', target: 'development', severity: 'low', artifacts: [] })
     expect(typeof i.context).toBe('object')
     expect(String(i.plan)).toContain('ac1') // developer는 plan을 읽음(빈 plan no-op 방지)
+  })
+  it('userContext가 있으면 projectPath=workspaceRoot 절대경로(P4a-2 — cwd 무관 realpath 통과)', () => {
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
+    const i = buildWorkerInput(wp(), uc) as Record<string, unknown>
+    expect(i.projectPath).toBe('/workspace/p1')
   })
   it('shouldWireWorker 진리표', () => {
     expect(shouldWireWorker(false, true)).toBe(false)

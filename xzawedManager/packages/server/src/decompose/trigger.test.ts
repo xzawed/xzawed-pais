@@ -43,6 +43,41 @@ describe('handleDecomposeRequest', () => {
     expect(cleanup).toHaveBeenCalledTimes(1)
   })
 
+  it('userContext 전달 시 ensureWs 호출 후 emitted payload에 포함(P4a-2)', async () => {
+    const emitPublish = vi.fn().mockResolvedValue('1-0')
+    const producerPublish = vi.fn().mockResolvedValue('1-0')
+    const cleanup = vi.fn().mockResolvedValue(undefined)
+    const ensureWs = vi.fn().mockResolvedValue(undefined)
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
+
+    await handleDecomposeRequest('sess-uc', 'build it', mockDecompose(emitPublish), { publish: producerPublish }, cleanup, uc, ensureWs)
+
+    expect(ensureWs).toHaveBeenCalledWith(uc)
+    const emitMsg = emitPublish.mock.calls[0]![1]
+    expect(emitMsg.payload.userContext).toEqual(uc)
+    expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+
+  it('userContext 미전달 시 ensureWs 미호출 + payload에 userContext 키 없음', async () => {
+    const emitPublish = vi.fn().mockResolvedValue('1-0')
+    const ensureWs = vi.fn().mockResolvedValue(undefined)
+    await handleDecomposeRequest('sess-no-uc', 'build it', mockDecompose(emitPublish), { publish: vi.fn().mockResolvedValue('1-0') }, vi.fn().mockResolvedValue(undefined), undefined, ensureWs)
+    expect(ensureWs).not.toHaveBeenCalled()
+    expect(emitPublish.mock.calls[0]![1].payload).not.toHaveProperty('userContext')
+  })
+
+  it('ensureWs 실패 시에도 cleanup 보장(finally) + 분해 미진행', async () => {
+    const emitPublish = vi.fn().mockResolvedValue('1-0')
+    const cleanup = vi.fn().mockResolvedValue(undefined)
+    const ensureWs = vi.fn().mockRejectedValue(new Error('WORKSPACE_ROOT must not be filesystem root'))
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/' }
+    await expect(
+      handleDecomposeRequest('sess-bad-ws', 'x', mockDecompose(emitPublish), { publish: vi.fn() }, cleanup, uc, ensureWs),
+    ).rejects.toThrow(/filesystem root/)
+    expect(emitPublish).not.toHaveBeenCalled()
+    expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+
   it('수렴 실패 시 에스컬레이션 메시지 task_complete', async () => {
     const emitPublish = vi.fn().mockResolvedValue('1-0')
     const producerPublish = vi.fn().mockResolvedValue('1-0')

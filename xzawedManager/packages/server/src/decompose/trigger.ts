@@ -1,9 +1,12 @@
 import type { StreamProducer } from '../streams/producer.js'
+import type { UserContext } from '../types/user-context.js'
+import { ensureWorkspace } from '../workspace.js'
 import { produceDecomposition, type ProduceDeps } from './producer.js'
 
 /**
- * decompose_request 처리 글루: 분해 생산(→decomposition.emitted) → task_complete 발행 → cleanup.
- * cleanup은 finally로 보장(생산/발행 실패 시에도 세션 정리). 호출자(sessions.route)가 flag 게이트.
+ * decompose_request 처리 글루: (P4a-2) 워크스페이스 보장 → 분해 생산(→decomposition.emitted) →
+ * task_complete 발행 → cleanup. cleanup은 finally로 보장(워크스페이스 검증·생산·발행 실패 시에도 세션 정리).
+ * 호출자(sessions.route)가 flag 게이트. ensureWs는 테스트 주입용(기본 실 구현 — task_request 경로와 대칭).
  */
 export async function handleDecomposeRequest(
   sessionId: string,
@@ -11,9 +14,14 @@ export async function handleDecomposeRequest(
   decompose: ProduceDeps,
   producer: Pick<StreamProducer, 'publish'>,
   cleanup: () => Promise<void>,
+  userContext?: UserContext,
+  ensureWs: (uc: UserContext) => Promise<void> = ensureWorkspace,
 ): Promise<void> {
   try {
-    const { emitted, escalated } = await produceDecomposition(intent, sessionId, decompose)
+    if (userContext !== undefined) {
+      await ensureWs(userContext)
+    }
+    const { emitted, escalated } = await produceDecomposition(intent, sessionId, decompose, userContext)
     const content = escalated
       ? '분해 불일치: 커버리지 수렴 실패 — 사람 검토 필요(에스컬레이션)'
       : `분해 완료: ${emitted} WP emitted`

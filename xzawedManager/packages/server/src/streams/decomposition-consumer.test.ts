@@ -34,10 +34,22 @@ describe('handleDecompositionEmitted — happy path', () => {
     const publish = vi.fn().mockResolvedValue('1-0')
     const out = await handleDecompositionEmitted(msg([wp('a'), wp('b', ['a'])]), { repo, publish })
     expect(repo.upsertGraph).toHaveBeenCalledWith({
-      workflowId: 'wf-1', workPackages: [wp('a'), wp('b', ['a'])], eventId: 'evt-1',
+      workflowId: 'wf-1', workPackages: [wp('a'), wp('b', ['a'])], eventId: 'evt-1', userContext: null,
     })
     expect(publish).not.toHaveBeenCalled()
     expect(out).toEqual({ status: 'persisted', version: 1 })
+  })
+
+  it('payload.userContext가 있으면 upsertGraph로 함께 영속한다(P4a-2)', async () => {
+    const repo = mockRepo(1)
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
+    const m: DecompositionEmittedMessage = {
+      envelope: env(), type: 'decomposition.emitted',
+      payload: { workPackages: [wp('a')], oracleDrafts: [], userContext: uc },
+    }
+    await handleDecompositionEmitted(m, { repo, publish })
+    expect(repo.upsertGraph).toHaveBeenCalledWith(expect.objectContaining({ userContext: uc }))
   })
 
   it('upsertGraph의 version을 그대로 전파한다(재분해 version++)', async () => {

@@ -34,7 +34,11 @@ export interface AbortMessage extends BaseMessage {
 
 export interface DecomposeRequestMessage extends BaseMessage {
   type: 'decompose_request'
-  payload: { intent: string }
+  payload: {
+    intent: string
+    /** P4a-2: 워크플로 워크스페이스 컨텍스트 — 그래프에 영속돼 실행 워커가 에이전트 호출에 주입. */
+    userContext?: UserContext | undefined
+  }
 }
 
 export type OrchestratorToManagerMessage =

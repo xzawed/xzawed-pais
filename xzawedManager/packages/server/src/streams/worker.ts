@@ -3,6 +3,7 @@ import type { Redis } from 'ioredis'
 import { BaseConsumer, makeEnvelope } from '@xzawed/agent-streams'
 import type { WorkPackage } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
+import type { UserContext } from '../types/user-context.js'
 import type { Publish } from './decomposition-consumer.js'
 import { WpDispatchSignalSchema, type WpDispatchSignalMessage } from './dispatch-signal.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
@@ -12,9 +13,10 @@ const STREAM_PREFIX = 'manager:dispatched'
 const DEFAULT_COMPLETION_STREAM = 'manager:completions:main'
 const WP_COMPLETION = 'wp.completion'
 
-/** 에이전트 실행 최소 구조(RedisAgentHandler.execute가 만족 — userContext 옵셔널 인자 무관). */
+/** 에이전트 실행 최소 구조(RedisAgentHandler.execute가 만족). userContext(P4a-2)는 옵셔널 3번째 인자 —
+ *  2-인자 구현(일반 ToolHandler)도 구조적으로 할당 가능(잉여 인자는 무시). */
 export interface AgentExecutor {
-  execute(input: unknown, sessionId: string): Promise<unknown>
+  execute(input: unknown, sessionId: string, userContext?: UserContext): Promise<unknown>
 }
 
 export interface WorkerDeps {
@@ -24,7 +26,7 @@ export interface WorkerDeps {
   publish: Publish
   /** 완료 신호 스트림(기본 manager:completions:main; createSupervisor가 COMPLETION_PREFIX:channel 주입). */
   completionStream?: string
-  buildInput?: (wp: WorkPackage) => unknown
+  buildInput?: (wp: WorkPackage, userContext?: UserContext) => unknown
   now?: () => number
 }
 
@@ -33,17 +35,19 @@ export type WorkerOutcome =
   | { status: 'skipped'; reason: 'wp_not_found' | 'unknown_role' | 'no_handler' }
   | { status: 'failed'; reason: 'agent_error' }
 
-/** WP→에이전트 입력(최소·placeholder 품질). 필수 필드는 runner.ts `buildAgentQueryPayload`의 **검증된 union**과
+/** WP→에이전트 입력. 필수 필드는 runner.ts `buildAgentQueryPayload`의 **검증된 union**과
  *  같은 타입(5종 safeParse 통과·Zod 잉여 키 strip). intent/plan에 WP 설명을 담는다.
  *  ⚠️ context는 `z.record`(객체), target은 빌더 enum 'development', severity는 'low'(string/storyId면 safeParse 실패).
- *  ⚠️ projectPath는 execute 모드에서 실제 파일시스템 검증(`fs.realpath`)을 받는다 — ''는 ENOENT 거부라 '.'(워크스페이스 루트
- *  상대)로 둔다. 단, 에이전트 cwd≠workspaceRoot 배포에선 '.'도 거부될 수 있다 → 실 워크스페이스 경로 주입은 후속(설계 §6). */
-export function buildWorkerInput(wp: WorkPackage): Record<string, unknown> {
+ *  ⚠️ projectPath(P4a-2): userContext 존재 시 workspaceRoot **절대경로** — builder/tester `validatePath`는
+ *  `fs.realpath(projectPath)`를 에이전트 cwd 기준으로 해석하므로 '.'는 cwd≠workspaceRoot 배포에서 거부(NEW-2).
+ *  절대경로는 cwd 무관 + `path.relative(realRoot, realProject)=''`로 containment 통과. 미존재 시 '.' 폴백(P4-1 동작 보존). */
+export function buildWorkerInput(wp: WorkPackage, userContext?: UserContext): Record<string, unknown> {
   const acList = wp.acceptanceCriteria.map((a) => `- ${a}`).join('\n')
   const intent = wp.acceptanceCriteria.length
     ? `Implement story ${wp.storyId}.\nAcceptance criteria:\n${acList}`
     : `Implement story ${wp.storyId}.`
-  return { intent, plan: intent, context: {}, priority: 'normal', projectPath: '.', target: 'development', severity: 'low', artifacts: [] }
+  const projectPath = userContext?.workspaceRoot ?? '.'
+  return { intent, plan: intent, context: {}, priority: 'normal', projectPath, target: 'development', severity: 'low', artifacts: [] }
 }
 
 /** 워커 배선 판정(순수·D4 패턴): taskWorker flag + 핸들러 주입 둘 다 있어야 배선. */
@@ -65,6 +69,8 @@ async function publishCompletion(deps: WorkerDeps, workflowId: string, wpId: str
 /**
  * 트리거 신호 1건 처리: getGraph→WP 해석→resolveAgentTool(owningRole)→핸들러 자율 호출→성공 시 wp.completion 발행.
  * 실패/미해석은 신호 미발행 후 return(lease 백스톱이 reclaim·결정 2/5). 검증 trivial(실 검증=4b).
+ * P4a-2: 그래프에 영속된 userContext(워크스페이스 컨텍스트)를 입력·execute에 주입 — RedisAgentHandler가
+ * payload.userContext로 spread해 에이전트가 resolveWorkspaceRoot로 소비(실 에이전트 성공 성립).
  */
 export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps: WorkerDeps): Promise<WorkerOutcome> {
   const { workflowId } = msg.envelope
@@ -76,9 +82,10 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
   if (!tool) return { status: 'skipped', reason: 'unknown_role' }
   const handler = deps.handlers[tool]
   if (!handler) return { status: 'skipped', reason: 'no_handler' }
-  const input = (deps.buildInput ?? buildWorkerInput)(wp)
+  const userContext = stored?.userContext ?? undefined
+  const input = (deps.buildInput ?? buildWorkerInput)(wp, userContext)
   try {
-    await handler.execute(input, workflowId)
+    await handler.execute(input, workflowId, userContext)
   } catch {
     return { status: 'failed', reason: 'agent_error' } // 신호 미발행 → lease 타임아웃 reclaim
   }

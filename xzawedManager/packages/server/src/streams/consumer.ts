@@ -46,7 +46,11 @@ const DecomposeRequestSchema = z.object({
   messageId: z.string(),
   timestamp: z.number(),
   type: z.literal('decompose_request'),
-  payload: z.object({ intent: z.string().min(1) }),
+  payload: z.object({
+    intent: z.string().min(1),
+    // P4a-2: 워크스페이스 컨텍스트(additive optional) — 분해→그래프 영속→실행 워커 주입.
+    userContext: UserContextSchema.optional(),
+  }),
 })
 
 export const OrchestratorToManagerMessageSchema = z.union([

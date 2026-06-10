@@ -109,6 +109,7 @@ export function makeSessionStarter(
             opts.activeConsumers.delete(sessionId)
             opts.registry?.releaseAll(sessionId)
           },
+          msg.payload.userContext, // P4a-2: 워크스페이스 컨텍스트 — 그래프 영속→실행 워커 주입
         ).catch((err: unknown) => {
           opts.log.error({ err, sessionId }, 'decompose_request handler error')
         })
