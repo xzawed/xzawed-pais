@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 643/668 테스트 — 로컬 25 skip, CI는 pg 통합 22건 포함 665/668 실행)**
+현재 상태: **구현 완료 (server 668/696 테스트 — 로컬 28 skip, CI는 pg 통합 25건 포함 693/696 실행)**
 
 > **통합 테스트 게이트**: `test/*.integration.test.ts`는 `TEST_DATABASE_URL ?? DATABASE_URL`로 게이트(CI turborepo 잡이 `TEST_DATABASE_URL` 주입 — 이전엔 `DATABASE_URL`만 읽어 **CI에서 한 번도 실행되지 않았음**). cleanup은 전부 파일별 prefix 스코프(`wf-comp-`·`wf-disp-`·`wf-lease-`·`wf-dc-`·`wf-tgp-`·`wf-ew-`·`wf-orc-`·`es-it`) — 비스코프 DELETE는 병렬 형제 테스트의 행을 지워 간헐 실패를 만든다. `runMigrations`는 pg advisory lock으로 동시 실행 직렬화(병렬 테스트·다중 인스턴스 기동 공통 방어). — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
@@ -248,6 +248,17 @@ P4-1 워커의 trivial 완료 판정(무예외=성공)을 **실행 ground truth 
 - **배선**: `SupervisorConfig.wpVerify?`(optional additive) → `buildWorkerConsumerDeps(deps, config)` **순수 헬퍼**(D4 — 스레딩 누락이 무음 fail-open 퇴행이 되지 않도록 행동 단언)로 WorkerConsumer deps 조립. server.ts가 `config.MANAGER_WP_VERIFY` 전달 + 오진 방지 경고 2종(전제 `MANAGER_TASK_WORKER` 미충족·`MANAGER_LEASE_VISIBILITY_MS<360s` 가시성 하한).
 - **한계(후속)**: 빈 스위트 vacuous pass(테스트 0개 프로젝트의 derived run_tests `failed:0` 통과)는 N8 mutation 게이트(4b 후속)가 봉합. 검증 실패 사유가 reclaim 재실행 입력에 미반영(비정보 재시도 — 4c informed rework). 오라클 GWT 시나리오는 아직 검증 미사용(step-def 컴파일=4b-2). lease 가시성 경합의 근본 해소(heartbeat·completion attempt CAS)·primary 실행의 RPC 무상관은 후속. 상세는 설계 스펙 §7.
 
+## Oracle conformance 검증 (P4b-2)
+
+P4b-1 검증 게이트의 N6 한계(게이트 통과가 구현자의 `package.json scripts`에서 파생된 명령에만 의존 — 작성자가 검증 명령을 통제)를 봉합한다. develop_code WP 검증에 **사람 승인 오라클 GWT 시나리오를 실행 ground truth로 소비**하는 conformance 채널을 P4b-1 파생 체크 위에 additive hard-AND로 추가: 게이트가 구현자와 독립된, 사람이 승인한 동작에 묶인 검증 테스트의 실 실행 결과에 의존한다(N1·N6). `MANAGER_WP_CONFORMANCE`(기본 false) flag 뒤로 가역 — off면 P4b-1 검증과 바이트 동일·회귀 0. 전제: `MANAGER_TASK_WORKER`+`MANAGER_WP_VERIFY`+OracleRepo. 설계 스펙 [2026-06-10-p4b-2-oracle-conformance-design.md](../../docs/superpowers/specs/2026-06-10-p4b-2-oracle-conformance-design.md). **새 migration·테이블·핸들러 계약 무수정**(run_tests `testFiles?`·develop_code `artifacts[]` 기존 존재).
+
+- **`db/oracle.repo.ts` `approvedOracleForStory(wf, storyId)`**(additive): 해당 story의 approved 오라클(최신 version)에서 `human_approved` 시나리오 + coverage 반환. 승인 행 없음·human_approved 0개면 `null`(→ conformance skip·회귀 0). `OracleScenarioSchema.array().parse`로 재검증(불량 레거시 JSON throw→상위 fail-closed). `approvedByWorkflow`(satisfied-set용)와 별개.
+- **`streams/conformance.ts`(신규·순수)**: `CONFORMANCE_DIR='.xzawed/conformance'`·`buildConformanceAuthorPlan(wp, scenarios)`(승인 GWT를 번호 매겨 나열 + "실행 가능한 테스트를 `<DIR>/<wpId>.*`에 작성·**구현 파일 수정 금지**·시나리오 단언만 인코딩" 지시·4000자 클램프)·`selectConformanceTestFiles(artifacts, wpId)`(설계 §4 두 불변식: ①좌측 prefix 앵커 `<DIR>/<wpId>.`로 인접 wpId(wp-7 vs wp-70)·깊은 경로(node_modules 등) 오지정 차단 ②테스트 확장자 필터(`.test.`·`.spec.`·`_test.`·`test_`·`.py`)로 비테스트 산출물(.md·.txt·.json) 제외 — "테스트 미작성=fail-closed" 가드 유지·구분자 정규화·결정론).
+- **`streams/verify.ts`**: `VerifyDeps`에 `oracleStore?`(`ConformanceOracleStore`)·`conformanceEnabled?` 추가(둘 다 optional·기본 미동작). `runConformanceCheck(wp, deps)`(**never-throw**·fail-closed): 미주입/미활성/oracle null → skip(`{ok:true}`); workspaceRoot 부재·author throw·author 테스트 미생성·run throw·run 결과 fail → fail. `execConformanceStep`이 buildInput·execute를 try 안에서 수행해 모든 throw를 fail verdict로 변환. author=독립 develop_code 호출(`conf-author` 격리 세션·plan=승인 GWT), run=Tester(`conf-run` 격리 세션·author가 만든 `testFiles`만)·`judgePrimaryResult('run_tests', ...)` 재사용. `verifyWp`는 ①②(P4b-1) 후 `tool==='develop_code'`이면 `runConformanceCheck` 호출. `verifySessionId`에 4번째 옵셔널 `suffix` 추가(P4b-1 호출 바이트 동일).
+- **워커 통합(`worker.ts`)**: `WorkerDeps.oracleStore?`·`conformanceEnabled?` 추가 → verifyEnabled 경로의 `verifyWp` deps에 합류. conformance 실패도 P4b-1 그대로 완료 미발행 → lease 백스톱 reclaim→escalate(새 재시도 메커니즘 0).
+- **배선(`supervisor.ts`·`server.ts`)**: `SupervisorConfig.wpConformance?`·`buildWorkerConsumerDeps`가 `conformanceEnabled = config.wpConformance && deps.oracleStore != null`(검증 우회 무음 방지·행동 단언)·oracleStore를 verify deps에 합류. server.ts는 `oracleStore` 생성 조건에 `MANAGER_WP_CONFORMANCE` 추가(`pool && (DOR||DRAFT||CONFORMANCE)`)·`wpConformance` 전달·오진 방지 경고 **3종**(conformance on인데 ①`MANAGER_WP_VERIFY` off(verifyWp 미경유 무음 no-op) ②oracleStore 부재(항상 skip) ③`MANAGER_LEASE_VISIBILITY_MS<600s`(WP당 호출 최대 5단계)).
+- **한계(후속·정직 문서화)**: vacuous conformance(약한/빈 테스트가 `failed:0`으로 통과)는 4b-3 mutation 게이트(N8)가 봉합. author Developer는 구현자와 같은 모델군(신규 컨텍스트·사람 승인 단언으로 *경계*만)·"구현 수정 금지"는 프롬프트 지시일 뿐(읽기전용 워크스페이스 마운트는 후속). 평문 GWT 해석(구조화 step_defs 미도입)·invariants/golden_refs·advisory/impact 채널·security(STRIDE)·designer 검증은 후속(4b-3/4d).
+
 ## AgentQuery 교차질의
 
 에이전트가 작업 중 다른 에이전트에게 질의할 수 있다. 하위 에이전트가 `AgentQueryError`(to·question·kind: `active_request` | `cross_check`)를 throw하면 runner가 처리한다.
@@ -284,6 +295,7 @@ MANAGER_ORACLE_DOR=             # 선택: 기본 false. true+DATABASE_URL이면 
 MANAGER_ORACLE_DRAFT=           # 선택: 기본 false. true면 decompose ok 경로가 draft 스테이지 실행 + producer가 oracleDrafts emit + consumer upsertDraft(P3-2). ⚠️초안 영속은 TASK_MANAGER_ENABLED+DATABASE_URL 전제(소비자 부재 시 미영속)
 MANAGER_TASK_WORKER=            # 선택: 기본 false. true면 dispatch/reclaim이 wp.dispatch_signal 발행 + WorkerConsumer 배선 → dispatch된 WP를 owningRole 에이전트로 자율 실행 후 wp.completion 발행(P4-1). 전제: TASK_MANAGER_ENABLED+DATABASE_URL(Supervisor·getGraph)
 MANAGER_WP_VERIFY=              # 선택: 기본 false. true면 워커가 완료 발행 전 실행 ground truth 검증을 fail-closed로 수행(결과-근거 판정 + develop_code 파생 빌드·테스트 재실행). 실패 시 완료 미발행 → lease 백스톱 reclaim→escalate(P4b-1). 전제: MANAGER_TASK_WORKER
+MANAGER_WP_CONFORMANCE=         # 선택: 기본 false. true면 develop_code WP 검증에 사람 승인 오라클 GWT 시나리오를 실행 ground truth로 소비하는 conformance 채널 추가 — 독립 develop_code 호출이 승인 시나리오로 테스트 작성 → Tester 실행 → 결과 판정(N1/N6). 실패 시 완료 미발행 → lease 백스톱(P4b-2). 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY + OracleRepo(MANAGER_ORACLE_DOR||MANAGER_ORACLE_DRAFT). ⚠️ WP당 에이전트 호출 최대 5단계 → MANAGER_LEASE_VISIBILITY_MS 600s 이상 권장
 ```
 
 ## 보안 구현 패턴

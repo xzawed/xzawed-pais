@@ -129,7 +129,7 @@ PR #238에서 반영된 senario 사양(v5) 기반 자율 Task Manager 로드맵(
 | P1d | Task Manager 1~7 — 그래프 코어·영속·소비·디스패치·lease/escalation·완료 흐름·Supervisor 배선 (`TASK_MANAGER_ENABLED`) | ✅ 완료 | #253~#262 |
 | P2 | PM 다단계 분해 파이프라인 + 자가수선 (`MANAGER_DECOMPOSE_ENABLED`) | ◐ 부분 — Wiki Agent 리스크 분류·모델 라우팅·P6 간선 추론 잔여 | #263~#266 |
 | P3 | Oracle DoR 게이트 + 초안 생성 (`MANAGER_ORACLE_DOR`·`MANAGER_ORACLE_DRAFT`) | ◐ 부분 — invariants·golden_refs·step branch 잔여 | #267~#268 |
-| P4 | 실행 워커 + 실 검증 오라클 (`MANAGER_TASK_WORKER`·`MANAGER_WP_VERIFY`) | ◐ 골격+컨텍스트(4a)+검증 게이트(4b-1 correctness 채널) — 4b-2 step-def 컴파일·4b-3 advisory/impact·mutation(N8)·4c 결함 국소화·4d 검증 에이전트 잔여 | #269, #271 |
+| P4 | 실행 워커 + 실 검증 오라클 (`MANAGER_TASK_WORKER`·`MANAGER_WP_VERIFY`·`MANAGER_WP_CONFORMANCE`) | ◐ 골격+컨텍스트(4a)+검증 게이트(4b-1 correctness 채널)+오라클 conformance(4b-2 step-def 컴파일·승인 GWT→실행 테스트) — 4b-3 advisory/impact·mutation(N8)·4c 결함 국소화·4d 검증 에이전트 잔여 | #269, #271, #273 |
 | P5 | fail-closed 릴리스 게이트·saga 보상·canary/롤백 | ⬜ 미착수 | — |
 | P6 | 의사결정 브리프·HumanDecision/SignOff 영속(M9)·관측성 | ⬜ 미착수 | — |
 
@@ -139,7 +139,7 @@ PR #238에서 반영된 senario 사양(v5) 기반 자율 Task Manager 로드맵(
 
 senario 로드맵의 다음 슬라이스 순서:
 
-1. **P4b 잔여 — 실 검증 오라클 확장**: step-def 컴파일(4b-2, 사람 승인 GWT→실행 테스트·N1)·advisory/impact 채널·mutation 게이트(4b-3, N8). 4b-1(correctness 채널 골격 — 결과-근거 판정+파생 빌드·테스트 실 재실행, `MANAGER_WP_VERIFY`)은 완료.
+1. **P4b 잔여 — 실 검증 오라클 확장**: advisory/impact 채널·mutation 게이트(4b-3, N8)·invariants/golden_refs·구조화 step_defs. 4b-1(correctness 채널 골격 — 결과-근거 판정+파생 빌드·테스트 실 재실행, `MANAGER_WP_VERIFY`)·4b-2(오라클 conformance — 사람 승인 GWT→독립 develop_code author→Tester 실행·N1·N6, `MANAGER_WP_CONFORMANCE`)는 완료.
 2. **사람 접점 UI**: 오라클 승인·편집 카드, decompose 트리거 UX(P4a-2 userContext 채움 포함), ESCALATED WP 재개입 경로, Task Graph 상태 모니터링.
 3. **잠복 하드닝**: WP 생명주기 이벤트 멱등키 공유 해소, M6 무음 유실(핸들러 트랜잭션 멱등), Manager StreamConsumer·OutboxRelay DLQ, DLQ 재처리 도구.
 
