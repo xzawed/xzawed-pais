@@ -34,6 +34,10 @@ export interface WorkerDeps {
   /** P4b-1: 검증 게이트(=MANAGER_WP_VERIFY). on이면 완료 발행 전 verifyWp fail-closed 판정 —
    *  실패 시 완료 미발행(lease 백스톱이 reclaim→escalate) + wp.verification.failed 관측 이벤트. */
   verifyEnabled?: boolean
+  /** P4b-2: 승인 오라클 조회 포트(conformance 채널). verifyWp로 전달. */
+  oracleStore?: import('./conformance.js').ConformanceOracleStore
+  /** P4b-2: conformance 채널 활성(=MANAGER_WP_CONFORMANCE && oracleStore 주입). */
+  conformanceEnabled?: boolean
 }
 
 export type WorkerOutcome =
@@ -116,6 +120,8 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
     const verdict = await verifyWp(tool, wp, result, {
       handlers: deps.handlers, buildInput: deps.buildInput ?? buildWorkerInput, userContext, workflowId,
       attempt: msg.payload.attempt,
+      ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
+      conformanceEnabled: deps.conformanceEnabled === true,
     })
     if (!verdict.ok) {
       try {
