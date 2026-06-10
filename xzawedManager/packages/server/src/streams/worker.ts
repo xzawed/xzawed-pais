@@ -43,11 +43,14 @@ export type WorkerOutcome =
  *  절대경로는 cwd 무관 + `path.relative(realRoot, realProject)=''`로 containment 통과. 미존재 시 '.' 폴백(P4-1 동작 보존). */
 export function buildWorkerInput(wp: WorkPackage, userContext?: UserContext): Record<string, unknown> {
   const acList = wp.acceptanceCriteria.map((a) => `- ${a}`).join('\n')
-  const intent = wp.acceptanceCriteria.length
+  const fullIntent = wp.acceptanceCriteria.length
     ? `Implement story ${wp.storyId}.\nAcceptance criteria:\n${acList}`
     : `Implement story ${wp.storyId}.`
+  // planner/designer intent는 .max(4000) — AC 합계가 길면 safeParse 실패→DLQ→타임아웃이므로
+  // runner.ts buildAgentQueryPayload와 동일하게 클램프(AC 전체는 plan에 무손실 보존 — developer가 읽음).
+  const intent = fullIntent.slice(0, 4000)
   const projectPath = userContext?.workspaceRoot ?? '.'
-  return { intent, plan: intent, context: {}, priority: 'normal', projectPath, target: 'development', severity: 'low', artifacts: [] }
+  return { intent, plan: fullIntent, context: {}, priority: 'normal', projectPath, target: 'development', severity: 'low', artifacts: [] }
 }
 
 /** 워커 배선 판정(순수·D4 패턴): taskWorker flag + 핸들러 주입 둘 다 있어야 배선. */

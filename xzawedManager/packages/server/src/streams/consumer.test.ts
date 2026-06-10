@@ -35,6 +35,14 @@ describe('OrchestratorToManagerMessageSchema — decompose_request', () => {
     expect(r.success).toBe(false)
   })
 
+  it('상대경로 workspaceRoot는 Zod 단계에서 거부(절대경로 강제 — false-success 방지)', () => {
+    const r = OrchestratorToManagerMessageSchema.safeParse({
+      sessionId: 's', messageId: 'm', timestamp: 1, type: 'decompose_request',
+      payload: { intent: 'build it', userContext: { userId: 'u1', projectId: 'p1', workspaceRoot: 'projects/p1' } },
+    })
+    expect(r.success).toBe(false)
+  })
+
   it('기존 task_request도 여전히 파싱(회귀 0)', () => {
     const r = OrchestratorToManagerMessageSchema.safeParse({
       sessionId: 's', messageId: 'm', timestamp: 1, type: 'task_request',

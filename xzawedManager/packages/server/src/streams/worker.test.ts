@@ -85,10 +85,22 @@ describe('buildWorkerInput / shouldWireWorker', () => {
     expect(typeof i.context).toBe('object')
     expect(String(i.plan)).toContain('ac1') // developer는 plan을 읽음(빈 plan no-op 방지)
   })
-  it('userContext가 있으면 projectPath=workspaceRoot 절대경로(P4a-2 — cwd 무관 realpath 통과)', () => {
+  it('userContext가 있으면 projectPath=workspaceRoot 절대경로(P4a-2 — cwd 무관 realpath 통과)·나머지 형상 보존', () => {
     const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
-    const i = buildWorkerInput(wp(), uc) as Record<string, unknown>
-    expect(i.projectPath).toBe('/workspace/p1')
+    const i = buildWorkerInput(wp({ acceptanceCriteria: ['ac1'] }), uc) as Record<string, unknown>
+    expect(i).toMatchObject({
+      context: {}, priority: 'normal', projectPath: '/workspace/p1',
+      target: 'development', severity: 'low', artifacts: [],
+    })
+    expect(String(i.intent)).toContain('ac1')
+    expect(String(i.plan)).toContain('ac1')
+  })
+  it('intent는 4000자 클램프(planner/designer .max(4000))·plan은 AC 무손실 보존', () => {
+    const longAc = 'x'.repeat(3000)
+    const i = buildWorkerInput(wp({ acceptanceCriteria: [longAc, longAc] })) as Record<string, unknown>
+    expect(String(i.intent).length).toBeLessThanOrEqual(4000)
+    expect(String(i.plan)).toContain(longAc) // developer가 읽는 plan은 전체 보존
+    expect(String(i.plan).length).toBeGreaterThan(4000)
   })
   it('shouldWireWorker 진리표', () => {
     expect(shouldWireWorker(false, true)).toBe(false)

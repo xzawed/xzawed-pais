@@ -1,7 +1,7 @@
 import type { Pool } from 'pg'
 import { z } from 'zod'
 import { WorkPackageSchema, type WorkPackage } from '@xzawed/agent-streams'
-import { UserContextSchema, type UserContext } from '../types/user-context.js'
+import { AbsoluteUserContextSchema, type UserContext } from '../types/user-context.js'
 
 export interface PersistGraphInput {
   workflowId: string
@@ -110,7 +110,13 @@ export class TaskGraphRepo {
     const row = rows[0]
     if (!row) return null
     const workPackages = workPackagesSchema.parse(row.graph_dag?.workPackages ?? [])
-    const ucParsed = UserContextSchema.safeParse(row.graph_dag?.userContext)
+    const rawUc = row.graph_dag?.userContext
+    const ucParsed = AbsoluteUserContextSchema.safeParse(rawUc)
+    // 키가 존재하는데 파싱 실패(손상·상대경로)면 강등 사유를 남긴다 — escalate 폭주 원인 추적용.
+    // 레거시 행(키 자체 없음)은 정상 경로라 무로그.
+    if (rawUc !== undefined && !ucParsed.success) {
+      console.warn(`[task-graph] getGraph(${workflowId}): userContext 파싱 실패 — placeholder 강등`, ucParsed.error.issues)
+    }
     return {
       workflowId, workPackages, eventId: row.event_id, version: row.version,
       userContext: ucParsed.success ? ucParsed.data : null,

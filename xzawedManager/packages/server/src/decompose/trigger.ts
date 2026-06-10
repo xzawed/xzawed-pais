@@ -32,6 +32,19 @@ export async function handleDecomposeRequest(
       type: 'task_complete',
       payload: { agentId: 'manager', content },
     })
+  } catch (err) {
+    // M8 무음 통과 금지: 실패(워크스페이스 검증·발행 등)를 요청자에게 error로 알린 뒤 재던진다
+    // (task_request 경로 대칭 — 미발행 시 세션이 응답 없이 해체돼 무한 대기). 에러 발행 자체가
+    // 실패하면 원 오류 보존을 우선한다(호출자 .catch가 로그).
+    const content = err instanceof Error ? err.message : String(err)
+    await producer.publish({
+      sessionId,
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now(),
+      type: 'error',
+      payload: { agentId: 'manager', content },
+    }).catch(() => undefined)
+    throw err
   } finally {
     await cleanup()
   }

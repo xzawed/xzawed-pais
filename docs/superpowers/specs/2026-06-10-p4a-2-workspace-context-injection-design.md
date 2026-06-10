@@ -83,10 +83,29 @@ decompose_request {intent, userContext?}                        ← (1) 계약 a
 - **worker.test.ts**: stored.userContext 존재 시 execute 3번째 인자 전달 + projectPath=workspaceRoot /
   부재 시 기존 동작('.'·undefined).
 
-## 6. 한계 / 후속
+## 6. 한계 / 후속 (적대적 리뷰 28에이전트 반영 후)
+
+리뷰에서 확정된 3건은 본 슬라이스에서 수정 완료: ① workspaceRoot **절대경로 강제**(`AbsoluteUserContextSchema`
+refine — decompose_request·emitted·getGraph 3지점, 상대경로는 Zod 거부/null 강등 — developer false-success 차단)
+② **trigger 실패 무응답 해소**(catch→`type:'error'` 발행→rethrow, task_request 대칭·M8) ③ **intent 4000자
+클램프**(planner/designer `.max(4000)` 정합·plan은 무손실).
+
+잔여 한계:
 
 - **재분해 시 컨텍스트 유실 가능**: 이후 decompose_request가 userContext 없이 오면 graph_dag 교체로
   null이 된다(가변 프로젝션 의미상 의도). 운영에선 트리거 UX(후속)가 항상 채우는 것으로 해소.
+- **재분해 자체가 M6 dedup에 24h 차단(기존·P3-2 §6 blocker#4 인계)**: producer가 `attemptId: 0` 고정으로
+  emit하므로 같은 workflowId 재분해의 idempotencyKey가 동일 — DecompositionConsumer dedup(TTL 24h)이
+  의미적 재분해를 전달-중복으로 오인해 skip한다. 컨텍스트 교체 의미론도 그 동안 무효. **재분해 트리거 배선
+  슬라이스에서 분해 시도별 attemptId 증가(또는 eventId 기반 dedup 키)로 해소** — 본 슬라이스 범위 밖.
+- **신뢰 경계 가정**: `validateWorkspaceRoot`는 컨테인먼트(샌드박스 프리픽스) 검사가 아니다 — 절대경로면
+  fs 루트 외 어디든 통과한다. decompose_request 발행자(Orchestrator)는 신뢰 주체이고 최종 백스톱은 각
+  에이전트의 `WORKSPACE_ROOT` 가드(`validatePath` containment)다. 신뢰 베이스 하위 강제(예: projectId
+  파생 경로)는 P5 릴리스 게이트/RBAC(#6)와 함께 재검토.
+- **Manager 통합 테스트 CI 미실행(기존·전 슬라이스 공통)**: ci.yml turborepo 잡은 `TEST_DATABASE_URL`만
+  설정하나 Manager 통합 테스트 8파일은 `DATABASE_URL`로 게이트 — skip-if-no-DB가 CI에서도 항상 skip.
+  게이트 통일(`TEST_DATABASE_URL ?? DATABASE_URL`)+비스코프 DELETE cleanup의 prefix 스코프화(P1d-4 §8.3)를
+  묶은 **별도 후속 PR**로 해소(활성화 시 병렬 flake 위험을 함께 제거해야 함).
 - **dispatch_signal 자체에는 컨텍스트 없음**: 워커가 매 신호마다 getGraph로 조회(이미 WP 해석에 필요해
   추가 조회 0). 신호 페이로드 확장은 불필요로 판단.
 - **에이전트별 의미 차이**: developer는 workspaceRoot(파일 I/O)+projectPath(프롬프트), builder/tester는

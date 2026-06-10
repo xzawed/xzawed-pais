@@ -8,7 +8,7 @@ const wp = (id: string, deps: string[] = []): WorkPackage => ({
   id, storyId: 'story-1', owningRole: 'developer', oracleRef: 'oracle-1',
   acceptanceCriteria: [], dependencies: deps, attributionCounters: {}, status: 'draft',
 })
-const stored = (wps: WorkPackage[]): StoredGraph => ({ workflowId: 'wf-1', workPackages: wps, eventId: null, version: 1 })
+const stored = (wps: WorkPackage[]): StoredGraph => ({ workflowId: 'wf-1', workPackages: wps, eventId: null, version: 1, userContext: null })
 const stateRec = (wpId: string, toState: string): WpStateRecord => ({
   seq: 1, workflowId: 'wf-1', wpId, fromState: null, toState, eventId: null, reason: null, occurredAt: 0,
 })

@@ -60,7 +60,7 @@ describe('planDispatch (순수)', () => {
 
 // ── handleDispatch ─────────────────────────────────────────────
 const stored = (wps: WorkPackage[], eventId: string | null = null): StoredGraph => ({
-  workflowId: 'wf-1', workPackages: wps, eventId, version: 1,
+  workflowId: 'wf-1', workPackages: wps, eventId, version: 1, userContext: null,
 })
 const stateRec = (wpId: string, toState: string): WpStateRecord => ({
   seq: 1, workflowId: 'wf-1', wpId, fromState: null, toState, eventId: null, reason: null, occurredAt: 0,

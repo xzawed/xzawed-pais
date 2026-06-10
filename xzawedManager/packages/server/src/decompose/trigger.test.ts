@@ -66,15 +66,32 @@ describe('handleDecomposeRequest', () => {
     expect(emitPublish.mock.calls[0]![1].payload).not.toHaveProperty('userContext')
   })
 
-  it('ensureWs 실패 시에도 cleanup 보장(finally) + 분해 미진행', async () => {
+  it('ensureWs 실패 시 error 발행(M8 무음 금지) + cleanup 보장(finally) + 분해 미진행', async () => {
     const emitPublish = vi.fn().mockResolvedValue('1-0')
+    const producerPublish = vi.fn().mockResolvedValue('1-0')
     const cleanup = vi.fn().mockResolvedValue(undefined)
     const ensureWs = vi.fn().mockRejectedValue(new Error('WORKSPACE_ROOT must not be filesystem root'))
     const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/' }
     await expect(
-      handleDecomposeRequest('sess-bad-ws', 'x', mockDecompose(emitPublish), { publish: vi.fn() }, cleanup, uc, ensureWs),
+      handleDecomposeRequest('sess-bad-ws', 'x', mockDecompose(emitPublish), { publish: producerPublish }, cleanup, uc, ensureWs),
     ).rejects.toThrow(/filesystem root/)
     expect(emitPublish).not.toHaveBeenCalled()
+    // task_request 경로 대칭 — 요청자가 무한 대기하지 않도록 error 메시지를 발행
+    const errMsg = producerPublish.mock.calls[0]![0]
+    expect(errMsg.type).toBe('error')
+    expect(errMsg.sessionId).toBe('sess-bad-ws')
+    expect(errMsg.payload.content).toContain('filesystem root')
+    expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+
+  it('error 발행 자체가 실패해도 원 오류를 보존해 재던진다', async () => {
+    const cleanup = vi.fn().mockResolvedValue(undefined)
+    const badProducer = { publish: vi.fn().mockRejectedValue(new Error('redis down')) }
+    const ensureWs = vi.fn().mockRejectedValue(new Error('original failure'))
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/' }
+    await expect(
+      handleDecomposeRequest('sess-double-fail', 'x', mockDecompose(vi.fn()), badProducer, cleanup, uc, ensureWs),
+    ).rejects.toThrow(/original failure/)
     expect(cleanup).toHaveBeenCalledTimes(1)
   })
 

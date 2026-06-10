@@ -12,7 +12,7 @@ import type { TaskGraph } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import { OracleDraftSchema } from '../db/oracle.types.js'
 import type { OracleScenario } from '../db/oracle.types.js'
-import { UserContextSchema } from '../types/user-context.js'
+import { AbsoluteUserContextSchema } from '../types/user-context.js'
 
 // 단일 type 스트림(manager:decomposition:{wf})용 스키마 — 다른 type 메시지가 들어오면
 // BaseConsumer가 invalid_schema로 DLQ 격리한다(의도된 동작; P1d-4가 이 스트림을 다중화하면 재검토).
@@ -24,7 +24,8 @@ export const DecompositionEmittedSchema = z.object({
     // P3-2: 초안 오라클(additive·off면 producer가 []로 발행). consumer가 upsertDraft로 영속.
     oracleDrafts: z.array(OracleDraftSchema).default([]),
     // P4a-2: 워크스페이스 컨텍스트(additive optional) — 그래프에 영속돼 실행 워커가 주입.
-    userContext: UserContextSchema.optional(),
+    // 절대경로 강제(자율 실행 경로) — 위반 메시지는 BaseConsumer invalid_schema DLQ 격리.
+    userContext: AbsoluteUserContextSchema.optional(),
   }),
 })
 export type DecompositionEmittedMessage = z.infer<typeof DecompositionEmittedSchema>

@@ -82,11 +82,35 @@ describe('TaskGraphRepo.getGraph', () => {
     expect(out?.userContext).toEqual(uc)
   })
 
-  it('손상된 userContext는 throw 대신 null(tolerant — 디스패치 경로 보호)', async () => {
-    const pool = mockPool({ rows: [{ graph_dag: { workPackages: [wp], userContext: { bogus: 1 } }, event_id: null, version: 1 }] })
+  it('손상된 userContext는 throw 대신 null(tolerant — 디스패치 경로 보호) + 강등 warn 로그', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const pool = mockPool({ rows: [{ graph_dag: { workPackages: [wp], userContext: { bogus: 1 } }, event_id: null, version: 1 }] })
+      const out = await new TaskGraphRepo(pool).getGraph('wf-1')
+      expect(out?.userContext).toBeNull()
+      expect(out?.workPackages).toEqual([wp]) // workPackages 파싱은 영향 없음
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('wf-1'), expect.anything())
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('상대경로 workspaceRoot가 영속돼 있어도 null 강등(절대경로 계약 — 워커 placeholder 폴백)', async () => {
+    const pool = mockPool({ rows: [{ graph_dag: { workPackages: [wp], userContext: { userId: 'u1', projectId: 'p1', workspaceRoot: 'projects/p1' } }, event_id: null, version: 1 }] })
     const out = await new TaskGraphRepo(pool).getGraph('wf-1')
     expect(out?.userContext).toBeNull()
-    expect(out?.workPackages).toEqual([wp]) // workPackages 파싱은 영향 없음
+  })
+
+  it('레거시 행(userContext 키 없음)은 무로그 null', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      const pool = mockPool({ rows: [{ graph_dag: { workPackages: [wp] }, event_id: null, version: 1 }] })
+      const out = await new TaskGraphRepo(pool).getGraph('wf-1')
+      expect(out?.userContext).toBeNull()
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('저장 데이터가 WorkPackage 스키마 위반이면 throw한다', async () => {
