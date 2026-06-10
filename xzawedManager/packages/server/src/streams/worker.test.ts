@@ -208,6 +208,8 @@ describe('handleWpDispatchSignal conformance threading (P4b-2)', () => {
     expect(outcome.status).toBe('verification_failed')
     const completionPublished = publish.mock.calls.some((c: unknown[]) => (c[1] as { type: string }).type === 'wp.completion')
     expect(completionPublished).toBe(false)
+    const failedPublished = publish.mock.calls.some((c: unknown[]) => (c[1] as { type: string }).type === 'wp.verification.failed')
+    expect(failedPublished).toBe(true)
   })
 })
 
