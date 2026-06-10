@@ -45,4 +45,9 @@ describe('selectConformanceTestFiles', () => {
   it('returns empty when no conformance artifact present', () => {
     expect(selectConformanceTestFiles(['src/impl.ts'], 'wp-7')).toEqual([])
   })
+
+  it('excludes an adjacent wpId that shares a prefix (wp-7 vs wp-70)', () => {
+    const artifacts = ['.xzawed/conformance/wp-7.test.ts', '.xzawed/conformance/wp-70.test.ts']
+    expect(selectConformanceTestFiles(artifacts, 'wp-7')).toEqual(['.xzawed/conformance/wp-7.test.ts'])
+  })
 })

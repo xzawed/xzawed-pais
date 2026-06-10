@@ -14,7 +14,8 @@ export interface ConformanceOracleStore {
   ): Promise<{ scenarios: OracleScenario[]; coverage: Record<string, string[]> } | null>
 }
 
-/** 사람 승인 GWT 시나리오를 conformance 테스트로 작성하라는 develop_code plan. 4000자 클램프(planner/developer 정합). */
+/** 사람 승인 GWT 시나리오를 conformance 테스트로 작성하라는 develop_code plan. 4000자 클램프(planner/developer 정합).
+ *  호출자는 human_approved 시나리오만 전달해야 한다(이 함수는 받은 것을 그대로 렌더). */
 export function buildConformanceAuthorPlan(wp: WorkPackage, scenarios: OracleScenario[]): string {
   const blocks = scenarios.map((s) => {
     const given = s.given.length ? s.given.join('; ') : '(none)'
@@ -32,8 +33,9 @@ export function buildConformanceAuthorPlan(wp: WorkPackage, scenarios: OracleSce
   return plan.slice(0, 4000)
 }
 
-/** develop_code author 결과 artifacts 중 conformance 테스트 파일만 선별(구분자 정규화·wpId 접두). */
+/** develop_code author 결과 artifacts 중 conformance 테스트 파일만 선별(구분자 정규화·`<wpId>.` 점-경계 앵커로
+ *  인접 wpId(예: wp-7 vs wp-70) false-positive 차단). 파일은 `<CONFORMANCE_DIR>/<wpId>.<ext>` 컨벤션. */
 export function selectConformanceTestFiles(artifacts: string[], wpId: string): string[] {
-  const needle = `${CONFORMANCE_DIR}/${wpId}`
+  const needle = `${CONFORMANCE_DIR}/${wpId}.`
   return artifacts.filter((a) => a.replace(/\\/g, '/').includes(needle))
 }
