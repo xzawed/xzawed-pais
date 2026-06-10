@@ -7,6 +7,7 @@ import { buildOracleApprovedHandler, OracleApprovedSchema, type OracleApprovedMe
 import { handleCompletion } from './completion.js'
 import { LeaseSweeper } from './lease-sweeper.js'
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
+import type { ConformanceOracleStore } from './conformance.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
 import type { LeaseStore } from '../db/lease.repo.js'
@@ -111,7 +112,7 @@ export interface SupervisorDeps {
   publish: Publish
   /** P3-1 dispatch satisfied-set(approvedByWorkflow) + P3-2 consumer upsertDraft 둘 다 노출(blocker#2).
    *  DOR||DRAFT일 때 server.ts가 OracleRepo 주입. DRAFT만 켜도 decompositionConsumer가 upsert로 사용. */
-  oracleStore?: OracleStore & NonNullable<DecompositionDeps['oracleStore']>
+  oracleStore?: OracleStore & NonNullable<DecompositionDeps['oracleStore']> & ConformanceOracleStore
   /** P4-1: tool명→에이전트 핸들러(server.ts가 registry.get으로 주입). 주입+taskWorker면 워커 배선. */
   handlers?: Record<string, AgentExecutor>
 }
@@ -126,6 +127,8 @@ export interface SupervisorConfig {
   taskWorker: boolean
   /** P4b-1: 워커 검증 게이트(완료 발행 전 fail-closed 실 검증) 활성(=MANAGER_WP_VERIFY, 기본 off). */
   wpVerify?: boolean
+  /** P4b-2: conformance 채널(승인 오라클을 실행 테스트로 검증) 활성(=MANAGER_WP_CONFORMANCE). oracleStore 동반 필요. */
+  wpConformance?: boolean
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
@@ -136,7 +139,7 @@ export function shouldWireOracleConsumer(oracleDor: boolean, hasOracleStore: boo
 /** P4b-1: WorkerConsumer deps 조립(순수·D4) — wpVerify→verifyEnabled 스레딩을 행동 단언 가능하게 분리.
  *  instanceOf 단언만으로는 이 한 줄의 누락(undefined→off)이 무음 fail-open 퇴행이 되는 것을 잡지 못한다. */
 export function buildWorkerConsumerDeps(
-  deps: Pick<SupervisorDeps, 'repo' | 'publish'> & { handlers: Record<string, AgentExecutor> },
+  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore'> & { handlers: Record<string, AgentExecutor> },
   config: SupervisorConfig,
 ): WorkerDeps {
   return {
@@ -145,6 +148,10 @@ export function buildWorkerConsumerDeps(
     publish: deps.publish,
     completionStream: `${COMPLETION_PREFIX}:${DEFAULT_CHANNEL}`,
     verifyEnabled: config.wpVerify === true,
+    // P4b-2: SupervisorDeps.oracleStore는 ConformanceOracleStore를 포함(server.ts가 OracleRepo 주입·approvedOracleForStory 보유).
+    // 미주입이면 키 생략(exactOptionalPropertyTypes). conformanceEnabled는 flag+oracleStore 동반 시에만 true(검증 우회 무음 방지).
+    ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
+    conformanceEnabled: config.wpConformance === true && deps.oracleStore != null,
   }
 }
 
@@ -209,7 +216,11 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
   const workerConsumer = workerActive && deps.handlers
     ? new WorkerConsumer(
         makeRedis(),
-        buildWorkerConsumerDeps({ repo: deps.repo, publish: deps.publish, handlers: deps.handlers }, config),
+        buildWorkerConsumerDeps(
+          // exactOptionalPropertyTypes: oracleStore는 미주입 시 키 생략(undefined 명시 불가). 기존 dispatch deps 조립 idiom.
+          { repo: deps.repo, publish: deps.publish, handlers: deps.handlers, ...(deps.oracleStore && { oracleStore: deps.oracleStore }) },
+          config,
+        ),
       )
     : undefined
 
