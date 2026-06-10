@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { RedisEventBus } from '@xzawed/agent-streams'
 import type { StreamConsumerPort } from '@xzawed/agent-streams'
 import type { OrchestratorToManagerMessage } from '../types/streams.js'
-import { UserContextSchema } from '../types/user-context.js'
+import { UserContextSchema, AbsoluteUserContextSchema } from '../types/user-context.js'
 import { getRedisClient } from './redis.client.js'
 
 const streamKey = (sessionId: string) => `orchestrator:to-manager:${sessionId}`
@@ -46,7 +46,12 @@ const DecomposeRequestSchema = z.object({
   messageId: z.string(),
   timestamp: z.number(),
   type: z.literal('decompose_request'),
-  payload: z.object({ intent: z.string().min(1) }),
+  payload: z.object({
+    intent: z.string().min(1),
+    // P4a-2: 워크스페이스 컨텍스트(additive optional) — 분해→그래프 영속→실행 워커 주입.
+    // 자율 실행 경로라 절대경로 강제(상대경로는 Zod 단계 거부 — false-success 방지).
+    userContext: AbsoluteUserContextSchema.optional(),
+  }),
 })
 
 export const OrchestratorToManagerMessageSchema = z.union([

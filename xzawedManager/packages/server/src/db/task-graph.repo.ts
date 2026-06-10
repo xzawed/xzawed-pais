@@ -1,11 +1,14 @@
 import type { Pool } from 'pg'
 import { z } from 'zod'
 import { WorkPackageSchema, type WorkPackage } from '@xzawed/agent-streams'
+import { AbsoluteUserContextSchema, type UserContext } from '../types/user-context.js'
 
 export interface PersistGraphInput {
   workflowId: string
   workPackages: WorkPackage[]
   eventId?: string | null
+  /** P4a-2: 워크플로 워크스페이스 컨텍스트 — graph_dag JSONB 내부에 additive 저장(migration 0). */
+  userContext?: UserContext | null
 }
 
 export interface StoredGraph {
@@ -13,6 +16,8 @@ export interface StoredGraph {
   workPackages: WorkPackage[]
   eventId: string | null
   version: number
+  /** P4a-2: 레거시 행(키 없음)·파싱 실패는 null — 소비자(워커)는 placeholder 폴백. */
+  userContext: UserContext | null
 }
 
 export interface WpTransitionInput {
@@ -70,7 +75,10 @@ export class TaskGraphRepo {
 
   /** 워크플로 그래프 프로젝션 upsert(재분해 시 version++·graph_dag 교체). */
   async upsertGraph(input: PersistGraphInput): Promise<{ version: number }> {
-    const dag = JSON.stringify({ workPackages: input.workPackages })
+    const dag = JSON.stringify({
+      workPackages: input.workPackages,
+      ...(input.userContext != null && { userContext: input.userContext }),
+    })
     const { rows } = await this.pool.query<{ version: number }>(
       `INSERT INTO task_graphs (workflow_id, graph_dag, event_id, version, created_at, updated_at)
          VALUES ($1, $2, $3, 1, NOW(), NOW())
@@ -87,10 +95,12 @@ export class TaskGraphRepo {
     return { version: row.version }
   }
 
-  /** 그래프 조회(graph_dag.workPackages를 WorkPackageSchema 배열로 재검증). 없으면 null. */
+  /** 그래프 조회(graph_dag.workPackages를 WorkPackageSchema 배열로 재검증). 없으면 null.
+   *  userContext는 safeParse(tolerant) — 레거시 행·손상 데이터가 getGraph 자체(디스패치 경로 포함)를
+   *  깨지 않도록 실패 시 null(워커는 placeholder 폴백·우아한 강등). */
   async getGraph(workflowId: string): Promise<StoredGraph | null> {
     const { rows } = await this.pool.query<{
-      graph_dag: { workPackages?: unknown } | null
+      graph_dag: { workPackages?: unknown; userContext?: unknown } | null
       event_id: string | null
       version: number
     }>(
@@ -100,7 +110,17 @@ export class TaskGraphRepo {
     const row = rows[0]
     if (!row) return null
     const workPackages = workPackagesSchema.parse(row.graph_dag?.workPackages ?? [])
-    return { workflowId, workPackages, eventId: row.event_id, version: row.version }
+    const rawUc = row.graph_dag?.userContext
+    const ucParsed = AbsoluteUserContextSchema.safeParse(rawUc)
+    // 키가 존재하는데 파싱 실패(손상·상대경로)면 강등 사유를 남긴다 — escalate 폭주 원인 추적용.
+    // 레거시 행(키 자체 없음)은 정상 경로라 무로그.
+    if (rawUc !== undefined && !ucParsed.success) {
+      console.warn(`[task-graph] getGraph(${workflowId}): userContext 파싱 실패 — placeholder 강등`, ucParsed.error.issues)
+    }
+    return {
+      workflowId, workPackages, eventId: row.event_id, version: row.version,
+      userContext: ucParsed.success ? ucParsed.data : null,
+    }
   }
 
   /** WP 상태 전이를 append-only 기록(INSERT only). */

@@ -51,6 +51,21 @@ describe('produceDecomposition (P2-3b)', () => {
     expect(msg.payload.oracleDrafts[0]).not.toHaveProperty('oracleId')
   })
 
+  it('userContext 전달 시 ok 경로 payload에 포함(P4a-2)', async () => {
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
+    await produceDecomposition('build a thing', 'wf-uc', deps(stagedClaude(EPICS, STORY_D1, DELIVS_D1, ROLES), publish), uc)
+    const msg = publish.mock.calls[0]![1]
+    expect(msg.type).toBe('decomposition.emitted')
+    expect(msg.payload.userContext).toEqual(uc)
+  })
+
+  it('userContext 미전달 시 payload에 키 자체가 없음(additive 보존)', async () => {
+    const publish = vi.fn().mockResolvedValue('1-0')
+    await produceDecomposition('build a thing', 'wf-no-uc', deps(stagedClaude(EPICS, STORY_D1, DELIVS_D1, ROLES), publish))
+    expect(publish.mock.calls[0]![1].payload).not.toHaveProperty('userContext')
+  })
+
   it('repair 소진 → decomposition.inconsistent 발행·WP 미발행', async () => {
     const publish = vi.fn().mockResolvedValue('1-0')
     const logSpy = vi.fn()
@@ -87,5 +102,13 @@ describe('produceDecomposition (P2-3b)', () => {
     const msg = publish.mock.calls[0]![1]
     expect(msg.type).toBe('decomposition.emitted')
     expect(msg.payload.workPackages[0].acceptanceCriteria).toEqual(['do Z'])
+  })
+
+  it('기술 fallback 경로도 userContext를 보존한다(P4a-2 — degraded여도 워크스페이스 유지)', async () => {
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const claude: ClaudeLike = { messages: { create: vi.fn().mockRejectedValue(new Error('boom')) } }
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
+    await produceDecomposition('do Z', 'wf-fb-uc', deps(claude, publish), uc)
+    expect(publish.mock.calls[0]![1].payload.userContext).toEqual(uc)
   })
 })

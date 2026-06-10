@@ -129,7 +129,7 @@ PR #238에서 반영된 senario 사양(v5) 기반 자율 Task Manager 로드맵(
 | P1d | Task Manager 1~7 — 그래프 코어·영속·소비·디스패치·lease/escalation·완료 흐름·Supervisor 배선 (`TASK_MANAGER_ENABLED`) | ✅ 완료 | #253~#262 |
 | P2 | PM 다단계 분해 파이프라인 + 자가수선 (`MANAGER_DECOMPOSE_ENABLED`) | ◐ 부분 — Wiki Agent 리스크 분류·모델 라우팅·P6 간선 추론 잔여 | #263~#266 |
 | P3 | Oracle DoR 게이트 + 초안 생성 (`MANAGER_ORACLE_DOR`·`MANAGER_ORACLE_DRAFT`) | ◐ 부분 — invariants·golden_refs·step branch 잔여 | #267~#268 |
-| P4 | 실행 워커 + 실 검증 오라클 (`MANAGER_TASK_WORKER`) | ◐ 골격(4a-1) — 4a-2 워크스페이스 주입·4b 검증 3채널·4c 결함 국소화·4d 검증 에이전트 잔여 | #269 |
+| P4 | 실행 워커 + 실 검증 오라클 (`MANAGER_TASK_WORKER`) | ◐ 골격+컨텍스트(4a) — 4b 검증 3채널·4c 결함 국소화·4d 검증 에이전트 잔여 | #269, #271 |
 | P5 | fail-closed 릴리스 게이트·saga 보상·canary/롤백 | ⬜ 미착수 | — |
 | P6 | 의사결정 브리프·HumanDecision/SignOff 영속(M9)·관측성 | ⬜ 미착수 | — |
 
@@ -139,10 +139,9 @@ PR #238에서 반영된 senario 사양(v5) 기반 자율 Task Manager 로드맵(
 
 senario 로드맵의 다음 슬라이스 순서:
 
-1. **P4a-2 — 워크스페이스 컨텍스트 주입**: 실행 워커의 에이전트 입력에 실 프로젝트 워크스페이스 경로·컨텍스트를 주입해 실 에이전트 실행을 성립시킨다 (현재는 placeholder 입력으로 mock 실증만).
-2. **P4b — 실 검증 오라클**: step-def 컴파일(N1)·검증 3채널(correctness/advisory/impact)·mutation 게이트(N8). 현재 워커 완료 판정은 trivial(무예외=성공).
-3. **사람 접점 UI**: 오라클 승인·편집 카드, decompose 트리거 UX, ESCALATED WP 재개입 경로, Task Graph 상태 모니터링.
-4. **잠복 하드닝**: WP 생명주기 이벤트 멱등키 공유 해소, M6 무음 유실(핸들러 트랜잭션 멱등), Manager StreamConsumer·OutboxRelay DLQ, DLQ 재처리 도구.
+1. **P4b — 실 검증 오라클**: step-def 컴파일(N1)·검증 3채널(correctness/advisory/impact)·mutation 게이트(N8). 현재 워커 완료 판정은 trivial(무예외=성공).
+2. **사람 접점 UI**: 오라클 승인·편집 카드, decompose 트리거 UX(P4a-2 userContext 채움 포함), ESCALATED WP 재개입 경로, Task Graph 상태 모니터링.
+3. **잠복 하드닝**: WP 생명주기 이벤트 멱등키 공유 해소, M6 무음 유실(핸들러 트랜잭션 멱등), Manager StreamConsumer·OutboxRelay DLQ, DLQ 재처리 도구.
 
 잠재적 개선 영역:
 - xzawedLauncher GitHub Actions 릴리스 파이프라인 (`launcher-release.yml`, `docker-publish.yml`)

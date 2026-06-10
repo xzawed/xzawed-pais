@@ -12,6 +12,7 @@ import type { TaskGraph } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import { OracleDraftSchema } from '../db/oracle.types.js'
 import type { OracleScenario } from '../db/oracle.types.js'
+import { AbsoluteUserContextSchema } from '../types/user-context.js'
 
 // 단일 type 스트림(manager:decomposition:{wf})용 스키마 — 다른 type 메시지가 들어오면
 // BaseConsumer가 invalid_schema로 DLQ 격리한다(의도된 동작; P1d-4가 이 스트림을 다중화하면 재검토).
@@ -22,6 +23,9 @@ export const DecompositionEmittedSchema = z.object({
     workPackages: z.array(WorkPackageSchema),
     // P3-2: 초안 오라클(additive·off면 producer가 []로 발행). consumer가 upsertDraft로 영속.
     oracleDrafts: z.array(OracleDraftSchema).default([]),
+    // P4a-2: 워크스페이스 컨텍스트(additive optional) — 그래프에 영속돼 실행 워커가 주입.
+    // 절대경로 강제(자율 실행 경로) — 위반 메시지는 BaseConsumer invalid_schema DLQ 격리.
+    userContext: AbsoluteUserContextSchema.optional(),
   }),
 })
 export type DecompositionEmittedMessage = z.infer<typeof DecompositionEmittedSchema>
@@ -101,6 +105,8 @@ export async function handleDecompositionEmitted(
     workflowId,
     workPackages: wps,
     eventId: msg.envelope.eventId,
+    // P4a-2: 워크스페이스 컨텍스트를 그래프와 함께 영속(미존재 시 null — 워커가 placeholder 폴백).
+    userContext: msg.payload.userContext ?? null,
   })
   // P3-2: 초안 오라클 pending 영속(멱등 upsertDraft). oracleId는 repo가 workflowId로 파생(D2 — 단일 출처).
   // 미주입/빈 배열이면 skip(회귀 0). upsertGraph 성공 후에만 — 영속 실패 시 오라클 미적재.

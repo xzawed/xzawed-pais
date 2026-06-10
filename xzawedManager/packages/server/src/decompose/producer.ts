@@ -3,6 +3,7 @@ import type { ClaudeLike, WorkPackage } from '@xzawed/agent-streams'
 import { runDecomposition, fallbackWorkPackages, DEFAULT_REPAIR_MAX, type DecomposeResult } from './pipeline.js'
 import { defaultInconsistentStream, type InconsistentReason } from '../streams/decomposition-consumer.js'
 import type { OracleDraft } from '../db/oracle.types.js'
+import type { UserContext } from '../types/user-context.js'
 
 /** Supervisor DecompositionConsumer가 구독하는 스트림(manager:decomposition:{channel='main'}). */
 export const DECOMPOSE_STREAM = 'manager:decomposition:main'
@@ -30,18 +31,24 @@ export interface ProduceResult {
   escalated: boolean
 }
 
-/** decomposition.emitted 발행(ok·fallback 공용). oracleDrafts는 ok 경로만 채움(기본 []·additive). */
+/** decomposition.emitted 발행(ok·fallback 공용). oracleDrafts는 ok 경로만 채움(기본 []·additive).
+ *  userContext(P4a-2)는 존재 시에만 payload에 포함 — 그래프 영속→실행 워커 주입 경로. */
 async function emitWorkPackages(
   deps: ProduceDeps,
   workflowId: string,
   workPackages: WorkPackage[],
   oracleDrafts: OracleDraft[] = [],
+  userContext?: UserContext,
 ): Promise<void> {
   const envelope = makeEnvelope(
     { correlationId: workflowId, causationId: null, workflowId, stepId: 'decomposition.emitted', attemptId: 0 },
     deps.now?.(),
   )
-  await deps.publish(DECOMPOSE_STREAM, { envelope, type: 'decomposition.emitted', payload: { workPackages, oracleDrafts } })
+  await deps.publish(DECOMPOSE_STREAM, {
+    envelope,
+    type: 'decomposition.emitted',
+    payload: { workPackages, oracleDrafts, ...(userContext !== undefined && { userContext }) },
+  })
 }
 
 /**
@@ -54,6 +61,7 @@ export async function produceDecomposition(
   intent: string,
   workflowId: string,
   deps: ProduceDeps,
+  userContext?: UserContext,
 ): Promise<ProduceResult> {
   let result: DecomposeResult
   try {
@@ -68,7 +76,7 @@ export async function produceDecomposition(
       error: err instanceof Error ? err.message : String(err),
     })
     const workPackages = fallbackWorkPackages(intent)
-    await emitWorkPackages(deps, workflowId, workPackages)
+    await emitWorkPackages(deps, workflowId, workPackages, [], userContext)
     return { emitted: workPackages.length, escalated: false }
   }
 
@@ -99,6 +107,6 @@ export async function produceDecomposition(
     singleRoleStoryIds: result.singleRoleStoryIds.length,
   })
   // ok 경로만 oracleDrafts 전달 — inconsistent/기술 fallback 경로는 기본 [](degraded·blocker#5).
-  await emitWorkPackages(deps, workflowId, result.workPackages, result.oracleDrafts)
+  await emitWorkPackages(deps, workflowId, result.workPackages, result.oracleDrafts, userContext)
   return { emitted: result.workPackages.length, escalated: false }
 }

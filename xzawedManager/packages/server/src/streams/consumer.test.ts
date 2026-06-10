@@ -16,6 +16,33 @@ describe('OrchestratorToManagerMessageSchema — decompose_request', () => {
     expect(r.success).toBe(false)
   })
 
+  it('userContext가 있으면 함께 파싱(P4a-2 additive)', () => {
+    const r = OrchestratorToManagerMessageSchema.safeParse({
+      sessionId: 's', messageId: 'm', timestamp: 1, type: 'decompose_request',
+      payload: { intent: 'build it', userContext: { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' } },
+    })
+    expect(r.success).toBe(true)
+    if (r.success && r.data.type === 'decompose_request') {
+      expect(r.data.payload.userContext?.workspaceRoot).toBe('/workspace/p1')
+    }
+  })
+
+  it('불량 userContext(필수 필드 누락)는 거부', () => {
+    const r = OrchestratorToManagerMessageSchema.safeParse({
+      sessionId: 's', messageId: 'm', timestamp: 1, type: 'decompose_request',
+      payload: { intent: 'build it', userContext: { userId: 'u1' } },
+    })
+    expect(r.success).toBe(false)
+  })
+
+  it('상대경로 workspaceRoot는 Zod 단계에서 거부(절대경로 강제 — false-success 방지)', () => {
+    const r = OrchestratorToManagerMessageSchema.safeParse({
+      sessionId: 's', messageId: 'm', timestamp: 1, type: 'decompose_request',
+      payload: { intent: 'build it', userContext: { userId: 'u1', projectId: 'p1', workspaceRoot: 'projects/p1' } },
+    })
+    expect(r.success).toBe(false)
+  })
+
   it('기존 task_request도 여전히 파싱(회귀 0)', () => {
     const r = OrchestratorToManagerMessageSchema.safeParse({
       sessionId: 's', messageId: 'm', timestamp: 1, type: 'task_request',

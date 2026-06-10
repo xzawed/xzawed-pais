@@ -46,6 +46,22 @@ d('task-graph 영속 통합 (pg)', () => {
     expect(got?.workPackages.map((w) => w.id)).toEqual(['wp-1', 'wp-9'])
   })
 
+  it('userContext 라운드트립(githubRepo 중첩 포함) + 재분해가 userContext 없이 오면 null 교체(P4a-2 스펙 §6)', async () => {
+    const wfId = `wf-${Date.now()}-uc`
+    const repo = new TaskGraphRepo(pool)
+    const uc = {
+      userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1',
+      githubRepo: { owner: 'o', repo: 'r', branch: 'main' },
+    }
+    await repo.upsertGraph({ workflowId: wfId, workPackages: [wp('wp-1')], userContext: uc })
+    expect((await repo.getGraph(wfId))?.userContext).toEqual(uc) // JSONB 왕복 중첩 보존
+
+    await repo.upsertGraph({ workflowId: wfId, workPackages: [wp('wp-1')] }) // 재분해(컨텍스트 미전달)
+    const after = await repo.getGraph(wfId)
+    expect(after?.version).toBe(2)
+    expect(after?.userContext).toBeNull() // graph_dag 통째 교체 — 가변 프로젝션 의미(유실은 스펙 §6 문서화)
+  })
+
   it('appendTransition 다중 → transitions seq ASC, latestStates는 WP별 최신', async () => {
     const wfId = `wf-${Date.now()}-c`
     const repo = new TaskGraphRepo(pool)

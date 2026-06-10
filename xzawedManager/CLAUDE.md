@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 588/609 테스트, 21 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
+현재 상태: **구현 완료 (server 609/632 테스트, 23 skip)** — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
 **최근 반영(PR-1 게이트 fail-safe)**: 승인 응답이 파싱 불가·비객체·미지 decision이면 자동 승인(fail-open)하지 않고 `needs_human`으로 사람 재검토를 요청한다(같은 산출물·사유 안내, `MAX_GATE_REASKS` 초과 시 세션 중단). revise 소진도 무음 통과 대신 에스컬레이션. `MANAGER_GATE_FAILSAFE=false`로 레거시 fail-open 복원 가능. senario M8(무음 통과 금지)·N1(불확실=실패) 구현.
 
@@ -64,7 +64,7 @@ packages/
 | `task_request` | Claude tool-calling 루프 시작. `payload.gateMode`(`manual\|auto`) 있으면 세션 기본 승인 모드로 적용(`setGateDefaultMode`) |
 | `info_response` | 대기 중 루프 재개. `answer`가 승인 게이트 응답이면 JSON 결정(`{decision: approve\|revise\|abort, rememberAuto?, saveToWiki?, wikiSummary?, feedback?}`)으로 해석 (`parseDecision`) |
 | `abort` | 루프 즉시 중단 |
-| `decompose_request` | `payload.intent` → flag on(`MANAGER_DECOMPOSE_ENABLED`)이면 4단계 LLM 분해+P4 repair 루프(소진 시 에스컬레이션)→decomposition.emitted 발행(Supervisor 소비). flag off면 분기 무시 |
+| `decompose_request` | `payload.intent` → flag on(`MANAGER_DECOMPOSE_ENABLED`)이면 4단계 LLM 분해+P4 repair 루프(소진 시 에스컬레이션)→decomposition.emitted 발행(Supervisor 소비). flag off면 분기 무시. `payload.userContext`(optional, P4a-2) 있으면 `ensureWorkspace` 후 그래프에 영속→실행 워커 주입 |
 
 **발신:** `manager:to-orchestrator:{sessionId}`
 | type | 시점 |
@@ -224,7 +224,17 @@ P1d Task Manager의 디스패치 루프(dispatch→lease→complete→re-dispatc
 - **dispatch/reclaim 신호 발행**: `DispatchDeps.publish?`(P4-1) 주입 시 `handleDispatch`의 recorded 분기에서 `publishDispatchSignal(publish, wf, wpId, 0)` 발행(deduped는 무발행). `SweepDeps.publish?`+`LeaseSweeperDeps.publish?` 주입 시 reclaim 분기에서 `publishDispatchSignal(publish, wf, wpId, nextAttempt)` 발행(escalate는 무발행). 미주입(flag off)이면 무발행 — 회귀 0.
 - **스트림 단일출처(드리프트 0)**: 트리거 스트림 `manager:dispatched:main`(WorkerConsumer prefix+channel). 완료 스트림 `manager:completions:main`=`supervisor.ts COMPLETION_PREFIX('manager:completions')`+`DEFAULT_CHANNEL('main')`. `createSupervisor`가 worker의 `completionStream`을 `${COMPLETION_PREFIX}:${DEFAULT_CHANNEL}`로 주입해 워커 완료 발행 스트림과 기존 완료 소비자 구독 스트림을 단일 출처로 일치.
 - **Supervisor·server.ts 배선**: `SupervisorConfig.taskWorker`(=`MANAGER_TASK_WORKER`)·`SupervisorDeps.handlers?`(tool명→AgentExecutor). `createSupervisor`가 `workerActive=shouldWireWorker(taskWorker, handlers!==undefined)`면 dispatch·leaseSweeper deps에 `publish` 합류 + `WorkerConsumer`를 전용 Redis 연결(makeRedis 1회 더)로 조건부 생성→start/stop 배선. `server.ts`는 `MANAGER_TASK_WORKER`면 `registry.get`으로 답변 가능 5종(`develop_code`·`design_ui`·`run_tests`·`build_project`·`security_audit` — watcher 제외) 핸들러 맵을 구성해 `handlers`로 주입(`ToolHandler.execute(input, sessionId)`가 `AgentExecutor` 구조 만족). flag off면 handlers 미주입·taskWorker=false → 미배선.
-- **DB-level 통합 테스트(`test/execution-worker.integration.test.ts`, skip-if-no-DB)**: dispatch_signal→`handleWpDispatchSignal`(mock 에이전트 성공)→wp.completion capture→`handleCompletion`→DONE 전이를 실 Postgres로 실증(루프 닫힘 검증).
+- **DB-level 통합 테스트(`test/execution-worker.integration.test.ts`, skip-if-no-DB)**: dispatch_signal→`handleWpDispatchSignal`(mock 에이전트 성공)→wp.completion capture→`handleCompletion`→DONE 전이를 실 Postgres로 실증(루프 닫힘 검증) + userContext 영속→워커 주입 라운드트립(P4a-2).
+
+## 워크스페이스 컨텍스트 주입 (P4a-2)
+
+P4-1의 핵심 한계(§6 Codex NEW-2 — `buildWorkerInput`이 placeholder `projectPath:'.'`라 실 에이전트가 `fs.realpath` 검증에서 거부)를 해소한다. 분해 시점의 `UserContext`를 그래프에 영속하고 워커가 에이전트 호출에 주입해 **실 에이전트 성공 완료가 성립**한다. 설계 스펙 [2026-06-10-p4a-2-workspace-context-injection-design.md](../../docs/superpowers/specs/2026-06-10-p4a-2-workspace-context-injection-design.md). **새 migration·flag 없음**(graph_dag JSONB additive·기존 flag 게이트 보존).
+
+- **계약(additive optional)**: `decompose_request.payload.userContext`(`AbsoluteUserContextSchema` — userId·projectId·workspaceRoot·githubRepo?, **workspaceRoot 절대경로 강제** refine — 상대경로는 manager cwd mkdir→에이전트 cwd 해석으로 developer false-success를 만들므로 Zod 단계 거부) → `decomposition.emitted.payload.userContext`(위반 시 invalid_schema DLQ) → `task_graphs.graph_dag = {workPackages, userContext?}`.
+- **스레딩**: sessions.route → `handleDecomposeRequest(..., userContext?, ensureWs)`(trigger try 안에서 `ensureWorkspace` — task_request 경로 대칭·실패 시에도 finally cleanup) → `produceDecomposition(..., userContext?)`(ok·기술 fallback 경로 포함, inconsistent 경로 제외) → `handleDecompositionEmitted`가 `upsertGraph`에 전달. **실패 무음 금지(M8)**: trigger catch가 모든 실패(워크스페이스 검증·발행)를 `type:'error'`로 요청자에게 발행 후 rethrow — 미발행 시 세션이 응답 없이 해체돼 무한 대기하던 결함 해소(에러 발행 실패는 원 오류 보존).
+- **영속·조회(`TaskGraphRepo`)**: `PersistGraphInput.userContext?`(null/undefined면 키 생략)·`StoredGraph.userContext: UserContext | null`. `getGraph`는 **safeParse tolerant**(AbsoluteUserContextSchema) — 레거시 행은 무로그 null, 키가 있는데 실패(손상·상대경로)면 **warn 로그 후 null**(escalate 폭주 원인 추적·디스패치 경로 보호·워커는 placeholder 폴백 우아한 강등). workPackages는 기존대로 strict.
+- **워커 주입(`worker.ts`)**: `AgentExecutor.execute(input, sessionId, userContext?)`(3번째 옵셔널 — `RedisAgentHandler.execute` 시그니처와 일치·2-인자 구현도 구조적 할당 가능). `buildWorkerInput(wp, userContext?)`가 `projectPath = userContext?.workspaceRoot ?? '.'` — builder/tester `validatePath`는 `fs.realpath(projectPath)`를 **에이전트 cwd 기준**으로 해석하므로 절대경로가 cwd 무관 통과(NEW-2의 실체). **intent는 4000자 클램프**(planner/designer `.max(4000)` 정합 — 초과 시 DLQ→타임아웃 방지·AC 전체는 plan에 무손실 보존). `handleWpDispatchSignal`이 `stored.userContext`를 입력·execute 양쪽에 전달 → RedisAgentHandler가 `payload.userContext`로 spread → 에이전트 `resolveWorkspaceRoot(payload.userContext, config.workspaceRoot)` 소비.
+- **한계(후속)**: 재분해가 userContext 없이 오면 graph_dag 교체로 유실(가변 프로젝션 의미·트리거 UX가 항상 채우는 것으로 해소 예정). 모노레포 서브프로젝트 라우팅·검증 trivial(4b)은 범위 밖.
 
 ## AgentQuery 교차질의
 

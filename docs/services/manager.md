@@ -78,8 +78,9 @@ interface DecomposeRequestMessage {
   messageId: string
   timestamp: number
   type: 'decompose_request'
-  // MANAGER_DECOMPOSE_ENABLED=true면 4단계 LLM 분해 → decomposition.emitted 발행
-  payload: { intent: string }
+  // MANAGER_DECOMPOSE_ENABLED=true면 4단계 LLM 분해 → decomposition.emitted 발행.
+  // userContext(P4a-2)는 그래프에 영속돼 실행 워커가 에이전트 호출에 주입(워크스페이스 컨텍스트).
+  payload: { intent: string; userContext?: UserContext }
 }
 
 interface UserContext {
