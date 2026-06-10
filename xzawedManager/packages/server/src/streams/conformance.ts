@@ -33,9 +33,20 @@ export function buildConformanceAuthorPlan(wp: WorkPackage, scenarios: OracleSce
   return plan.slice(0, 4000)
 }
 
-/** develop_code author 결과 artifacts 중 conformance 테스트 파일만 선별(구분자 정규화·`<wpId>.` 점-경계 앵커로
- *  인접 wpId(예: wp-7 vs wp-70) false-positive 차단). 파일은 `<CONFORMANCE_DIR>/<wpId>.<ext>` 컨벤션. */
+/** 인식하는 실행 가능 테스트 파일 마커(설계 §4 목록: `.test.`·`.spec.`·`_test.`·`test_`·`.py`). 비테스트
+ *  산출물(.md·.txt·.json·.fixture.json 등)을 제외해 "테스트 미작성=fail-closed"(decision #8) 가드가
+ *  무력화되지 않게 한다 — 비실행 파일을 testFiles로 넘기면 0-테스트가 failed:0으로 통과(false-pass)된다. */
+const TEST_FILE_RE = /\.test\.|\.spec\.|_test\.|(?:^|\/)test_|\.py$/i
+
+/** develop_code author 결과 artifacts 중 conformance 테스트 파일만 선별. 두 불변식(설계 §4):
+ *  ① **좌측 prefix 앵커** `<CONFORMANCE_DIR>/<wpId>.` — `<wpId>.` 점-경계로 인접 wpId(wp-7 vs wp-70) 차단 +
+ *     워크스페이스 루트 고정으로 node_modules 등 깊은 경로에 박힌 동명 파일 오지정 차단(보안). 구분자 정규화·leading `./` 허용.
+ *  ② **테스트 확장자 필터**(TEST_FILE_RE) — 컨벤션 경로 아래여도 비테스트 산출물은 제외(fail-closed 가드 유지).
+ *  반환은 원본 artifact 문자열(정규화는 매칭에만 사용). */
 export function selectConformanceTestFiles(artifacts: string[], wpId: string): string[] {
-  const needle = `${CONFORMANCE_DIR}/${wpId}.`
-  return artifacts.filter((a) => a.replace(/\\/g, '/').includes(needle))
+  const prefix = `${CONFORMANCE_DIR}/${wpId}.`
+  return artifacts.filter((a) => {
+    const norm = a.replaceAll('\\', '/').replace(/^\.\//, '')
+    return norm.startsWith(prefix) && TEST_FILE_RE.test(norm)
+  })
 }

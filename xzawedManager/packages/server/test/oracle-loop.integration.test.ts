@@ -61,4 +61,43 @@ describe.skipIf(!url)('P3-2 오라클 루프 통합(영속→승인→DoR)', () 
       await closePool()
     }
   })
+
+  // P4b-2 설계 §8: approvedOracleForStory가 실 Postgres에서 (a) 동일 story 다중 approved 중 최신 version을 선택하고
+  // (b) 미승인(pending)·(c) 타 story는 null을 반환하는지 실증(이전엔 SQL 문자열 mock + 단일 happy-path만).
+  it('approvedOracleForStory: 동일 story 다중 approved 중 최신 version·미승인/타 story→null (P4b-2)', async () => {
+    const pool = createPool(url!)
+    try {
+      await runMigrations(pool)
+      const repo = new OracleRepo(pool)
+      const wf = `wf-orc-afs-${Date.now()}`
+
+      // 같은 (wf, story)에 approved 오라클 2개(서로 다른 oracleId·version 1·2) — ORDER BY version DESC LIMIT 1이 최신을 골라야.
+      await repo.upsert({
+        oracleId: `${wf}-s1-v1`, workflowId: wf, storyId: 's1', version: 1, status: 'approved',
+        scenarios: [{ id: 'old', title: 'old', given: [], when: '', thenSteps: ['x'], status: 'human_approved' }], coverage: { AC1: ['old'] },
+      })
+      await repo.upsert({
+        oracleId: `${wf}-s1-v2`, workflowId: wf, storyId: 's1', version: 2, status: 'approved',
+        scenarios: [{ id: 'new', title: 'new', given: [], when: '', thenSteps: ['y'], status: 'human_approved' }], coverage: { AC1: ['new'] },
+      })
+      const latest = await repo.approvedOracleForStory(wf, 's1')
+      expect(latest?.scenarios.map((s) => s.id)).toEqual(['new'])  // 최신 version(2)
+      expect(latest?.coverage).toEqual({ AC1: ['new'] })
+
+      // (b) 미승인(pending) story → null
+      await repo.upsertDraft({
+        workflowId: wf, storyId: 's2',
+        scenarios: [{ id: 's2-sc1', title: '', given: [], when: '', thenSteps: [], status: 'drafted' }], coverage: {},
+      })
+      expect(await repo.approvedOracleForStory(wf, 's2')).toBeNull()
+
+      // (c) 타/미존재 story → null
+      expect(await repo.approvedOracleForStory(wf, 's-none')).toBeNull()
+    } finally {
+      await pool.query("DELETE FROM manager_outbox WHERE message::text LIKE '%wf-orc-%'").catch(() => undefined)
+      await pool.query("DELETE FROM manager_events WHERE session_id LIKE 'wf-orc-%'").catch(() => undefined)
+      await pool.query("DELETE FROM oracles WHERE workflow_id LIKE 'wf-orc-%'").catch(() => undefined)
+      await closePool()
+    }
+  })
 })

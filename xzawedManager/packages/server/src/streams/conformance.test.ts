@@ -50,4 +50,35 @@ describe('selectConformanceTestFiles', () => {
     const artifacts = ['.xzawed/conformance/wp-7.test.ts', '.xzawed/conformance/wp-70.test.ts']
     expect(selectConformanceTestFiles(artifacts, 'wp-7')).toEqual(['.xzawed/conformance/wp-7.test.ts'])
   })
+
+  // 설계 §4·§8: 테스트 확장자 필터 — 비테스트 산출물은 컨벤션 경로 아래여도 제외해야 fail-closed(테스트 미작성)
+  // 가드가 무력화되지 않는다(decision #8). .md/.txt/.json 같은 비실행 파일을 testFiles로 넘기면 0-테스트 통과(false-pass)가 된다.
+  it('excludes non-test artifacts under the conformance dir (.md/.txt/.json) — fail-closed guard intact', () => {
+    const artifacts = [
+      '.xzawed/conformance/wp-7.md',
+      '.xzawed/conformance/wp-7.txt',
+      '.xzawed/conformance/wp-7.fixture.json',
+    ]
+    expect(selectConformanceTestFiles(artifacts, 'wp-7')).toEqual([])
+  })
+
+  it('keeps recognized test extensions including python (.test.ts/.spec.tsx/.py)', () => {
+    const artifacts = [
+      '.xzawed/conformance/wp-7.test.ts',
+      '.xzawed/conformance/wp-7.spec.tsx',
+      '.xzawed/conformance/wp-7.py',
+    ]
+    expect(selectConformanceTestFiles(artifacts, 'wp-7')).toEqual(artifacts)
+  })
+
+  it('accepts a leading ./ on the convention path', () => {
+    expect(selectConformanceTestFiles(['./.xzawed/conformance/wp-7.test.ts'], 'wp-7')).toEqual(['./.xzawed/conformance/wp-7.test.ts'])
+  })
+
+  // 보안(좌측 앵커): 컨벤션 경로가 워크스페이스 루트가 아닌 곳(node_modules 등)에 박혀 있으면 author가
+  // 임의의 워크스페이스 내 파일을 conf-run 대상으로 오지정할 수 있다 — prefix 좌측 앵커로 차단.
+  it('excludes a conformance-dir substring embedded deeper in the path (not left-anchored)', () => {
+    const artifacts = ['node_modules/x/.xzawed/conformance/wp-7.test.ts', 'vendor/copy/.xzawed/conformance/wp-7.spec.ts']
+    expect(selectConformanceTestFiles(artifacts, 'wp-7')).toEqual([])
+  })
 })
