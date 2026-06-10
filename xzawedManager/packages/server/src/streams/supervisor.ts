@@ -124,6 +124,8 @@ export interface SupervisorConfig {
   oracleDor: boolean
   /** P4-1: 실행 워커(WorkerConsumer 배선 + dispatch/reclaim 신호 발행) 활성(=MANAGER_TASK_WORKER). */
   taskWorker: boolean
+  /** P4b-1: 워커 검증 게이트(완료 발행 전 fail-closed 실 검증) 활성(=MANAGER_WP_VERIFY, 기본 off). */
+  wpVerify?: boolean
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
@@ -193,6 +195,7 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     ? new WorkerConsumer(makeRedis(), {
         repo: deps.repo, handlers: deps.handlers, publish: deps.publish,
         completionStream: `${COMPLETION_PREFIX}:${DEFAULT_CHANNEL}`,
+        verifyEnabled: config.wpVerify === true,
       })
     : undefined
 

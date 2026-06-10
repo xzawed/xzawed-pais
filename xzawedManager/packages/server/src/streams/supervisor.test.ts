@@ -143,4 +143,9 @@ describe('createSupervisor worker 배선 (P4-1)', () => {
   it('taskWorker=true + handlers 주입이면 조립 성공(worker 배선)', () => {
     expect(createSupervisor(makeRedis, { ...base, handlers }, cfg({ taskWorker: true }))).toBeInstanceOf(Supervisor)
   })
+  it('wpVerify=true + worker 배선이면 조립 성공(검증 게이트 스레딩·P4b-1)', () => {
+    expect(
+      createSupervisor(makeRedis, { ...base, handlers }, { ...cfg({ taskWorker: true }), wpVerify: true }),
+    ).toBeInstanceOf(Supervisor)
+  })
 })
