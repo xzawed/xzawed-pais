@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest'
-import { judgePrimaryResult, planVerificationChecks } from './verify.js'
+import { describe, it, expect, vi } from 'vitest'
+import type { WorkPackage } from '@xzawed/agent-streams'
+import {
+  judgePrimaryResult, planVerificationChecks, verifyWp, publishVerificationFailed,
+  WP_VERIFICATION_FAILED, type VerifyDeps,
+} from './verify.js'
 
 describe('judgePrimaryResult — 결과-근거 판정(fail-closed)', () => {
   it('run_tests: success=true·failed=0 → ok', () => {
@@ -39,5 +43,85 @@ describe('planVerificationChecks — 파생 체크 플랜', () => {
     expect(planVerificationChecks('build_project')).toEqual([])
     expect(planVerificationChecks('design_ui')).toEqual([])
     expect(planVerificationChecks('security_audit')).toEqual([])
+  })
+})
+
+const wpFix = (over: Partial<WorkPackage> = {}): WorkPackage => ({
+  id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null,
+  acceptanceCriteria: ['ac1'], dependencies: [], attributionCounters: {}, status: 'draft', ...over,
+})
+const buildInput = (wp: WorkPackage) => ({ projectPath: '/ws', wp: wp.id })
+
+describe('verifyWp — 검증 오케스트레이션(fail-closed·never-throw)', () => {
+  const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/ws' }
+  const okExec = () => ({ execute: vi.fn().mockResolvedValue({ success: true, failed: 0 }) })
+
+  it('결과-근거 판정 실패(run_tests WP가 success=false) → 파생 체크 없이 즉시 fail', async () => {
+    const deps: VerifyDeps = { handlers: {}, buildInput, workflowId: 'wf1' }
+    const v = await verifyWp('run_tests', wpFix(), { success: false, failed: 3 }, deps)
+    expect(v.ok).toBe(false)
+  })
+  it('develop_code: 빌드·테스트 둘 다 통과 → ok (호출 순서: build → test)', async () => {
+    const calls: string[] = []
+    const mk = (name: string) => ({
+      execute: vi.fn().mockImplementation(() => { calls.push(name); return Promise.resolve({ success: true, failed: 0 }) }),
+    })
+    const deps: VerifyDeps = {
+      handlers: { build_project: mk('build'), run_tests: mk('test') },
+      buildInput, userContext: uc, workflowId: 'wf1',
+    }
+    expect(await verifyWp('develop_code', wpFix(), { artifacts: [] }, deps)).toEqual({ ok: true })
+    expect(calls).toEqual(['build', 'test'])
+  })
+  it('develop_code: 빌드 실패 → fail-fast(run_tests 미호출)', async () => {
+    const test = okExec()
+    const deps: VerifyDeps = {
+      handlers: { build_project: { execute: vi.fn().mockResolvedValue({ success: false }) }, run_tests: test },
+      buildInput, userContext: uc, workflowId: 'wf1',
+    }
+    const v = await verifyWp('develop_code', wpFix(), {}, deps)
+    expect(v.ok).toBe(false)
+    expect(test.execute).not.toHaveBeenCalled()
+  })
+  it('체크 핸들러 execute throw → fail(불확실=실패·never-throw)', async () => {
+    const deps: VerifyDeps = {
+      handlers: { build_project: { execute: vi.fn().mockRejectedValue(new Error('boom')) }, run_tests: okExec() },
+      buildInput, userContext: uc, workflowId: 'wf1',
+    }
+    const v = await verifyWp('develop_code', wpFix(), {}, deps)
+    expect(v.ok).toBe(false)
+    if (!v.ok) expect(v.reason).toContain('build_project')
+  })
+  it('체크 핸들러 미주입 → fail(fail-closed)', async () => {
+    const deps: VerifyDeps = { handlers: {}, buildInput, userContext: uc, workflowId: 'wf1' }
+    expect((await verifyWp('develop_code', wpFix(), {}, deps)).ok).toBe(false)
+  })
+  it('체크 execute에 buildInput(wp, uc) 결과와 userContext가 전달된다', async () => {
+    const build = okExec()
+    const deps: VerifyDeps = {
+      handlers: { build_project: build, run_tests: okExec() },
+      buildInput: (wp, u) => ({ projectPath: u?.workspaceRoot, id: wp.id }),
+      userContext: uc, workflowId: 'wf1',
+    }
+    await verifyWp('develop_code', wpFix(), {}, deps)
+    expect(build.execute).toHaveBeenCalledWith({ projectPath: '/ws', id: 'a' }, 'wf1', uc)
+  })
+  it('파생 체크 비대상 도구(design_ui) → 즉시 ok', async () => {
+    const deps: VerifyDeps = { handlers: {}, buildInput, workflowId: 'wf1' }
+    expect(await verifyWp('design_ui', wpFix({ owningRole: 'designer' }), null, deps)).toEqual({ ok: true })
+  })
+})
+
+describe('publishVerificationFailed — 관측 이벤트', () => {
+  it('manager:events:{wf}에 wp.verification.failed 발행(멱등키=wf:type:wpId:attempt·reason 클램프)', async () => {
+    const publish = vi.fn().mockResolvedValue('1-0')
+    await publishVerificationFailed(publish, 'wf1', 'a', 2, 'x'.repeat(900), 1000)
+    const [stream, msg] = publish.mock.calls[0]!
+    expect(stream).toBe('manager:events:wf1')
+    expect(msg.type).toBe(WP_VERIFICATION_FAILED)
+    expect(msg.envelope.idempotencyKey).toBe('wf1:wp.verification.failed:a:2')
+    expect(msg.envelope.attemptId).toBe(2)
+    expect(msg.payload.wpId).toBe('a')
+    expect(msg.payload.reason.length).toBeLessThanOrEqual(500)
   })
 })

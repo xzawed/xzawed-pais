@@ -1,6 +1,13 @@
 import { z } from 'zod'
+import { makeEnvelope } from '@xzawed/agent-streams'
+import type { WorkPackage } from '@xzawed/agent-streams'
+import type { UserContext } from '../types/user-context.js'
+import type { Publish } from './decomposition-consumer.js'
+import type { AgentExecutor } from './worker.js'
 
 export const WP_VERIFICATION_FAILED = 'wp.verification.failed'
+/** 관측 이벤트 reason 상한 — 에이전트 오류 메시지 폭주가 페이로드를 키우지 않도록. */
+const REASON_MAX = 500
 
 export type VerificationVerdict = { ok: true } | { ok: false; reason: string }
 
@@ -37,4 +44,52 @@ export function judgePrimaryResult(tool: string, result: unknown): VerificationV
 export function planVerificationChecks(tool: string): string[] {
   if (tool === 'develop_code') return ['build_project', 'run_tests']
   return []
+}
+
+export interface VerifyDeps {
+  /** tool명→핸들러(워커 deps.handlers 재사용 — server.ts 5종 맵). */
+  handlers: Record<string, AgentExecutor>
+  /** 체크 입력 생성(워커 buildWorkerInput 재사용 — 5종 union 검증 경로). */
+  buildInput: (wp: WorkPackage, userContext?: UserContext) => unknown
+  userContext?: UserContext
+  workflowId: string
+}
+
+/**
+ * WP 검증(P4b-1 correctness 채널 골격): ①결과-근거 판정 ②파생 체크 실 재실행(fail-fast).
+ * never-throw — 모든 불확실(핸들러 부재·throw·파싱 실패)은 fail verdict(fail-closed, N1).
+ * 검증 통과는 LLM 선언이 아니라 tester/builder의 실 spawn 실행 결과 필드로만 성립한다.
+ */
+export async function verifyWp(
+  tool: string, wp: WorkPackage, result: unknown, deps: VerifyDeps,
+): Promise<VerificationVerdict> {
+  const primary = judgePrimaryResult(tool, result)
+  if (!primary.ok) return primary
+  for (const check of planVerificationChecks(tool)) {
+    const handler = deps.handlers[check]
+    if (!handler) return { ok: false, reason: `${check}: 체크 핸들러 미주입` }
+    let checkResult: unknown
+    try {
+      checkResult = await handler.execute(deps.buildInput(wp, deps.userContext), deps.workflowId, deps.userContext)
+    } catch (err) {
+      return { ok: false, reason: `${check}: 체크 실행 실패 — ${err instanceof Error ? err.message : String(err)}` }
+    }
+    const verdict = judgePrimaryResult(check, checkResult)
+    if (!verdict.ok) return verdict
+  }
+  return { ok: true }
+}
+
+/** 검증 실패 관측 이벤트(M8 무음 금지). best-effort — 발행 실패해도 완료 부재가 load-bearing 신호
+ *  (lease 백스톱이 reclaim→escalate 보장). 스트림은 decomposition.inconsistent와 동일 패턴. */
+export async function publishVerificationFailed(
+  publish: Publish, workflowId: string, wpId: string, attempt: number, reason: string, now?: number,
+): Promise<void> {
+  const envelope = makeEnvelope(
+    { correlationId: workflowId, causationId: null, workflowId, stepId: `${WP_VERIFICATION_FAILED}:${wpId}`, attemptId: attempt },
+    now ?? Date.now(),
+  )
+  await publish(`manager:events:${workflowId}`, {
+    envelope, type: WP_VERIFICATION_FAILED, payload: { wpId, attempt, reason: reason.slice(0, REASON_MAX) },
+  })
 }
