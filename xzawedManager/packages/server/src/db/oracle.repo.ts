@@ -71,6 +71,24 @@ export class OracleRepo {
     }))
   }
 
+  /** P4b-2: 특정 story의 approved 오라클(최신 version)에서 human_approved 시나리오 + coverage 반환.
+   *  conformance author가 인코딩할 베이스라인. 승인 행 없음·human_approved 0개면 null(→ 검증 skip). */
+  async approvedOracleForStory(
+    workflowId: string, storyId: string,
+  ): Promise<{ scenarios: OracleScenario[]; coverage: Record<string, string[]> } | null> {
+    const { rows } = await this.pool.query<{ scenarios: OracleScenario[]; coverage: Record<string, string[]> }>(
+      `SELECT scenarios, coverage FROM oracles
+       WHERE workflow_id = $1 AND story_id = $2 AND status = $3
+       ORDER BY version DESC LIMIT 1`,
+      [workflowId, storyId, ORACLE_APPROVED],
+    )
+    const row = rows[0]
+    if (!row) return null
+    const approved = OracleScenarioSchema.array().parse(row.scenarios).filter((s) => s.status === SCENARIO_APPROVED)
+    if (approved.length === 0) return null
+    return { scenarios: approved, coverage: row.coverage ?? {} }
+  }
+
   /** 승인: SELECT FOR UPDATE → (status≠pending이면 null·blocker#8) → drafted 시나리오 human_approved 전이 →
    *  UPDATE(status=approved) + oracle.approved 이벤트(아웃박스). drafted 없으면 전이 no-op(회귀 0). */
   async approve(oracleId: string, approvedBy: string): Promise<{ eventId: string } | null> {
