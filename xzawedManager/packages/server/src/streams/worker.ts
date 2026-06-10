@@ -7,6 +7,7 @@ import type { UserContext } from '../types/user-context.js'
 import type { Publish } from './decomposition-consumer.js'
 import { WpDispatchSignalSchema, type WpDispatchSignalMessage } from './dispatch-signal.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
+import { verifyWp, publishVerificationFailed } from './verify.js'
 
 const WORKER_GROUP = 'manager-worker-consumers'
 const STREAM_PREFIX = 'manager:dispatched'
@@ -28,12 +29,16 @@ export interface WorkerDeps {
   completionStream?: string
   buildInput?: (wp: WorkPackage, userContext?: UserContext) => unknown
   now?: () => number
+  /** P4b-1: 검증 게이트(=MANAGER_WP_VERIFY). on이면 완료 발행 전 verifyWp fail-closed 판정 —
+   *  실패 시 완료 미발행(lease 백스톱이 reclaim→escalate) + wp.verification.failed 관측 이벤트. */
+  verifyEnabled?: boolean
 }
 
 export type WorkerOutcome =
   | { status: 'completed'; wpId: string }
   | { status: 'skipped'; reason: 'wp_not_found' | 'unknown_role' | 'no_handler' }
   | { status: 'failed'; reason: 'agent_error' }
+  | { status: 'verification_failed'; wpId: string; reason: string }
 
 /** WP→에이전트 입력. 필수 필드는 runner.ts `buildAgentQueryPayload`의 **검증된 union**과
  *  같은 타입(5종 safeParse 통과·Zod 잉여 키 strip). intent/plan에 WP 설명을 담는다.
@@ -87,10 +92,26 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
   if (!handler) return { status: 'skipped', reason: 'no_handler' }
   const userContext = stored?.userContext ?? undefined
   const input = (deps.buildInput ?? buildWorkerInput)(wp, userContext)
+  let result: unknown
   try {
-    await handler.execute(input, workflowId, userContext)
+    result = await handler.execute(input, workflowId, userContext)
   } catch {
     return { status: 'failed', reason: 'agent_error' } // 신호 미발행 → lease 타임아웃 reclaim
+  }
+  // P4b-1 검증 게이트: trivial(무예외=성공)을 실행 ground truth fail-closed 판정으로 교체(N1).
+  // 실패 = 완료 미발행(lease 백스톱 reclaim→escalate·N5) + 관측 이벤트(M8 무음 금지·best-effort).
+  if (deps.verifyEnabled) {
+    const verdict = await verifyWp(tool, wp, result, {
+      handlers: deps.handlers, buildInput: deps.buildInput ?? buildWorkerInput, userContext, workflowId,
+    })
+    if (!verdict.ok) {
+      try {
+        await publishVerificationFailed(deps.publish, workflowId, wpId, msg.payload.attempt, verdict.reason, deps.now?.())
+      } catch (err) {
+        console.error('[worker] wp.verification.failed 발행 실패(완료 부재가 reclaim 보장):', err)
+      }
+      return { status: 'verification_failed', wpId, reason: verdict.reason }
+    }
   }
   await publishCompletion(deps, workflowId, wpId, msg.payload.attempt)
   return { status: 'completed', wpId }
