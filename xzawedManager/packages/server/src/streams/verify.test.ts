@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { WorkPackage } from '@xzawed/agent-streams'
 import {
-  judgePrimaryResult, planVerificationChecks, verifyWp, publishVerificationFailed,
+  judgePrimaryResult, planVerificationChecks, verifyWp, publishVerificationFailed, verifySessionId,
   WP_VERIFICATION_FAILED, type VerifyDeps,
 } from './verify.js'
 
@@ -57,7 +57,7 @@ describe('verifyWp — 검증 오케스트레이션(fail-closed·never-throw)', 
   const okExec = () => ({ execute: vi.fn().mockResolvedValue({ success: true, failed: 0 }) })
 
   it('결과-근거 판정 실패(run_tests WP가 success=false) → 파생 체크 없이 즉시 fail', async () => {
-    const deps: VerifyDeps = { handlers: {}, buildInput, workflowId: 'wf1' }
+    const deps: VerifyDeps = { handlers: {}, buildInput, workflowId: 'wf1', attempt: 0 }
     const v = await verifyWp('run_tests', wpFix(), { success: false, failed: 3 }, deps)
     expect(v.ok).toBe(false)
   })
@@ -68,7 +68,7 @@ describe('verifyWp — 검증 오케스트레이션(fail-closed·never-throw)', 
     })
     const deps: VerifyDeps = {
       handlers: { build_project: mk('build'), run_tests: mk('test') },
-      buildInput, userContext: uc, workflowId: 'wf1',
+      buildInput, userContext: uc, workflowId: 'wf1', attempt: 0,
     }
     expect(await verifyWp('develop_code', wpFix(), { artifacts: [] }, deps)).toEqual({ ok: true })
     expect(calls).toEqual(['build', 'test'])
@@ -77,7 +77,7 @@ describe('verifyWp — 검증 오케스트레이션(fail-closed·never-throw)', 
     const test = okExec()
     const deps: VerifyDeps = {
       handlers: { build_project: { execute: vi.fn().mockResolvedValue({ success: false }) }, run_tests: test },
-      buildInput, userContext: uc, workflowId: 'wf1',
+      buildInput, userContext: uc, workflowId: 'wf1', attempt: 0,
     }
     const v = await verifyWp('develop_code', wpFix(), {}, deps)
     expect(v.ok).toBe(false)
@@ -86,28 +86,42 @@ describe('verifyWp — 검증 오케스트레이션(fail-closed·never-throw)', 
   it('체크 핸들러 execute throw → fail(불확실=실패·never-throw)', async () => {
     const deps: VerifyDeps = {
       handlers: { build_project: { execute: vi.fn().mockRejectedValue(new Error('boom')) }, run_tests: okExec() },
-      buildInput, userContext: uc, workflowId: 'wf1',
+      buildInput, userContext: uc, workflowId: 'wf1', attempt: 0,
     }
     const v = await verifyWp('develop_code', wpFix(), {}, deps)
     expect(v.ok).toBe(false)
     if (!v.ok) expect(v.reason).toContain('build_project')
   })
   it('체크 핸들러 미주입 → fail(fail-closed)', async () => {
-    const deps: VerifyDeps = { handlers: {}, buildInput, userContext: uc, workflowId: 'wf1' }
+    const deps: VerifyDeps = { handlers: {}, buildInput, userContext: uc, workflowId: 'wf1', attempt: 0 }
     expect((await verifyWp('develop_code', wpFix(), {}, deps)).ok).toBe(false)
   })
-  it('체크 execute에 buildInput(wp, uc) 결과와 userContext가 전달된다', async () => {
+  it('workspaceRoot 미영속이면 파생 체크를 돌리지 않고 즉시 fail — 에이전트 cwd 기준 \'.\' 검증의 false PASS 차단', async () => {
+    const build = okExec()
+    const deps: VerifyDeps = { handlers: { build_project: build, run_tests: okExec() }, buildInput, workflowId: 'wf1', attempt: 0 }
+    const v = await verifyWp('develop_code', wpFix(), {}, deps)
+    expect(v.ok).toBe(false)
+    if (!v.ok) expect(v.reason).toContain('workspaceRoot')
+    expect(build.execute).not.toHaveBeenCalled()
+  })
+  it('체크 execute에 buildInput(wp, uc) 결과·격리 세션 키·userContext가 전달된다', async () => {
     const build = okExec()
     const deps: VerifyDeps = {
       handlers: { build_project: build, run_tests: okExec() },
       buildInput: (wp, u) => ({ projectPath: u?.workspaceRoot, id: wp.id }),
-      userContext: uc, workflowId: 'wf1',
+      userContext: uc, workflowId: 'wf1', attempt: 2,
     }
     await verifyWp('develop_code', wpFix(), {}, deps)
-    expect(build.execute).toHaveBeenCalledWith({ projectPath: '/ws', id: 'a' }, 'wf1', uc)
+    // 워크플로 공유 세션이 아니라 (wpId, attempt) 격리 세션 — 좀비 응답 교차 귀속 차단
+    expect(build.execute).toHaveBeenCalledWith({ projectPath: '/ws', id: 'a' }, 'wf1-verify-a-2', uc)
+  })
+  it('verifySessionId는 (wf, wpId, attempt) 결정론 키', () => {
+    expect(verifySessionId('wf1', 'a', 0)).toBe('wf1-verify-a-0')
+    expect(verifySessionId('wf1', 'a', 1)).not.toBe(verifySessionId('wf1', 'a', 0))
+    expect(verifySessionId('wf1', 'b', 0)).not.toBe(verifySessionId('wf1', 'a', 0))
   })
   it('파생 체크 비대상 도구(design_ui) → 즉시 ok', async () => {
-    const deps: VerifyDeps = { handlers: {}, buildInput, workflowId: 'wf1' }
+    const deps: VerifyDeps = { handlers: {}, buildInput, workflowId: 'wf1', attempt: 0 }
     expect(await verifyWp('design_ui', wpFix({ owningRole: 'designer' }), null, deps)).toEqual({ ok: true })
   })
 })

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import type { WorkPackage } from '@xzawed/agent-streams'
 import type { UserContext } from '../types/user-context.js'
-import type { Publish } from './decomposition-consumer.js'
+import { defaultInconsistentStream, type Publish } from './decomposition-consumer.js'
 import type { AgentExecutor } from './worker.js'
 
 export const WP_VERIFICATION_FAILED = 'wp.verification.failed'
@@ -54,11 +54,20 @@ export interface VerifyDeps {
   /** exactOptionalPropertyTypes: 워커가 `stored?.userContext ?? undefined`를 그대로 넘긴다. */
   userContext?: UserContext | undefined
   workflowId: string
+  /** 신호의 attempt — 체크 세션 격리 키에 포함(attempt 간 좀비 응답 교차 귀속 차단). */
+  attempt: number
 }
+
+/** 검증 체크 전용 세션 키. RedisAgentHandler의 응답 매칭은 무상관(스트림 위치+type뿐)이라 워크플로 공유
+ *  세션에서는 타임아웃된 이전 체크의 좀비 응답이 다음 attempt의 판정으로 오귀속될 수 있다(N1 false-pass) —
+ *  (wpId, attempt)별 사설 응답 스트림으로 격리해 구조적으로 차단한다. 게이트웨이 notify는 sessionId를
+ *  페이로드로 전달하므로 임의 키가 기존 메커니즘으로 동작한다. */
+export const verifySessionId = (workflowId: string, wpId: string, attempt: number): string =>
+  `${workflowId}-verify-${wpId}-${attempt}`
 
 /**
  * WP 검증(P4b-1 correctness 채널 골격): ①결과-근거 판정 ②파생 체크 실 재실행(fail-fast).
- * never-throw — 모든 불확실(핸들러 부재·throw·파싱 실패)은 fail verdict(fail-closed, N1).
+ * never-throw — 모든 불확실(핸들러 부재·throw·파싱 실패·검증 대상 경로 불명)은 fail verdict(fail-closed, N1).
  * 검증 통과는 LLM 선언이 아니라 tester/builder의 실 spawn 실행 결과 필드로만 성립한다.
  */
 export async function verifyWp(
@@ -66,12 +75,20 @@ export async function verifyWp(
 ): Promise<VerificationVerdict> {
   const primary = judgePrimaryResult(tool, result)
   if (!primary.ok) return primary
-  for (const check of planVerificationChecks(tool)) {
+  const checks = planVerificationChecks(tool)
+  if (checks.length === 0) return { ok: true }
+  // 파생 체크는 검증 대상 워크스페이스 경로가 명시돼야만 의미가 있다 — 부재 시 '.'로 돌리면 에이전트
+  // cwd⊂WORKSPACE_ROOT 배포에서 엉뚱한 프로젝트(에이전트 자신)를 빌드·테스트해 false PASS가 된다.
+  if (!deps.userContext?.workspaceRoot) {
+    return { ok: false, reason: 'workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)' }
+  }
+  const checkSession = verifySessionId(deps.workflowId, wp.id, deps.attempt)
+  for (const check of checks) {
     const handler = deps.handlers[check]
     if (!handler) return { ok: false, reason: `${check}: 체크 핸들러 미주입` }
     let checkResult: unknown
     try {
-      checkResult = await handler.execute(deps.buildInput(wp, deps.userContext), deps.workflowId, deps.userContext)
+      checkResult = await handler.execute(deps.buildInput(wp, deps.userContext), checkSession, deps.userContext)
     } catch (err) {
       return { ok: false, reason: `${check}: 체크 실행 실패 — ${err instanceof Error ? err.message : String(err)}` }
     }
@@ -81,8 +98,9 @@ export async function verifyWp(
   return { ok: true }
 }
 
-/** 검증 실패 관측 이벤트(M8 무음 금지). best-effort — 발행 실패해도 완료 부재가 load-bearing 신호
- *  (lease 백스톱이 reclaim→escalate 보장). 스트림은 decomposition.inconsistent와 동일 패턴. */
+/** 검증 실패 관측 이벤트(소비자 배선 전까지 사람 도달 신호는 lease 상태머신의 ESCALATED — 이 이벤트는 추적용).
+ *  best-effort — 발행 실패해도 완료 부재가 load-bearing 신호(lease 백스톱이 reclaim→escalate 보장).
+ *  스트림은 decomposition.inconsistent와 단일 출처 공유(contract-drift 회피). */
 export async function publishVerificationFailed(
   publish: Publish, workflowId: string, wpId: string, attempt: number, reason: string, now?: number,
 ): Promise<void> {
@@ -90,7 +108,7 @@ export async function publishVerificationFailed(
     { correlationId: workflowId, causationId: null, workflowId, stepId: `${WP_VERIFICATION_FAILED}:${wpId}`, attemptId: attempt },
     now ?? Date.now(),
   )
-  await publish(`manager:events:${workflowId}`, {
+  await publish(defaultInconsistentStream(workflowId), {
     envelope, type: WP_VERIFICATION_FAILED, payload: { wpId, attempt, reason: reason.slice(0, REASON_MAX) },
   })
 }
