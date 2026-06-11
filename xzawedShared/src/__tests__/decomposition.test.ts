@@ -1,21 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import { coverageMatrix, contentHashId, mergeKeepInflight } from '../decomposition/index.js'
 import { buildTaskGraph } from '../task-graph/index.js'
-import type { WorkPackage } from '../types/work-package.js'
+import { WorkPackageSchema, type WorkPackage } from '../types/work-package.js'
 
-/** 테스트 WP 생성 헬퍼 — 기본값 채우고 핵심 필드만 override. */
+/** 테스트 WP 생성 헬퍼 — 스키마 parse로 §7 포함 모든 기본값을 채우고 핵심 필드만 override(추가 필드 내성). */
 function wp(id: string, over: Partial<WorkPackage> = {}): WorkPackage {
-  return {
+  return WorkPackageSchema.parse({
     id,
     storyId: 'story-1',
     owningRole: 'developer',
     oracleRef: 'oracle-1',
     acceptanceCriteria: [],
     dependencies: [],
-    attributionCounters: {},
     status: 'draft',
     ...over,
-  }
+  })
 }
 
 describe('coverageMatrix', () => {

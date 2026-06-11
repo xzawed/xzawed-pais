@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (211 테스트 통과)**
+**현재 상태: 구현 완료 (216 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -31,7 +31,9 @@ src/
 ├── claude/
 │   └── answer-query.ts          # Claude 호출·텍스트 추출·질의 응답 공통 로직
 ├── types/
-│   └── agent-query.ts           # 에이전트 간 질의 타입·스키마 (AgentQuery 등)
+│   ├── agent-query.ts           # 에이전트 간 질의 타입·스키마 (AgentQuery 등)
+│   ├── event-envelope.ts        # EventEnvelope·makeEnvelope (correlation/causation/idempotency)
+│   └── work-package.ts          # WorkPackageSchema (§7 계약: risk·inputs·outputs·epicId·고정 attributionCounters{impl,task,plan})
 ├── prompt/
 │   └── domain-knowledge.ts      # formatDomainKnowledge() — 도메인 위키 주입 포매터
 ├── task-graph/                  # P1d Task Manager Core (순수 그래프/스케줄링 로직)
@@ -93,6 +95,21 @@ const satisfied = oracleSatisfiedSet(workPackages, approvedOracles) // Set<wpId>
 
 - WP satisfied ⇔ `storyId` 바인딩 approved 오라클 존재 **AND** `wp.acceptanceCriteria` 전부가 그 오라클 `coveredCriteria`에 포함. 빈 AC는 오라클 존재 시 vacuously true.
 - story당 approved 오라클 1개 불변식(승인이 이전 버전 supersede); 다중이면 마지막 우선. 입력 순서 무관(결정론).
+
+## WorkPackage §7 계약 스키마 (`types/work-package.ts`)
+
+senario 사양 §7의 기계 디스패치 가능한 작업 단위 계약. Task Graph 노드로 재사용되며, 분해→디스패치→검증→결함 국소화의 토대다.
+
+```typescript
+import { WorkPackageSchema, WpRiskSchema, AttributionCountersSchema } from '@xzawed/agent-streams'
+import type { WorkPackage, WpRisk } from '@xzawed/agent-streams'
+```
+
+- **§7 필드**: `id`(content-hash)·`storyId`·`epicId`(nullable)·`owningRole`·`inputs`·`outputs`·`oracleRef`·`acceptanceCriteria`·`dependencies`·`risk`(LOW/MEDIUM/HIGH)·`attributionCounters`·`status`.
+- **`risk`**: Wiki Agent 리스크 분류기(P2 잔여)가 채우기 전 기본 `MEDIUM`(중립·보수적). θ_risk 게이트·모델 라우팅 입력.
+- **`attributionCounters`**: 계약 사슬 3계층 고정 `{impl, task, plan}`(자유형 record 아님 — 미지 키는 strip·부분 입력은 0으로 채움). P4c 진동 차단(N5) 입력.
+- **id 정체성 분리(N4)**: `contentHashId`는 `storyId·owningRole·acceptanceCriteria`만 해싱 — `risk·inputs·outputs·epicId`(§7 추가분)·status·oracleRef·dependencies·attributionCounters는 **제외**. 리스크 재분류·계약 정련이 id를 바꾸지 않는다.
+- **backward-compat(additive)**: 추가 필드는 전부 default 보유 → 레거시 영속 WP(필드 부재·`attributionCounters:{}`)도 재parse 시 기본값으로 정규화. ⚠️ `owningRole`은 WP0 #3(토폴로지) 미해결로 아직 자유 string(enum 보류).
 
 ## 결정론 분해 코어 패턴 (P2-1)
 
