@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { WorkPackage } from '@xzawed/agent-streams'
+import type { UserContext } from '../types/user-context.js'
 import {
   judgePrimaryResult, planVerificationChecks, verifyWp, publishVerificationFailed, verifySessionId,
   WP_VERIFICATION_FAILED, type VerifyDeps,
@@ -123,6 +124,83 @@ describe('verifyWp — 검증 오케스트레이션(fail-closed·never-throw)', 
   it('파생 체크 비대상 도구(design_ui) → 즉시 ok', async () => {
     const deps: VerifyDeps = { handlers: {}, buildInput, workflowId: 'wf1', attempt: 0 }
     expect(await verifyWp('design_ui', wpFix({ owningRole: 'designer' }), null, deps)).toEqual({ ok: true })
+  })
+})
+
+describe('verifySessionId suffix', () => {
+  it('appends suffix when provided, omits otherwise (P4b-1 unchanged)', () => {
+    expect(verifySessionId('wf', 'wp', 0)).toBe('wf-verify-wp-0')
+    expect(verifySessionId('wf', 'wp', 0, 'conf-author')).toBe('wf-verify-wp-0-conf-author')
+  })
+})
+
+describe('verifyWp conformance (develop_code)', () => {
+  const devWp = { id: 'wp-1', storyId: 'story-1', owningRole: 'developer', acceptanceCriteria: ['AC-1'], oracleRef: null, dependsOn: [] } as unknown as WorkPackage
+  const uc: UserContext = { userId: 'u', projectId: 'p', workspaceRoot: '/abs/ws' }
+  const okTester = { execute: vi.fn().mockResolvedValue({ success: true, failed: 0 }) }
+  const okBuilder = { execute: vi.fn().mockResolvedValue({ success: true }) }
+  const approvedScenarios = [{ id: 's1', title: 't', given: [], when: 'w', thenSteps: ['ok'], status: 'human_approved' as const }]
+  function baseDeps(over: Record<string, unknown> = {}) {
+    return {
+      handlers: { build_project: okBuilder, run_tests: okTester },
+      buildInput: () => ({ projectPath: '/abs/ws', context: {} }),
+      userContext: uc, workflowId: 'wf-1', attempt: 0,
+      ...over,
+    }
+  }
+
+  it('skips conformance when conformanceEnabled is false → ok via P4b-1 path', async () => {
+    const store = { approvedOracleForStory: vi.fn() }
+    const v = await verifyWp('develop_code', devWp, {}, baseDeps({ oracleStore: store, conformanceEnabled: false }) as never)
+    expect(v.ok).toBe(true)
+    expect(store.approvedOracleForStory).not.toHaveBeenCalled()
+  })
+
+  it('skips conformance when no approved oracle → ok', async () => {
+    const store = { approvedOracleForStory: vi.fn().mockResolvedValue(null) }
+    const v = await verifyWp('develop_code', devWp, {}, baseDeps({ oracleStore: store, conformanceEnabled: true }) as never)
+    expect(v.ok).toBe(true)
+  })
+
+  it('fails when author returns no conformance test file', async () => {
+    const store = { approvedOracleForStory: vi.fn().mockResolvedValue({ scenarios: approvedScenarios, coverage: {} }) }
+    const author = { execute: vi.fn().mockResolvedValue({ artifacts: ['src/impl.ts'] }) }
+    const v = await verifyWp('develop_code', devWp, {},
+      baseDeps({ oracleStore: store, conformanceEnabled: true, handlers: { build_project: okBuilder, run_tests: okTester, develop_code: author } }) as never)
+    expect(v.ok).toBe(false)
+  })
+
+  it('passes when author writes a conformance test and Tester runs it green', async () => {
+    const store = { approvedOracleForStory: vi.fn().mockResolvedValue({ scenarios: approvedScenarios, coverage: {} }) }
+    const author = { execute: vi.fn().mockResolvedValue({ artifacts: ['.xzawed/conformance/wp-1.test.ts'] }) }
+    const runner = { execute: vi.fn().mockResolvedValue({ success: true, failed: 0 }) }
+    const v = await verifyWp('develop_code', devWp, {},
+      baseDeps({ oracleStore: store, conformanceEnabled: true, handlers: { build_project: okBuilder, run_tests: runner, develop_code: author } }) as never)
+    expect(v.ok).toBe(true)
+    expect(author.execute.mock.calls[0][1]).toBe('wf-1-verify-wp-1-0-conf-author')
+    const runCall = runner.execute.mock.calls.find((c: unknown[]) => (c[1] as string).includes('conf-run'))
+    expect(runCall![1]).toBe('wf-1-verify-wp-1-0-conf-run')
+    expect((runCall![0] as { testFiles: string[] }).testFiles).toEqual(['.xzawed/conformance/wp-1.test.ts'])
+  })
+
+  it('fails when conformance test runs red', async () => {
+    const store = { approvedOracleForStory: vi.fn().mockResolvedValue({ scenarios: approvedScenarios, coverage: {} }) }
+    const author = { execute: vi.fn().mockResolvedValue({ artifacts: ['.xzawed/conformance/wp-1.test.ts'] }) }
+    const runner = { execute: vi.fn()
+      .mockResolvedValueOnce({ success: true, failed: 0 })
+      .mockResolvedValueOnce({ success: false, failed: 2 }) }
+    const v = await verifyWp('develop_code', devWp, {},
+      baseDeps({ oracleStore: store, conformanceEnabled: true, handlers: { build_project: okBuilder, run_tests: runner, develop_code: author } }) as never)
+    expect(v.ok).toBe(false)
+  })
+
+  it('fails when workspaceRoot is missing', async () => {
+    const store = { approvedOracleForStory: vi.fn().mockResolvedValue({ scenarios: approvedScenarios, coverage: {} }) }
+    const author = { execute: vi.fn() }
+    const v = await verifyWp('develop_code', devWp, {},
+      baseDeps({ oracleStore: store, conformanceEnabled: true, userContext: undefined, handlers: { build_project: okBuilder, run_tests: okTester, develop_code: author } }) as never)
+    expect(v.ok).toBe(false)
+    expect(author.execute).not.toHaveBeenCalled()
   })
 })
 

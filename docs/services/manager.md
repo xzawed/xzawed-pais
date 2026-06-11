@@ -23,8 +23,9 @@ xzawedManager는 시스템의 두 번째 계층이다. `orchestrator:to-manager:
 - **Oracle DoR 게이트 + 초안 생성** (`db/oracle.repo.ts` + `api/oracle.route.ts`, P3) — 사람이 승인한 오라클의 satisfied-set으로 WP 디스패치 DoR을 판정하고, 분해 시 story별 GWT 시나리오 초안을 생성해 승인 부담을 줄인다. `MANAGER_ORACLE_DOR`·`MANAGER_ORACLE_DRAFT` flag.
 - **실행 워커** (`streams/worker.ts`, P4-1) — dispatch된 WP를 `owningRole` 에이전트로 자율 호출하고 성공 시 `wp.completion`을 발행해 디스패치 루프를 닫는다. `MANAGER_TASK_WORKER` flag.
 - **검증 게이트** (`streams/verify.ts`, P4b-1) — 워커가 완료 발행 전 실행 ground truth 검증을 fail-closed로 수행(tester/builder 결과-근거 판정 + develop_code WP는 빌드·테스트 실 재실행). 실패 시 완료 미발행 → lease 백스톱이 reclaim→escalate. `MANAGER_WP_VERIFY` flag.
+- **Oracle conformance 검증** (`streams/verify.ts` + `streams/conformance.ts`, P4b-2) — develop_code WP 검증에 사람 승인 오라클 GWT 시나리오를 실행 ground truth로 소비한다. 독립 develop_code 호출이 승인 시나리오로 conformance 테스트를 작성(격리 세션·구현 수정 금지)하고 Tester가 실행해 그 결과로 게이트 — 구현자가 게이트 명령을 통제하는 P4b-1 N6 한계를 봉합(N1·N6). 승인 오라클 부재면 skip(회귀 0). `MANAGER_WP_CONFORMANCE` flag.
 
-> ⚠️ 위 flag들은 전부 기본 `false`(미활성)이며, `MANAGER_TASK_WORKER`·`MANAGER_ORACLE_DRAFT`는 `TASK_MANAGER_ENABLED`+`DATABASE_URL`을, `MANAGER_WP_VERIFY`는 `MANAGER_TASK_WORKER`를 실질 전제로 한다.
+> ⚠️ 위 flag들은 전부 기본 `false`(미활성)이며, `MANAGER_TASK_WORKER`·`MANAGER_ORACLE_DRAFT`는 `TASK_MANAGER_ENABLED`+`DATABASE_URL`을, `MANAGER_WP_VERIFY`는 `MANAGER_TASK_WORKER`를, `MANAGER_WP_CONFORMANCE`는 `MANAGER_WP_VERIFY`+OracleRepo(`MANAGER_ORACLE_DOR`||`MANAGER_ORACLE_DRAFT`)를 실질 전제로 한다.
 
 ---
 
@@ -193,7 +194,8 @@ packages/server/src/
 │   ├── oracle-consumer.ts     # oracle.approved → 재디스패치 (P3-1)
 │   ├── dispatch-signal.ts     # wp.dispatch_signal 트리거 계약 (P4-1)
 │   ├── worker.ts              # 실행 워커 — WP를 owningRole 에이전트로 자율 실행 (P4-1)
-│   ├── verify.ts              # 검증 게이트 — fail-closed 실 검증 코어 (P4b-1)
+│   ├── verify.ts              # 검증 게이트 — fail-closed 실 검증 코어 + conformance 채널 (P4b-1·P4b-2)
+│   ├── conformance.ts         # conformance 순수 헬퍼 — author plan·테스트 파일 선별 (P4b-2)
 │   └── redis.client.ts        # ioredis 클라이언트 (공유 + 전용 연결)
 ├── sessions/
 │   └── session.store.ts       # SessionStore — gateConfig·waitForInfo·EventStore 컴포지션
@@ -249,6 +251,7 @@ packages/server/src/
 | `MANAGER_ORACLE_DRAFT` | 분해 시 story별 GWT 시나리오 초안 생성·영속 (⚠️영속은 `TASK_MANAGER_ENABLED`+`DATABASE_URL` 전제) | P3-2 |
 | `MANAGER_TASK_WORKER` | 실행 워커 — dispatch된 WP를 owningRole 에이전트로 자율 실행 후 `wp.completion` 발행 (전제 동일) | P4-1 |
 | `MANAGER_WP_VERIFY` | 워커 검증 게이트 — 완료 발행 전 fail-closed 실 검증(결과-근거 판정 + develop_code 파생 빌드·테스트 재실행), 실패 시 완료 미발행 → lease 백스톱 (전제: `MANAGER_TASK_WORKER`) | P4b-1 |
+| `MANAGER_WP_CONFORMANCE` | Oracle conformance 채널 — develop_code WP 검증 시 사람 승인 GWT를 독립 develop_code 호출이 실행 테스트로 작성→Tester 실행→결과 게이트(N1·N6). 승인 오라클 부재면 skip (전제: `MANAGER_WP_VERIFY`+OracleRepo, 가시성 600s↑ 권장) | P4b-2 |
 
 ### Task Manager 튜닝
 

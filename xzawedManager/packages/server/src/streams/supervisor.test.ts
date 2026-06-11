@@ -170,3 +170,21 @@ describe('buildWorkerConsumerDeps (P4b-1 — wpVerify 스레딩 행동 검증)',
     expect(buildWorkerConsumerDeps(d, base).completionStream).toBe('manager:completions:main')
   })
 })
+
+describe('buildWorkerConsumerDeps conformance (P4b-2)', () => {
+  const base = { repo: {} as never, publish: vi.fn(), handlers: { develop_code: { execute: vi.fn() } } }
+  const cfg = { sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: false, taskWorker: true } as never
+
+  it('conformanceEnabled true only when wpConformance && oracleStore both present', () => {
+    const store = { approvedOracleForStory: vi.fn() }
+    expect(buildWorkerConsumerDeps({ ...base, oracleStore: store as never }, { ...cfg, wpConformance: true }).conformanceEnabled).toBe(true)
+    expect(buildWorkerConsumerDeps({ ...base, oracleStore: store as never }, { ...cfg, wpConformance: false }).conformanceEnabled).toBe(false)
+    expect(buildWorkerConsumerDeps(base, { ...cfg, wpConformance: true }).conformanceEnabled).toBe(false) // oracleStore 부재
+    expect(buildWorkerConsumerDeps(base, cfg).conformanceEnabled).toBe(false) // wpConformance 미지정
+  })
+
+  it('passes oracleStore through when present', () => {
+    const store = { approvedOracleForStory: vi.fn() }
+    expect(buildWorkerConsumerDeps({ ...base, oracleStore: store as never }, { ...cfg, wpConformance: true }).oracleStore).toBe(store)
+  })
+})

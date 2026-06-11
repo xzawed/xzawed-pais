@@ -182,6 +182,37 @@ describe('검증 게이트(P4b-1·verifyEnabled)', () => {
   })
 })
 
+describe('handleWpDispatchSignal conformance threading (P4b-2)', () => {
+  it('threads oracleStore + conformanceEnabled into verifyWp → conformance fail blocks completion', async () => {
+    const wp = { id: 'wp-1', storyId: 'story-1', owningRole: 'developer', acceptanceCriteria: ['AC-1'], oracleRef: null, dependsOn: [] }
+    const graph = { workPackages: [wp], userContext: { userId: 'u', projectId: 'p', workspaceRoot: '/abs/ws' } }
+    const repo = {
+      getGraph: vi.fn().mockResolvedValue(graph),
+      latestStates: vi.fn().mockResolvedValue(new Map()),
+    }
+    const okBuilder = { execute: vi.fn().mockResolvedValue({ success: true }) }
+    const developer = { execute: vi.fn().mockResolvedValue({ artifacts: ['.xzawed/conformance/wp-1.test.ts'] }) }
+    const tester = { execute: vi.fn()
+      .mockResolvedValueOnce({ success: true, failed: 0 })   // derived run_tests (P4b-1)
+      .mockResolvedValueOnce({ success: false, failed: 1 }) } // conformance run (red)
+    const publish = vi.fn().mockResolvedValue(undefined)
+    const store = { approvedOracleForStory: vi.fn().mockResolvedValue({ scenarios: [{ id: 's1', title: 't', given: [], when: 'w', thenSteps: ['x'], status: 'human_approved' }], coverage: {} }) }
+    const deps = {
+      repo, publish,
+      handlers: { develop_code: developer, build_project: okBuilder, run_tests: tester },
+      verifyEnabled: true, conformanceEnabled: true, oracleStore: store,
+      now: () => 1,
+    }
+    const msg = { envelope: { workflowId: 'wf-1' }, type: 'wp.dispatch_signal', payload: { wpId: 'wp-1', attempt: 0 } } as never
+    const outcome = await handleWpDispatchSignal(msg, deps as never)
+    expect(outcome.status).toBe('verification_failed')
+    const completionPublished = publish.mock.calls.some((c: unknown[]) => (c[1] as { type: string }).type === 'wp.completion')
+    expect(completionPublished).toBe(false)
+    const failedPublished = publish.mock.calls.some((c: unknown[]) => (c[1] as { type: string }).type === 'wp.verification.failed')
+    expect(failedPublished).toBe(true)
+  })
+})
+
 describe('buildWorkerInput / shouldWireWorker', () => {
   it('buildWorkerInput은 AC를 intent에 담고 검증된 union 값을 채움(context=record·target=development·severity=low)', () => {
     const i = buildWorkerInput(wp({ acceptanceCriteria: ['ac1', 'ac2'] })) as Record<string, unknown>

@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
+import type { Pool } from 'pg'
 import { OracleRepo } from './oracle.repo.js'
 import { oracleIdFor } from './oracle.types.js'
+
+function mockPool(rows: unknown[]): Pool {
+  return { query: vi.fn().mockResolvedValue({ rows }) } as unknown as Pool
+}
 
 function makeMockPool(opts: { selectRows?: unknown[]; scenarios?: unknown[] } = {}) {
   const defaultRow = { workflow_id: 'wf1', story_id: 's1', version: 1, status: 'pending', scenarios: opts.scenarios ?? [] }
@@ -107,5 +112,44 @@ describe('OracleRepo.upsertDraft (P3-2 멱등)', () => {
     const args = query.mock.calls[0]![1] as unknown[]
     expect(JSON.parse(args[3] as string)).toEqual(scenarios)
     expect(JSON.parse(args[4] as string)).toEqual(coverage)
+  })
+})
+
+describe('OracleRepo.approvedOracleForStory', () => {
+  it('returns human_approved scenarios + coverage for the approved oracle', async () => {
+    const pool = mockPool([
+      {
+        scenarios: [
+          { id: 's1', title: 'ok', given: ['g'], when: 'w', thenSteps: ['t'], status: 'human_approved' },
+          { id: 's2', title: 'drafted', given: [], when: '', thenSteps: [], status: 'drafted' },
+        ],
+        coverage: { 'AC-1': ['s1'] },
+      },
+    ])
+    const repo = new OracleRepo(pool)
+    const result = await repo.approvedOracleForStory('wf-1', 'story-1')
+    expect(result).not.toBeNull()
+    expect(result!.scenarios.map((s) => s.id)).toEqual(['s1'])
+    expect(result!.coverage).toEqual({ 'AC-1': ['s1'] })
+  })
+
+  it('returns null when no approved oracle row', async () => {
+    const repo = new OracleRepo(mockPool([]))
+    expect(await repo.approvedOracleForStory('wf-1', 'story-1')).toBeNull()
+  })
+
+  it('returns null when approved oracle has zero human_approved scenarios', async () => {
+    const repo = new OracleRepo(mockPool([{ scenarios: [{ id: 's1', status: 'drafted' }], coverage: {} }]))
+    expect(await repo.approvedOracleForStory('wf-1', 'story-1')).toBeNull()
+  })
+
+  it('queries status=approved + story_id, highest version first', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const repo = new OracleRepo({ query } as unknown as Pool)
+    await repo.approvedOracleForStory('wf-9', 'story-9')
+    const [sql, params] = query.mock.calls[0]
+    expect(sql).toMatch(/status = \$3/)
+    expect(sql).toMatch(/ORDER BY version DESC/)
+    expect(params).toEqual(['wf-9', 'story-9', 'approved'])
   })
 })
