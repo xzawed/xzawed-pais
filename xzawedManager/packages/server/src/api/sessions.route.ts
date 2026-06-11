@@ -43,6 +43,25 @@ export function makeSessionStarter(
     const consumer = new StreamConsumer(opts.redisUrl)
     opts.activeConsumers.set(sessionId, consumer)
 
+    // 세션 종료 정리(누수 방지) — 정상 완료·decompose 완료·M8 에러 분기 공통.
+    const cleanupSession = async (): Promise<void> => {
+      opts.watcherEventConsumer?.unwatchSession(sessionId)
+      consumer.stop()
+      await opts.sessionStore.delete(sessionId)
+      opts.activeConsumers.delete(sessionId)
+      opts.registry?.releaseAll(sessionId)
+    }
+    // 요청자에게 error 메시지 발행(무음 drop 금지·M8).
+    const publishError = async (content: string): Promise<void> => {
+      await opts.producer.publish({
+        sessionId,
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now(),
+        type: 'error',
+        payload: { agentId: 'manager', content },
+      })
+    }
+
     void consumer.start(sessionId, async (msg: OrchestratorToManagerMessage) => {
       if (msg.type === 'task_request') {
         void (async () => {
@@ -74,41 +93,30 @@ export function makeSessionStarter(
             const message = err instanceof Error ? err.message : String(err)
             // Do NOT publish an error for intentional aborts
             if (message === 'Session aborted') return
-            await opts.producer.publish({
-              sessionId,
-              messageId: crypto.randomUUID(),
-              timestamp: Date.now(),
-              type: 'error',
-              payload: {
-                agentId: 'manager',
-                content: message,
-              },
-            })
+            await publishError(message)
           } finally {
-            opts.watcherEventConsumer?.unwatchSession(sessionId)
-            consumer.stop()
-            await opts.sessionStore.delete(sessionId)
-            opts.activeConsumers.delete(sessionId)
-            opts.registry?.releaseAll(sessionId)
+            await cleanupSession()
           }
         })().catch((err: unknown) => {
           opts.log.error({ err, sessionId }, 'Unexpected task runner error')
         })
       } else if (msg.type === 'info_response') {
         await opts.sessionStore.resolveInfo(sessionId, msg.payload.answer)
-      } else if (msg.type === 'decompose_request' && opts.decompose) {
+      } else if (msg.type === 'decompose_request') {
+        if (!opts.decompose) {
+          // M8(무음 통과 금지): decompose 비활성(MANAGER_DECOMPOSE_ENABLED off)인데 요청이 도착했다.
+          // 무음 drop하면 요청자가 응답 없이 무한 대기하고 세션 consumer가 누수된다 — 명시 에러 + 정리.
+          opts.log.error({ sessionId }, 'decompose_request received but decomposition is disabled')
+          await publishError('decompose_request를 받았으나 분해 기능이 비활성화되어 있습니다(MANAGER_DECOMPOSE_ENABLED off).')
+          await cleanupSession()
+          return
+        }
         void handleDecomposeRequest(
           sessionId,
           msg.payload.intent,
           opts.decompose,
           opts.producer,
-          async () => {
-            opts.watcherEventConsumer?.unwatchSession(sessionId)
-            consumer.stop()
-            await opts.sessionStore.delete(sessionId)
-            opts.activeConsumers.delete(sessionId)
-            opts.registry?.releaseAll(sessionId)
-          },
+          cleanupSession,
           msg.payload.userContext, // P4a-2: 워크스페이스 컨텍스트 — 그래프 영속→실행 워커 주입
         ).catch((err: unknown) => {
           opts.log.error({ err, sessionId }, 'decompose_request handler error')
@@ -120,6 +128,13 @@ export function makeSessionStarter(
         opts.activeConsumers.delete(sessionId)
         await opts.sessionStore.delete(sessionId)
         opts.registry?.releaseAll(sessionId)
+      } else {
+        // M8(무음 통과 금지·방어): 스키마는 통과했으나 처리 분기가 없는 타입. 닫힌 union이라 정상 경로엔
+        // 미도달하지만, 향후 union 확장 시 무음 drop·세션 누수를 막는다(에러 발행 + 정리).
+        const unknownType = (msg as unknown as { type?: unknown }).type
+        opts.log.error({ sessionId, type: unknownType }, 'Unhandled message type — publishing error')
+        await publishError(`Unsupported message type: ${String(unknownType)}`)
+        await cleanupSession()
       }
     }).catch(async (err: unknown) => {
       opts.log.error({ err, sessionId }, 'StreamConsumer error')

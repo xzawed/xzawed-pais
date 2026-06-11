@@ -100,6 +100,77 @@ describe('sessionsRoute — abort 처리', () => {
   })
 })
 
+describe('sessionsRoute — 무음 drop 금지 (M8)', () => {
+  function captureHandlerConsumer() {
+    const capturedHandlers: MsgHandler[] = []
+    const stop = vi.fn()
+    vi.mocked(StreamConsumer).mockImplementation(function () { return ({
+      start: vi.fn().mockImplementation(async (_sid: string, handler: MsgHandler) => {
+        capturedHandlers.push(handler)
+      }),
+      stop,
+    }) as unknown as StreamConsumer })
+    return { capturedHandlers, stop }
+  }
+
+  it('decompose_request인데 decompose 비활성(미주입)이면 무음 drop 대신 error를 발행한다', async () => {
+    const { capturedHandlers, stop } = captureHandlerConsumer()
+    const mockPublish = vi.fn().mockResolvedValue(undefined)
+    const sessionStore = new SessionStore()
+
+    const app = Fastify({ logger: false })
+    await app.register(sessionsRoute, {
+      redisUrl: 'redis://localhost:6379',
+      runner: { run: vi.fn() } as never,
+      producer: { publish: mockPublish } as never,
+      sessionStore,
+      // decompose 미주입(flag off)
+    })
+
+    await app.inject({ method: 'POST', url: `/api/sessions/${SESSION_A}/start` })
+    await capturedHandlers[0]!({
+      sessionId: SESSION_A, messageId: 'msg-d', timestamp: Date.now(),
+      type: 'decompose_request', payload: { intent: 'build it' },
+    })
+    await flushMicrotasks()
+
+    const errorCalls = mockPublish.mock.calls.filter(([m]) => (m as { type: string }).type === 'error')
+    expect(errorCalls).toHaveLength(1)
+    expect((errorCalls[0]![0] as { payload: { content: string } }).payload.content).toMatch(/decompos/i)
+    expect(stop).toHaveBeenCalled() // 세션 정리(누수 방지)
+
+    await app.close()
+  })
+
+  it('처리 분기가 없는 메시지 타입은 무음 drop 대신 error를 발행한다(방어)', async () => {
+    const { capturedHandlers } = captureHandlerConsumer()
+    const mockPublish = vi.fn().mockResolvedValue(undefined)
+    const sessionStore = new SessionStore()
+
+    const app = Fastify({ logger: false })
+    await app.register(sessionsRoute, {
+      redisUrl: 'redis://localhost:6379',
+      runner: { run: vi.fn() } as never,
+      producer: { publish: mockPublish } as never,
+      sessionStore,
+    })
+
+    await app.inject({ method: 'POST', url: `/api/sessions/${SESSION_A}/start` })
+    // 스키마는 통과했다고 가정하고 처리 분기 없는 타입을 직접 주입(방어 경로 — 닫힌 union이라 정상경로엔 미도달)
+    await capturedHandlers[0]!({
+      sessionId: SESSION_A, messageId: 'msg-x', timestamp: Date.now(),
+      type: 'bogus_type', payload: {},
+    } as unknown as OrchestratorToManagerMessage)
+    await flushMicrotasks()
+
+    const errorCalls = mockPublish.mock.calls.filter(([m]) => (m as { type: string }).type === 'error')
+    expect(errorCalls).toHaveLength(1)
+    expect((errorCalls[0]![0] as { payload: { content: string } }).payload.content).toMatch(/bogus_type/)
+
+    await app.close()
+  })
+})
+
 describe('sessionsRoute — decompose_request 배선 (P4a-2)', () => {
   it('payload.userContext가 ensureWorkspace를 거쳐 decomposition.emitted payload까지 도달한다', async () => {
     const capturedHandlers: MsgHandler[] = []
