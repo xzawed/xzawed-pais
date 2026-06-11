@@ -1,17 +1,17 @@
 import { describe, it, expect, vi } from 'vitest'
 import { TaskGraphRepo } from './task-graph.repo.js'
-import type { WorkPackage } from '@xzawed/agent-streams'
+import { WorkPackageSchema, type WorkPackage } from '@xzawed/agent-streams'
 
 function mockPool(result: unknown = { rows: [] }) {
   return { query: vi.fn().mockResolvedValue(result) } as unknown as
     import('pg').Pool & { query: ReturnType<typeof vi.fn> }
 }
 
-const wp: WorkPackage = {
+// 스키마 parse로 §7 기본값까지 채운 완전한 WP — getGraph(재parse)가 동일 객체를 돌려주도록(직렬화·재검증 정합).
+const wp: WorkPackage = WorkPackageSchema.parse({
   id: 'wp-1', storyId: 'story-1', owningRole: 'developer',
   oracleRef: null, acceptanceCriteria: ['AC1'], dependencies: [],
-  attributionCounters: {}, status: 'draft',
-}
+})
 
 describe('TaskGraphRepo.upsertGraph', () => {
   it('graph_dag를 {workPackages} JSON으로 직렬화하고 ON CONFLICT version++ INSERT한다', async () => {

@@ -10,8 +10,9 @@ export interface WpHashInput {
 
 /**
  * §6 P7 안정 WP id. 같은 의미 내용 → 같은 id(N4 재진입 안정).
- * 형식 "wp_" + sha256 hex 32자(128bit). status·oracleRef·dependencies·attributionCounters는
- * 제외 — 상태 변화·oracle 부착·의존 변경이 id를 바꾸지 않는다(스펙 §4.2).
+ * 형식 "wp_" + sha256 hex 32자(128bit). 정체성 필드(storyId·owningRole·acceptanceCriteria)만 해싱하고
+ * status·oracleRef·dependencies·attributionCounters·**risk·inputs·outputs·epicId(§7)**는 제외 —
+ * 상태 변화·oracle 부착·의존 변경·리스크 재분류·계약 정련이 id를 바꾸지 않는다(스펙 §4.2·N4).
  */
 export function contentHashId(content: WpHashInput): string {
   // canonical: 키 고정 순서 + acceptanceCriteria 정렬(입력 순서 무관). 원본 배열 불변(복사 정렬).
