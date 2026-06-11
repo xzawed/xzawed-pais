@@ -17,7 +17,7 @@ import { createOutboxPublish } from './streams/outbox-publish.js'
 import { createPool, runMigrations, closePool } from './db/pool.js'
 import type { Pool } from 'pg'
 import { ToolRegistry } from './tools/registry.js'
-import { ClaudeRunner, type BudgetRunnerDeps } from './claude/runner.js'
+import { ClaudeRunner, type BudgetRunnerDeps, type ProviderRunnerDeps } from './claude/runner.js'
 import { createPlanTaskHandler } from './tools/plan-task.js'
 import { createDevelopCodeHandler } from './tools/develop-code.js'
 import { createDesignUiHandler } from './tools/design-ui.js'
@@ -32,7 +32,7 @@ import { createDeployProjectHandler } from './tools/deploy-project.js'
 import { SessionGatewayConsumer } from './streams/session-gateway.js'
 import { WatcherEventConsumer } from './streams/watcher-event-consumer.js'
 import { getRedisClient, createRedisClient } from './streams/redis.client.js'
-import { RedisEventBus, BudgetCircuitBreaker } from '@xzawed/agent-streams'
+import { RedisEventBus, BudgetCircuitBreaker, ProviderCircuitBreaker } from '@xzawed/agent-streams'
 import { TaskGraphRepo } from './db/task-graph.repo.js'
 import { DispatchStore } from './db/dispatch.repo.js'
 import { LeaseStore } from './db/lease.repo.js'
@@ -116,7 +116,26 @@ export async function buildServer(
       `[budget] §13 서킷브레이커 가동 — perWorkflow=$${config.MANAGER_BUDGET_PER_WORKFLOW_USD || '∞'} daily=$${config.MANAGER_BUDGET_DAILY_USD || '∞'}`,
     )
   }
-  const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry, knowledgeRepo, undefined, budget)
+  // §13 provider 서킷브레이커: flag on이면 가동. provider 지속 장애 시 open→cooldown 동안 fail-fast(러너가
+  // ProviderCircuitOpenError throw→error 발행)+alert(app.log.warn). off면 미주입(회귀 0). 트립은 P6 강등 신호.
+  const providerCircuit: ProviderRunnerDeps | undefined = config.MANAGER_PROVIDER_CIRCUIT
+    ? {
+        breaker: new ProviderCircuitBreaker({
+          failureThreshold: config.MANAGER_PROVIDER_CIRCUIT_THRESHOLD,
+          cooldownMs: config.MANAGER_PROVIDER_CIRCUIT_COOLDOWN_MS,
+        }),
+        onOpen: () =>
+          app.log.warn(
+            `[provider-circuit] open — provider 지속 장애(연속 ${config.MANAGER_PROVIDER_CIRCUIT_THRESHOLD}회)로 회로 개방, ${config.MANAGER_PROVIDER_CIRCUIT_COOLDOWN_MS}ms 동안 fail-fast(강등 신호)`,
+          ),
+      }
+    : undefined
+  if (config.MANAGER_PROVIDER_CIRCUIT) {
+    app.log.info(
+      `[provider-circuit] §13 서킷브레이커 가동 — threshold=${config.MANAGER_PROVIDER_CIRCUIT_THRESHOLD} cooldown=${config.MANAGER_PROVIDER_CIRCUIT_COOLDOWN_MS}ms`,
+    )
+  }
+  const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry, knowledgeRepo, undefined, budget, providerCircuit)
   const producer = new StreamProducer(config.REDIS_URL)
   const sessionStore = new SessionStore(sessionRepo, eventStore)
   const activeConsumers = new Map<string, StreamConsumer>()
