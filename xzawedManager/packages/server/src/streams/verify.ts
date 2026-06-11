@@ -67,8 +67,10 @@ export interface VerifyDeps {
  *  세션에서는 타임아웃된 이전 체크의 좀비 응답이 다음 attempt의 판정으로 오귀속될 수 있다(N1 false-pass) —
  *  (wpId, attempt)별 사설 응답 스트림으로 격리해 구조적으로 차단한다. 게이트웨이 notify는 sessionId를
  *  페이로드로 전달하므로 임의 키가 기존 메커니즘으로 동작한다. */
-export const verifySessionId = (workflowId: string, wpId: string, attempt: number, suffix?: string): string =>
-  `${workflowId}-verify-${wpId}-${attempt}${suffix ? `-${suffix}` : ''}`
+export const verifySessionId = (workflowId: string, wpId: string, attempt: number, suffix?: string): string => {
+  const suffixPart = suffix ? `-${suffix}` : ''
+  return `${workflowId}-verify-${wpId}-${attempt}${suffixPart}`
+}
 
 /** conformance 에이전트 1회 실행(입력 빌드 포함)을 never-throw로 감싸 결과 또는 fail verdict 반환.
  *  buildInput·execute 모두 try 안에서 수행해 어떤 throw도 fail-closed verdict로 변환(N1). */

@@ -36,7 +36,7 @@ export function buildConformanceAuthorPlan(wp: WorkPackage, scenarios: OracleSce
 /** 인식하는 실행 가능 테스트 파일 마커(설계 §4 목록: `.test.`·`.spec.`·`_test.`·`test_`·`.py`). 비테스트
  *  산출물(.md·.txt·.json·.fixture.json 등)을 제외해 "테스트 미작성=fail-closed"(decision #8) 가드가
  *  무력화되지 않게 한다 — 비실행 파일을 testFiles로 넘기면 0-테스트가 failed:0으로 통과(false-pass)된다. */
-const TEST_FILE_RE = /\.test\.|\.spec\.|_test\.|(?:^|\/)test_|\.py$/i
+const TEST_FILE_RE = /\.test\.|\.spec\.|_test\.|(?:(?:^|\/)test_)|(?:\.py$)/i
 
 /** develop_code author 결과 artifacts 중 conformance 테스트 파일만 선별. 두 불변식(설계 §4):
  *  ① **좌측 prefix 앵커** `<CONFORMANCE_DIR>/<wpId>.` — `<wpId>.` 점-경계로 인접 wpId(wp-7 vs wp-70) 차단 +
