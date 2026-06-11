@@ -2,6 +2,10 @@ import type { Redis } from 'ioredis'
 import type { ZodType } from 'zod'
 import { RedisEventBus } from './event-bus.js'
 import type { StreamConsumerPort } from './event-bus.js'
+import { defaultDedupKey, dlqStreamKey, idemKey } from './dlq.js'
+
+// DLQ 키·멱등 마커·기본 dedup 키는 dlq.ts가 단일출처(redrive 도구와 포맷 공유). 기존 import 경로 호환을 위해 재노출.
+export { defaultDedupKey }
 
 const INITIAL_RETRY_DELAY_MS = 1_000
 const MAX_RETRY_DELAY_MS = 30_000
@@ -19,15 +23,6 @@ export interface DedupOptions<TMessage> {
   enabled?: boolean
   ttlSec?: number
   key?: (msg: TMessage) => string | null
-}
-
-/** 기본 dedup 키: envelope.idempotencyKey ?? messageId. 둘 다 없으면 null(해당 메시지 dedup 건너뜀). */
-export function defaultDedupKey(msg: unknown): string | null {
-  const m = msg as { messageId?: unknown; envelope?: { idempotencyKey?: unknown } }
-  const idem = m.envelope?.idempotencyKey
-  if (typeof idem === 'string' && idem.length > 0) return idem
-  if (typeof m.messageId === 'string' && m.messageId.length > 0) return m.messageId
-  return null
 }
 
 /** SHARED_IDEM_TTL_SEC를 양의 정수로 파싱. NaN/0/음수는 기본값(24h)으로 폴백. */
@@ -195,7 +190,7 @@ export class BaseConsumer<TMessage> {
     const key = this.dedupKeyFn(data)
     if (key === null) return false
     try {
-      const res = await this.redis.set(`idem:${stream}:${key}`, '1', 'EX', this.idemTtlSec, 'NX')
+      const res = await this.redis.set(idemKey(stream, key), '1', 'EX', this.idemTtlSec, 'NX')
       return res === null // ioredis: 'OK'면 신규(set됨), null이면 이미 존재(중복)
     } catch (err) {
       console.error('[Consumer] dedup SETNX 실패 — fail-open(처리 계속):', err)
@@ -234,8 +229,8 @@ export class BaseConsumer<TMessage> {
         ...(error === undefined ? {} : { error: error instanceof Error ? error.message : String(error) }),
         failedAt: Date.now(), sourceStream: stream,
       }
-      // DLQ 무한 증가 방지 — approximate MAXLEN(소비자/재처리 도구는 P1 운영)
-      await this.bus.publish(`${stream}:dlq`, dlqMessage, { maxlen: DLQ_MAXLEN })
+      // DLQ 무한 증가 방지 — approximate MAXLEN. 재처리는 redriveDlq(dlq.ts) 운영 도구가 담당.
+      await this.bus.publish(dlqStreamKey(stream), dlqMessage, { maxlen: DLQ_MAXLEN })
     } catch (e) {
       console.error(`[Consumer] DLQ 발행 실패(${stream}:dlq) — 메시지 격리 실패:`, e)
     }
