@@ -4,7 +4,7 @@ import type { UserContext } from '../types/user-context.js'
 import { getRedisClient } from '../streams/redis.client.js'
 import type { Redis } from 'ioredis'
 import { RedisEventBus } from '@xzawed/agent-streams'
-import type { RequestReplyPort } from '@xzawed/agent-streams'
+import type { RequestReplyPort, Bulkhead } from '@xzawed/agent-streams'
 import { ClarificationNeededError, AgentQueryError } from './errors.js'
 
 const DEFAULT_TIMEOUT_MS = 120_000
@@ -29,6 +29,8 @@ export class RedisAgentHandler<TInput, TOutput>
     public readonly inputSchema: AnthropicInputSchema,
     private readonly outputSchema: z.ZodType<TOutput>,
     private readonly timeoutMs: number = DEFAULT_TIMEOUT_MS,
+    // §13 벌크헤드(optional). 주입 시 agentName(에이전트 종류) 키로 동시 RPC를 캡·큐잉. 미주입이면 직접 실행(회귀 0).
+    private readonly bulkhead?: Bulkhead,
   ) {}
 
   private get redis(): Redis {
@@ -136,7 +138,16 @@ export class RedisAgentHandler<TInput, TOutput>
     return { lastId: currentLastId, output: null }
   }
 
+  /**
+   * §13 벌크헤드 게이트. 주입 시 agentName 키로 동시 RPC를 캡(초과 시 큐잉·백프레셔)한 뒤 실 RPC 실행.
+   * 미주입이면 직접 실행(회귀 0). 한 종류의 에이전트 폭주가 다른 종류의 풀을 잠식하지 않게 격리.
+   */
   async execute(input: TInput, sessionId: string, userContext?: UserContext): Promise<TOutput> {
+    if (!this.bulkhead) return this.executeRpc(input, sessionId, userContext)
+    return this.bulkhead.run(this.agentName, () => this.executeRpc(input, sessionId, userContext))
+  }
+
+  private async executeRpc(input: TInput, sessionId: string, userContext?: UserContext): Promise<TOutput> {
     const requestStream = `manager:to-${this.agentName}:${sessionId}`
     const responseStream = `${this.agentName}:to-manager:${sessionId}`
 

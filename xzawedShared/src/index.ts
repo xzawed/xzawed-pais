@@ -27,5 +27,5 @@ export { coverageMatrix, contentHashId, mergeKeepInflight } from './decompositio
 export type { StoryCoverage, CoverageMatrix, WpHashInput, MergeOptions } from './decomposition/index.js'
 export { costOf, MODEL_PRICING, BudgetCircuitBreaker, BudgetExceededError } from './budget/index.js'
 export type { ModelPrice, TokenUsage, BudgetCircuitOptions, BudgetRecordResult, BudgetSnapshot, BudgetScope } from './budget/index.js'
-export { ProviderCircuitBreaker, ProviderCircuitOpenError } from './resilience/index.js'
-export type { CircuitState, ProviderCircuitOptions, ProviderCircuitSnapshot } from './resilience/index.js'
+export { ProviderCircuitBreaker, ProviderCircuitOpenError, Bulkhead } from './resilience/index.js'
+export type { CircuitState, ProviderCircuitOptions, ProviderCircuitSnapshot, BulkheadOptions, BulkheadSnapshot } from './resilience/index.js'

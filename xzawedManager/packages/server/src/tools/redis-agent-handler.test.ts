@@ -6,6 +6,7 @@ import { getRedisClient } from '../streams/redis.client.js'
 import { z } from 'zod'
 import { RedisAgentHandler } from './redis-agent-handler.js'
 import { ClarificationNeededError, AgentQueryError } from './errors.js'
+import { Bulkhead } from '@xzawed/agent-streams'
 
 const getRedisClientMock = vi.mocked(getRedisClient)
 
@@ -227,6 +228,42 @@ describe('RedisAgentHandler', () => {
         (c) => c[0] === 'manager:to-builder:sessions'
       )
       expect(gatewayCalls).toHaveLength(2)
+    })
+  })
+
+  describe('§13 벌크헤드 통합', () => {
+    function buildOk() {
+      return makeMsg('build_complete', { success: true, output: 'ok', artifacts: [] })
+    }
+    function handlerWith(bulkhead: Bulkhead) {
+      return new RedisAgentHandler(
+        'redis://localhost:6379', 'builder', 'build_request', 'build_complete', 'build_project',
+        'Build the project', { type: 'object', properties: {}, required: [] }, buildOutputSchema,
+        undefined, bulkhead,
+      )
+    }
+
+    it('bulkhead 주입 시 agentName 키로 bulkhead.run을 통해 실행한다', async () => {
+      mockRedis.xread.mockResolvedValueOnce(buildOk())
+      const run = vi.fn((_key: string, fn: () => Promise<unknown>) => fn())
+      const h = handlerWith({ run } as unknown as Bulkhead)
+      const result = await h.execute({ projectPath: '/app', target: 'production', context: {} }, 'sess-1')
+      expect(run).toHaveBeenCalledWith('builder', expect.any(Function))
+      expect((result as { success: boolean }).success).toBe(true)
+    })
+
+    it('실 Bulkhead로 감싸도 정상 반환하고 슬롯을 해제한다', async () => {
+      mockRedis.xread.mockResolvedValueOnce(buildOk())
+      const bulkhead = new Bulkhead({ perKeyLimit: 1 })
+      const h = handlerWith(bulkhead)
+      await h.execute({ projectPath: '/app', target: 'production', context: {} }, 'sess-1')
+      expect(bulkhead.snapshot().global).toBe(0) // 완료 후 해제
+    })
+
+    it('bulkhead 미주입이면 직접 실행한다(회귀 0)', async () => {
+      mockRedis.xread.mockResolvedValueOnce(buildOk())
+      const result = await handler.execute({}, 'sess-1') // beforeEach 핸들러(bulkhead 미주입)
+      expect((result as { success: boolean }).success).toBe(true)
     })
   })
 })

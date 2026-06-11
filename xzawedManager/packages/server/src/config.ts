@@ -97,6 +97,10 @@ const configSchema = z
       .transform((v) => v === 'true'),
     MANAGER_PROVIDER_CIRCUIT_THRESHOLD: z.coerce.number().int().positive().default(5),
     MANAGER_PROVIDER_CIRCUIT_COOLDOWN_MS: z.coerce.number().int().positive().default(30_000),
+    // §13 벌크헤드(에이전트 종류별 풀 + 전역 캡). 0=무제한(비활성). 둘 중 하나라도 >0이면 RedisAgentHandler에 주입 —
+    // 에이전트 종류(agentName)별 동시 RPC를 캡(초과 시 큐잉·백프레셔·드롭 없음)·한 종류 폭주가 다른 풀을 잠식 차단(§3).
+    MANAGER_BULKHEAD_GLOBAL: z.coerce.number().int().nonnegative().default(0),
+    MANAGER_BULKHEAD_PER_AGENT: z.coerce.number().int().nonnegative().default(0),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

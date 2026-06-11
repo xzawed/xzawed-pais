@@ -32,7 +32,7 @@ import { createDeployProjectHandler } from './tools/deploy-project.js'
 import { SessionGatewayConsumer } from './streams/session-gateway.js'
 import { WatcherEventConsumer } from './streams/watcher-event-consumer.js'
 import { getRedisClient, createRedisClient } from './streams/redis.client.js'
-import { RedisEventBus, BudgetCircuitBreaker, ProviderCircuitBreaker } from '@xzawed/agent-streams'
+import { RedisEventBus, BudgetCircuitBreaker, ProviderCircuitBreaker, Bulkhead } from '@xzawed/agent-streams'
 import { TaskGraphRepo } from './db/task-graph.repo.js'
 import { DispatchStore } from './db/dispatch.repo.js'
 import { LeaseStore } from './db/lease.repo.js'
@@ -76,14 +76,26 @@ export async function buildServer(
 
   const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY, maxRetries: 3 })
 
+  // §13 벌크헤드: 전역/에이전트별 캡 중 하나라도 >0이면 가동. 7개 에이전트 RedisAgentHandler에 공유 주입 —
+  // 에이전트 종류별 동시 RPC를 캡·초과 시 큐잉(백프레셔·드롭 없음). off(둘 다 0)면 미주입(직접 실행·회귀 0).
+  const bulkhead =
+    config.MANAGER_BULKHEAD_GLOBAL > 0 || config.MANAGER_BULKHEAD_PER_AGENT > 0
+      ? new Bulkhead({ globalLimit: config.MANAGER_BULKHEAD_GLOBAL, perKeyLimit: config.MANAGER_BULKHEAD_PER_AGENT })
+      : undefined
+  if (bulkhead) {
+    app.log.info(
+      `[bulkhead] §13 가동 — global=${config.MANAGER_BULKHEAD_GLOBAL || '∞'} perAgent=${config.MANAGER_BULKHEAD_PER_AGENT || '∞'}`,
+    )
+  }
+
   const registry = new ToolRegistry()
-  registry.register(createPlanTaskHandler(config.REDIS_URL))
-  registry.register(createDevelopCodeHandler(config.REDIS_URL))
-  registry.register(createDesignUiHandler(config.REDIS_URL))
-  registry.register(createRunTestsHandler(config.REDIS_URL))
-  registry.register(createBuildProjectHandler(config.REDIS_URL))
-  registry.register(createWatchChangesHandler(config.REDIS_URL))
-  registry.register(createSecurityAuditHandler(config.REDIS_URL))
+  registry.register(createPlanTaskHandler(config.REDIS_URL, bulkhead))
+  registry.register(createDevelopCodeHandler(config.REDIS_URL, bulkhead))
+  registry.register(createDesignUiHandler(config.REDIS_URL, bulkhead))
+  registry.register(createRunTestsHandler(config.REDIS_URL, bulkhead))
+  registry.register(createBuildProjectHandler(config.REDIS_URL, bulkhead))
+  registry.register(createWatchChangesHandler(config.REDIS_URL, bulkhead))
+  registry.register(createSecurityAuditHandler(config.REDIS_URL, bulkhead))
   if (config.GITHUB_TOKEN) {
     registry.register(createGithubOpsHandler(config.GITHUB_TOKEN))
     registry.register(createDeployProjectHandler(config.GITHUB_TOKEN, config.REDIS_URL))

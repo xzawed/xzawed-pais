@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ToolHandler } from './handler.interface.js'
 import { RedisAgentHandler } from './redis-agent-handler.js'
+import type { Bulkhead } from '@xzawed/agent-streams'
 
 interface RunTestsInput {
   projectPath: string
@@ -52,7 +53,7 @@ const outputSchema = z.object({
   content: z.string().default(''),
 })
 
-export function createRunTestsHandler(redisUrl: string): ToolHandler<RunTestsInput, RunTestsOutput> {
+export function createRunTestsHandler(redisUrl: string, bulkhead?: Bulkhead): ToolHandler<RunTestsInput, RunTestsOutput> {
   return new RedisAgentHandler<RunTestsInput, RunTestsOutput>(
     redisUrl,
     'tester',
@@ -62,5 +63,7 @@ export function createRunTestsHandler(redisUrl: string): ToolHandler<RunTestsInp
     'Execute test suites in the specified project and analyze failures',
     inputSchema,
     outputSchema as z.ZodType<RunTestsOutput>,
+    undefined,
+    bulkhead,
   )
 }
