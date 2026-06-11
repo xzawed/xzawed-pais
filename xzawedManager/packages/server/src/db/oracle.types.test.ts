@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { OracleSchema, coveredCriteria, OracleScenarioSchema, OracleDraftSchema, oracleIdFor } from './oracle.types.js'
+import {
+  OracleSchema, coveredCriteria, OracleScenarioSchema, OracleDraftSchema, oracleIdFor,
+  OracleInvariantSchema, OracleGoldenSchema,
+} from './oracle.types.js'
 
 describe('OracleSchema', () => {
   it('기본값을 적용해 파싱한다', () => {
@@ -37,5 +40,32 @@ describe('P3-2 스키마', () => {
   it('oracleIdFor는 경계 모호성 충돌을 회피(길이-prefix 구분)', () => {
     // 단순 연결이면 ('a-b','c')와 ('a','b-c')가 'a-b-c'로 충돌 — 길이-prefix가 분리
     expect(oracleIdFor('a-b', 'c')).not.toBe(oracleIdFor('a', 'b-c'))
+  })
+})
+
+describe('P4b-3 Oracle 아티팩트 확장 (invariants·golden_refs)', () => {
+  it('OracleSchema는 invariants·goldenRefs 기본 [](P3 회귀 0)', () => {
+    const o = OracleSchema.parse({ oracleId: 'o1', workflowId: 'wf1', storyId: 's1' })
+    expect(o.invariants).toEqual([])
+    expect(o.goldenRefs).toEqual([])
+  })
+  it('OracleInvariantSchema는 statement/domain/property·status 기본값(human_approved만 게이트 계수)', () => {
+    expect(OracleInvariantSchema.parse({ id: 'inv1' })).toMatchObject({
+      id: 'inv1', statement: '', domain: '', property: '', status: 'drafted',
+    })
+  })
+  it('OracleGoldenSchema는 normalizedOutput·normalizers·frozenBy·version 기본값', () => {
+    expect(OracleGoldenSchema.parse({ id: 'g1' })).toMatchObject({
+      id: 'g1', inputFixture: '', normalizedOutput: '', normalizers: [], frozenBy: null, fromDecision: null, version: 1,
+    })
+  })
+  it('OracleSchema가 invariants·goldenRefs 값을 보존', () => {
+    const o = OracleSchema.parse({
+      oracleId: 'o1', workflowId: 'wf1', storyId: 's1',
+      invariants: [{ id: 'inv1', statement: 's', property: 'p', status: 'human_approved' }],
+      goldenRefs: [{ id: 'g1', normalizedOutput: 'out', version: 2 }],
+    })
+    expect(o.invariants[0]).toMatchObject({ id: 'inv1', status: 'human_approved' })
+    expect(o.goldenRefs[0]).toMatchObject({ id: 'g1', version: 2 })
   })
 })
