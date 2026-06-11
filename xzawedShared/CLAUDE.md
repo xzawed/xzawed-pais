@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (246 테스트 통과)**
+**현재 상태: 구현 완료 (263 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -49,6 +49,9 @@ src/
 │   ├── provider-circuit.ts      # ProviderCircuitBreaker(closed/open/half_open)·ProviderCircuitOpenError
 │   ├── bulkhead.ts              # Bulkhead(에이전트 종류별 풀+전역 캡·FIFO 큐·HoL 회피·acquire/run)
 │   └── index.ts                 # resilience 배럴 export
+├── risk/                        # P2r-1 Wiki Agent 리스크 분류 결정론 코어 (순수·LLM/IO 0)
+│   ├── risk-classification.ts   # confidenceFromSupport·aggregateDimension·combineRisk·routeModels·evaluateHumanGate·scoreClassification·RiskClassificationSchema
+│   └── index.ts                 # risk 배럴 export
 ├── decomposition/               # P2-1 결정론 분해 코어 (순수 함수·I/O 0)
 │   ├── coverage-matrix.ts       # coverageMatrix — §6 P4 커버리지 매트릭스(gaps·overlaps·unknownClaims)
 │   ├── content-hash.ts          # contentHashId — §6 P7 안정 WP ID(wp_<sha256 32hex>)
@@ -62,6 +65,7 @@ src/
     ├── budget-circuit.test.ts   # costOf/BudgetCircuitBreaker/BudgetExceededError 테스트
     ├── provider-circuit.test.ts # ProviderCircuitBreaker 상태머신(open/half_open/cooldown) 테스트
     ├── bulkhead.test.ts         # Bulkhead 캡/큐잉/HoL 회피/run/멱등 release 테스트
+    ├── risk-classification.test.ts # confidence/aggregate/combineRisk/routeModels/humanGate/scoreClassification 테스트
     ├── session-dispatcher.test.ts  # SessionDispatcher 테스트
     ├── agent-query.test.ts      # AgentQuery / parseAgentQuery 테스트
     ├── answer-query.test.ts     # answerViaClaude / callClaudeText 등 테스트
@@ -158,6 +162,29 @@ await bh.run('tester', () => doWork())        // acquire→fn→release(finally)
 - **HoL(head-of-line) 회피**: 해제 시 큐를 FIFO로 훑되 캡에 막힌 키는 건너뛰고 **진행 가능한 첫 대기자**를 grant — 키A가 막혀도 키B 대기자가 먼저 진행.
 - **멱등 release**: 중복 호출 무시(카운터 음수 방지). I/O·타이머 0.
 - **소비자 측**(Manager): 7개 에이전트 `RedisAgentHandler.execute`가 `bulkhead.run(agentName, …)`로 RPC를 감싼다(단일 chokepoint — 러너·워커·교차질의 전부 커버). 미주입이면 직접 실행(회귀 0).
+
+## P2r-1 리스크 분류 결정론 코어 (`risk/risk-classification.ts`)
+
+Wiki Agent 리스크 분류기(spec §5·§20.2·WIKI_AGENT_RISK_CLASSIFICATION.md)의 **순수 코드 경계**(P4 투표·P5 채점/라우팅/게이트). P2 조사·P3 claim 추출·인용 해소는 LLM/IO라 후속 생산자 슬라이스가 담당하고, verified claim을 이 코어에 넘겨 아티팩트를 조립한다.
+
+```typescript
+import { scoreClassification, routeModels, combineRisk } from '@xzawed/agent-streams'
+import type { RiskClassification, ClaimInput } from '@xzawed/agent-streams'
+
+const rc: RiskClassification = scoreClassification({
+  projectId, complianceFrameworks: ['HIPAA'],
+  claims: [{ text: 'PHI 취급→HIPAA', dimension: 'compliance', support: 3, citations: ['hipaa.gov#164'] }],
+})
+// rc.risk(LOW|MED|HIGH)·rc.modelRouting(§5)·rc.humanGate(§4)·rc.dimensionScores·rc.audit(미승인 v1)
+```
+
+- **`confidenceFromSupport(support)`**: 독립 소스 수→confidence(FULL=3에서 포화·음수 0).
+- **`aggregateDimension(claims, dim)`**: noisy-OR(점수)·평균(confidence). claim 없으면 {0,0}.
+- **`combineRisk(scores, {complianceFrameworks})`**: 최대 점수 기준 LOW/MED/HIGH·컴플라이언스 감지 시 바닥 MEDIUM.
+- **`routeModels(risk, {complianceDetected})`**(§5): PM 항상 opus·LOW=나머지 sonnet·HIGH=전부 opus·MEDIUM=sonnet+Security 에스컬레이션.
+- **`evaluateHumanGate(risk, scores, frameworks)`**(§4): HIGH·고stakes 저confidence·컴플라이언스 불확실 시 required.
+- **`scoreClassification(input)`**: 위를 조립해 `RiskClassification`(사람 미승인 audit.version=1). Wiki Agent 자신=`classifierModel:'opus'`.
+- ⚠️ 산식·임계(`FULL_CONFIDENCE_SUPPORT`·`*_SCORE_THRESHOLD`·`LOW_CONFIDENCE_THRESHOLD`)는 spec §19 캘리브레이션 대상. 라우팅 테이블은 §5 확정. risk 레벨은 `WpRisk` 재사용(work-package §7).
 
 ## WorkPackage §7 계약 스키마 (`types/work-package.ts`)
 
