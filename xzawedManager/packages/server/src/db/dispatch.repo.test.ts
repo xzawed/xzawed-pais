@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { DispatchStore } from './dispatch.repo.js'
+import { DispatchStore, appendWpEvent, wpEnvelope } from './dispatch.repo.js'
 
 /** lease INSERT은 RETURNING wp_id, wp_state_log INSERT은 RETURNING seq를 돌려주는 mock. leaseConflict면 lease 0행. */
 function makeMockPool(opts: { leaseConflict?: boolean } = {}) {
@@ -41,7 +41,7 @@ describe('DispatchStore.recordDispatch (P1d-5a: lease + WP 고정 멱등키)', (
     const m = makeMockPool()
     await new DispatchStore(m.pool, () => 1000).recordDispatch(base)
     const ev = callFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[]
-    expect(ev[6]).toBe('wf-1:wp-wp-1:0')          // idempotency_key (attempt 기본 0)
+    expect(ev[6]).toBe('wf-1:wp-wp-1:0:wp.dispatched')  // idempotency_key (attempt 0·event_type 분리 §8)
     expect(JSON.parse(ev[3] as string)).toEqual({ wpId: 'wp-1', stepN: 3, attempt: 0 })
   })
 
@@ -49,7 +49,7 @@ describe('DispatchStore.recordDispatch (P1d-5a: lease + WP 고정 멱등키)', (
     const m = makeMockPool()
     await new DispatchStore(m.pool, () => 1000).recordDispatch({ ...base, attempt: 2 })
     const ev = callFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[]
-    expect(ev[6]).toBe('wf-1:wp-wp-1:2')
+    expect(ev[6]).toBe('wf-1:wp-wp-1:2:wp.dispatched')
     expect(JSON.parse(ev[3] as string)).toMatchObject({ attempt: 2 })
     const lease = callFor(m.query, /INSERT INTO wp_leases/i)![1] as unknown[]
     expect(lease[2]).toBe(2)                        // attempt
@@ -94,7 +94,7 @@ describe('DispatchStore.recordDispatch (P1d-5a: lease + WP 고정 멱등키)', (
     expect(ob[1]).toBe('manager:events:wf-1')
     const msg = JSON.parse(ob[2] as string)
     expect(msg.type).toBe('wp.dispatched')
-    expect(msg.envelope.idempotencyKey).toBe('wf-1:wp-wp-1:0')
+    expect(msg.envelope.idempotencyKey).toBe('wf-1:wp-wp-1:0:wp.dispatched')
   })
 
   it('이미 lease가 있으면(ON CONFLICT 0행) ROLLBACK하고 {status:deduped} 반환·이벤트 미적재(§8 #2)', async () => {
@@ -141,5 +141,31 @@ describe('DispatchStore.recordDispatch (P1d-5a: lease + WP 고정 멱등키)', (
     })
     await expect(new DispatchStore(m.pool, () => 1).recordDispatch(base)).rejects.toThrow('original')
     expect(m.release).toHaveBeenCalled()
+  })
+})
+
+/** manager_events idempotency_key(params[6])와 outbox 봉투 키를 캡처하는 mock client(appendWpEvent 단위 검증). */
+function captureClient() {
+  const keys: string[] = []
+  const envKeys: string[] = []
+  const query = vi.fn().mockImplementation((sql: string, params: unknown[]) => {
+    if (/INSERT INTO manager_events/i.test(sql)) keys.push(params[6] as string)
+    if (/INSERT INTO wp_state_log/i.test(sql)) return Promise.resolve({ rows: [{ seq: '1' }] })
+    if (/INSERT INTO manager_outbox/i.test(sql)) envKeys.push(JSON.parse(params[2] as string).envelope.idempotencyKey)
+    return Promise.resolve({ rows: [] })
+  })
+  return { client: { query } as never, keys, envKeys }
+}
+
+describe('appendWpEvent — 멱등키 event_type 분리(§8 생명주기 충돌 방지)', () => {
+  it('같은 (wf,wp,attempt)라도 dispatched·completed가 분리된 멱등키를 받는다 — 키 충돌 dedup 유실 방지', async () => {
+    const c = captureClient()
+    const append = (eventType: string, fromState: string, toState: string) =>
+      appendWpEvent(c.client, wpEnvelope('wf', 'a', 0, 1), { workflowId: 'wf', wpId: 'a', attempt: 0, stepN: 0, eventType, fromState, toState })
+    await append('wp.dispatched', 'DRAFTED', 'DISPATCHED')
+    await append('wp.completed', 'DISPATCHED', 'DONE')
+    expect(c.keys).toEqual(['wf:wp-a:0:wp.dispatched', 'wf:wp-a:0:wp.completed'])
+    expect(c.keys[0]).not.toBe(c.keys[1])            // 핵심: 같은 attempt라도 충돌 없음
+    expect(c.envKeys).toEqual(c.keys)                 // 아웃박스 봉투 키도 event_type 반영(소비자 dedup 정합)
   })
 })
