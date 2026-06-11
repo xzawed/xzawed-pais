@@ -75,10 +75,12 @@ describe.skipIf(!url)('P3-2 오라클 루프 통합(영속→승인→DoR)', () 
       await repo.upsert({
         oracleId: `${wf}-s1-v1`, workflowId: wf, storyId: 's1', version: 1, status: 'approved',
         scenarios: [{ id: 'old', title: 'old', given: [], when: '', thenSteps: ['x'], status: 'human_approved' }], coverage: { AC1: ['old'] },
+        invariants: [], goldenRefs: [],
       })
       await repo.upsert({
         oracleId: `${wf}-s1-v2`, workflowId: wf, storyId: 's1', version: 2, status: 'approved',
         scenarios: [{ id: 'new', title: 'new', given: [], when: '', thenSteps: ['y'], status: 'human_approved' }], coverage: { AC1: ['new'] },
+        invariants: [], goldenRefs: [],
       })
       const latest = await repo.approvedOracleForStory(wf, 's1')
       expect(latest?.scenarios.map((s) => s.id)).toEqual(['new'])  // 최신 version(2)
@@ -93,6 +95,39 @@ describe.skipIf(!url)('P3-2 오라클 루프 통합(영속→승인→DoR)', () 
 
       // (c) 타/미존재 story → null
       expect(await repo.approvedOracleForStory(wf, 's-none')).toBeNull()
+    } finally {
+      await pool.query("DELETE FROM manager_outbox WHERE message::text LIKE '%wf-orc-%'").catch(() => undefined)
+      await pool.query("DELETE FROM manager_events WHERE session_id LIKE 'wf-orc-%'").catch(() => undefined)
+      await pool.query("DELETE FROM oracles WHERE workflow_id LIKE 'wf-orc-%'").catch(() => undefined)
+      await closePool()
+    }
+  })
+
+  // P4b-3: 확장 아티팩트(invariants §4·golden_refs §5)가 migration 010 컬럼에 upsert→listByWorkflow로
+  // 라운드트립(JSONB 보존). additive — approve는 invariants/golden_refs를 건드리지 않음(보존).
+  it('upsert→listByWorkflow가 invariants·golden_refs를 보존(P4b-3 additive 스키마)', async () => {
+    const pool = createPool(url!)
+    try {
+      await runMigrations(pool)
+      const repo = new OracleRepo(pool)
+      const wf = `wf-orc-igr-${Date.now()}`
+      const invariants = [{ id: 'inv1', statement: '30분 경과 토큰은 거부', domain: '토큰 생성기', property: 'for all t: age(t)>30min => reject(t)', status: 'human_approved' as const }]
+      const goldenRefs = [{ id: 'g1', inputFixture: 'ref', normalizedOutput: 'OK', normalizers: ['strip_timestamps'], frozenAt: '2026-06-11', frozenBy: 'human-1', fromDecision: 'dec-1', version: 1 }]
+      await repo.upsert({
+        oracleId: `${wf}-s1`, workflowId: wf, storyId: 's1', version: 1, status: 'pending',
+        scenarios: [{ id: 'sc1', title: 't', given: [], when: 'w', thenSteps: ['ok'], status: 'drafted' }],
+        coverage: { AC1: ['sc1'] }, invariants, goldenRefs,
+      })
+      const rows = await repo.listByWorkflow(wf)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.invariants).toEqual(invariants)
+      expect(rows[0]?.golden_refs).toEqual(goldenRefs)
+
+      // approve는 invariants/golden_refs 보존(scenarios만 전이) — additive 회귀 0 실증.
+      await repo.approve(`${wf}-s1`, 'human-1')
+      const after = await repo.listByWorkflow(wf)
+      expect(after[0]?.invariants).toEqual(invariants)
+      expect(after[0]?.golden_refs).toEqual(goldenRefs)
     } finally {
       await pool.query("DELETE FROM manager_outbox WHERE message::text LIKE '%wf-orc-%'").catch(() => undefined)
       await pool.query("DELETE FROM manager_events WHERE session_id LIKE 'wf-orc-%'").catch(() => undefined)

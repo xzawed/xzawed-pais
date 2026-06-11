@@ -21,6 +21,31 @@ export const OracleScenarioSchema = z.object({
 })
 export type OracleScenario = z.infer<typeof OracleScenarioSchema>
 
+/** §4 Invariant — 속성 기반(property-based 테스트로 컴파일). 사람 검토용·human_approved만 게이트 계수.
+ *  현재 영속 스키마만(검증 미소비) — property-based 컴파일·게이트 계수는 후속(impact/mutation 슬라이스). */
+export const OracleInvariantSchema = z.object({
+  id: z.string().min(1),
+  statement: z.string().default(''),
+  domain: z.string().default(''),
+  property: z.string().default(''),
+  status: z.enum(['drafted', 'human_approved', 'rejected']).default('drafted'),
+})
+export type OracleInvariant = z.infer<typeof OracleInvariantSchema>
+
+/** §5 Golden reference — 사람 사인오프 시점의 정규화된 기준 출력(impact 채널 differential 베이스라인).
+ *  normalizer로 비결정 필드(타임스탬프·id) 제거. 신규 골든 버전은 사람 승인만(N7) — 현재 영속 스키마만. */
+export const OracleGoldenSchema = z.object({
+  id: z.string().min(1),
+  inputFixture: z.string().default(''),
+  normalizedOutput: z.string().default(''),
+  normalizers: z.array(z.string()).default([]),
+  frozenAt: z.string().default(''),
+  frozenBy: z.string().nullable().default(null),
+  fromDecision: z.string().nullable().default(null),
+  version: z.number().int().positive().default(1),
+})
+export type OracleGolden = z.infer<typeof OracleGoldenSchema>
+
 export const OracleSchema = z.object({
   oracleId: z.string().min(1),
   workflowId: z.string().min(1),
@@ -28,6 +53,10 @@ export const OracleSchema = z.object({
   version: z.number().int().positive().default(1),
   status: z.enum(['pending', 'approved', 'superseded']).default('pending'),
   scenarios: z.array(OracleScenarioSchema).default([]),
+  /** §4 속성 기반 불변식(additive·기본 [] — P3 회귀 0). */
+  invariants: z.array(OracleInvariantSchema).default([]),
+  /** §5 골든 기준 출력(additive·기본 [] — impact 채널이 differential 베이스라인으로 소비). */
+  goldenRefs: z.array(OracleGoldenSchema).default([]),
   /** acceptance_criterion(문자열) → 그것을 덮는 scenario id 목록. */
   coverage: z.record(z.array(z.string())).default({}),
 })

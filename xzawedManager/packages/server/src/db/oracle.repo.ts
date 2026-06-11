@@ -5,11 +5,12 @@ import {
   OracleScenarioSchema, coveredCriteria, oracleIdFor,
   ORACLE_PENDING, ORACLE_APPROVED, ORACLE_APPROVED_EVENT, ORACLE_ACTOR, ORACLE_STREAM, SCENARIO_APPROVED,
 } from './oracle.types.js'
-import type { Oracle, OracleScenario } from './oracle.types.js'
+import type { Oracle, OracleScenario, OracleInvariant, OracleGolden } from './oracle.types.js'
 
 interface OracleRow {
   oracle_id: string; workflow_id: string; story_id: string; version: number
   status: string; scenarios: OracleScenario[]; coverage: Record<string, string[]>
+  invariants: OracleInvariant[]; golden_refs: OracleGolden[]
 }
 
 /** ROLLBACK 자체 실패(연결 손상)해도 무시 — 원본 흐름 보존(DispatchStore 패턴). */
@@ -26,13 +27,15 @@ export class OracleRepo {
 
   async upsert(oracle: Oracle): Promise<void> {
     await this.pool.query(
-      `INSERT INTO oracles (oracle_id, workflow_id, story_id, version, status, scenarios, coverage)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
+      `INSERT INTO oracles (oracle_id, workflow_id, story_id, version, status, scenarios, invariants, golden_refs, coverage)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (oracle_id) DO UPDATE SET
          version = oracles.version + 1, status = EXCLUDED.status,
-         scenarios = EXCLUDED.scenarios, coverage = EXCLUDED.coverage`,
+         scenarios = EXCLUDED.scenarios, invariants = EXCLUDED.invariants,
+         golden_refs = EXCLUDED.golden_refs, coverage = EXCLUDED.coverage`,
       [oracle.oracleId, oracle.workflowId, oracle.storyId, oracle.version, oracle.status,
-        JSON.stringify(oracle.scenarios), JSON.stringify(oracle.coverage)],
+        JSON.stringify(oracle.scenarios), JSON.stringify(oracle.invariants), JSON.stringify(oracle.goldenRefs),
+        JSON.stringify(oracle.coverage)],
     )
   }
 
