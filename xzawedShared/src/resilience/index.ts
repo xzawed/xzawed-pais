@@ -4,3 +4,5 @@ export type {
   ProviderCircuitOptions,
   ProviderCircuitSnapshot,
 } from './provider-circuit.js'
+export { Bulkhead } from './bulkhead.js'
+export type { BulkheadOptions, BulkheadSnapshot } from './bulkhead.js'

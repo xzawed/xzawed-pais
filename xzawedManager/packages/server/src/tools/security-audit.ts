@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ToolHandler } from './handler.interface.js'
 import { RedisAgentHandler } from './redis-agent-handler.js'
+import type { Bulkhead } from '@xzawed/agent-streams'
 
 interface SecurityAuditInput {
   artifacts: string[]
@@ -58,7 +59,7 @@ const outputSchema = z.object({
   knowledge: z.array(z.string()).optional(),
 })
 
-export function createSecurityAuditHandler(redisUrl: string): ToolHandler<SecurityAuditInput, SecurityAuditOutput> {
+export function createSecurityAuditHandler(redisUrl: string, bulkhead?: Bulkhead): ToolHandler<SecurityAuditInput, SecurityAuditOutput> {
   return new RedisAgentHandler<SecurityAuditInput, SecurityAuditOutput>(
     redisUrl,
     'security',
@@ -68,5 +69,7 @@ export function createSecurityAuditHandler(redisUrl: string): ToolHandler<Securi
     'Audit code artifacts for security vulnerabilities above the specified severity',
     inputSchema,
     outputSchema as z.ZodType<SecurityAuditOutput>,
+    undefined,
+    bulkhead,
   )
 }

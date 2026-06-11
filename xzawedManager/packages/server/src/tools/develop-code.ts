@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ToolHandler } from './handler.interface.js'
 import { RedisAgentHandler } from './redis-agent-handler.js'
+import type { Bulkhead } from '@xzawed/agent-streams'
 
 interface DevelopCodeInput {
   plan: string
@@ -32,7 +33,7 @@ const outputSchema = z.object({
   knowledge: z.array(z.string()).optional(),
 })
 
-export function createDevelopCodeHandler(redisUrl: string): ToolHandler<DevelopCodeInput, DevelopCodeOutput> {
+export function createDevelopCodeHandler(redisUrl: string, bulkhead?: Bulkhead): ToolHandler<DevelopCodeInput, DevelopCodeOutput> {
   return new RedisAgentHandler<DevelopCodeInput, DevelopCodeOutput>(
     redisUrl,
     'developer',
@@ -42,5 +43,7 @@ export function createDevelopCodeHandler(redisUrl: string): ToolHandler<DevelopC
     'Implement code according to a plan for the specified project',
     inputSchema,
     outputSchema as z.ZodType<DevelopCodeOutput>,
+    undefined,
+    bulkhead,
   )
 }

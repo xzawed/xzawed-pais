@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ToolHandler } from './handler.interface.js'
 import { RedisAgentHandler } from './redis-agent-handler.js'
+import type { Bulkhead } from '@xzawed/agent-streams'
 
 interface PlanTaskInput {
   intent: string
@@ -48,7 +49,7 @@ const outputSchema = z.object({
   ])).optional(),
 })
 
-export function createPlanTaskHandler(redisUrl: string): ToolHandler<PlanTaskInput, PlanTaskOutput> {
+export function createPlanTaskHandler(redisUrl: string, bulkhead?: Bulkhead): ToolHandler<PlanTaskInput, PlanTaskOutput> {
   return new RedisAgentHandler<PlanTaskInput, PlanTaskOutput>(
     redisUrl,
     'planner',
@@ -58,5 +59,7 @@ export function createPlanTaskHandler(redisUrl: string): ToolHandler<PlanTaskInp
     'Create a detailed step-by-step implementation plan for a development task',
     inputSchema,
     outputSchema as z.ZodType<PlanTaskOutput>,
+    undefined,
+    bulkhead,
   )
 }

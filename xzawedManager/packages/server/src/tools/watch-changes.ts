@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ToolHandler } from './handler.interface.js'
 import { RedisAgentHandler } from './redis-agent-handler.js'
+import type { Bulkhead } from '@xzawed/agent-streams'
 
 interface WatchChangesInput {
   projectPath: string
@@ -44,7 +45,7 @@ const outputSchema = z.object({
   changes: z.array(fileEventSchema).optional(),
 })
 
-export function createWatchChangesHandler(redisUrl: string): ToolHandler<WatchChangesInput, WatchChangesOutput> {
+export function createWatchChangesHandler(redisUrl: string, bulkhead?: Bulkhead): ToolHandler<WatchChangesInput, WatchChangesOutput> {
   return new RedisAgentHandler<WatchChangesInput, WatchChangesOutput>(
     redisUrl,
     'watcher',
@@ -54,5 +55,7 @@ export function createWatchChangesHandler(redisUrl: string): ToolHandler<WatchCh
     'Start a file watcher that triggers actions on file changes in the project',
     inputSchema,
     outputSchema as unknown as z.ZodType<WatchChangesOutput>,
+    undefined,
+    bulkhead,
   )
 }

@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (238 테스트 통과)**
+**현재 상태: 구현 완료 (246 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -45,8 +45,9 @@ src/
 ├── budget/                      # §13 budget 서킷브레이커 (순수·인메모리)
 │   ├── budget-circuit.ts        # MODEL_PRICING·costOf·BudgetCircuitBreaker·BudgetExceededError
 │   └── index.ts                 # budget 배럴 export
-├── resilience/                  # §13 provider 서킷브레이커 (순수 상태머신)
+├── resilience/                  # §13 provider 서킷브레이커 + 벌크헤드 (순수)
 │   ├── provider-circuit.ts      # ProviderCircuitBreaker(closed/open/half_open)·ProviderCircuitOpenError
+│   ├── bulkhead.ts              # Bulkhead(에이전트 종류별 풀+전역 캡·FIFO 큐·HoL 회피·acquire/run)
 │   └── index.ts                 # resilience 배럴 export
 ├── decomposition/               # P2-1 결정론 분해 코어 (순수 함수·I/O 0)
 │   ├── coverage-matrix.ts       # coverageMatrix — §6 P4 커버리지 매트릭스(gaps·overlaps·unknownClaims)
@@ -60,6 +61,7 @@ src/
     ├── dlq.test.ts              # dlqStreamKey/idemKey/DlqMessageSchema/redriveDlq 테스트
     ├── budget-circuit.test.ts   # costOf/BudgetCircuitBreaker/BudgetExceededError 테스트
     ├── provider-circuit.test.ts # ProviderCircuitBreaker 상태머신(open/half_open/cooldown) 테스트
+    ├── bulkhead.test.ts         # Bulkhead 캡/큐잉/HoL 회피/run/멱등 release 테스트
     ├── session-dispatcher.test.ts  # SessionDispatcher 테스트
     ├── agent-query.test.ts      # AgentQuery / parseAgentQuery 테스트
     ├── answer-query.test.ts     # answerViaClaude / callClaudeText 등 테스트
@@ -138,6 +140,24 @@ cb.onFailure()    // 실패 → 카운트++(half_open은 즉시 재open)·임계
 - **상태**: closed(정상)→연속 실패 임계 도달→open(cooldown 동안 fail-fast)→cooldown 경과 시 `before`가 half_open으로 1회 probe→성공 closed/실패 재open.
 - **provider-agnostic**: SDK 에러 분류는 호출자(Manager 러너 `isProviderFailure` — `.status`/`.name` duck-typing)가 담당. 코어는 success/failure 신호만 받는다(테스트·다른 provider 재사용 용이).
 - **소비자 측**(Manager): 러너가 `before`(open이면 throw→error 발행=stop)·실패 시 `onFailure`(429/5xx/529·연결/타임아웃만·400 등 미반영)·성공 시 `onSuccess`를 배선. 트립은 OPERATIONS_DECISIONS §1 NORMAL→DEGRADED 강등 신호 입력(전이는 P6).
+
+## §13 벌크헤드 패턴 (`resilience/bulkhead.ts`)
+
+에이전트 종류별 풀 + 전역 캡으로 동시 실행을 제한하는 순수 async 세마포어 — 한 종류의 폭주가 다른 풀을 잠식하지 않게 격리(연쇄 장애 차단·§3).
+
+```typescript
+import { Bulkhead } from '@xzawed/agent-streams'
+
+const bh = new Bulkhead({ globalLimit: 16, perKeyLimit: 4 }) // 0/미지정=무제한
+const release = await bh.acquire('developer') // 캡 도달 시 await(큐잉·드롭 없음)·반환=멱등 release
+try { /* ...작업... */ } finally { release() }
+await bh.run('tester', () => doWork())        // acquire→fn→release(finally) 편의
+```
+
+- **이중 제약**: 전역 캡 AND 키별 캡 둘 다 만족해야 grant. 캡 도달 시 FIFO 큐잉(백프레셔·**드롭 없음**).
+- **HoL(head-of-line) 회피**: 해제 시 큐를 FIFO로 훑되 캡에 막힌 키는 건너뛰고 **진행 가능한 첫 대기자**를 grant — 키A가 막혀도 키B 대기자가 먼저 진행.
+- **멱등 release**: 중복 호출 무시(카운터 음수 방지). I/O·타이머 0.
+- **소비자 측**(Manager): 7개 에이전트 `RedisAgentHandler.execute`가 `bulkhead.run(agentName, …)`로 RPC를 감싼다(단일 chokepoint — 러너·워커·교차질의 전부 커버). 미주입이면 직접 실행(회귀 0).
 
 ## WorkPackage §7 계약 스키마 (`types/work-package.ts`)
 

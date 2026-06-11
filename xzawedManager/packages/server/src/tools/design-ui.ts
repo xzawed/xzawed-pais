@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ToolHandler } from './handler.interface.js'
 import { RedisAgentHandler } from './redis-agent-handler.js'
+import type { Bulkhead } from '@xzawed/agent-streams'
 
 interface ComponentSpec {
   name: string
@@ -65,7 +66,7 @@ const outputSchema = z.object({
   knowledge: z.array(z.string()).optional(),
 })
 
-export function createDesignUiHandler(redisUrl: string): ToolHandler<DesignUiInput, DesignUiOutput> {
+export function createDesignUiHandler(redisUrl: string, bulkhead?: Bulkhead): ToolHandler<DesignUiInput, DesignUiOutput> {
   return new RedisAgentHandler<DesignUiInput, DesignUiOutput>(
     redisUrl,
     'designer',
@@ -75,5 +76,7 @@ export function createDesignUiHandler(redisUrl: string): ToolHandler<DesignUiInp
     'Design UI components and layout specification for a given intent',
     inputSchema,
     outputSchema as unknown as z.ZodType<DesignUiOutput>,
+    undefined,
+    bulkhead,
   )
 }

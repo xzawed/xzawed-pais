@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { ToolHandler } from './handler.interface.js'
 import { RedisAgentHandler } from './redis-agent-handler.js'
+import type { Bulkhead } from '@xzawed/agent-streams'
 
 interface BuildProjectInput {
   projectPath: string
@@ -25,7 +26,7 @@ const outputSchema = z.object({
   artifacts: z.array(z.string()).default([]),
 })
 
-export function createBuildProjectHandler(redisUrl: string): ToolHandler<BuildProjectInput, BuildProjectOutput> {
+export function createBuildProjectHandler(redisUrl: string, bulkhead?: Bulkhead): ToolHandler<BuildProjectInput, BuildProjectOutput> {
   return new RedisAgentHandler<BuildProjectInput, BuildProjectOutput>(
     redisUrl,
     'builder',
@@ -35,5 +36,7 @@ export function createBuildProjectHandler(redisUrl: string): ToolHandler<BuildPr
     'Build the project at the specified path for the given target',
     inputSchema,
     outputSchema as z.ZodType<BuildProjectOutput>,
+    undefined,
+    bulkhead,
   )
 }
