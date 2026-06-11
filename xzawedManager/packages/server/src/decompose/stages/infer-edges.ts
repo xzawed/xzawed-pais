@@ -26,7 +26,8 @@ Return ONLY valid JSON:
 export async function inferStoryDependencies(stories: Story[], deps: StageDeps): Promise<Map<string, string[]>> {
   if (stories.length < 2) return new Map() // 간선이 불가능 — LLM 호출·비용 회피
   const fallback = (): z.infer<typeof EdgesSchema> => ({ dependencies: [] })
-  const user = `Stories:\n${stories.map((s) => `- ${s.storyId}: ${s.title}`).join('\n')}`
+  const lines = stories.map((s) => `- ${s.storyId}: ${s.title}`).join('\n')
+  const user = `Stories:\n${lines}`
   const data = await runStage(deps, { system: INFER_EDGES_SYSTEM_PROMPT, user, maxTokens: MAX_TOKENS, schema: EdgesSchema, fallback })
   const raw = new Map<string, string[]>()
   for (const d of data.dependencies ?? []) raw.set(d.storyId, d.dependsOn ?? [])
@@ -38,6 +39,13 @@ export async function inferStoryDependencies(stories: Story[], deps: StageDeps):
  * (story 순서 + 정렬된 prereq로 결정론). "s depends on p" = 간선 s→p; p가 이미 s에 도달하면 추가 시 사이클 → skip.
  * 모든 storyId가 키로 존재(빈 prereq면 []). build_dag(buildTaskGraph)가 그대로 수용하는 DAG 보장.
  */
+/** 결정론 문자열 비교(codepoint·locale 비의존 — Array.sort comparator). localeCompare 금지(결정론 보존). */
+function byString(a: string, b: string): number {
+  if (a < b) return -1
+  if (a > b) return 1
+  return 0
+}
+
 export function acyclicStoryDependencies(storyIds: string[], raw: Map<string, string[]>): Map<string, string[]> {
   const known = new Set(storyIds)
   const deps = new Map<string, string[]>()
@@ -55,7 +63,7 @@ export function acyclicStoryDependencies(storyIds: string[], raw: Map<string, st
   }
   for (const s of storyIds) {
     const prereqs: string[] = []
-    for (const p of [...new Set(raw.get(s) ?? [])].sort()) {
+    for (const p of [...new Set(raw.get(s) ?? [])].sort(byString)) {
       if (p === s || !known.has(p)) continue // 자기참조·미지 드롭
       if (canReach(p, s)) continue // p가 s에 도달 → s→p 추가 시 사이클
       prereqs.push(p)
