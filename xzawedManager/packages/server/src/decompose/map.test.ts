@@ -40,6 +40,11 @@ describe('toWorkPackages', () => {
     expect(toWorkPackages([])).toEqual([])
   })
 
+  it('epicId 전파(§7 — 없으면 null)', () => {
+    expect(toWorkPackages([llm({ ref: 'a', epicId: 'e1' })])[0]?.epicId).toBe('e1')
+    expect(toWorkPackages([llm({ ref: 'b' })])[0]?.epicId).toBeNull()
+  })
+
   it('출력은 buildTaskGraph가 수용(dangling 0)', () => {
     const out = toWorkPackages([llm({ ref: 'a' }), llm({ ref: 'b', storyId: 's2', dependsOn: ['a'] })])
     expect(() => buildTaskGraph(out)).not.toThrow()

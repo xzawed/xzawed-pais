@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildTaskGraph } from '@xzawed/agent-streams'
+import { buildTaskGraph, readyNodes } from '@xzawed/agent-streams'
 import type { ClaudeLike } from '@xzawed/agent-streams'
 import { runDecomposition, fallbackWorkPackages } from './pipeline.js'
 import type { StageDeps } from './stages/run-stage.js'
@@ -65,6 +65,41 @@ describe('runDecomposition (P2-3b)', () => {
     const out = fallbackWorkPackages('only this')
     expect(out).toHaveLength(1)
     expect(out[0]?.acceptanceCriteria).toEqual(['only this'])
+  })
+})
+
+const STORIES_2 = '{"stories":[{"storyId":"s1","epicRef":"e1","title":"A","deliverableIds":["d1"],"acceptanceCriteria":["a"]},{"storyId":"s2","epicRef":"e1","title":"B","deliverableIds":["d2"],"acceptanceCriteria":["b"]}]}'
+const DELIVS_2 = '{"deliverables":["d1","d2"]}'
+const ROLES_2 = '{"assignments":[{"storyId":"s1","roles":["developer"]},{"storyId":"s2","roles":["developer"]}]}'
+const EDGES_S2_S1 = '{"dependencies":[{"storyId":"s2","dependsOn":["s1"]}]}'
+
+describe('runDecomposition 간선 추론·epicId (P6/P7)', () => {
+  it('다중 story → 선행 story WP에 의존 + epicId 전파, FLAT 아님', async () => {
+    // 순서: epics → slice(2 story) → deliverables → roles → infer-edges(2 story라 LLM 호출).
+    const res = await runDecomposition('build', stagedDeps(EPICS, STORIES_2, DELIVS_2, ROLES_2, EDGES_S2_S1))
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok') return
+    expect(res.workPackages).toHaveLength(2)
+    // 파이프라인은 story 순서로 WP 생성(s1 먼저). 결정론적이라 인덱스로 안전 접근(`!` 단언 회피).
+    const [s1wp, s2wp] = res.workPackages
+    expect(s1wp?.storyId).toBe('s1')
+    expect(s2wp?.storyId).toBe('s2')
+    expect(s1wp?.dependencies).toEqual([])           // root(선행 없음)
+    expect(s2wp?.dependencies).toEqual([s1wp?.id])   // s2 → s1 (간선)
+    expect(s1wp?.epicId).toBe('e1')                  // §7 epicId
+    expect(s2wp?.epicId).toBe('e1')
+    const graph = buildTaskGraph(res.workPackages)
+    // 간선이 생겨 s2는 s1 완료 전 미ready(FLAT이면 둘 다 ready였음). 오라클 검사는 격리.
+    expect(readyNodes(graph, { oracleSatisfied: () => true })).toEqual([s1wp?.id])
+  })
+
+  it('단일 story는 infer-edges LLM 미호출(추가 응답 불필요·간선 없음)', async () => {
+    // STORY_D1 = 단일 story. infer-edges는 stories<2라 LLM 미호출 → 4응답으로 충분.
+    const res = await runDecomposition('build', stagedDeps(EPICS, STORY_D1, DELIVS_D1, ROLES))
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok') return
+    expect(res.workPackages[0]?.dependencies).toEqual([])
+    expect(res.workPackages[0]?.epicId).toBe('e1')   // 단일 story도 epicId는 전파
   })
 })
 

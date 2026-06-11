@@ -8,6 +8,7 @@ export interface LlmWorkPackage {
   owningRole: string
   acceptanceCriteria: string[]
   dependsOn: string[] // 다른 WP의 ref 목록
+  epicId?: string | null // §7 epic_id — story의 epicRef(Epic→Story→WP 추적성). 없으면 null
 }
 
 /**
@@ -34,6 +35,7 @@ export function toWorkPackages(llmWps: LlmWorkPackage[]): WorkPackage[] {
     return WorkPackageSchema.parse({
       id,
       storyId: w.storyId,
+      epicId: w.epicId ?? null,
       owningRole: w.owningRole,
       oracleRef: null,
       acceptanceCriteria: w.acceptanceCriteria,
