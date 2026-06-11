@@ -12,6 +12,7 @@ import { SessionRepo } from './db/session.repo.js'
 import { KnowledgeRepo } from './db/knowledge.repo.js'
 import { EventStore } from './db/event-store.js'
 import { OutboxRelay } from './streams/outbox-relay.js'
+import { createOutboxPublish } from './streams/outbox-publish.js'
 import { createPool, runMigrations, closePool } from './db/pool.js'
 import type { Pool } from 'pg'
 import { ToolRegistry } from './tools/registry.js'
@@ -111,12 +112,15 @@ export async function buildServer(
   // 아웃박스 행이 published_at=NULL로 영구 잔류해 재디스패치가 트리거되지 않는다.
   // D3: MANAGER_ORACLE_DRAFT 포함 — DRAFT-only에서 사람이 approve 시 생기는 oracle.approved 아웃박스가
   // published_at=NULL로 잔류하지 않도록 relay를 함께 가동(approve 전이는 flag 무관 always-on).
+  // 하드닝: MANAGER_DECOMPOSE_ENABLED 포함 — decompose 생산자가 아웃박스 경유로 decomposition.emitted/.inconsistent를
+  // 적재(pool 있을 때)하므로 relay 미기동 시 그 행이 잔류해 분해가 소비자에 도달하지 않는다.
   if (
     pool &&
     (config.EVENT_SOURCED_SESSION ||
       config.TASK_MANAGER_ENABLED ||
       config.MANAGER_ORACLE_DOR ||
-      config.MANAGER_ORACLE_DRAFT)
+      config.MANAGER_ORACLE_DRAFT ||
+      config.MANAGER_DECOMPOSE_ENABLED)
   ) {
     outboxRelay = new OutboxRelay(pool, producer, config.MANAGER_OUTBOX_POLL_MS)
     outboxRelay.start()
@@ -229,7 +233,11 @@ export async function buildServer(
     ? {
         claude: client,
         model: config.CLAUDE_MODEL,
-        publish: (stream, message) => producer.publishRaw(stream, message),
+        // 하드닝: pool 있으면 트랜잭셔널 아웃박스 경유(at-least-once·truth-source 정합·M5/M7) — OutboxRelay가 발행.
+        // pool 없으면 raw 발행으로 우아한 강등(내구성 없음·아래 경고). producer 코드는 무수정(DecomposePublish 동일).
+        publish: pool
+          ? createOutboxPublish(pool)
+          : (stream, message) => producer.publishRaw(stream, message),
         timeoutMs: config.CLAUDE_TIMEOUT_MS,
         repairMax: config.MANAGER_DECOMPOSE_REPAIR_MAX,
         log: (msg, data) => app.log.info(data ?? {}, msg),
@@ -239,6 +247,10 @@ export async function buildServer(
     : undefined
   if (config.MANAGER_DECOMPOSE_ENABLED) {
     app.log.info('[decompose] MANAGER_DECOMPOSE_ENABLED — decompose_request 생산자 배선')
+    // 하드닝: pool 없으면 분해 emission이 raw 발행(내구성 없음·크래시/전송실패 시 유실). 트랜잭셔널 아웃박스 미적용 경고.
+    if (!pool) {
+      app.log.warn('MANAGER_DECOMPOSE_ENABLED=true 이지만 DATABASE_URL이 없어 분해 emission이 트랜잭셔널 아웃박스를 경유하지 않습니다(raw 발행·내구성 없음).')
+    }
   }
 
   const authHook = config.SERVICE_JWT_SECRET ? verifyServiceToken : undefined
