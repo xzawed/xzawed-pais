@@ -10,7 +10,12 @@ import { isGatedTool, effectiveMode, summarizeOutput, parseDecision, isKnowledge
 import type { GateMode, GateDecision } from '../gates/approval-gate.js'
 import { validateToolInput } from './validate-tool-input.js'
 import type { KnowledgeRepo } from '../db/knowledge.repo.js'
-import type { BudgetCircuitBreaker, BudgetRecordResult } from '@xzawed/agent-streams'
+import type {
+  BudgetCircuitBreaker,
+  BudgetRecordResult,
+  ProviderCircuitBreaker,
+  ProviderCircuitSnapshot,
+} from '@xzawed/agent-streams'
 
 /** §13 budget 서킷 트립 알림 정보(server.ts가 app.log.warn로 배선). */
 export interface BudgetTripInfo extends BudgetRecordResult {
@@ -21,6 +26,27 @@ export interface BudgetTripInfo extends BudgetRecordResult {
 export interface BudgetRunnerDeps {
   breaker: BudgetCircuitBreaker
   onTrip?: (info: BudgetTripInfo) => void
+}
+
+/** 러너에 주입하는 §13 provider 서킷 의존성. 미주입이면 no-op(회귀 0). */
+export interface ProviderRunnerDeps {
+  breaker: ProviderCircuitBreaker
+  onOpen?: (snapshot: ProviderCircuitSnapshot) => void
+}
+
+/**
+ * provider(Anthropic) 장애 분류 — 회로 카운트 대상(429/5xx/529·연결/타임아웃)만 true.
+ * instanceof 대신 duck-typing(`.status`/`.name`/message) — SDK 에러·자체 타임아웃·테스트 더블 모두 수용.
+ * 결정론적 클라이언트 오류(400/401/403/404)·사용자 중단은 provider 장애가 아니므로 회로 미반영.
+ */
+export function isProviderFailure(err: unknown): boolean {
+  if (err instanceof Error && err.message.includes('timed out')) return true // 자체 타임아웃(provider hang)
+  if (err === null || typeof err !== 'object') return false
+  const e = err as { name?: unknown; status?: unknown; message?: unknown }
+  if (e.name === 'AbortError' || e.name === 'APIUserAbortError') return false // 사용자 중단
+  if (typeof e.status === 'number') return e.status === 429 || e.status >= 500
+  if (e.name === 'APIConnectionError' || e.name === 'APIConnectionTimeoutError') return true // 상태 없는 연결류
+  return false
 }
 
 /** MANAGER_MAX_ITERATIONS 환경변수를 파싱하고 유효성을 검증한다. 유효하지 않으면 Error를 throw한다. */
@@ -138,7 +164,20 @@ export class ClaudeRunner {
     private readonly failSafe: boolean = GATE_FAILSAFE,
     // §13 budget 서킷(optional). 미주입이면 check/record no-op(회귀 0).
     private readonly budget?: BudgetRunnerDeps,
+    // §13 provider 서킷(optional). 미주입이면 before/record no-op(회귀 0).
+    private readonly providerCircuit?: ProviderRunnerDeps,
   ) {}
+
+  /** §13: provider 장애만 회로에 기록(새로 open 시 onOpen 알림·never-throw — 관측이 작업을 막지 않음). */
+  private recordProviderFailure(err: unknown): void {
+    if (!this.providerCircuit || !isProviderFailure(err)) return
+    try {
+      const opened = this.providerCircuit.breaker.onFailure()
+      if (opened) this.providerCircuit.onOpen?.(this.providerCircuit.breaker.snapshot())
+    } catch (e) {
+      console.warn('[runner] provider 서킷 record 실패 — 작업 계속:', e)
+    }
+  }
 
   /** §13: 호출 후 토큰 비용 누적. 트립 시 onTrip 알림(never-throw — 관측이 작업을 막지 않음). */
   private recordBudget(workflowId: string, usage: Anthropic.Usage | undefined): void {
@@ -613,6 +652,8 @@ export class ClaudeRunner {
       // §13 budget 서킷: 호출 전 fail-closed 선검사. 상한 초과면 BudgetExceededError throw →
       // run()을 빠져나가 sessions.route catch가 type:'error' 발행(M8 stop·무음 금지).
       this.budget?.breaker.check(sessionId)
+      // §13 provider 서킷: open이면 ProviderCircuitOpenError throw로 fail-fast(지속 장애 시 낭비 호출 차단).
+      this.providerCircuit?.breaker.before()
 
       let timerId: ReturnType<typeof setTimeout> | undefined
       let response: Anthropic.Message
@@ -639,10 +680,17 @@ export class ClaudeRunner {
           ),
           timeoutSignal,
         ])
+      } catch (err) {
+        // §13 provider 서킷: 호출이 provider 장애(429/5xx/529·연결/타임아웃)로 실패하면 회로에 기록(새로 open 시 onOpen).
+        // 비-provider 오류(400 등)·사용자 중단은 미반영. 분류 후 원 오류를 그대로 전파(sessions.route catch가 처리).
+        this.recordProviderFailure(err)
+        throw err
       } finally {
         clearTimeout(timerId)
       }
 
+      // §13 provider 서킷: 호출 성공 → 회로 닫고 연속 실패 카운터 리셋.
+      this.providerCircuit?.breaker.onSuccess()
       // §13 budget 서킷: 호출 후 비용 누적(트립 시 onTrip 알림). 다음 iteration의 check가 차단.
       this.recordBudget(sessionId, response.usage)
 

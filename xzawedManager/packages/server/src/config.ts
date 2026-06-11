@@ -88,6 +88,15 @@ const configSchema = z
     // 워크플로(세션)당 상한 + 일(UTC) 전체 상한. 인메모리(재시작 시 일 카운터 소실·캘리브레이션 비차단).
     MANAGER_BUDGET_PER_WORKFLOW_USD: z.coerce.number().nonnegative().default(0),
     MANAGER_BUDGET_DAILY_USD: z.coerce.number().nonnegative().default(0),
+    // §13 provider 서킷브레이커(기본 false). true면 러너 tool-loop이 provider(Anthropic) 지속 장애
+    // (429/5xx/529·연결/타임아웃)를 추적 — 연속 실패 임계 도달 시 회로 open→cooldown 동안 fail-fast(낭비 호출 차단).
+    // 트립은 OPERATIONS_DECISIONS §1 NORMAL→DEGRADED 강등 신호 입력(상태머신 전이는 P6). off면 미주입(회귀 0).
+    MANAGER_PROVIDER_CIRCUIT: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
+    MANAGER_PROVIDER_CIRCUIT_THRESHOLD: z.coerce.number().int().positive().default(5),
+    MANAGER_PROVIDER_CIRCUIT_COOLDOWN_MS: z.coerce.number().int().positive().default(30_000),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

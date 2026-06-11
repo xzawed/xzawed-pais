@@ -16,7 +16,7 @@ import { ClaudeRunner, parseMaxIterations, parsePositiveInt } from './runner.js'
 import { ToolRegistry } from '../tools/registry.js'
 import { AgentQueryError, ClarificationNeededError } from '../tools/errors.js'
 import { SessionStore } from '../sessions/session.store.js'
-import { BudgetCircuitBreaker, BudgetExceededError } from '@xzawed/agent-streams'
+import { BudgetCircuitBreaker, BudgetExceededError, ProviderCircuitBreaker, ProviderCircuitOpenError } from '@xzawed/agent-streams'
 
 /** 조건이 참이 될 때까지 macrotask로 양보하며 폴링한다. */
 async function waitFor(pred: () => boolean, ms = 2000): Promise<void> {
@@ -1368,5 +1368,48 @@ describe('ClaudeRunner — §13 budget 서킷', () => {
     const info = onTrip.mock.calls[0]![0] as { workflowId: string; tripped: boolean }
     expect(info.workflowId).toBe('sess-1')
     expect(info.tripped).toBe(true)
+  })
+})
+
+describe('ClaudeRunner — §13 provider 서킷', () => {
+  it('provider 미주입이면 동작 불변(회귀 0)', async () => {
+    createFn.mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+    const result = await runner.run(baseRunOptions())
+    expect(result).toBe('done')
+  })
+
+  it('provider 실패(529)를 기록하고 임계 도달 시 onOpen 알림 후 오류를 전파한다', async () => {
+    const breaker = new ProviderCircuitBreaker({ failureThreshold: 1, now: () => 0 })
+    const onOpen = vi.fn()
+    const r = new ClaudeRunner(client, 'claude-test', registry, undefined, undefined, undefined, { breaker, onOpen })
+    createFn.mockRejectedValueOnce(Object.assign(new Error('overloaded'), { status: 529 }))
+    await expect(r.run(baseRunOptions())).rejects.toThrow('overloaded') // 원 오류 전파
+    expect(onOpen).toHaveBeenCalledTimes(1)
+    expect(breaker.snapshot().state).toBe('open')
+  })
+
+  it('open 상태면 호출 전 before가 fail-fast로 막는다(LLM 미호출)', async () => {
+    const breaker = new ProviderCircuitBreaker({ failureThreshold: 1, cooldownMs: 30_000, now: () => 0 })
+    breaker.onFailure() // pre-open
+    const r = new ClaudeRunner(client, 'claude-test', registry, undefined, undefined, undefined, { breaker })
+    await expect(r.run(baseRunOptions())).rejects.toThrow(ProviderCircuitOpenError)
+    expect(createFn).not.toHaveBeenCalled()
+  })
+
+  it('비-provider 오류(400)는 회로를 건드리지 않는다', async () => {
+    const breaker = new ProviderCircuitBreaker({ failureThreshold: 1, now: () => 0 })
+    const r = new ClaudeRunner(client, 'claude-test', registry, undefined, undefined, undefined, { breaker })
+    createFn.mockRejectedValueOnce(Object.assign(new Error('bad request'), { status: 400 }))
+    await expect(r.run(baseRunOptions())).rejects.toThrow('bad request')
+    expect(breaker.snapshot().state).toBe('closed') // 미기록
+  })
+
+  it('성공 시 onSuccess로 연속 실패 카운터를 리셋한다', async () => {
+    const breaker = new ProviderCircuitBreaker({ failureThreshold: 3, now: () => 0 })
+    breaker.onFailure() // consecutiveFailures=1
+    const r = new ClaudeRunner(client, 'claude-test', registry, undefined, undefined, undefined, { breaker })
+    createFn.mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+    await r.run(baseRunOptions())
+    expect(breaker.snapshot().consecutiveFailures).toBe(0) // 성공이 리셋
   })
 })
