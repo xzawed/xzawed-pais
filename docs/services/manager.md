@@ -28,6 +28,8 @@ xzawedManager는 시스템의 두 번째 계층이다. `orchestrator:to-manager:
 - **§13 횡단 회복탄력성** (`claude/runner.ts` + `tools/` + shared `budget/`·`resilience/`) — 병렬-비용/장애/동시성 폭발 선제 보호. (a) **budget 서킷**: 러너 tool-loop이 호출 전 누적 USD 비용 `check`(워크플로/일 상한 초과 시 fail-closed throw→error 발행)·호출 후 `record`, `MANAGER_BUDGET_PER_WORKFLOW_USD`·`MANAGER_BUDGET_DAILY_USD`(0=비활성). (b) **provider 서킷**: provider(Anthropic) 지속 장애(429/5xx/529·연결/타임아웃)를 추적, 연속 실패 임계 도달 시 회로 open→cooldown 동안 fail-fast, `MANAGER_PROVIDER_CIRCUIT` flag. (c) **벌크헤드**: 7개 `RedisAgentHandler`에 공유 주입해 에이전트 종류별 동시 RPC를 캡·초과 시 큐잉(백프레셔·드롭 없음), `MANAGER_BULKHEAD_GLOBAL`·`MANAGER_BULKHEAD_PER_AGENT`(0=무제한). 트립은 강등 모드(P6) 신호 입력.
 - **DLQ 재처리 운영 라우트** (`api/admin.route.ts`) — `POST /api/admin/dlq/redrive`가 shared `redriveDlq`로 격리된 poison 메시지를 멱등 마커 선삭제 후 원 스트림에 재발행한다(reason 필터·count 배치 상한). **인증 필수**(authHook 없으면 server.ts가 미등록 — open admin endpoint 금지).
 - **무음 drop 봉합(M8)** (`api/sessions.route.ts`) — 미처리 `msg.type`·decompose 비활성 시 무음 auto-ack drop(요청자 무한 대기·consumer 누수)을 명시 `error` 발행 + 세션 정리로 봉합.
+- **M9 의사결정 영속** (`db/decision.repo.ts` + migration 011, P6·#288) — 사람 결정(결함 브리프·강등 사인오프·게이트 override·오라클 승인·SAFE 재개)을 **event-sourced·append-only 불변·비부인**으로 영속한다. `DecisionRequest`(상태머신 `PENDING→RESOLVED|EXPIRED|SUPERSEDED`)·`HumanDecision`·`SignOff`를 단일 tx 아웃박스(M5/M7/M9)로 적재, 전 쓰기 멱등(M6), `EXPIRED`는 비-무음 에스컬레이션(M8). 소비자·API·UI는 후속 P6 슬라이스 — **미배선·additive**.
+- **P2r-2 리스크 분류 영속** (`db/risk-classification.repo.ts` + migration 012) — P2r-1 결정론 코어가 산출한 `RiskClassification` 아티팩트를 영속하고 **사람 승인으로 라우팅을 확정**한다(N6: `approvedForWorkflow`는 승인된 분류만 반환). 재채점=재승인(upsert version++·pending 리셋). P2r-3 생산자·P2r-4 소비는 후속 — **미배선·additive**.
 
 > ⚠️ 위 flag들은 전부 기본 `false`(미활성)이며, `MANAGER_TASK_WORKER`·`MANAGER_ORACLE_DRAFT`는 `TASK_MANAGER_ENABLED`+`DATABASE_URL`을, `MANAGER_WP_VERIFY`는 `MANAGER_TASK_WORKER`를, `MANAGER_WP_CONFORMANCE`는 `MANAGER_WP_VERIFY`+OracleRepo(`MANAGER_ORACLE_DOR`||`MANAGER_ORACLE_DRAFT`)를 실질 전제로 한다.
 
@@ -219,7 +221,9 @@ packages/server/src/
     ├── dispatch.repo.ts       # 디스패치 원자 적재 + lease 획득 (P1d-4/5a)
     ├── lease.repo.ts          # LeaseStore — reclaim·escalate·완료 (P1d-5b/6)
     ├── oracle.types.ts / oracle.repo.ts # Oracle 스키마·저장소 (P3·P4b-3 invariants/golden_refs)
-    └── migrations/            # 001~010 (010 oracle invariants/golden_refs additive)
+    ├── decision.types.ts / decision.repo.ts # M9 의사결정 영속 — DecisionRequest/HumanDecision/SignOff (P6·#288)
+    ├── risk-classification.types.ts / risk-classification.repo.ts # P2r-2 리스크 분류 영속 — RiskClassification 프로젝션·사람 승인
+    └── migrations/            # 001~012 (010 oracle invariants/golden·011 decisions·012 risk_classifications)
 ```
 
 ---
