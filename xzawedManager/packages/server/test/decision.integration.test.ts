@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { createPool, runMigrations, closePool } from '../src/db/pool.js'
 import { DecisionRepo } from '../src/db/decision.repo.js'
+import { handleLeaseSweep, type SweepDeps } from '../src/streams/lease.js'
+import { makeEscalationBrief } from '../src/streams/decision-brief.js'
 
 // CI(turborepo 잡)는 TEST_DATABASE_URL을 주입 — 게이트 통일(oracle-loop·event-sourcing 통합 패턴).
 const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL']
@@ -102,6 +104,35 @@ describe.skipIf(!url)('M9 결정 영속 통합(요청→결정→사인오프)',
       expect(await repo.decisionsForRequest(requestId)).toHaveLength(1)
     } finally {
       await cleanup(pool)
+      await closePool()
+    }
+  })
+
+  it('P6: handleLeaseSweep escalation → makeEscalationBrief → defect_brief DecisionRequest 영속', async () => {
+    const pool = createPool(url!)
+    try {
+      await runMigrations(pool)
+      const repo = new DecisionRepo(pool)
+      const wf = `wf-dec-brief-${Date.now()}`
+      // mock LeaseStore: 만료 lease 1건이 상한 초과로 escalate(attempt 2·maxAttempts 3).
+      const store = {
+        expiredActiveLeases: async () => [
+          { workflowId: wf, wpId: 'wp_x', attempt: 2, owner: null, status: 'active', expiresAt: 0, stepN: 1, eventId: null },
+        ],
+        recordReclaim: async () => ({ status: 'skipped' as const }),
+        recordEscalation: async () => ({ status: 'escalated' as const, eventId: 'ev', seq: 1 }),
+      }
+      // onEscalated를 실 DecisionRepo로 배선(createSupervisor가 production에서 하는 것과 동일).
+      const deps = { store, maxAttempts: 3, onEscalated: makeEscalationBrief(repo) } as unknown as SweepDeps
+      await handleLeaseSweep(1000, deps)
+
+      const req = await repo.getRequest(`${wf}:wp_x:2`)
+      expect(req?.type).toBe('defect_brief')
+      expect(req?.status).toBe('PENDING')
+      expect(req?.wpId).toBe('wp_x')
+      expect(req?.context.options).toContain('fix_reverify')
+    } finally {
+      await cleanup(pool) // wf-dec-% prefix가 wf-dec-brief-% 포함
       await closePool()
     }
   })

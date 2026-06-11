@@ -37,6 +37,7 @@ import { TaskGraphRepo } from './db/task-graph.repo.js'
 import { DispatchStore } from './db/dispatch.repo.js'
 import { LeaseStore } from './db/lease.repo.js'
 import { OracleRepo } from './db/oracle.repo.js'
+import { DecisionRepo } from './db/decision.repo.js'
 import { oracleRoute } from './api/oracle.route.js'
 import { createSupervisor, shouldWireSupervisor, type Supervisor } from './streams/supervisor.js'
 import type { ProduceDeps } from './decompose/producer.js'
@@ -186,6 +187,8 @@ export async function buildServer(
     pool && (config.MANAGER_ORACLE_DOR || config.MANAGER_ORACLE_DRAFT || config.MANAGER_WP_CONFORMANCE)
       ? new OracleRepo(pool)
       : undefined
+  // P6: 결함 의사결정 브리프 영속소(escalation→DecisionRequest). MANAGER_DECISION_BRIEF + pool 시만 생성(회귀 0).
+  const decisionStore = pool && config.MANAGER_DECISION_BRIEF ? new DecisionRepo(pool) : undefined
 
   // D5: 초안 영속은 decomposition consumer(=Supervisor)가 돌아야 하므로 TASK_MANAGER_ENABLED+DATABASE_URL이 전제다.
   // DRAFT만 켜고 그 전제가 없으면 producer가 oracleDrafts를 emit해도 소비자 부재로 영속되지 않는다 — 오진 방지 경고.
@@ -259,6 +262,8 @@ export async function buildServer(
         ...(oracleStore && { oracleStore }),
         // P4-1: MANAGER_TASK_WORKER on이면 워커 핸들러 맵 주입 → createSupervisor가 워커 배선. off면 미주입(회귀 0).
         ...(config.MANAGER_TASK_WORKER && { handlers: workerHandlers }),
+        // P6: 결함 브리프 영속소(=MANAGER_DECISION_BRIEF). createSupervisor가 config.decisionBrief로 onEscalated 배선.
+        ...(decisionStore && { decisionStore }),
       },
       {
         sweepMs: config.MANAGER_LEASE_SWEEP_MS,
@@ -272,6 +277,8 @@ export async function buildServer(
         // P4b-2: conformance 채널(=MANAGER_WP_CONFORMANCE). off면 P4b-1 검증과 바이트 동일(회귀 0).
         // buildWorkerConsumerDeps가 oracleStore 동반 시에만 conformanceEnabled=true로 게이트(검증 우회 무음 방지).
         wpConformance: config.MANAGER_WP_CONFORMANCE,
+        // P6: 결함 브리프(=MANAGER_DECISION_BRIEF). off면 escalation 시 브리프 미생성(회귀 0). decisionStore 동반 시만 배선.
+        decisionBrief: config.MANAGER_DECISION_BRIEF,
       },
     )
     supervisor.start()

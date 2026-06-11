@@ -38,6 +38,8 @@ export interface SweepDeps {
   visibilityMs?: number
   /** P4-1: 주입 시 reclaim 후 wp.dispatch_signal 발행(워커 재실행 트리거). 미주입이면 무발행. */
   publish?: Publish
+  /** P6: 주입 시 escalate 성공 후 결함 브리프(DecisionRequest) 생성. best-effort(throw는 sweep 비차단). */
+  onEscalated?: (info: { workflowId: string; wpId: string; attempt: number; stepN: number }) => Promise<void>
 }
 
 export interface SweepOutcome {
@@ -45,6 +47,32 @@ export interface SweepOutcome {
   escalated: Array<{ workflowId: string; wpId: string; eventId: string }>
   /** 동시 sweep이 선점해 skip된 항목 수. */
   skipped: number
+}
+
+/** 한 항목 reclaim: 성공 시 outcome.reclaimed에 추가 + dispatch 신호(P4-1) 발행, skip이면 outcome.skipped++. */
+async function reclaimOne(item: ReclaimItem, deps: SweepDeps, visibilityMs: number, now: number, outcome: SweepOutcome): Promise<void> {
+  const r = await deps.store.recordReclaim({
+    workflowId: item.workflowId, wpId: item.wpId, nextAttempt: item.nextAttempt, stepN: item.stepN, visibilityMs,
+  })
+  if (r.status !== 'reclaimed') { outcome.skipped += 1; return }
+  if (deps.publish) await publishDispatchSignal(deps.publish, item.workflowId, item.wpId, item.nextAttempt, now)
+  outcome.reclaimed.push({ workflowId: item.workflowId, wpId: item.wpId, nextAttempt: item.nextAttempt, eventId: r.eventId })
+}
+
+/** 한 항목 escalate: 성공 시 outcome.escalated에 추가 + 결함 브리프(P6·best-effort), skip이면 outcome.skipped++. */
+async function escalateOne(item: ReclaimItem, deps: SweepDeps, outcome: SweepOutcome): Promise<void> {
+  const r = await deps.store.recordEscalation({
+    workflowId: item.workflowId, wpId: item.wpId, attempt: item.attempt, stepN: item.stepN,
+  })
+  if (r.status !== 'escalated') { outcome.skipped += 1; return }
+  if (deps.onEscalated) {
+    try {
+      await deps.onEscalated({ workflowId: item.workflowId, wpId: item.wpId, attempt: item.attempt, stepN: item.stepN })
+    } catch (err) {
+      console.warn('[lease-sweep] 결함 브리프 생성 실패(best-effort·escalation 이벤트는 진실원천):', err)
+    }
+  }
+  outcome.escalated.push({ workflowId: item.workflowId, wpId: item.wpId, eventId: r.eventId })
 }
 
 /**
@@ -57,25 +85,10 @@ export async function handleLeaseSweep(now: number, deps: SweepDeps): Promise<Sw
   const expired = await deps.store.expiredActiveLeases(now)
   const plan = planReclaim(expired, { maxAttempts })
 
-  const reclaimed: SweepOutcome['reclaimed'] = []
-  const escalated: SweepOutcome['escalated'] = []
-  let skipped = 0
+  const outcome: SweepOutcome = { reclaimed: [], escalated: [], skipped: 0 }
   for (const item of plan) {
-    if (item.action === 'reclaim') {
-      const r = await deps.store.recordReclaim({
-        workflowId: item.workflowId, wpId: item.wpId, nextAttempt: item.nextAttempt, stepN: item.stepN, visibilityMs,
-      })
-      if (r.status === 'reclaimed') {
-        reclaimed.push({ workflowId: item.workflowId, wpId: item.wpId, nextAttempt: item.nextAttempt, eventId: r.eventId })
-        if (deps.publish) await publishDispatchSignal(deps.publish, item.workflowId, item.wpId, item.nextAttempt, now)
-      } else skipped += 1
-    } else {
-      const r = await deps.store.recordEscalation({
-        workflowId: item.workflowId, wpId: item.wpId, attempt: item.attempt, stepN: item.stepN,
-      })
-      if (r.status === 'escalated') escalated.push({ workflowId: item.workflowId, wpId: item.wpId, eventId: r.eventId })
-      else skipped += 1
-    }
+    if (item.action === 'reclaim') await reclaimOne(item, deps, visibilityMs, now, outcome)
+    else await escalateOne(item, deps, outcome)
   }
-  return { reclaimed, escalated, skipped }
+  return outcome
 }

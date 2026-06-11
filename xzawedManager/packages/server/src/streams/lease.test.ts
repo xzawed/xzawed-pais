@@ -92,3 +92,40 @@ describe('handleLeaseSweep 트리거 신호 (P4-1)', () => {
     expect(out.reclaimed.length).toBe(1)
   })
 })
+
+describe('handleLeaseSweep onEscalated (P6 결함 브리프)', () => {
+  it('escalate 성공 시 onEscalated를 (wf,wpId,attempt,stepN)으로 호출', async () => {
+    const onEscalated = vi.fn().mockResolvedValue(undefined)
+    const { deps } = makeSweepDeps([lease('c', 2, { stepN: 5 })], { maxAttempts: 3, onEscalated })
+    await handleLeaseSweep(1000, deps)
+    expect(onEscalated).toHaveBeenCalledWith({ workflowId: 'wf-1', wpId: 'c', attempt: 2, stepN: 5 })
+  })
+
+  it('reclaim은 onEscalated를 호출하지 않음', async () => {
+    const onEscalated = vi.fn().mockResolvedValue(undefined)
+    const { deps } = makeSweepDeps([lease('a', 0)], { maxAttempts: 3, onEscalated })
+    await handleLeaseSweep(1000, deps)
+    expect(onEscalated).not.toHaveBeenCalled()
+  })
+
+  it('escalate가 skipped(동시 sweep)면 onEscalated 미호출', async () => {
+    const onEscalated = vi.fn().mockResolvedValue(undefined)
+    const { deps } = makeSweepDeps([lease('c', 2)], { maxAttempts: 3, onEscalated })
+    deps.store.recordEscalation = vi.fn().mockResolvedValue({ status: 'skipped' })
+    await handleLeaseSweep(1000, deps)
+    expect(onEscalated).not.toHaveBeenCalled()
+  })
+
+  it('onEscalated가 throw해도 sweep은 계속(best-effort·escalated 기록 보존)', async () => {
+    const onEscalated = vi.fn().mockRejectedValue(new Error('brief fail'))
+    const { deps } = makeSweepDeps([lease('c', 2)], { maxAttempts: 3, onEscalated })
+    const out = await handleLeaseSweep(1000, deps)
+    expect(out.escalated).toEqual([{ workflowId: 'wf-1', wpId: 'c', eventId: 'x1' }])
+  })
+
+  it('onEscalated 미주입이면 회귀 0', async () => {
+    const { deps } = makeSweepDeps([lease('c', 2)], { maxAttempts: 3 })
+    const out = await handleLeaseSweep(1000, deps)
+    expect(out.escalated.length).toBe(1)
+  })
+})
