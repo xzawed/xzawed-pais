@@ -127,7 +127,7 @@ PR #238에서 반영된 senario 사양(v5) 기반 자율 Task Manager 로드맵(
 | P0 | 세션 이벤트소싱 + 트랜잭셔널 아웃박스 (`EVENT_SOURCED_SESSION`) | ✅ 완료 | #243 |
 | P1a~c | BaseConsumer 바운드 재시도+DLQ·멱등 소비(M6)·EventBus 전송 추상화 | ✅ 완료 | #244~#252 |
 | P1d | Task Manager 1~7 — 그래프 코어·영속·소비·디스패치·lease/escalation·완료 흐름·Supervisor 배선 (`TASK_MANAGER_ENABLED`) | ✅ 완료 | #253~#262 |
-| P2 | PM 다단계 분해 파이프라인 + 자가수선 (`MANAGER_DECOMPOSE_ENABLED`) | ◐ 부분 — P6 간선 추론(현재 FLAT WP)·P7 epicId/inputs/outputs 채움·재진입 머지 잔여 | #263~#266 |
+| P2 | PM 다단계 분해 파이프라인 + 자가수선 (`MANAGER_DECOMPOSE_ENABLED`) | ◐ 부분 — P6 간선 추론(infer-edges·비순환)+P7 epicId 완료(#290) / inputs·outputs 채움·재진입 머지(merge_keep_inflight)·near_term 필터 잔여 | #263~#266, #290 |
 | P2r | Wiki Agent 리스크 분류기 (5-슬라이스) | ◐ P2r-1 결정론 코어(#286)+P2r-2 영속(RiskClassification 저장소·사람 승인 전이·migration 012)·**미배선** — P2r-3 LLM 생산자·P2r-4 라우팅+사람게이트·P7 per-WP 재채점·§5 모델 라우팅 배선 잔여 | #286, #289 |
 | 횡단 | WP §7 계약 스키마 정합(S1) + §13 회복탄력성(budget·provider 서킷·벌크헤드) | ✅ 완료 | #282 / #283~#285 |
 | P3 | Oracle DoR 게이트 + 초안 생성 (`MANAGER_ORACLE_DOR`·`MANAGER_ORACLE_DRAFT`) | ◐ 부분 — invariants/golden_refs 미소비·§14 step branch git 워크플로·WP 상태머신(8+2) 잔여 | #267~#268 |
@@ -139,12 +139,12 @@ PR #238에서 반영된 senario 사양(v5) 기반 자율 Task Manager 로드맵(
 
 ## 진행 예정
 
-post-#286 전면 감사(spec↔코드 대조·적대 검증)가 확정한 슬라이스 순서. **최심 공통 토대부터** 착수 — ~~P6 M9 영속(#288)~~·~~P2r-2 영속(#289)~~ 완료. 다음:
+post-#286 전면 감사(spec↔코드 대조·적대 검증)가 확정한 슬라이스 순서. **최심 공통 토대부터** 착수 — ~~P6 M9 영속(#288)~~·~~P2r-2 영속(#289)~~·~~P2 간선 추론+epicId(#290)~~ 완료. 다음:
 
-1. **P2 P6 간선 추론(`build_dag`) + P7 epicId 전파** `[의존 없음]`: risk와 독립인 가장 싼 정확성 승리 — 현재 FLAT 그래프(전 WP `dependsOn:[]`)는 P1d DAG/topo/step-N·detectCycle을 우회한다.
-2. **P6 의사결정 브리프 + escalated/verification.failed 컨슈머 배선** `[의존 M9(#288)]`: 방금 영속된 `DecisionRepo` 위에, 발행만 되고 사라지던 escalation을 `DecisionRequest`로 변환해 사람 도달 구조화 핸드오프로 폐합(M8). UI ESCALATED 카드의 서버 측 선행.
-3. **P2r-3 LLM 분류 생산자** `[의존 P2r-2(#289)]`: §5 차원별 병렬 Opus 조사+claim 추출+인용 해소→`scoreClassification`→`upsert`(§13 벌크헤드/budget 서킷 아래·flag).
-4. **P4 §11 결함 위치추적(impl/task/plan 귀속) + N5 진동 차단** `[의존 attribution 쓰기경로]`: 블라인드 lease 재시도를 계약-체인 귀속으로 교체. 최고 레버리지 검증 갭.
+1. **P6 의사결정 브리프 + escalated/verification.failed 컨슈머 배선** `[의존 M9(#288)]`: 영속된 `DecisionRepo` 위에, 발행만 되고 사라지던 escalation을 `DecisionRequest`로 변환해 사람 도달 구조화 핸드오프로 폐합(M8). UI ESCALATED 카드의 서버 측 선행.
+2. **P2r-3 LLM 분류 생산자** `[의존 P2r-2(#289)]`: §5 차원별 병렬 Opus 조사+claim 추출+인용 해소→`scoreClassification`→`upsert`(§13 벌크헤드/budget 서킷 아래·flag).
+3. **P4 §11 결함 위치추적(impl/task/plan 귀속) + N5 진동 차단** `[의존 attribution 쓰기경로]`: 블라인드 lease 재시도를 계약-체인 귀속으로 교체. 최고 레버리지 검증 갭.
+4. **P2 잔여 정밀화** `[의존 없음]`: WP `inputs`/`outputs` 채움(계약 체인 §11·impact-DAG 입력)·재진입 머지(`merge_keep_inflight` 배선·N4)·`near_term` 점진 정교화 필터.
 
 > ⚠️ **시퀀싱 함정**: P5 fail-closed 릴리스 게이트(hard-AND)는 P4 security/regression 채널이 **먼저** 착륙해야 한다 — 지금 `verify.ts`가 security_audit/design_ui에 빈 plan을 반환하므로, 게이트를 먼저 만들면 채널 skip이 fail-open을 fail-closed로 위장(M1/N1 위반)한다.
 

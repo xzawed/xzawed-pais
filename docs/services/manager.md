@@ -19,7 +19,7 @@ xzawedManager는 시스템의 두 번째 계층이다. `orchestrator:to-manager:
 - **도메인 위키** (`db/knowledge.repo.ts` + `api/knowledge.route.ts`) — 프로젝트 단위 도메인 지식 누적·주입·조회 API.
 - **세션 이벤트소싱 + 트랜잭셔널 아웃박스** (`db/event-store.ts` + `streams/outbox-relay.ts`, P0) — append-only `manager_events` 진실원천과 replay 복원. `EVENT_SOURCED_SESSION` flag로 가역.
 - **Task Manager** (`streams/supervisor.ts` 외, P1d) — `decomposition.emitted` 소비→Task Graph 영속→ready WP 디스패치→lease 가시성 타임아웃/reclaim/escalate→완료 시 후행 unblock 재디스패치. `TASK_MANAGER_ENABLED` flag.
-- **다단계 분해 생산자** (`decompose/`, P2-3) — `decompose_request`를 4단계 LLM 분해(epics→slice→deliverables→roles)+repair 루프로 WP[]로 변환해 `decomposition.emitted` 발행. `MANAGER_DECOMPOSE_ENABLED` flag.
+- **다단계 분해 생산자** (`decompose/`, P2-3·P6) — `decompose_request`를 다단계 LLM 분해(epics→slice→deliverables→roles→**P6 infer-edges**)+repair 루프로 WP DAG로 변환해 `decomposition.emitted` 발행. infer-edges가 story-level 선행 의존을 비순환 정제해 WP 간선을 파생(FLAT 제거)하고 `epicRef`→`epicId`를 전파(§7). `MANAGER_DECOMPOSE_ENABLED` flag.
 - **Oracle DoR 게이트 + 초안 생성** (`db/oracle.repo.ts` + `api/oracle.route.ts`, P3) — 사람이 승인한 오라클의 satisfied-set으로 WP 디스패치 DoR을 판정하고, 분해 시 story별 GWT 시나리오 초안을 생성해 승인 부담을 줄인다. `MANAGER_ORACLE_DOR`·`MANAGER_ORACLE_DRAFT` flag.
 - **실행 워커** (`streams/worker.ts`, P4-1) — dispatch된 WP를 `owningRole` 에이전트로 자율 호출하고 성공 시 `wp.completion`을 발행해 디스패치 루프를 닫는다. `MANAGER_TASK_WORKER` flag.
 - **검증 게이트** (`streams/verify.ts`, P4b-1) — 워커가 완료 발행 전 실행 ground truth 검증을 fail-closed로 수행(tester/builder 결과-근거 판정 + develop_code WP는 빌드·테스트 실 재실행). 실패 시 완료 미발행 → lease 백스톱이 reclaim→escalate. `MANAGER_WP_VERIFY` flag.
