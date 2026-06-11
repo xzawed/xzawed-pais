@@ -1,5 +1,7 @@
 export { BaseConsumer, defaultDedupKey } from './streams/base-consumer.js'
 export type { DedupOptions } from './streams/base-consumer.js'
+export { redriveDlq, dlqStreamKey, idemKey, DlqMessageSchema, DlqReasonSchema } from './streams/dlq.js'
+export type { DlqRedis, DlqMessage, DlqReason, RedriveOptions, RedriveResult } from './streams/dlq.js'
 export { RedisEventBus } from './streams/event-bus.js'
 export type { EventBus, PublishOptions, StreamConsumerPort, RequestReplyPort, RawStreamReply } from './streams/event-bus.js'
 export { validateWorkspaceRoot, resolveWorkspaceRoot } from './workspace-guard.js'

@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (197 테스트 통과)**
+**현재 상태: 구현 완료 (211 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -23,7 +23,8 @@ src/
 ├── index.ts                     # 패키지 진입점 — 아래 모든 public export 재노출
 ├── workspace-guard.ts           # validateWorkspaceRoot() / resolveWorkspaceRoot() — 파일시스템 루트 거부
 ├── streams/
-│   ├── base-consumer.ts         # BaseConsumer<T> 제네릭 클래스
+│   ├── base-consumer.ts         # BaseConsumer<T> 제네릭 클래스 (DLQ 키·멱등 마커는 dlq.ts 재사용)
+│   ├── dlq.ts                   # DLQ 계약 단일출처(dlqStreamKey·idemKey·defaultDedupKey·DlqMessageSchema) + redriveDlq 운영 도구
 │   ├── event-bus.ts             # EventBus 발행 추상화 + RedisEventBus 어댑터
 │   ├── session-dispatcher.ts    # SessionDispatcher — per-session 동적 consumer 팩토리, ConsumerLike
 │   └── collaboration.ts         # 협업 handle 골격 공통화 (runCollaborativeHandle 등)
@@ -48,6 +49,7 @@ src/
 └── __tests__/
     ├── workspace-guard.test.ts  # validateWorkspaceRoot + resolveWorkspaceRoot 테스트
     ├── base-consumer.test.ts    # BaseConsumer 테스트
+    ├── dlq.test.ts              # dlqStreamKey/idemKey/DlqMessageSchema/redriveDlq 테스트
     ├── session-dispatcher.test.ts  # SessionDispatcher 테스트
     ├── agent-query.test.ts      # AgentQuery / parseAgentQuery 테스트
     ├── answer-query.test.ts     # answerViaClaude / callClaudeText 등 테스트
@@ -164,6 +166,27 @@ class BaseConsumer<TMessage> {
 - **멱등 소비(M6, P1b)**: `dispatchWithRetry` 직전 delivery당 1회 `SET idem:{stream}:{key} 1 NX EX {ttl}`. 키=`envelope.idempotencyKey ?? messageId`(`dedup.key`로 주입 가능, 둘 다 없으면 dedup skip). 중복(SETNX null)이면 `onMessage` 없이 skip+ack — 재전달(XAUTOCLAIM)·outbox 중복발행을 effective-exactly-once로 마감. delivery당 1회라 P1a 인-프로세스 재시도는 막지 않음. `SHARED_IDEMPOTENT_CONSUME`(기본 ON·`=false` 가역)·`SHARED_IDEM_TTL_SEC`(기본 86400) env. SETNX 오류는 fail-open(처리 계속·never-throws 보존). ⚠️ 처리 중 크래시는 재전달 skip으로 미완성 작업 유실 가능(핸들러 트랜잭션 멱등은 후속).
 - `xreadgroup` 오류 재시도: 1초부터 최대 30초까지 지수 백오프
 - XAUTOCLAIM(시작 시 1회): 5분 이상 미처리(컨슈머 死) 메시지를 재획득해 동일 `handleMessage` 경로로 처리
+
+## DLQ 계약·재처리 패턴 (`streams/dlq.ts`)
+
+BaseConsumer가 poison 메시지를 격리하는 `{stream}:dlq` 키와 멱등 마커 `idem:{stream}:{key}`의 **단일출처**. base-consumer.ts가 `dlqStreamKey`·`idemKey`·`defaultDedupKey`를 재사용해 쓰기 경로와 재처리 도구의 키 포맷이 드리프트하지 않게 한다(dlq.ts는 base-consumer를 import하지 않음 — 순환 회피).
+
+```typescript
+import { redriveDlq, dlqStreamKey, DlqMessageSchema } from '@xzawed/agent-streams'
+import type { DlqRedis, RedriveResult } from '@xzawed/agent-streams'
+
+// 격리된 메시지를 원 스트림으로 되돌린다(P1 운영 잔여 해소)
+const result: RedriveResult = await redriveDlq(redis, 'manager:dispatched:main', {
+  count: 100,          // 배치 상한(기본 100)
+  reason: 'handler_failed', // 선택: 이 사유만 재처리(invalid_schema 무한 재발행 루프 회피)
+})
+// { read, republished, skipped }
+```
+
+- **각 엔트리**: 봉투 파싱 → (reason 필터) → **멱등 마커 삭제(재발행 전)** → 원본을 원 스트림 재발행(소비자 그룹이 XREADGROUP 픽업) → DLQ에서 제거(재실행 시 이중 재발행 방지).
+- **마커 선삭제**가 핵심: handler_failed 엔트리는 처음 처리 시 SETNX로 마커가 설정돼 있어, 삭제하지 않으면 재발행본이 dedup-skip된다. dedup 키 없음(envelope·messageId 없음)이면 마커 삭제 건너뜀.
+- **never-block 드레인**: 파싱 불가·엔트리별 실패는 skip(엔트리 보존)하고 배치를 계속. 재발행 후 XDEL 실패로 엔트리가 남아도 소비자 멱등 소비가 이중 처리를 흡수(재발행본은 새 마커로 dedup).
+- **소비자 측**(Manager): `POST /api/admin/dlq/redrive`(admin.route.ts)가 이 함수를 authHook 보호 하에 노출.
 
 ## validateWorkspaceRoot 패턴
 

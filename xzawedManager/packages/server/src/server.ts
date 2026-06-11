@@ -5,6 +5,7 @@ import { registerJwt, verifyServiceToken } from './auth/jwt.plugin.js'
 import { healthRoute } from './api/health.route.js'
 import { knowledgeRoute } from './api/knowledge.route.js'
 import { sessionsRoute, makeSessionStarter } from './api/sessions.route.js'
+import { adminRoute } from './api/admin.route.js'
 import { StreamProducer } from './streams/producer.js'
 import { StreamConsumer } from './streams/consumer.js'
 import { SessionStore } from './sessions/session.store.js'
@@ -309,6 +310,8 @@ export async function buildServer(
     ...(authHook && { authHook }),
     ...(decompose && { decompose }),
   })
+  // 운영 라우트: DLQ 재처리(redriveDlq). 격리된 poison 메시지를 원 스트림으로 되돌린다(쓰기/부수효과라 authHook 보호).
+  await app.register(adminRoute, { redisUrl: config.REDIS_URL, ...(authHook && { authHook }) })
 
   const startManagedSession = makeSessionStarter({
     redisUrl: config.REDIS_URL, runner, producer, sessionStore, activeConsumers,
