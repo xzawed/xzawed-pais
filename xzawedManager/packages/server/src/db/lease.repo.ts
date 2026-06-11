@@ -87,6 +87,24 @@ export class LeaseStore {
   }
 
   /**
+   * 하드닝: lease 하트비트 — 실행 중인 lease의 가시성 만료를 연장(expires_at = now + visibilityMs)해
+   * 장기 실행(verify/conformance의 WP당 다단계 에이전트 호출) 도중 false reclaim을 막는다.
+   * **status='active' AND attempt CAS** 가드 — 이미 reclaim된(attempt++)·escalated·released lease는 0행으로
+   * 갱신 안 됨(stale 워커가 남의 lease 만료를 연장하지 못함). 가시성 연장만(상태/이벤트 전이 아님)이라
+   * manager_events·outbox 미적재 — 진실원천 전이는 reclaim/escalate/complete가 소유(운영 메타만 갱신).
+   * @returns 갱신됐으면 true(1행), 아니면 false(lease 부재·attempt 불일치·비active).
+   */
+  async renewLease(workflowId: string, wpId: string, expectedAttempt: number, visibilityMs: number): Promise<boolean> {
+    const expiresAt = this.now() + visibilityMs
+    const res = await this.pool.query(
+      `UPDATE wp_leases SET expires_at = $1, updated_at = NOW()
+        WHERE workflow_id = $2 AND wp_id = $3 AND status = $4 AND attempt = $5`,
+      [expiresAt, workflowId, wpId, LEASE_ACTIVE, expectedAttempt],
+    )
+    return (res.rowCount ?? 0) > 0
+  }
+
+  /**
    * reclaim: lease를 attempt++·새 만료·active로 갱신하고 wp.dispatched(attempt next)를 적재(재디스패치).
    * 동시 sweep 직렬화: reclaim은 status를 'active'로 유지하므로 status 가드만으로는 이중 reclaim을 못 막는다.
    * **attempt CAS**(`AND attempt = $expected`)로 직렬화 — 경쟁한 두 번째 reclaim은 attempt가 이미 증가해

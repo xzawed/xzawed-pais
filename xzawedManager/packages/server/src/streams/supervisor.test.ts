@@ -151,12 +151,19 @@ describe('createSupervisor worker 배선 (P4-1)', () => {
 })
 
 describe('buildWorkerConsumerDeps (P4b-1 — wpVerify 스레딩 행동 검증)', () => {
+  const leaseStoreMock = { renewLease: vi.fn() } as unknown as LeaseStore
   const d = {
     repo: {} as unknown as TaskGraphRepo,
     publish: vi.fn(),
     handlers: { develop_code: { execute: vi.fn() } },
+    leaseStore: leaseStoreMock,
   }
   const base = { sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: false, taskWorker: true }
+  it('하드닝: lease 하트비트 — leaseStore·visibilityMs를 워커 deps에 스레딩(누락이 무음 회귀 안 되게 단언)', () => {
+    const w = buildWorkerConsumerDeps(d, base)
+    expect(w.leaseStore).toBe(leaseStoreMock)
+    expect(w.visibilityMs).toBe(1)
+  })
   it('wpVerify=true → verifyEnabled=true', () => {
     expect(buildWorkerConsumerDeps(d, { ...base, wpVerify: true }).verifyEnabled).toBe(true)
   })

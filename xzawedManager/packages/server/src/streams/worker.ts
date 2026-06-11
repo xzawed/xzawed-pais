@@ -39,6 +39,11 @@ export interface WorkerDeps {
   oracleStore?: ConformanceOracleStore
   /** P4b-2: conformance 채널 활성(=MANAGER_WP_CONFORMANCE && oracleStore 주입). */
   conformanceEnabled?: boolean
+  /** 하드닝: lease 하트비트 — 실행 중 renewLease로 가시성 연장(verify/conformance 다단계 호출 중 false reclaim 방지).
+   *  leaseStore+visibilityMs 둘 다 주입 시에만 활성(미주입=P4b 동작 보존·회귀 0). */
+  leaseStore?: { renewLease(workflowId: string, wpId: string, expectedAttempt: number, visibilityMs: number): Promise<boolean> }
+  /** lease 가시성 ms — 하트비트 연장량 + 갱신 주기(visibilityMs/3) 도출. */
+  visibilityMs?: number
 }
 
 export type WorkerOutcome =
@@ -81,6 +86,32 @@ async function publishCompletion(deps: WorkerDeps, workflowId: string, wpId: str
   await deps.publish(deps.completionStream ?? DEFAULT_COMPLETION_STREAM, { envelope, type: WP_COMPLETION, payload: { wpId } })
 }
 
+export interface HeartbeatTimers {
+  set: (cb: () => void, ms: number) => unknown
+  clear: (handle: unknown) => void
+}
+const realTimers: HeartbeatTimers = {
+  set: (cb, ms) => {
+    const t = setInterval(cb, ms)
+    // unref: 하트비트 타이머가 프로세스 종료를 막지 않게(stop 누락 시 안전망).
+    ;(t as { unref?: () => void }).unref?.()
+    return t
+  },
+  clear: (h) => { clearInterval(h as Parameters<typeof clearInterval>[0]) },
+}
+
+/**
+ * lease 하트비트: intervalMs마다 renew를 호출해 가시성 만료·false reclaim을 방지한다. renew는 never-throw로
+ * 감싸 전송/DB 오류가 워커 처리를 죽이지 않게 한다. 반환 stop()을 finally에서 호출해 타이머를 정리한다.
+ * 주입형 timers로 테스트 용이(fake interval).
+ */
+export function startLeaseHeartbeat(
+  renew: () => Promise<unknown>, intervalMs: number, timers: HeartbeatTimers = realTimers,
+): { stop: () => void } {
+  const handle = timers.set(() => { void Promise.resolve(renew()).catch(() => undefined) }, intervalMs)
+  return { stop: () => timers.clear(handle) }
+}
+
 /**
  * 트리거 신호 1건 처리: getGraph→WP 해석→resolveAgentTool(owningRole)→핸들러 자율 호출→성공 시 wp.completion 발행.
  * 실패/미해석은 신호 미발행 후 return(lease 백스톱이 reclaim·결정 2/5). 검증 trivial(실 검증=4b).
@@ -109,32 +140,51 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
   }
   const userContext = stored?.userContext ?? undefined
   const input = (deps.buildInput ?? buildWorkerInput)(wp, userContext)
-  let result: unknown
+  // 하드닝: 장기 실행(verify/conformance는 WP당 다단계 에이전트 호출·최대 5×120s) 중 lease 가시성 만료·
+  // false reclaim을 막기 위해 실행 동안 주기적으로 renewLease(하트비트). leaseStore+visibilityMs 주입 시에만
+  // 활성(미주입=P4-1/P4b 동작 보존·회귀 0). stop()은 finally에서 모든 종료 경로에 보장.
+  const heartbeat =
+    deps.leaseStore !== undefined && deps.visibilityMs !== undefined
+      ? startLeaseHeartbeat(
+          async () => {
+            // 0행 = lease가 reclaim(attempt++)·escalate·release돼 stale — 가시성 연장 무효. 워커는 stale 작업
+            // 중일 수 있으나 완료는 lease-active 가드로 멱등 차단되고 후속 신호가 새 attempt로 재실행한다. 관측 로그.
+            const ok = await deps.leaseStore!.renewLease(workflowId, wpId, msg.payload.attempt, deps.visibilityMs!)
+            if (!ok) console.warn(`[worker] lease 하트비트 갱신 0행(stale lease — reclaim/escalate/release 가능): ${workflowId}/${wpId} attempt=${msg.payload.attempt}`)
+          },
+          Math.max(1000, Math.floor(deps.visibilityMs / 3)), // 가시성 창당 ~3회 갱신
+        )
+      : undefined
   try {
-    result = await handler.execute(input, workflowId, userContext)
-  } catch {
-    return { status: 'failed', reason: 'agent_error' } // 신호 미발행 → lease 타임아웃 reclaim
-  }
-  // P4b-1 검증 게이트: trivial(무예외=성공)을 실행 ground truth fail-closed 판정으로 교체(N1).
-  // 실패 = 완료 미발행(lease 백스톱 reclaim→escalate·N5) + 관측 이벤트(best-effort 추적용).
-  if (deps.verifyEnabled) {
-    const verdict = await verifyWp(tool, wp, result, {
-      handlers: deps.handlers, buildInput: deps.buildInput ?? buildWorkerInput, userContext, workflowId,
-      attempt: msg.payload.attempt,
-      ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
-      conformanceEnabled: deps.conformanceEnabled === true,
-    })
-    if (!verdict.ok) {
-      try {
-        await publishVerificationFailed(deps.publish, workflowId, wpId, msg.payload.attempt, verdict.reason, deps.now?.())
-      } catch (err) {
-        console.error('[worker] wp.verification.failed 발행 실패(완료 부재가 reclaim 보장):', err)
-      }
-      return { status: 'verification_failed', wpId, reason: verdict.reason }
+    let result: unknown
+    try {
+      result = await handler.execute(input, workflowId, userContext)
+    } catch {
+      return { status: 'failed', reason: 'agent_error' } // 신호 미발행 → lease 타임아웃 reclaim
     }
+    // P4b-1 검증 게이트: trivial(무예외=성공)을 실행 ground truth fail-closed 판정으로 교체(N1).
+    // 실패 = 완료 미발행(lease 백스톱 reclaim→escalate·N5) + 관측 이벤트(best-effort 추적용).
+    if (deps.verifyEnabled) {
+      const verdict = await verifyWp(tool, wp, result, {
+        handlers: deps.handlers, buildInput: deps.buildInput ?? buildWorkerInput, userContext, workflowId,
+        attempt: msg.payload.attempt,
+        ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
+        conformanceEnabled: deps.conformanceEnabled === true,
+      })
+      if (!verdict.ok) {
+        try {
+          await publishVerificationFailed(deps.publish, workflowId, wpId, msg.payload.attempt, verdict.reason, deps.now?.())
+        } catch (err) {
+          console.error('[worker] wp.verification.failed 발행 실패(완료 부재가 reclaim 보장):', err)
+        }
+        return { status: 'verification_failed', wpId, reason: verdict.reason }
+      }
+    }
+    await publishCompletion(deps, workflowId, wpId, msg.payload.attempt)
+    return { status: 'completed', wpId }
+  } finally {
+    heartbeat?.stop()
   }
-  await publishCompletion(deps, workflowId, wpId, msg.payload.attempt)
-  return { status: 'completed', wpId }
 }
 
 export function buildWorkerHandler(deps: WorkerDeps): (msg: WpDispatchSignalMessage) => Promise<void> {

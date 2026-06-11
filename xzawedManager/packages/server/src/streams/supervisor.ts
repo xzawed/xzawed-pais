@@ -139,7 +139,7 @@ export function shouldWireOracleConsumer(oracleDor: boolean, hasOracleStore: boo
 /** P4b-1: WorkerConsumer deps 조립(순수·D4) — wpVerify→verifyEnabled 스레딩을 행동 단언 가능하게 분리.
  *  instanceOf 단언만으로는 이 한 줄의 누락(undefined→off)이 무음 fail-open 퇴행이 되는 것을 잡지 못한다. */
 export function buildWorkerConsumerDeps(
-  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore'> & { handlers: Record<string, AgentExecutor> },
+  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore'> & { handlers: Record<string, AgentExecutor> },
   config: SupervisorConfig,
 ): WorkerDeps {
   return {
@@ -148,6 +148,11 @@ export function buildWorkerConsumerDeps(
     publish: deps.publish,
     completionStream: `${COMPLETION_PREFIX}:${DEFAULT_CHANNEL}`,
     verifyEnabled: config.wpVerify === true,
+    // 하드닝: lease 하트비트 — 실행 중 renewLease로 가시성 연장(verify/conformance 다단계 호출 중 false reclaim 방지).
+    // production 배선(createSupervisor)에서는 leaseStore+visibilityMs를 항상 동반(하트비트 항상-on). 워커는
+    // 둘 중 하나라도 미주입이면 하트비트 비활성으로 방어(P4-1/P4b 동작 보존). LeaseStore가 renewLease를 구조적 만족.
+    leaseStore: deps.leaseStore,
+    visibilityMs: config.visibilityMs,
     // P4b-2: SupervisorDeps.oracleStore는 ConformanceOracleStore를 포함(server.ts가 OracleRepo 주입·approvedOracleForStory 보유).
     // 미주입이면 키 생략(exactOptionalPropertyTypes). conformanceEnabled는 flag+oracleStore 동반 시에만 true(검증 우회 무음 방지).
     ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
@@ -218,7 +223,7 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
         makeRedis(),
         buildWorkerConsumerDeps(
           // exactOptionalPropertyTypes: oracleStore는 미주입 시 키 생략(undefined 명시 불가). 기존 dispatch deps 조립 idiom.
-          { repo: deps.repo, publish: deps.publish, handlers: deps.handlers, ...(deps.oracleStore && { oracleStore: deps.oracleStore }) },
+          { repo: deps.repo, publish: deps.publish, handlers: deps.handlers, leaseStore: deps.leaseStore, ...(deps.oracleStore && { oracleStore: deps.oracleStore }) },
           config,
         ),
       )
