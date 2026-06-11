@@ -24,6 +24,10 @@ xzawedManager는 시스템의 두 번째 계층이다. `orchestrator:to-manager:
 - **실행 워커** (`streams/worker.ts`, P4-1) — dispatch된 WP를 `owningRole` 에이전트로 자율 호출하고 성공 시 `wp.completion`을 발행해 디스패치 루프를 닫는다. `MANAGER_TASK_WORKER` flag.
 - **검증 게이트** (`streams/verify.ts`, P4b-1) — 워커가 완료 발행 전 실행 ground truth 검증을 fail-closed로 수행(tester/builder 결과-근거 판정 + develop_code WP는 빌드·테스트 실 재실행). 실패 시 완료 미발행 → lease 백스톱이 reclaim→escalate. `MANAGER_WP_VERIFY` flag.
 - **Oracle conformance 검증** (`streams/verify.ts` + `streams/conformance.ts`, P4b-2) — develop_code WP 검증에 사람 승인 오라클 GWT 시나리오를 실행 ground truth로 소비한다. 독립 develop_code 호출이 승인 시나리오로 conformance 테스트를 작성(격리 세션·구현 수정 금지)하고 Tester가 실행해 그 결과로 게이트 — 구현자가 게이트 명령을 통제하는 P4b-1 N6 한계를 봉합(N1·N6). 승인 오라클 부재면 skip(회귀 0). `MANAGER_WP_CONFORMANCE` flag.
+- **검증 vacuous-pass 봉합** (`streams/verify.ts`, P4b-3) — `judgePrimaryResult('run_tests')`에 `passed>0` floor를 추가해 0-test가 `failed:0`으로 통과하던 빈 스위트·빈 conformance를 fail-closed로 차단(primary·파생·conformance 균일·N8 선행). 함께 `db/oracle.types.ts`에 invariants(§4)·golden_refs(§5) 스키마(migration 010·additive·default `[]`·현재 검증 미소비 — impact/property 채널 선결)를 추가했다. `MANAGER_WP_VERIFY` 게이트 안.
+- **§13 횡단 회복탄력성** (`claude/runner.ts` + `tools/` + shared `budget/`·`resilience/`) — 병렬-비용/장애/동시성 폭발 선제 보호. (a) **budget 서킷**: 러너 tool-loop이 호출 전 누적 USD 비용 `check`(워크플로/일 상한 초과 시 fail-closed throw→error 발행)·호출 후 `record`, `MANAGER_BUDGET_PER_WORKFLOW_USD`·`MANAGER_BUDGET_DAILY_USD`(0=비활성). (b) **provider 서킷**: provider(Anthropic) 지속 장애(429/5xx/529·연결/타임아웃)를 추적, 연속 실패 임계 도달 시 회로 open→cooldown 동안 fail-fast, `MANAGER_PROVIDER_CIRCUIT` flag. (c) **벌크헤드**: 7개 `RedisAgentHandler`에 공유 주입해 에이전트 종류별 동시 RPC를 캡·초과 시 큐잉(백프레셔·드롭 없음), `MANAGER_BULKHEAD_GLOBAL`·`MANAGER_BULKHEAD_PER_AGENT`(0=무제한). 트립은 강등 모드(P6) 신호 입력.
+- **DLQ 재처리 운영 라우트** (`api/admin.route.ts`) — `POST /api/admin/dlq/redrive`가 shared `redriveDlq`로 격리된 poison 메시지를 멱등 마커 선삭제 후 원 스트림에 재발행한다(reason 필터·count 배치 상한). **인증 필수**(authHook 없으면 server.ts가 미등록 — open admin endpoint 금지).
+- **무음 drop 봉합(M8)** (`api/sessions.route.ts`) — 미처리 `msg.type`·decompose 비활성 시 무음 auto-ack drop(요청자 무한 대기·consumer 누수)을 명시 `error` 발행 + 세션 정리로 봉합.
 
 > ⚠️ 위 flag들은 전부 기본 `false`(미활성)이며, `MANAGER_TASK_WORKER`·`MANAGER_ORACLE_DRAFT`는 `TASK_MANAGER_ENABLED`+`DATABASE_URL`을, `MANAGER_WP_VERIFY`는 `MANAGER_TASK_WORKER`를, `MANAGER_WP_CONFORMANCE`는 `MANAGER_WP_VERIFY`+OracleRepo(`MANAGER_ORACLE_DOR`||`MANAGER_ORACLE_DRAFT`)를 실질 전제로 한다.
 
@@ -160,6 +164,7 @@ interface ToolHandler<TInput = Record<string, unknown>, TOutput = unknown> {
 | `POST` | `/workflows/:workflowId/oracles` | 오라클 생성/업서트 (P3-1, `MANAGER_ORACLE_DOR` 시 등록) |
 | `PATCH` | `/oracles/:oracleId/approve` | 오라클 승인 — drafted→human_approved 일괄 전이로 DoR 충족 (`approvedBy` 필수) |
 | `GET` | `/workflows/:workflowId/oracles` | 워크플로 오라클 목록 (status 필터) |
+| `POST` | `/api/admin/dlq/redrive` | DLQ 격리 메시지 재처리 (reason·count 필터, **인증 필수** — authHook 미설정 시 미등록) |
 
 ---
 
@@ -168,13 +173,14 @@ interface ToolHandler<TInput = Record<string, unknown>, TOutput = unknown> {
 ```
 packages/server/src/
 ├── index.ts                   # 진입점: Redis consumer + Fastify 서버 시작
-├── config.ts                  # 환경변수 검증 (Zod superRefine + 피처 플래그 6종)
-├── server.ts                  # Fastify HTTP 서버 초기화 + Supervisor/OutboxRelay/Worker flag 배선
+├── config.ts                  # 환경변수 검증 (Zod superRefine + 피처 플래그 + §13 회복탄력성 env)
+├── server.ts                  # Fastify HTTP 서버 초기화 + Supervisor/OutboxRelay/Worker/§13 서킷·벌크헤드 flag 배선
 ├── api/
 │   ├── health.route.ts        # GET /health
-│   ├── sessions.route.ts      # 세션 관련 라우트 (decompose_request 트리거 포함)
+│   ├── sessions.route.ts      # 세션 관련 라우트 (decompose_request 트리거·무음 drop 봉합 M8)
 │   ├── knowledge.route.ts     # 도메인 위키 GET/PATCH/DELETE (쓰기는 서비스 JWT)
-│   └── oracle.route.ts        # 오라클 POST/PATCH approve/GET (P3-1)
+│   ├── oracle.route.ts        # 오라클 POST/PATCH approve/GET (P3-1)
+│   └── admin.route.ts         # POST /api/admin/dlq/redrive (DLQ 재처리·인증 필수)
 ├── auth/
 │   └── jwt.plugin.ts          # @fastify/jwt 기반 서비스 간 JWT 인증
 ├── claude/
@@ -212,8 +218,8 @@ packages/server/src/
     ├── task-graph.repo.ts     # Task Graph 영속 (P1d-3)
     ├── dispatch.repo.ts       # 디스패치 원자 적재 + lease 획득 (P1d-4/5a)
     ├── lease.repo.ts          # LeaseStore — reclaim·escalate·완료 (P1d-5b/6)
-    ├── oracle.types.ts / oracle.repo.ts # Oracle 스키마·저장소 (P3)
-    └── migrations/            # 001~009
+    ├── oracle.types.ts / oracle.repo.ts # Oracle 스키마·저장소 (P3·P4b-3 invariants/golden_refs)
+    └── migrations/            # 001~010 (010 oracle invariants/golden_refs additive)
 ```
 
 ---
@@ -252,6 +258,18 @@ packages/server/src/
 | `MANAGER_TASK_WORKER` | 실행 워커 — dispatch된 WP를 owningRole 에이전트로 자율 실행 후 `wp.completion` 발행 (전제 동일) | P4-1 |
 | `MANAGER_WP_VERIFY` | 워커 검증 게이트 — 완료 발행 전 fail-closed 실 검증(결과-근거 판정 + develop_code 파생 빌드·테스트 재실행), 실패 시 완료 미발행 → lease 백스톱 (전제: `MANAGER_TASK_WORKER`) | P4b-1 |
 | `MANAGER_WP_CONFORMANCE` | Oracle conformance 채널 — develop_code WP 검증 시 사람 승인 GWT를 독립 develop_code 호출이 실행 테스트로 작성→Tester 실행→결과 게이트(N1·N6). 승인 오라클 부재면 skip (전제: `MANAGER_WP_VERIFY`+OracleRepo, 가시성 600s↑ 권장) | P4b-2 |
+
+### §13 횡단 회복탄력성 (병렬-비용/장애/동시성 보호)
+
+| 환경변수 | 기본값 | 설명 |
+|---------|--------|------|
+| `MANAGER_BUDGET_PER_WORKFLOW_USD` | `0`(비활성) | budget 서킷 — 워크플로(세션)당 USD 비용 상한. >0이면 러너가 호출 전 누적 비용 검사(초과 시 fail-closed)·호출 후 누적 |
+| `MANAGER_BUDGET_DAILY_USD` | `0`(비활성) | budget 서킷 — 일(UTC) 전체 USD 비용 상한. 인메모리(재시작 시 일 카운터 소실) |
+| `MANAGER_PROVIDER_CIRCUIT` | `false` | provider 서킷 — provider 지속 장애(429/5xx/529·연결/타임아웃) 추적, 연속 실패 임계 시 open→cooldown fail-fast |
+| `MANAGER_PROVIDER_CIRCUIT_THRESHOLD` | `5` | provider 서킷 연속 실패 임계 — 도달 시 회로 open |
+| `MANAGER_PROVIDER_CIRCUIT_COOLDOWN_MS` | `30000` | provider 서킷 open 유지 ms — 경과 후 half_open 1회 probe |
+| `MANAGER_BULKHEAD_GLOBAL` | `0`(무제한) | 벌크헤드 — 전역 동시 에이전트 RPC 캡 |
+| `MANAGER_BULKHEAD_PER_AGENT` | `0`(무제한) | 벌크헤드 — 에이전트 종류별 동시 RPC 캡. 캡 도달 시 큐잉(백프레셔·드롭 없음) |
 
 ### Task Manager 튜닝
 
