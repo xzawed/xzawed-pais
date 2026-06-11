@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (216 테스트 통과)**
+**현재 상태: 구현 완료 (229 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -42,6 +42,9 @@ src/
 │   ├── readiness.ts             # isReady/readyNodes (DoR 가드·주입형 술어)
 │   ├── oracle-dor.ts            # P3-1 oracleSatisfiedSet + ApprovedOracleView (§8 DoR satisfied-set)
 │   └── index.ts                 # task-graph 배럴 export
+├── budget/                      # §13 budget 서킷브레이커 (순수·인메모리)
+│   ├── budget-circuit.ts        # MODEL_PRICING·costOf·BudgetCircuitBreaker·BudgetExceededError
+│   └── index.ts                 # budget 배럴 export
 ├── decomposition/               # P2-1 결정론 분해 코어 (순수 함수·I/O 0)
 │   ├── coverage-matrix.ts       # coverageMatrix — §6 P4 커버리지 매트릭스(gaps·overlaps·unknownClaims)
 │   ├── content-hash.ts          # contentHashId — §6 P7 안정 WP ID(wp_<sha256 32hex>)
@@ -52,6 +55,7 @@ src/
     ├── workspace-guard.test.ts  # validateWorkspaceRoot + resolveWorkspaceRoot 테스트
     ├── base-consumer.test.ts    # BaseConsumer 테스트
     ├── dlq.test.ts              # dlqStreamKey/idemKey/DlqMessageSchema/redriveDlq 테스트
+    ├── budget-circuit.test.ts   # costOf/BudgetCircuitBreaker/BudgetExceededError 테스트
     ├── session-dispatcher.test.ts  # SessionDispatcher 테스트
     ├── agent-query.test.ts      # AgentQuery / parseAgentQuery 테스트
     ├── answer-query.test.ts     # answerViaClaude / callClaudeText 등 테스트
@@ -95,6 +99,24 @@ const satisfied = oracleSatisfiedSet(workPackages, approvedOracles) // Set<wpId>
 
 - WP satisfied ⇔ `storyId` 바인딩 approved 오라클 존재 **AND** `wp.acceptanceCriteria` 전부가 그 오라클 `coveredCriteria`에 포함. 빈 AC는 오라클 존재 시 vacuously true.
 - story당 approved 오라클 1개 불변식(승인이 이전 버전 supersede); 다중이면 마지막 우선. 입력 순서 무관(결정론).
+
+## §13 Budget 서킷브레이커 패턴 (`budget/budget-circuit.ts`)
+
+senario §13의 budget 서킷 — 토큰 비용 누적 상한(워크플로/일)을 강제하는 순수 인메모리 코어. 병렬 subagent·Deep Research(P2 Wiki Agent·P4 적대검증)의 비용 폭발을 본격화 이전에 막는 횡단 보호.
+
+```typescript
+import { BudgetCircuitBreaker, costOf, BudgetExceededError } from '@xzawed/agent-streams'
+import type { TokenUsage } from '@xzawed/agent-streams'
+
+const breaker = new BudgetCircuitBreaker({ perWorkflowUsd: 5, dailyUsd: 50 }) // 0/미지정=비활성
+breaker.check(workflowId)              // 호출 전: 누적 ≥ 상한이면 BudgetExceededError throw(fail-closed)
+const r = breaker.record(workflowId, model, usage) // 호출 후: usage→USD 누적, { workflowUsd, dailyUsd, tripped }
+```
+
+- **`costOf(model, usage)`**: 모델별 가격표(`MODEL_PRICING`, claude-api 레퍼런스)로 USD 환산. 캐시 토큰 가중(쓰기 1.25×·읽기 0.1×). 미지 모델은 Opus-tier로 보수적 폴백. 빈 usage=0.
+- **누적 ≥ 상한 시 다음 `check`가 차단**: 호출 비용은 사전 미상이라 임계를 넘긴 호출은 완료하고 이후 호출을 막는다(보수적 게이트).
+- **인메모리·주입형 clock**: 일(UTC) 카운터는 `now`로 롤오버. 재시작 시 일 카운터 소실(per-workflow는 워크플로가 한 프로세스라 정확). I/O·DB 0.
+- **소비자 측**(Manager): 러너 tool-loop이 `check`(stop=throw→error 발행 M8)/`record`(트립 시 onTrip 알림)를 배선. 트립은 OPERATIONS_DECISIONS §1 DEGRADED→SAFE 강등 신호의 입력(상태머신 전이는 P6).
 
 ## WorkPackage §7 계약 스키마 (`types/work-package.ts`)
 
