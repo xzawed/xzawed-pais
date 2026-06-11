@@ -11,17 +11,25 @@ describe('judgePrimaryResult — 결과-근거 판정(fail-closed)', () => {
     expect(judgePrimaryResult('run_tests', { success: true, failed: 0, passed: 3 })).toEqual({ ok: true })
   })
   it('run_tests: success=false → fail(사유 포함)', () => {
-    const v = judgePrimaryResult('run_tests', { success: false, failed: 2 })
+    const v = judgePrimaryResult('run_tests', { success: false, failed: 2, passed: 1 })
     expect(v.ok).toBe(false)
     if (!v.ok) expect(v.reason).toContain('run_tests')
   })
   it('run_tests: success=true라도 failed>0 → fail', () => {
-    expect(judgePrimaryResult('run_tests', { success: true, failed: 1 }).ok).toBe(false)
+    expect(judgePrimaryResult('run_tests', { success: true, failed: 1, passed: 3 }).ok).toBe(false)
   })
   it('run_tests: 필드 부재(파싱 실패) → fail — 기본값에 기대지 않는 fail-closed', () => {
     expect(judgePrimaryResult('run_tests', { passed: 3 }).ok).toBe(false)
     expect(judgePrimaryResult('run_tests', null).ok).toBe(false)
     expect(judgePrimaryResult('run_tests', 'ok').ok).toBe(false)
+  })
+  it('run_tests: success=true·failed=0이라도 passed=0 → fail (빈 스위트 vacuous-pass 봉합·N8)', () => {
+    const v = judgePrimaryResult('run_tests', { success: true, failed: 0, passed: 0 })
+    expect(v.ok).toBe(false)
+    if (!v.ok) expect(v.reason).toContain('vacuous')
+  })
+  it('run_tests: passed 필드 부재 → fail (실행 통과 미확인=실패·기본값 비의존)', () => {
+    expect(judgePrimaryResult('run_tests', { success: true, failed: 0 }).ok).toBe(false)
   })
   it('build_project: success=true → ok / false·부재 → fail', () => {
     expect(judgePrimaryResult('build_project', { success: true })).toEqual({ ok: true })
@@ -55,7 +63,7 @@ const buildInput = (wp: WorkPackage) => ({ projectPath: '/ws', wp: wp.id })
 
 describe('verifyWp — 검증 오케스트레이션(fail-closed·never-throw)', () => {
   const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/ws' }
-  const okExec = () => ({ execute: vi.fn().mockResolvedValue({ success: true, failed: 0 }) })
+  const okExec = () => ({ execute: vi.fn().mockResolvedValue({ success: true, failed: 0, passed: 1 }) })
 
   it('결과-근거 판정 실패(run_tests WP가 success=false) → 파생 체크 없이 즉시 fail', async () => {
     const deps: VerifyDeps = { handlers: {}, buildInput, workflowId: 'wf1', attempt: 0 }
@@ -65,7 +73,7 @@ describe('verifyWp — 검증 오케스트레이션(fail-closed·never-throw)', 
   it('develop_code: 빌드·테스트 둘 다 통과 → ok (호출 순서: build → test)', async () => {
     const calls: string[] = []
     const mk = (name: string) => ({
-      execute: vi.fn().mockImplementation(() => { calls.push(name); return Promise.resolve({ success: true, failed: 0 }) }),
+      execute: vi.fn().mockImplementation(() => { calls.push(name); return Promise.resolve({ success: true, failed: 0, passed: 1 }) }),
     })
     const deps: VerifyDeps = {
       handlers: { build_project: mk('build'), run_tests: mk('test') },
@@ -137,7 +145,7 @@ describe('verifySessionId suffix', () => {
 describe('verifyWp conformance (develop_code)', () => {
   const devWp = { id: 'wp-1', storyId: 'story-1', owningRole: 'developer', acceptanceCriteria: ['AC-1'], oracleRef: null, dependsOn: [] } as unknown as WorkPackage
   const uc: UserContext = { userId: 'u', projectId: 'p', workspaceRoot: '/abs/ws' }
-  const okTester = { execute: vi.fn().mockResolvedValue({ success: true, failed: 0 }) }
+  const okTester = { execute: vi.fn().mockResolvedValue({ success: true, failed: 0, passed: 1 }) }
   const okBuilder = { execute: vi.fn().mockResolvedValue({ success: true }) }
   const approvedScenarios = [{ id: 's1', title: 't', given: [], when: 'w', thenSteps: ['ok'], status: 'human_approved' as const }]
   function baseDeps(over: Record<string, unknown> = {}) {
@@ -173,7 +181,7 @@ describe('verifyWp conformance (develop_code)', () => {
   it('passes when author writes a conformance test and Tester runs it green', async () => {
     const store = { approvedOracleForStory: vi.fn().mockResolvedValue({ scenarios: approvedScenarios, coverage: {} }) }
     const author = { execute: vi.fn().mockResolvedValue({ artifacts: ['.xzawed/conformance/wp-1.test.ts'] }) }
-    const runner = { execute: vi.fn().mockResolvedValue({ success: true, failed: 0 }) }
+    const runner = { execute: vi.fn().mockResolvedValue({ success: true, failed: 0, passed: 1 }) }
     const v = await verifyWp('develop_code', devWp, {},
       baseDeps({ oracleStore: store, conformanceEnabled: true, handlers: { build_project: okBuilder, run_tests: runner, develop_code: author } }) as never)
     expect(v.ok).toBe(true)
@@ -187,8 +195,8 @@ describe('verifyWp conformance (develop_code)', () => {
     const store = { approvedOracleForStory: vi.fn().mockResolvedValue({ scenarios: approvedScenarios, coverage: {} }) }
     const author = { execute: vi.fn().mockResolvedValue({ artifacts: ['.xzawed/conformance/wp-1.test.ts'] }) }
     const runner = { execute: vi.fn()
-      .mockResolvedValueOnce({ success: true, failed: 0 })
-      .mockResolvedValueOnce({ success: false, failed: 2 }) }
+      .mockResolvedValueOnce({ success: true, failed: 0, passed: 1 })
+      .mockResolvedValueOnce({ success: false, failed: 2, passed: 3 }) }
     const v = await verifyWp('develop_code', devWp, {},
       baseDeps({ oracleStore: store, conformanceEnabled: true, handlers: { build_project: okBuilder, run_tests: runner, develop_code: author } }) as never)
     expect(v.ok).toBe(false)

@@ -131,7 +131,7 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
         { envelope: { eventId: '1', correlationId: wf, causationId: null, workflowId: wf, stepId: 'wp.dispatch_signal:a', attemptId: 0, idempotencyKey: `${wf}:wp.dispatch_signal:a:0`, occurredAt: 1 }, type: 'wp.dispatch_signal', payload: { wpId: 'a', attempt: 0 } },
         {
           repo,
-          handlers: { run_tests: { execute: vi.fn().mockResolvedValue({ success: false, failed: 2 }) } },
+          handlers: { run_tests: { execute: vi.fn().mockResolvedValue({ success: false, failed: 2, passed: 3 }) } },
           publish,
           verifyEnabled: true,
         },
@@ -269,7 +269,7 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
 
       // run_tests: 파생 체크(testFiles 없음)는 통과시켜 ②를 지나 conformance까지 도달, conformance-run(testFiles 있음)만 실패시킨다.
       const runTests = vi.fn().mockImplementation((input: unknown) =>
-        Promise.resolve((input as { testFiles?: unknown }).testFiles ? { success: false, failed: 1 } : { success: true, failed: 0 }),
+        Promise.resolve((input as { testFiles?: unknown }).testFiles ? { success: false, failed: 1, passed: 3 } : { success: true, failed: 0, passed: 1 }),
       )
       const published: Array<{ stream: string; msg: { type: string; payload?: { attempt?: number } } }> = []
       const publish = async (stream: string, msg: unknown): Promise<string> => { published.push({ stream, msg: msg as never }); return '1-0' }

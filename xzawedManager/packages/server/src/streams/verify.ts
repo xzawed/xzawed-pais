@@ -13,8 +13,8 @@ const REASON_MAX = 500
 export type VerificationVerdict = { ok: true } | { ok: false; reason: string }
 
 /** 판정 전용 minimal 스키마 — 핸들러 outputSchema의 .default()에 기대지 않고
- *  필드 부재=파싱 실패=fail(불확실=실패, senario N1). */
-const TesterResultSchema = z.object({ success: z.boolean(), failed: z.number() })
+ *  필드 부재=파싱 실패=fail(불확실=실패, senario N1). `passed`는 N8 vacuous-pass 봉합용. */
+const TesterResultSchema = z.object({ success: z.boolean(), passed: z.number(), failed: z.number() })
 const BuilderResultSchema = z.object({ success: z.boolean() })
 
 /**
@@ -24,9 +24,14 @@ const BuilderResultSchema = z.object({ success: z.boolean() })
 export function judgePrimaryResult(tool: string, result: unknown): VerificationVerdict {
   if (tool === 'run_tests') {
     const parsed = TesterResultSchema.safeParse(result)
-    if (!parsed.success) return { ok: false, reason: 'run_tests: 결과 파싱 실패(success/failed 부재)' }
+    if (!parsed.success) return { ok: false, reason: 'run_tests: 결과 파싱 실패(success/passed/failed 부재)' }
     if (!parsed.data.success || parsed.data.failed > 0) {
       return { ok: false, reason: `run_tests: success=${parsed.data.success} failed=${parsed.data.failed}` }
+    }
+    // N8 vacuous-pass 봉합: success·failed=0이어도 실행·통과한 테스트가 0이면 빈 껍데기 스위트(0-test가
+    // failed:0으로 통과하던 false-pass) — 게이트를 열지 않는다(fail-closed). 약한/빈 conformance 테스트도 차단.
+    if (parsed.data.passed <= 0) {
+      return { ok: false, reason: `run_tests: vacuous pass — 실행·통과 테스트 0개(passed=${parsed.data.passed})` }
     }
     return { ok: true }
   }
