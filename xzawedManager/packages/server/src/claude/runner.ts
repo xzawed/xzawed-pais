@@ -10,6 +10,18 @@ import { isGatedTool, effectiveMode, summarizeOutput, parseDecision, isKnowledge
 import type { GateMode, GateDecision } from '../gates/approval-gate.js'
 import { validateToolInput } from './validate-tool-input.js'
 import type { KnowledgeRepo } from '../db/knowledge.repo.js'
+import type { BudgetCircuitBreaker, BudgetRecordResult } from '@xzawed/agent-streams'
+
+/** §13 budget 서킷 트립 알림 정보(server.ts가 app.log.warn로 배선). */
+export interface BudgetTripInfo extends BudgetRecordResult {
+  workflowId: string
+}
+
+/** 러너에 주입하는 budget 서킷 의존성. 미주입이면 check/record no-op(회귀 0). */
+export interface BudgetRunnerDeps {
+  breaker: BudgetCircuitBreaker
+  onTrip?: (info: BudgetTripInfo) => void
+}
 
 /** MANAGER_MAX_ITERATIONS 환경변수를 파싱하고 유효성을 검증한다. 유효하지 않으면 Error를 throw한다. */
 export function parseMaxIterations(raw: string | undefined): number {
@@ -124,7 +136,20 @@ export class ClaudeRunner {
     private readonly knowledgeRepo?: KnowledgeRepo,
     // 게이트 fail-safe(기본 = env 기반 GATE_FAILSAFE). 테스트에서 레거시(false) 경로를 모듈 리로드 없이 주입.
     private readonly failSafe: boolean = GATE_FAILSAFE,
+    // §13 budget 서킷(optional). 미주입이면 check/record no-op(회귀 0).
+    private readonly budget?: BudgetRunnerDeps,
   ) {}
+
+  /** §13: 호출 후 토큰 비용 누적. 트립 시 onTrip 알림(never-throw — 관측이 작업을 막지 않음). */
+  private recordBudget(workflowId: string, usage: Anthropic.Usage | undefined): void {
+    if (!this.budget || !usage) return
+    try {
+      const result = this.budget.breaker.record(workflowId, this.model, usage)
+      if (result.tripped) this.budget.onTrip?.({ workflowId, ...result })
+    } catch (err) {
+      console.warn('[runner] budget record 실패 — 작업 계속:', err)
+    }
+  }
 
   private async publishStatus(
     producer: StreamProducer,
@@ -585,6 +610,10 @@ export class ClaudeRunner {
     while (iterations++ < MAX_ITERATIONS) {
       if (signal?.aborted) throw new Error('Session aborted')
 
+      // §13 budget 서킷: 호출 전 fail-closed 선검사. 상한 초과면 BudgetExceededError throw →
+      // run()을 빠져나가 sessions.route catch가 type:'error' 발행(M8 stop·무음 금지).
+      this.budget?.breaker.check(sessionId)
+
       let timerId: ReturnType<typeof setTimeout> | undefined
       let response: Anthropic.Message
       try {
@@ -613,6 +642,9 @@ export class ClaudeRunner {
       } finally {
         clearTimeout(timerId)
       }
+
+      // §13 budget 서킷: 호출 후 비용 누적(트립 시 onTrip 알림). 다음 iteration의 check가 차단.
+      this.recordBudget(sessionId, response.usage)
 
       if (response.stop_reason === 'end_turn') {
         const text = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text ?? ''

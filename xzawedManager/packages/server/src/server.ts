@@ -17,7 +17,7 @@ import { createOutboxPublish } from './streams/outbox-publish.js'
 import { createPool, runMigrations, closePool } from './db/pool.js'
 import type { Pool } from 'pg'
 import { ToolRegistry } from './tools/registry.js'
-import { ClaudeRunner } from './claude/runner.js'
+import { ClaudeRunner, type BudgetRunnerDeps } from './claude/runner.js'
 import { createPlanTaskHandler } from './tools/plan-task.js'
 import { createDevelopCodeHandler } from './tools/develop-code.js'
 import { createDesignUiHandler } from './tools/design-ui.js'
@@ -32,7 +32,7 @@ import { createDeployProjectHandler } from './tools/deploy-project.js'
 import { SessionGatewayConsumer } from './streams/session-gateway.js'
 import { WatcherEventConsumer } from './streams/watcher-event-consumer.js'
 import { getRedisClient, createRedisClient } from './streams/redis.client.js'
-import { RedisEventBus } from '@xzawed/agent-streams'
+import { RedisEventBus, BudgetCircuitBreaker } from '@xzawed/agent-streams'
 import { TaskGraphRepo } from './db/task-graph.repo.js'
 import { DispatchStore } from './db/dispatch.repo.js'
 import { LeaseStore } from './db/lease.repo.js'
@@ -96,7 +96,27 @@ export async function buildServer(
   registry.register(createRegisterProjectHandler(config.REDIS_URL))
   registry.register(createSwitchProjectHandler(config.REDIS_URL))
 
-  const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry, knowledgeRepo)
+  // §13 budget 서킷브레이커: 워크플로/일 비용 상한 중 하나라도 >0이면 가동. 트립 시 stop(러너가 throw→error 발행)+
+  // alert(app.log.warn). 인메모리(재시작 시 일 카운터 소실·per-workflow는 정확). 미설정이면 미주입(회귀 0).
+  const budgetEnabled = config.MANAGER_BUDGET_PER_WORKFLOW_USD > 0 || config.MANAGER_BUDGET_DAILY_USD > 0
+  const budget: BudgetRunnerDeps | undefined = budgetEnabled
+    ? {
+        breaker: new BudgetCircuitBreaker({
+          perWorkflowUsd: config.MANAGER_BUDGET_PER_WORKFLOW_USD,
+          dailyUsd: config.MANAGER_BUDGET_DAILY_USD,
+        }),
+        onTrip: (info) =>
+          app.log.warn(
+            `[budget] 서킷 트립 — workflow=${info.workflowId} workflowUsd=$${info.workflowUsd.toFixed(4)} dailyUsd=$${info.dailyUsd.toFixed(4)} (상한 도달 — 이후 호출 차단)`,
+          ),
+      }
+    : undefined
+  if (budgetEnabled) {
+    app.log.info(
+      `[budget] §13 서킷브레이커 가동 — perWorkflow=$${config.MANAGER_BUDGET_PER_WORKFLOW_USD || '∞'} daily=$${config.MANAGER_BUDGET_DAILY_USD || '∞'}`,
+    )
+  }
+  const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry, knowledgeRepo, undefined, budget)
   const producer = new StreamProducer(config.REDIS_URL)
   const sessionStore = new SessionStore(sessionRepo, eventStore)
   const activeConsumers = new Map<string, StreamConsumer>()

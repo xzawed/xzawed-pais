@@ -16,6 +16,7 @@ import { ClaudeRunner, parseMaxIterations, parsePositiveInt } from './runner.js'
 import { ToolRegistry } from '../tools/registry.js'
 import { AgentQueryError, ClarificationNeededError } from '../tools/errors.js'
 import { SessionStore } from '../sessions/session.store.js'
+import { BudgetCircuitBreaker, BudgetExceededError } from '@xzawed/agent-streams'
 
 /** 조건이 참이 될 때까지 macrotask로 양보하며 폴링한다. */
 async function waitFor(pred: () => boolean, ms = 2000): Promise<void> {
@@ -1328,5 +1329,44 @@ describe('MAX_ITERATIONS 검증 (parseMaxIterations)', () => {
     expect(() => parseMaxIterations('-5')).toThrow(
       /MANAGER_MAX_ITERATIONS must be a positive integer/,
     )
+  })
+})
+
+describe('ClaudeRunner — §13 budget 서킷', () => {
+  const zeroNow = () => 0 // 고정 clock(일 롤오버 결정론)
+
+  it('budget 미주입이면 동작 불변(회귀 0)', async () => {
+    createFn.mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+    const result = await runner.run(baseRunOptions()) // runner엔 budget 미주입
+    expect(result).toBe('done')
+  })
+
+  it('호출 후 토큰 비용을 워크플로(sessionId)에 누적한다', async () => {
+    const breaker = new BudgetCircuitBreaker({ perWorkflowUsd: 1, now: zeroNow })
+    const r = new ClaudeRunner(client, 'claude-test', registry, undefined, undefined, { breaker })
+    createFn.mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+    await r.run(baseRunOptions())
+    // usage {input:10, output:10}·미지 모델 → 기본가 $5/$25 → (10×5 + 10×25)/1e6 = $0.0003
+    expect(breaker.snapshot('sess-1').workflowUsd).toBeCloseTo(0.0003, 10)
+  })
+
+  it('상한 초과 시 호출 전 check가 던져 run이 거부된다(M8 stop·LLM 미호출)', async () => {
+    const breaker = new BudgetCircuitBreaker({ perWorkflowUsd: 0.0001, now: zeroNow })
+    breaker.record('sess-1', 'claude-opus-4-8', { input_tokens: 1000, output_tokens: 1000 }) // $0.03 ≥ 상한
+    const r = new ClaudeRunner(client, 'claude-test', registry, undefined, undefined, { breaker })
+    await expect(r.run(baseRunOptions())).rejects.toThrow(BudgetExceededError)
+    expect(createFn).not.toHaveBeenCalled() // 호출 전 차단
+  })
+
+  it('record가 트립하면 onTrip(알림)을 호출한다', async () => {
+    const breaker = new BudgetCircuitBreaker({ perWorkflowUsd: 0.0001, now: zeroNow }) // 매우 낮은 상한
+    const onTrip = vi.fn()
+    const r = new ClaudeRunner(client, 'claude-test', registry, undefined, undefined, { breaker, onTrip })
+    createFn.mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+    await r.run(baseRunOptions()) // $0.0003 ≥ 0.0001 → record 후 트립
+    expect(onTrip).toHaveBeenCalledTimes(1)
+    const info = onTrip.mock.calls[0]![0] as { workflowId: string; tripped: boolean }
+    expect(info.workflowId).toBe('sess-1')
+    expect(info.tripped).toBe(true)
   })
 })
