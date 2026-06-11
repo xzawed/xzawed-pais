@@ -186,7 +186,7 @@ const result: RedriveResult = await redriveDlq(redis, 'manager:dispatched:main',
 - **각 엔트리**: 봉투 파싱 → (reason 필터) → **멱등 마커 삭제(재발행 전)** → 원본을 원 스트림 재발행(소비자 그룹이 XREADGROUP 픽업) → DLQ에서 제거(재실행 시 이중 재발행 방지).
 - **마커 선삭제**가 핵심: handler_failed 엔트리는 처음 처리 시 SETNX로 마커가 설정돼 있어, 삭제하지 않으면 재발행본이 dedup-skip된다. dedup 키 없음(envelope·messageId 없음)이면 마커 삭제 건너뜀.
 - **never-block 드레인**: 파싱 불가·엔트리별 실패는 skip(엔트리 보존)하고 배치를 계속. 재발행 후 XDEL 실패로 엔트리가 남아도 소비자 멱등 소비가 이중 처리를 흡수(재발행본은 새 마커로 dedup).
-- **소비자 측**(Manager): `POST /api/admin/dlq/redrive`(admin.route.ts)가 이 함수를 authHook 보호 하에 노출.
+- **소비자 측**(Manager): `POST /api/admin/dlq/redrive`(admin.route.ts)가 이 함수를 **인증 필수** 라우트로 노출(부수효과 권한 엔드포인트라 authHook 없으면 server.ts가 미등록 — open admin endpoint 금지).
 
 ## validateWorkspaceRoot 패턴
 

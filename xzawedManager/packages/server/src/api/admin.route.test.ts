@@ -1,7 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
 import Fastify from 'fastify'
+import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { DlqRedis } from '@xzawed/agent-streams'
 import { adminRoute } from './admin.route.js'
+
+type Hook = (req: FastifyRequest, reply: FastifyReply) => Promise<void>
+
+/** 통과(인증 성공) authHook. */
+const allow: Hook = async () => {}
 
 /** routeToDlq 봉투 'data' 문자열. */
 function dlqEntry(messageId: string, reason = 'handler_failed', sourceStream = 'manager:dispatched:main'): string {
@@ -23,10 +29,11 @@ function fakeRedis(entries: Array<[string, string[]]> = []): DlqRedis & Record<s
   }
 }
 
-function appWith(redis: DlqRedis, extra: Record<string, unknown> = {}) {
+/** authHook은 필수 — 기본은 통과(allow). 인증 차단 테스트는 blocking hook을 주입. */
+function appWith(redis: DlqRedis, authHook: Hook = allow) {
   const app = Fastify()
   return app
-    .register(adminRoute, { redisUrl: 'redis://x', getRedis: () => redis, ...extra })
+    .register(adminRoute, { redisUrl: 'redis://x', getRedis: () => redis, authHook })
     .then(() => app)
 }
 
@@ -83,19 +90,32 @@ describe('adminRoute — POST /api/admin/dlq/redrive', () => {
     expect(res.statusCode).toBe(400)
   })
 
-  it('authHook 설정 시 preHandler로 적용된다(미인증 차단)', async () => {
-    const authHook = vi.fn(async (_req: unknown, reply: { code: (n: number) => { send: (b: unknown) => unknown } }) => {
-      reply.code(401).send({ error: 'unauthorized' })
+  it('인증(authHook)은 성공 경로에서도 항상 실행된다(우회 경로 없음)', async () => {
+    const spy: Hook = vi.fn(async () => {})
+    const redis = fakeRedis([['1-0', ['data', dlqEntry('m1')]]])
+    const app = await appWith(redis, spy)
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/admin/dlq/redrive',
+      payload: { sourceStream: 'manager:dispatched:main' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(spy).toHaveBeenCalled()
+  })
+
+  it('authHook이 차단하면 핸들러에 도달하지 않는다(미인증 거부)', async () => {
+    const blocking: Hook = vi.fn(async (_req, reply) => {
+      await reply.code(401).send({ error: 'unauthorized' })
     })
     const redis = fakeRedis()
-    const app = await appWith(redis, { authHook })
+    const app = await appWith(redis, blocking)
     const res = await app.inject({
       method: 'POST',
       url: '/api/admin/dlq/redrive',
       payload: { sourceStream: 's' },
     })
     expect(res.statusCode).toBe(401)
-    expect(authHook).toHaveBeenCalled()
+    expect(blocking).toHaveBeenCalled()
     expect(redis.xrange).not.toHaveBeenCalled() // 핸들러 미도달
   })
 })

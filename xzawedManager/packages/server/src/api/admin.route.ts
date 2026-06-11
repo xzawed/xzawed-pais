@@ -7,8 +7,12 @@ type RouteHook = (req: FastifyRequest, reply: FastifyReply) => Promise<void>
 
 export interface AdminRouteOptions {
   redisUrl: string
-  /** 설정 시 운영 라우트(redrive)에 적용(서비스 JWT). 미설정이면 개방(하위호환). */
-  authHook?: RouteHook
+  /**
+   * **필수** — 운영 라우트(redrive)는 부수효과(원 스트림 재발행→자율 에이전트 실행 트리거)가 있는 권한
+   * 엔드포인트라 인증을 강제한다. open admin endpoint를 만들지 않기 위해 옵셔널이 아니다. 인증을 구성할 수
+   * 없는 환경(SERVICE_JWT_SECRET 미설정)에서는 server.ts가 이 라우트를 **아예 등록하지 않는다**(미마운트).
+   */
+  authHook: RouteHook
   /** 테스트 주입용 — 기본은 공유 ioredis 클라이언트. */
   getRedis?: () => DlqRedis
 }
@@ -27,12 +31,11 @@ const RedriveBodySchema = z.object({
  * 멱등 마커 선삭제→재발행→DLQ 제거. 쓰기/부수효과 라우트라 authHook 설정 시 서비스 JWT로 보호.
  */
 export async function adminRoute(app: FastifyInstance, opts: AdminRouteOptions): Promise<void> {
-  const preHandler = opts.authHook ? [opts.authHook] : []
   const getRedis = opts.getRedis ?? (() => getRedisClient(opts.redisUrl) as unknown as DlqRedis)
 
   app.post<{ Body: unknown }>(
     '/api/admin/dlq/redrive',
-    { preHandler },
+    { preHandler: [opts.authHook] }, // 인증 필수 — authHook은 항상 preHandler로 실행(우회 경로 없음)
     async (req, reply) => {
       const parsed = RedriveBodySchema.safeParse(req.body)
       if (!parsed.success) {

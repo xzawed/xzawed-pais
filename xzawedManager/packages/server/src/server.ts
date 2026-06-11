@@ -310,8 +310,14 @@ export async function buildServer(
     ...(authHook && { authHook }),
     ...(decompose && { decompose }),
   })
-  // 운영 라우트: DLQ 재처리(redriveDlq). 격리된 poison 메시지를 원 스트림으로 되돌린다(쓰기/부수효과라 authHook 보호).
-  await app.register(adminRoute, { redisUrl: config.REDIS_URL, ...(authHook && { authHook }) })
+  // 운영 라우트: DLQ 재처리(redriveDlq). 격리된 poison 메시지를 원 스트림으로 되돌린다.
+  // 부수효과(원 스트림 재발행→자율 에이전트 실행 트리거)가 있는 권한 엔드포인트라 인증이 **필수**다 —
+  // authHook(SERVICE_JWT_SECRET)이 없으면 open admin endpoint를 만들지 않기 위해 라우트를 **등록하지 않는다**.
+  if (authHook) {
+    await app.register(adminRoute, { redisUrl: config.REDIS_URL, authHook })
+  } else {
+    app.log.warn('SERVICE_JWT_SECRET 미설정 — DLQ 재처리 운영 라우트(/api/admin/dlq/redrive)를 등록하지 않습니다(인증 필수).')
+  }
 
   const startManagedSession = makeSessionStarter({
     redisUrl: config.REDIS_URL, runner, producer, sessionStore, activeConsumers,
