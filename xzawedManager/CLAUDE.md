@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 693/723 테스트 — 로컬 30 skip, CI는 pg 통합 27건 포함 720/723 실행)**
+현재 상태: **구현 완료 (server 696/726 테스트 — 로컬 30 skip, CI는 pg 통합 27건 포함 723/726 실행)**
 
 > **통합 테스트 게이트**: `test/*.integration.test.ts`는 `TEST_DATABASE_URL ?? DATABASE_URL`로 게이트(CI turborepo 잡이 `TEST_DATABASE_URL` 주입 — 이전엔 `DATABASE_URL`만 읽어 **CI에서 한 번도 실행되지 않았음**). cleanup은 전부 파일별 prefix 스코프(`wf-comp-`·`wf-disp-`·`wf-lease-`·`wf-dc-`·`wf-tgp-`·`wf-ew-`·`wf-orc-`·`es-it`) — 비스코프 DELETE는 병렬 형제 테스트의 행을 지워 간헐 실패를 만든다. `runMigrations`는 pg advisory lock으로 동시 실행 직렬화(병렬 테스트·다중 인스턴스 기동 공통 방어). — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
@@ -66,7 +66,7 @@ packages/
 | `task_request` | Claude tool-calling 루프 시작. `payload.gateMode`(`manual\|auto`) 있으면 세션 기본 승인 모드로 적용(`setGateDefaultMode`) |
 | `info_response` | 대기 중 루프 재개. `answer`가 승인 게이트 응답이면 JSON 결정(`{decision: approve\|revise\|abort, rememberAuto?, saveToWiki?, wikiSummary?, feedback?}`)으로 해석 (`parseDecision`) |
 | `abort` | 루프 즉시 중단 |
-| `decompose_request` | `payload.intent` → flag on(`MANAGER_DECOMPOSE_ENABLED`)이면 4단계 LLM 분해+P4 repair 루프(소진 시 에스컬레이션)→decomposition.emitted 발행(Supervisor 소비). flag off면 분기 무시. `payload.userContext`(optional, P4a-2) 있으면 `ensureWorkspace` 후 그래프에 영속→실행 워커 주입 |
+| `decompose_request` | `payload.intent` → flag on(`MANAGER_DECOMPOSE_ENABLED`)이면 4단계 LLM 분해+P4 repair 루프(소진 시 에스컬레이션)→decomposition.emitted 발행(Supervisor 소비). **flag off면 무음 drop이 아니라 명시 `error` 발행+세션 정리(M8 — 이전엔 ladder 미일치로 무음 drop·요청자 무한 대기·consumer 누수)**. `payload.userContext`(optional, P4a-2) 있으면 `ensureWorkspace` 후 그래프에 영속→실행 워커 주입 |
 
 **발신:** `manager:to-orchestrator:{sessionId}`
 | type | 시점 |
@@ -312,6 +312,7 @@ MANAGER_WP_CONFORMANCE=         # 선택: 기본 false. true면 develop_code WP 
 
 - **Redis 메시지 검증**: `consumer.ts`는 `OrchestratorToManagerMessageSchema.safeParse()` 로 모든 수신 메시지 검증. 실패 시 xack 후 skip
 - **sessionId 검증**: `sessions.route.ts`에서 `z.string().uuid()` 검증 — UUID 형식 외 요청은 400 반환
+- **무음 drop 금지(M8)**: `sessions.route.ts` `startManagedSession`의 메시지 핸들러는 미처리 `msg.type`(방어적 else)·`decompose_request` 비활성(`MANAGER_DECOMPOSE_ENABLED` off)을 무음 auto-ack drop하지 않고 요청자에게 `error`를 발행한 뒤 `cleanupSession`으로 세션을 정리한다(이전엔 if/else-if ladder 미일치로 무음 drop → 요청자 무한 대기·consumer 누수). 정상 종료·decompose 완료·에러 분기가 `cleanupSession`/`publishError` 헬퍼를 공유
 - **JWT 인증**: `SERVICE_JWT_SECRET` 설정 시 JWT 인증 활성화 — 32자 미만이면 `superRefine`으로 시작 거부 (`config.ts`). `verifyServiceToken`은 `@fastify/jwt` 에러 코드별로 응답 메시지 분기: `FST_JWT_NO_AUTHORIZATION_IN_HEADER` → 401 `Missing token`, `FST_JWT_AUTHORIZATION_TOKEN_EXPIRED` → 401 `Token expired`, 그 외 → 401 `Invalid token`
 - **github-ops 경로 검증**: `commitAndPush`의 `files[].path`는 `validateCommitPath()`로 검증 — `..`, 제어문자, `.github/workflows/` 경로 차단
 - **Claude tool-use 검증**: `runner.ts`의 `block.input`은 각 핸들러의 `inputSchema`로 디스패치 전 선검증 (완료 — `validate-tool-input.ts`, #219). 검증 실패 시 디스패치 없이 `is_error` tool_result 반환
