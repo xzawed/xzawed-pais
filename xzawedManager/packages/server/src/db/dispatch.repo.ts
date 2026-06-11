@@ -56,15 +56,19 @@ export interface AppendWpEventInput {
 export async function appendWpEvent(
   client: PoolClient, env: EventEnvelope, input: AppendWpEventInput,
 ): Promise<{ eventId: string; seq: number }> {
+  // §8(P1d-6/7): dispatched/completed/escalated는 같은 (wf,wp,attempt) 봉투 멱등키 `{wf}:wp-${wpId}:${attempt}`를
+  // 공유 → 키-기반 dedup 소비자가 후속 생명주기 이벤트를 skip(예: wp.completed가 같은 attempt의 wp.dispatched 뒤로
+  // 유실). event_type을 키에 덧붙여 분리한다. eventId는 randomUUID라 항상 고유하므로 event_id 공유(lease provenance)는 불변.
+  const idempotencyKey = `${env.idempotencyKey}:${input.eventType}`
   const payload = { wpId: input.wpId, stepN: input.stepN, attempt: input.attempt }
-  const message = { envelope: env, type: input.eventType, payload }
+  const message = { envelope: { ...env, idempotencyKey }, type: input.eventType, payload }
   await client.query(
     `INSERT INTO manager_events
        (event_id, session_id, event_type, payload, correlation_id, causation_id, idempotency_key, actor, occurred_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
     [
       env.eventId, input.workflowId, input.eventType, JSON.stringify(payload),
-      env.correlationId, env.causationId, env.idempotencyKey, DISPATCH_ACTOR, env.occurredAt,
+      env.correlationId, env.causationId, idempotencyKey, DISPATCH_ACTOR, env.occurredAt,
     ],
   )
   const { rows } = await client.query<{ seq: number | string }>(

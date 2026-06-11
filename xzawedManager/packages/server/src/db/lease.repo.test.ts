@@ -57,7 +57,7 @@ describe('LeaseStore.recordReclaim', () => {
     expect(upd[1]).toContain(0) // expectedAttempt = nextAttempt(1) - 1
     const ev = callFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[]
     expect(ev[2]).toBe('wp.dispatched')
-    expect(ev[6]).toBe('wf-1:wp-wp-1:1')              // 멱등키 nextAttempt
+    expect(ev[6]).toBe('wf-1:wp-wp-1:1:wp.dispatched')  // 멱등키 nextAttempt·event_type 분리(§8)
     expect(JSON.parse(ev[3] as string)).toMatchObject({ wpId: 'wp-1', attempt: 1 })
     expect(res).toEqual({ status: 'reclaimed', eventId: expect.stringMatching(/[0-9a-f-]{36}/), seq: 42 })
   })
@@ -84,6 +84,7 @@ describe('LeaseStore.recordEscalation', () => {
     expect(upd[1]).toContain('escalated')
     const ev = callFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[]
     expect(ev[2]).toBe('wp.escalated')
+    expect(ev[6]).toBe('wf-1:wp-wp-1:2:wp.escalated')  // 멱등키 attempt·event_type 분리(§8)
     const log = callFor(m.query, /INSERT INTO wp_state_log/i)![1] as unknown[]
     expect(log[3]).toBe('ESCALATED')                  // to_state
     expect(res).toMatchObject({ status: 'escalated', seq: 42 })
@@ -109,7 +110,7 @@ describe('LeaseStore.recordCompletion', () => {
     expect(upd[1]).toContain('active')   // WHERE status='active' 가드(동시 완료 직렬화)
     const ev = callFor(m.query, /INSERT INTO manager_events/i)![1] as unknown[]
     expect(ev[2]).toBe('wp.completed')
-    expect(ev[6]).toBe('wf-1:wp-wp-1:1') // 멱등키 attempt
+    expect(ev[6]).toBe('wf-1:wp-wp-1:1:wp.completed') // 멱등키 attempt·event_type 분리(§8)
     const log = callFor(m.query, /INSERT INTO wp_state_log/i)![1] as unknown[]
     expect(log[3]).toBe('DONE')          // to_state
     expect(res).toMatchObject({ status: 'completed', seq: 42 })

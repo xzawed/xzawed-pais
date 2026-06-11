@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 674/703 테스트 — 로컬 29 skip, CI는 pg 통합 26건 포함 700/703 실행)**
+현재 상태: **구현 완료 (server 675/704 테스트 — 로컬 29 skip, CI는 pg 통합 26건 포함 701/704 실행)**
 
 > **통합 테스트 게이트**: `test/*.integration.test.ts`는 `TEST_DATABASE_URL ?? DATABASE_URL`로 게이트(CI turborepo 잡이 `TEST_DATABASE_URL` 주입 — 이전엔 `DATABASE_URL`만 읽어 **CI에서 한 번도 실행되지 않았음**). cleanup은 전부 파일별 prefix 스코프(`wf-comp-`·`wf-disp-`·`wf-lease-`·`wf-dc-`·`wf-tgp-`·`wf-ew-`·`wf-orc-`·`es-it`) — 비스코프 DELETE는 병렬 형제 테스트의 행을 지워 간헐 실패를 만든다. `runMigrations`는 pg advisory lock으로 동시 실행 직렬화(병렬 테스트·다중 인스턴스 기동 공통 방어). — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
@@ -165,7 +165,7 @@ P1d Task Manager의 영속 토대. `EVENT_SOURCED_SESSION`과 무관하게 `runM
 디스패치된 WP에 **가시성 타임아웃 lease**를 부여하고, 만료 시 reclaim(재할당 attempt++)→상한 초과 시 escalate한다. **미배선 코어**(sweep 타이머·wp.completed 흐름·server.ts 배선은 후속). PR 분할: **5a**(lease 획득 on dispatch + §8 하드닝) / **5b**(reclaim·escalate sweep). 설계 스펙 [2026-06-08-p1d5-lease-escalation-design.md](../../docs/superpowers/specs/2026-06-08-p1d5-lease-escalation-design.md).
 
 - **migration 008 `wp_leases`**: `(workflow_id, wp_id)` PK(가변 프로젝션·1행/WP)·`attempt`·`owner`(nullable)·`status`(active/released/escalated)·`expires_at`·`step_n`·`event_id`. **PK가 §8 #2 동시 dispatch dedup 게이트**.
-- **`recordDispatch`(5a)**: 같은 tx에 **`wp_leases` INSERT ON CONFLICT (wf,wp) DO NOTHING**(0행=이미 lease → ROLLBACK+`{status:'deduped'}`) + `appendWpEvent`(공통 헬퍼: manager_events+wp_state_log+outbox). **§8 #1 해소**: 멱등키를 `{wf}:wp-${wpId}:${attempt}`로 **WP 고정**(재분해 무관·attempt별), step-N은 payload 표시용. `expires_at=occurredAt+visibilityMs`(`DEFAULT_VISIBILITY_MS` 5분).
+- **`recordDispatch`(5a)**: 같은 tx에 **`wp_leases` INSERT ON CONFLICT (wf,wp) DO NOTHING**(0행=이미 lease → ROLLBACK+`{status:'deduped'}`) + `appendWpEvent`(공통 헬퍼: manager_events+wp_state_log+outbox). **§8 #1 해소**: 멱등키를 `{wf}:wp-${wpId}:${attempt}:${eventType}`로 **WP+event_type 고정**(재분해 무관·attempt별·생명주기 이벤트 분리 — `appendWpEvent`가 event_type 덧붙임), step-N은 payload 표시용. `expires_at=occurredAt+visibilityMs`(`DEFAULT_VISIBILITY_MS` 5분).
 - **`handleDispatch`(5a)**: `visibilityMs` 전달·`deduped`는 dispatched 제외·`skipped` 집계.
 - **`db/lease.repo.ts` `LeaseStore`(5b)**: `expiredActiveLeases`(status='active' AND expires_at<now)·`getLease`·원자 `recordReclaim`(lease UPDATE attempt++·새 만료 + wp.dispatched(attempt next) 단일 tx)·`recordEscalation`(status='escalated' + wp.escalated·ESCALATED 전이). `appendWpEvent`(5a) 재사용. **동시 sweep 직렬화**: reclaim=`AND attempt=$expected` **CAS**(reclaim은 status를 active로 유지하므로 status 가드만으론 이중 reclaim 미차단), escalate=status 단방향 전이. escalate는 lease.event_id 미갱신(dispatch provenance 보존).
 - **`streams/lease.ts`(5b)**: `planReclaim(expired, {maxAttempts})` **순수**(nextAttempt<maxAttempts→reclaim / 아니면 escalate)·`handleLeaseSweep(now, {store, maxAttempts?, visibilityMs?})`(expiredActiveLeases→planReclaim→항목별 recordReclaim/Escalation, outcome reclaimed/escalated/skipped). 실제 sweep 타이머 구동은 후속(server.ts 배선). `DEFAULT_MAX_ATTEMPTS=3`·`DEFAULT_VISIBILITY_MS=5분`(env `MANAGER_LEASE_MAX_ATTEMPTS`·`MANAGER_LEASE_VISIBILITY_MS` 오버라이드, 배선 시).
@@ -177,7 +177,7 @@ WP 완료 시 lease release + 완료 전이(DISPATCHED→DONE) + **후행 unbloc
 - **`LeaseStore.recordCompletion`**: lease `status='released'`(WHERE status='active' 가드·active lease만 완료·동시 완료 직렬화) + `wp.completed`(DISPATCHED→DONE) 단일 tx(`transition` 재사용). lease.event_id 미갱신(provenance).
 - **`streams/completion.ts` `handleCompletion(workflowId, wpId, {leaseStore, dispatch})`**: getLease(비active→skip)→recordCompletion(skip이면 재디스패치 안 함)→`handleDispatch` 재디스패치. outcome `{status, dispatched, eventId?}`.
 - **`handleDispatch` 수정(P1d-6)**: DoR done 판정을 정적 graph_dag status가 아니라 **`latestStates`의 to_state='DONE'에서 파생**(완료가 후행 실제 unblock). `alreadyDispatched`=DISPATCHED∪ESCALATED(escalated 재디스패치 금지). 주입 isDone은 **합성**(DONE 항상 done 보존). **회귀 0**(DONE 없는 기존 경로 동작 불변).
-- ⚠️ **배선 전 해소(스펙 §8)**: WP 생명주기 이벤트(dispatched/completed/escalated)가 같은 (wpId,attempt) 멱등키 공유 → P1d-7 소비자 dedup은 event_id 또는 event_type 포함 필요. recordCompletion stale-attempt(TOCTOU)는 provenance만·active 가드로 무해.
+- ✅ **§8 해소(하드닝)**: WP 생명주기 이벤트(dispatched/completed/escalated)가 같은 (wpId,attempt) 멱등키를 공유하던 것을 `appendWpEvent`가 **event_type을 키에 덧붙여 분리**(키-기반 dedup 소비자가 같은 attempt의 후속 생명주기 이벤트를 유실하던 잠복 결함 봉합 — 예: wp.completed가 wp.dispatched 뒤로 skip). eventId는 randomUUID라 event_id 공유(lease provenance)는 불변. recordCompletion stale-attempt(TOCTOU)는 provenance만·active 가드로 무해.
 
 ## Task Manager Supervisor 런타임 배선 (P1d-7)
 
