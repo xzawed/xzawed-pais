@@ -133,15 +133,15 @@ PR #238에서 반영된 senario 사양(v5) 기반 자율 Task Manager 로드맵(
 | P3 | Oracle DoR 게이트 + 초안 생성 (`MANAGER_ORACLE_DOR`·`MANAGER_ORACLE_DRAFT`) | ◐ 부분 — invariants/golden_refs 미소비·§14 step branch git 워크플로·WP 상태머신(8+2) 잔여 | #267~#268 |
 | P4 | 실행 워커 + 실 검증 오라클 (`MANAGER_TASK_WORKER`·`MANAGER_WP_VERIFY`·`MANAGER_WP_CONFORMANCE`) | ◐ 골격+컨텍스트(4a)+correctness 게이트(4b-1)+오라클 conformance(4b-2)+vacuous-pass `passed>0` floor·Oracle 스키마 invariants/golden_refs(4b-3·migration 010) — 잔여: advisory(N3)·impact(golden differential) 채널·전체 mutation 게이트(N8)·§11 결함 국소화(4c)·Tester/Security 적대 에이전트(4d) | #269, #271, #273~#275 |
 | P5 | fail-closed 릴리스 게이트(M1·N2)·saga 보상·canary/롤백·워크플로 FSM | ⬜ 미착수 | — |
-| P6 | 의사결정 브리프(§15)·HumanDecision/SignOff 영속(M9)·강등 모드 FSM·관측성/SLO | ◐ M9 영속 코어(DecisionRequest/HumanDecision/SignOff append-only·migration 011)·**미배선** — 결함 브리프·escalated 소비자 배선·강등 FSM·관측성/SLO 잔여 | #288 |
+| P6 | 의사결정 브리프(§15)·HumanDecision/SignOff 영속(M9)·강등 모드 FSM·관측성/SLO | ◐ M9 영속(migration 011)+**결함 브리프 배선**(lease escalation→defect_brief DecisionRequest·`MANAGER_DECISION_BRIEF`·M9 첫 런타임 소비) — 잔여: verification.failed/decomposition.inconsistent 브리프·사람 결정 라우팅(§11 되먹임)·UI 카드·강등 모드 FSM(N2)·관측성/SLO | #288, #291 |
 
 ---
 
 ## 진행 예정
 
-post-#286 전면 감사(spec↔코드 대조·적대 검증)가 확정한 슬라이스 순서. **최심 공통 토대부터** 착수 — ~~P6 M9 영속(#288)~~·~~P2r-2 영속(#289)~~·~~P2 간선 추론+epicId(#290)~~ 완료. 다음:
+post-#286 전면 감사(spec↔코드 대조·적대 검증)가 확정한 슬라이스 순서. **최심 공통 토대부터** 착수 — ~~P6 M9 영속(#288)~~·~~P2r-2 영속(#289)~~·~~P2 간선 추론+epicId(#290)~~·~~P6 결함 브리프 배선(#291)~~ 완료. 다음:
 
-1. **P6 의사결정 브리프 + escalated/verification.failed 컨슈머 배선** `[의존 M9(#288)]`: 영속된 `DecisionRepo` 위에, 발행만 되고 사라지던 escalation을 `DecisionRequest`로 변환해 사람 도달 구조화 핸드오프로 폐합(M8). UI ESCALATED 카드의 서버 측 선행.
+1. **P6 사람 결정 라우팅(§11 되먹임)** `[의존 #291]`: `defect_brief` DecisionRequest에 대한 사람 결정(fix_reverify/spec_fix/accept_known/reject)을 §11 계층으로 되먹임(구현/Task/기획 재진입). + verification.failed/decomposition.inconsistent 브리프 확장·UI ESCALATED 카드.
 2. **P2r-3 LLM 분류 생산자** `[의존 P2r-2(#289)]`: §5 차원별 병렬 Opus 조사+claim 추출+인용 해소→`scoreClassification`→`upsert`(§13 벌크헤드/budget 서킷 아래·flag).
 3. **P4 §11 결함 위치추적(impl/task/plan 귀속) + N5 진동 차단** `[의존 attribution 쓰기경로]`: 블라인드 lease 재시도를 계약-체인 귀속으로 교체. 최고 레버리지 검증 갭.
 4. **P2 잔여 정밀화** `[의존 없음]`: WP `inputs`/`outputs` 채움(계약 체인 §11·impact-DAG 입력)·재진입 머지(`merge_keep_inflight` 배선·N4)·`near_term` 점진 정교화 필터.

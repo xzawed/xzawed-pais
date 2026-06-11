@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 756/790 테스트 — 로컬 34 skip, CI는 pg 통합 포함 실행)**
+현재 상태: **구현 완료 (server 765/800 테스트 — 로컬 35 skip, CI는 pg 통합 포함 실행)**
 
 > **통합 테스트 게이트**: `test/*.integration.test.ts`는 `TEST_DATABASE_URL ?? DATABASE_URL`로 게이트(CI turborepo 잡이 `TEST_DATABASE_URL` 주입 — 이전엔 `DATABASE_URL`만 읽어 **CI에서 한 번도 실행되지 않았음**). cleanup은 전부 파일별 prefix 스코프(`wf-comp-`·`wf-disp-`·`wf-lease-`·`wf-dc-`·`wf-tgp-`·`wf-ew-`·`wf-orc-`·`es-it`) — 비스코프 DELETE는 병렬 형제 테스트의 행을 지워 간헐 실패를 만든다. `runMigrations`는 pg advisory lock으로 동시 실행 직렬화(병렬 테스트·다중 인스턴스 기동 공통 방어). — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
@@ -276,7 +276,8 @@ post-#286 감사가 지목한 **최심 공통 토대**. 사람 결정(결함 브
 - **migration 011 `decision_requests`/`human_decisions`/`sign_offs`**: 요청은 가변 프로젝션(상태머신 `PENDING→RESOLVED|EXPIRED|SUPERSEDED`), 결정·사인오프는 **append-only 불변**(코드 규약 INSERT만·부인방지 M9). 진실원천 manager_events(decision.* / signoff.*).
 - **`db/decision.types.ts`**: §3 Zod 스키마(7 type·6 choice·6 routedTo·DecisionContext) + 생명주기 이벤트·스트림(`manager:decision:main`)·actor 단일출처.
 - **`db/decision.repo.ts` `DecisionRepo`**: `createRequest`·`recordDecision`(→RESOLVED)·`recordSignOff`·`expireRequest`·`supersedeRequest`를 프로젝션 + manager_events + manager_outbox **단일 tx**(M5·OracleRepo.approve 패턴). `causation_id=request_id`(M7)·`actor=decided_by/approver`(M9). 전 쓰기 ON CONFLICT DO NOTHING 멱등(M6). 상태머신 가드(비-PENDING 결정·만료 거부). `EXPIRED`는 자동 통과 아님 — `decision.expired` 이벤트로 에스컬레이션(M8). 조회 `getRequest`·`pendingByWorkflow`·`decisionsForRequest`.
-- **DB 통합 테스트**(`test/decision.integration.test.ts`, skip-if-no-DB): 요청→결정→사인오프 루프·이벤트 3건 순서·멱등·EXPIRED 거부.
+- **DB 통합 테스트**(`test/decision.integration.test.ts`, skip-if-no-DB): 요청→결정→사인오프 루프·이벤트 3건 순서·멱등·EXPIRED 거부 + **P6 sweep escalation→defect_brief 영속**.
+- **결함 브리프 배선(P6·M9 첫 런타임 소비, `MANAGER_DECISION_BRIEF` flag)**: `streams/decision-brief.ts` `buildDefectBrief`(순수·escalation→`defect_brief` DecisionRequest 입력·§15 location/expected-vs-actual/options(§4 choice)·requestId `{wf}:{wpId}:{attempt}` 결정론 멱등) + `makeEscalationBrief`(DecisionRepo.createRequest 핸들러). `handleLeaseSweep`에 `onEscalated`(best-effort·throw 가드) 추가 — lease 상한 초과 escalate 성공 시 호출(reclaimOne/escalateOne 헬퍼 추출로 S3776 인지복잡도↓). `createSupervisor`가 `decisionBrief`+`decisionStore` 둘 다면 LeaseSweeper에 `makeEscalationBrief` 주입(briefStore 게이트). server.ts가 `MANAGER_DECISION_BRIEF`+pool 시 `DecisionRepo` 주입(전제 `TASK_MANAGER_ENABLED`+`DATABASE_URL`). **발행만 되고 사라지던 escalation을 사람 도달 핸드오프로 폐합(M8)** — verification.failed(비종단)·decomposition.inconsistent·UI 카드는 후속. off면 회귀 0.
 
 ## P2r-2 리스크 분류 영속 (#288 후속)
 
@@ -324,6 +325,7 @@ MANAGER_ORACLE_DRAFT=           # 선택: 기본 false. true면 decompose ok 경
 MANAGER_TASK_WORKER=            # 선택: 기본 false. true면 dispatch/reclaim이 wp.dispatch_signal 발행 + WorkerConsumer 배선 → dispatch된 WP를 owningRole 에이전트로 자율 실행 후 wp.completion 발행(P4-1). 전제: TASK_MANAGER_ENABLED+DATABASE_URL(Supervisor·getGraph)
 MANAGER_WP_VERIFY=              # 선택: 기본 false. true면 워커가 완료 발행 전 실행 ground truth 검증을 fail-closed로 수행(결과-근거 판정 + develop_code 파생 빌드·테스트 재실행). 실패 시 완료 미발행 → lease 백스톱 reclaim→escalate(P4b-1). 전제: MANAGER_TASK_WORKER
 MANAGER_WP_CONFORMANCE=         # 선택: 기본 false. true면 develop_code WP 검증에 사람 승인 오라클 GWT 시나리오를 실행 ground truth로 소비하는 conformance 채널 추가 — 독립 develop_code 호출이 승인 시나리오로 테스트 작성 → Tester 실행 → 결과 판정(N1/N6). 실패 시 완료 미발행 → lease 백스톱(P4b-2). 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY + OracleRepo(MANAGER_ORACLE_DOR||MANAGER_ORACLE_DRAFT). ⚠️ WP당 에이전트 호출 최대 5단계 → MANAGER_LEASE_VISIBILITY_MS 600s 이상 권장
+MANAGER_DECISION_BRIEF=         # 선택: 기본 false. true면 lease 상한 초과 escalation을 defect_brief DecisionRequest로 영속(사람 도달 핸드오프·M8/M9). 전제: TASK_MANAGER_ENABLED+DATABASE_URL(Supervisor·LeaseSweeper·DecisionRepo). off면 escalation 시 브리프 미생성(회귀 0)
 MANAGER_BUDGET_PER_WORKFLOW_USD= # 선택: 기본 0(비활성). §13 budget 서킷 — 워크플로(세션)당 USD 비용 상한. >0이면 러너가 호출 전 누적 비용 검사(초과 시 fail-closed throw→error 발행)·호출 후 usage→USD 누적
 MANAGER_BUDGET_DAILY_USD=        # 선택: 기본 0(비활성). §13 budget 서킷 — 일(UTC) 전체 USD 비용 상한. PER_WORKFLOW와 독립·둘 중 하나라도 >0이면 가동. 인메모리(재시작 시 일 카운터 소실·캘리브레이션 비차단)
 MANAGER_PROVIDER_CIRCUIT=       # 선택: 기본 false. §13 provider 서킷 — true면 러너가 provider(Anthropic) 지속 장애(429/5xx/529·연결/타임아웃) 추적, 연속 실패 임계 도달 시 회로 open→cooldown 동안 fail-fast(낭비 호출 차단). 강등 신호(P6)

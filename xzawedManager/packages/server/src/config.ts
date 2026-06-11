@@ -83,6 +83,13 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // P6 결함 의사결정 브리프(기본 false). true면 lease 상한 초과 escalation을 DecisionRequest(defect_brief)로
+    // 영속해 사람 도달 구조화 핸드오프로 폐합(M8 무음 통과 금지·M9 영속). 전제: TASK_MANAGER_ENABLED+DATABASE_URL
+    // (Supervisor·LeaseSweeper 가동 + DecisionRepo). off면 escalation 시 브리프 미생성(회귀 0).
+    MANAGER_DECISION_BRIEF: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
     // §13 budget 서킷브레이커(USD 비용 상한). 0/미설정이면 비활성. 둘 중 하나라도 >0이면
     // 러너 tool-loop이 호출 전 누적 비용을 검사(상한 초과 시 fail-closed 차단)·호출 후 비용 누적.
     // 워크플로(세션)당 상한 + 일(UTC) 전체 상한. 인메모리(재시작 시 일 카운터 소실·캘리브레이션 비차단).

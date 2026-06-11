@@ -6,6 +6,7 @@ import { handleDispatch, type DispatchDeps, type OracleStore } from './dispatch.
 import { buildOracleApprovedHandler, OracleApprovedSchema, type OracleApprovedMessage } from './oracle-consumer.js'
 import { handleCompletion } from './completion.js'
 import { LeaseSweeper } from './lease-sweeper.js'
+import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
 import type { ConformanceOracleStore } from './conformance.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -115,6 +116,8 @@ export interface SupervisorDeps {
   oracleStore?: OracleStore & NonNullable<DecompositionDeps['oracleStore']> & ConformanceOracleStore
   /** P4-1: tool명→에이전트 핸들러(server.ts가 registry.get으로 주입). 주입+taskWorker면 워커 배선. */
   handlers?: Record<string, AgentExecutor>
+  /** P6: 결함 브리프 영속소(DecisionRepo 구조). decisionBrief flag + 주입 시 escalation→DecisionRequest. */
+  decisionStore?: DecisionBriefStore
 }
 export interface SupervisorConfig {
   sweepMs: number
@@ -129,6 +132,8 @@ export interface SupervisorConfig {
   wpVerify?: boolean
   /** P4b-2: conformance 채널(승인 오라클을 실행 테스트로 검증) 활성(=MANAGER_WP_CONFORMANCE). oracleStore 동반 필요. */
   wpConformance?: boolean
+  /** P6: 결함 의사결정 브리프(escalation→DecisionRequest) 활성(=MANAGER_DECISION_BRIEF). decisionStore 동반 필요. */
+  decisionBrief?: boolean
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
@@ -194,10 +199,13 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     CompletionSignalSchema as ZodType<CompletionSignalMessage>,
   )
 
+  // P6: decisionBrief flag + decisionStore 주입 둘 다 있어야 escalation→DecisionRequest 브리프 배선(회귀 0).
+  const briefStore = config.decisionBrief ? deps.decisionStore : undefined
   const leaseSweeper = new LeaseSweeper(
     {
       store: deps.leaseStore, maxAttempts: config.maxAttempts, visibilityMs: config.visibilityMs,
       ...(workerActive && { publish: deps.publish }),
+      ...(briefStore && { onEscalated: makeEscalationBrief(briefStore) }),
     },
     config.sweepMs,
   )

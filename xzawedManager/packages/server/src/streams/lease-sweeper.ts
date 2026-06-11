@@ -1,4 +1,4 @@
-import { handleLeaseSweep } from './lease.js'
+import { handleLeaseSweep, type SweepDeps } from './lease.js'
 import type { LeaseStore } from '../db/lease.repo.js'
 import type { Publish } from './decomposition-consumer.js'
 
@@ -8,6 +8,8 @@ export interface LeaseSweeperDeps {
   visibilityMs: number
   /** P4-1: reclaim 시 wp.dispatch_signal 발행(워커 재실행). createSupervisor가 taskWorker 시 주입. */
   publish?: Publish
+  /** P6: escalate 시 결함 브리프(DecisionRequest) 생성. createSupervisor가 decisionBrief 시 주입. */
+  onEscalated?: SweepDeps['onEscalated']
 }
 
 /**
@@ -47,6 +49,7 @@ export class LeaseSweeper {
         maxAttempts: this.deps.maxAttempts,
         visibilityMs: this.deps.visibilityMs,
         ...(this.deps.publish && { publish: this.deps.publish }),
+        ...(this.deps.onEscalated && { onEscalated: this.deps.onEscalated }),
       })
     } catch (err) {
       console.warn('[lease-sweeper] sweep 실패 — 다음 주기 재시도:', err)

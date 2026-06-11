@@ -30,6 +30,7 @@ xzawedManager는 시스템의 두 번째 계층이다. `orchestrator:to-manager:
 - **무음 drop 봉합(M8)** (`api/sessions.route.ts`) — 미처리 `msg.type`·decompose 비활성 시 무음 auto-ack drop(요청자 무한 대기·consumer 누수)을 명시 `error` 발행 + 세션 정리로 봉합.
 - **M9 의사결정 영속** (`db/decision.repo.ts` + migration 011, P6·#288) — 사람 결정(결함 브리프·강등 사인오프·게이트 override·오라클 승인·SAFE 재개)을 **event-sourced·append-only 불변·비부인**으로 영속한다. `DecisionRequest`(상태머신 `PENDING→RESOLVED|EXPIRED|SUPERSEDED`)·`HumanDecision`·`SignOff`를 단일 tx 아웃박스(M5/M7/M9)로 적재, 전 쓰기 멱등(M6), `EXPIRED`는 비-무음 에스컬레이션(M8). 소비자·API·UI는 후속 P6 슬라이스 — **미배선·additive**.
 - **P2r-2 리스크 분류 영속** (`db/risk-classification.repo.ts` + migration 012) — P2r-1 결정론 코어가 산출한 `RiskClassification` 아티팩트를 영속하고 **사람 승인으로 라우팅을 확정**한다(N6: `approvedForWorkflow`는 승인된 분류만 반환). 재채점=재승인(upsert version++·pending 리셋). P2r-3 생산자·P2r-4 소비는 후속 — **미배선·additive**.
+- **P6 결함 의사결정 브리프** (`streams/decision-brief.ts` + `streams/lease.ts`) — lease 상한 초과로 ESCALATED되는 WP를 `defect_brief` `DecisionRequest`로 영속해 사람 도달 핸드오프로 폐합한다(§15·M8). `handleLeaseSweep`의 `onEscalated`(best-effort)가 `buildDefectBrief`(§4 choice 옵션)→`DecisionRepo.createRequest`를 호출. **M9 DecisionRepo의 첫 런타임 소비**. `MANAGER_DECISION_BRIEF` flag(전제 `TASK_MANAGER_ENABLED`+`DATABASE_URL`). 사람 결정 라우팅·UI는 후속.
 
 > ⚠️ 위 flag들은 전부 기본 `false`(미활성)이며, `MANAGER_TASK_WORKER`·`MANAGER_ORACLE_DRAFT`는 `TASK_MANAGER_ENABLED`+`DATABASE_URL`을, `MANAGER_WP_VERIFY`는 `MANAGER_TASK_WORKER`를, `MANAGER_WP_CONFORMANCE`는 `MANAGER_WP_VERIFY`+OracleRepo(`MANAGER_ORACLE_DOR`||`MANAGER_ORACLE_DRAFT`)를 실질 전제로 한다.
 
@@ -262,6 +263,7 @@ packages/server/src/
 | `MANAGER_TASK_WORKER` | 실행 워커 — dispatch된 WP를 owningRole 에이전트로 자율 실행 후 `wp.completion` 발행 (전제 동일) | P4-1 |
 | `MANAGER_WP_VERIFY` | 워커 검증 게이트 — 완료 발행 전 fail-closed 실 검증(결과-근거 판정 + develop_code 파생 빌드·테스트 재실행), 실패 시 완료 미발행 → lease 백스톱 (전제: `MANAGER_TASK_WORKER`) | P4b-1 |
 | `MANAGER_WP_CONFORMANCE` | Oracle conformance 채널 — develop_code WP 검증 시 사람 승인 GWT를 독립 develop_code 호출이 실행 테스트로 작성→Tester 실행→결과 게이트(N1·N6). 승인 오라클 부재면 skip (전제: `MANAGER_WP_VERIFY`+OracleRepo, 가시성 600s↑ 권장) | P4b-2 |
+| `MANAGER_DECISION_BRIEF` | 결함 의사결정 브리프 — lease 상한 초과 escalation을 `defect_brief` DecisionRequest로 영속(사람 도달 핸드오프·M8/M9). 전제: `TASK_MANAGER_ENABLED`+`DATABASE_URL` | P6 |
 
 ### §13 횡단 회복탄력성 (병렬-비용/장애/동시성 보호)
 
