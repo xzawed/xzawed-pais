@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { WorkPackage } from '@xzawed/agent-streams'
-import { handleWpDispatchSignal, buildWorkerInput, shouldWireWorker, type WorkerDeps } from './worker.js'
+import { handleWpDispatchSignal, buildWorkerInput, shouldWireWorker, startLeaseHeartbeat, type WorkerDeps } from './worker.js'
 import { WP_DISPATCH_SIGNAL } from './dispatch-signal.js'
 
 const wp = (over: Partial<WorkPackage> = {}): WorkPackage => ({
@@ -244,5 +244,78 @@ describe('buildWorkerInput / shouldWireWorker', () => {
     expect(shouldWireWorker(true, false)).toBe(false)
     expect(shouldWireWorker(false, false)).toBe(false)
     expect(shouldWireWorker(true, true)).toBe(true)
+  })
+})
+
+describe('startLeaseHeartbeat (하드닝)', () => {
+  it('intervalMs마다 renew 호출·stop()이 정리·renew 거부는 삼킴(never-throw)', async () => {
+    let cb: () => void = () => {}
+    const set = vi.fn().mockImplementation((fn: () => void) => { cb = fn; return 'h' })
+    const clear = vi.fn()
+    const renew = vi.fn().mockRejectedValue(new Error('db down')) // 거부해도 워커를 죽이지 않아야
+    const hb = startLeaseHeartbeat(renew, 1000, { set, clear })
+    expect(set).toHaveBeenCalledWith(expect.any(Function), 1000)
+    cb(); cb()
+    await Promise.resolve() // microtask flush — catch가 거부를 삼킴(unhandled rejection 없음)
+    expect(renew).toHaveBeenCalledTimes(2)
+    hb.stop()
+    expect(clear).toHaveBeenCalledWith('h')
+  })
+})
+
+describe('handleWpDispatchSignal — lease 하트비트(하드닝)', () => {
+  it('leaseStore/visibilityMs 주입 시 실행 동안 주기적 renewLease·완료 후 stop', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolveExec: (v: unknown) => void = () => {}
+      const execP = new Promise((r) => { resolveExec = r })
+      const renewLease = vi.fn().mockResolvedValue(true)
+      const d = deps({
+        repo: repoMock({ workPackages: [wp({ owningRole: 'tester' })], eventId: null, version: 1 }),
+        handlers: { run_tests: { execute: vi.fn().mockReturnValue(execP) } },
+        leaseStore: { renewLease }, visibilityMs: 3000, // 주기 = max(1000, 3000/3)=1000ms
+      })
+      const p = handleWpDispatchSignal(sig('a', 2), d)
+      await vi.advanceTimersByTimeAsync(2100) // 1000·2000 tick
+      expect(renewLease).toHaveBeenCalledTimes(2)
+      expect(renewLease).toHaveBeenLastCalledWith('wf1', 'a', 2, 3000) // 신호 attempt CAS·visibilityMs 연장
+      resolveExec({})
+      expect((await p).status).toBe('completed')
+      renewLease.mockClear()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(renewLease).not.toHaveBeenCalled() // finally stop 후 무호출
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('agent_error 경로에서도 finally가 하트비트 stop(타이머 누수 없음)', async () => {
+    vi.useFakeTimers()
+    try {
+      let rejectExec: (e: unknown) => void = () => {}
+      const execP = new Promise((_, rej) => { rejectExec = rej })
+      const renewLease = vi.fn().mockResolvedValue(true)
+      const d = deps({
+        repo: repoMock({ workPackages: [wp({ owningRole: 'tester' })], eventId: null, version: 1 }),
+        handlers: { run_tests: { execute: vi.fn().mockReturnValue(execP) } },
+        leaseStore: { renewLease }, visibilityMs: 3000,
+      })
+      const p = handleWpDispatchSignal(sig(), d)
+      await vi.advanceTimersByTimeAsync(1100)
+      expect(renewLease).toHaveBeenCalledTimes(1)
+      rejectExec(new Error('boom'))
+      expect((await p).status).toBe('failed')
+      renewLease.mockClear()
+      await vi.advanceTimersByTimeAsync(5000)
+      expect(renewLease).not.toHaveBeenCalled() // finally stop 후 무호출
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('leaseStore 미주입이면 하트비트 비활성(P4-1/P4b 동작 보존·회귀 0)', async () => {
+    const d = deps({ repo: repoMock({ workPackages: [wp({ owningRole: 'tester' })], eventId: null, version: 1 }),
+      handlers: { run_tests: { execute: vi.fn().mockResolvedValue({}) } } })
+    expect((await handleWpDispatchSignal(sig(), d)).status).toBe('completed')
   })
 })

@@ -138,3 +138,29 @@ describe('LeaseStore.recordCompletion', () => {
     expect(m.release).toHaveBeenCalled()
   })
 })
+
+/** renewLease는 단일 pool.query(tx 아님) — rowCount만 돌려주는 mock. */
+function renewPool(rowCount: number) {
+  const query = vi.fn().mockResolvedValue({ rows: [], rowCount })
+  return { pool: { query } as never, query }
+}
+
+describe('LeaseStore.renewLease — 하트비트(가시성 연장·attempt CAS·outbox 미적재)', () => {
+  it('status=active AND attempt CAS로 expires_at=now+visibilityMs UPDATE·1행이면 true·events/outbox 미적재', async () => {
+    const m = renewPool(1)
+    const ok = await new LeaseStore(m.pool, () => 1000).renewLease('wf-1', 'wp-1', 2, 5000)
+    expect(ok).toBe(true)
+    const [sql, params] = m.query.mock.calls[0]
+    expect(String(sql)).toMatch(/UPDATE wp_leases SET expires_at/i)
+    expect(String(sql)).toMatch(/status\s*=\s*\$4[\s\S]*attempt\s*=\s*\$5/i)  // 동시성: active + attempt CAS
+    expect(params[0]).toBe(6000)   // now(1000) + visibilityMs(5000)
+    expect(params[3]).toBe('active')
+    expect(params[4]).toBe(2)      // expectedAttempt
+    expect(m.query.mock.calls).toHaveLength(1)  // 가시성 연장만 — 전이/이벤트 적재 없음
+  })
+
+  it('0행(lease 부재·attempt 불일치·비active)이면 false', async () => {
+    const m = renewPool(0)
+    expect(await new LeaseStore(m.pool, () => 1).renewLease('wf', 'wp', 0, 1000)).toBe(false)
+  })
+})
