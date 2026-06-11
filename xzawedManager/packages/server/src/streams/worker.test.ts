@@ -104,7 +104,7 @@ describe('검증 게이트(P4b-1·verifyEnabled)', () => {
     const d = deps({
       verifyEnabled: true,
       repo: repoMock({ workPackages: [wp({ owningRole: 'tester' })], eventId: null, version: 1 }),
-      handlers: { run_tests: { execute: vi.fn().mockResolvedValue({ success: true, failed: 0 }) } },
+      handlers: { run_tests: { execute: vi.fn().mockResolvedValue({ success: true, failed: 0, passed: 1 }) } },
     })
     expect((await handleWpDispatchSignal(sig(), d)).status).toBe('completed')
     const [stream] = (d.publish as ReturnType<typeof vi.fn>).mock.calls[0]!
@@ -113,7 +113,7 @@ describe('검증 게이트(P4b-1·verifyEnabled)', () => {
   it('on + developer WP: 파생 체크(build→test) 실 호출 — 통과 시 completed', async () => {
     const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/ws' }
     const build = vi.fn().mockResolvedValue({ success: true })
-    const test = vi.fn().mockResolvedValue({ success: true, failed: 0 })
+    const test = vi.fn().mockResolvedValue({ success: true, failed: 0, passed: 1 })
     const d = deps({
       verifyEnabled: true,
       repo: repoMock({ workPackages: [wp()], eventId: null, version: 1, userContext: uc }),
@@ -135,7 +135,7 @@ describe('검증 게이트(P4b-1·verifyEnabled)', () => {
       handlers: {
         develop_code: { execute: vi.fn().mockResolvedValue({}) },
         build_project: { execute: vi.fn().mockResolvedValue({ success: true }) },
-        run_tests: { execute: vi.fn().mockResolvedValue({ success: true, failed: 2 }) },
+        run_tests: { execute: vi.fn().mockResolvedValue({ success: true, failed: 2, passed: 3 }) },
       },
     })
     const out = await handleWpDispatchSignal(sig(), d)
@@ -150,7 +150,7 @@ describe('검증 게이트(P4b-1·verifyEnabled)', () => {
       handlers: {
         develop_code: { execute: vi.fn().mockResolvedValue({}) },
         build_project: { execute: build },
-        run_tests: { execute: vi.fn().mockResolvedValue({ success: true, failed: 0 }) },
+        run_tests: { execute: vi.fn().mockResolvedValue({ success: true, failed: 0, passed: 1 }) },
       },
     })
     const out = await handleWpDispatchSignal(sig(), d)
@@ -175,7 +175,7 @@ describe('검증 게이트(P4b-1·verifyEnabled)', () => {
     const d = deps({
       verifyEnabled: true,
       repo: repoMock({ workPackages: [wp({ owningRole: 'tester' })], eventId: null, version: 1 }),
-      handlers: { run_tests: { execute: vi.fn().mockResolvedValue({ success: false, failed: 1 }) } },
+      handlers: { run_tests: { execute: vi.fn().mockResolvedValue({ success: false, failed: 1, passed: 3 }) } },
       publish: vi.fn().mockRejectedValue(new Error('redis down')),
     })
     expect((await handleWpDispatchSignal(sig(), d)).status).toBe('verification_failed')
@@ -193,8 +193,8 @@ describe('handleWpDispatchSignal conformance threading (P4b-2)', () => {
     const okBuilder = { execute: vi.fn().mockResolvedValue({ success: true }) }
     const developer = { execute: vi.fn().mockResolvedValue({ artifacts: ['.xzawed/conformance/wp-1.test.ts'] }) }
     const tester = { execute: vi.fn()
-      .mockResolvedValueOnce({ success: true, failed: 0 })   // derived run_tests (P4b-1)
-      .mockResolvedValueOnce({ success: false, failed: 1 }) } // conformance run (red)
+      .mockResolvedValueOnce({ success: true, failed: 0, passed: 1 })   // derived run_tests (P4b-1)
+      .mockResolvedValueOnce({ success: false, failed: 1, passed: 3 }) } // conformance run (red)
     const publish = vi.fn().mockResolvedValue(undefined)
     const store = { approvedOracleForStory: vi.fn().mockResolvedValue({ scenarios: [{ id: 's1', title: 't', given: [], when: 'w', thenSteps: ['x'], status: 'human_approved' }], coverage: {} }) }
     const deps = {
