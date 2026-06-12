@@ -90,6 +90,14 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // P4 impact golden-differential 채널(기본 false). true면 develop_code WP 검증에 사람 사인오프 golden_refs를
+    // 실행 ground truth로 소비(독립 develop_code가 golden-diff 테스트 작성→Tester 실행→drift면 blocking·N8). golden 읽기만(N7).
+    // 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY + OracleRepo(MANAGER_ORACLE_DOR||MANAGER_ORACLE_DRAFT).
+    // ⚠️ conformance+impact 동시 시 develop_code WP당 에이전트 호출 최대 7단계 → MANAGER_LEASE_VISIBILITY_MS 상향 권장.
+    MANAGER_WP_IMPACT: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
     // P6 결함 의사결정 브리프(기본 false). true면 lease 상한 초과 escalation을 DecisionRequest(defect_brief)로
     // 영속해 사람 도달 구조화 핸드오프로 폐합(M8 무음 통과 금지·M9 영속). 전제: TASK_MANAGER_ENABLED+DATABASE_URL
     // (Supervisor·LeaseSweeper 가동 + DecisionRepo). off면 escalation 시 브리프 미생성(회귀 0).
