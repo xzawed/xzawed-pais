@@ -1,9 +1,10 @@
 import { describe, it, test, expect } from 'vitest'
 import type { WorkPackage } from '@xzawed/agent-streams'
-import type { OracleScenario, OracleGolden } from '../db/oracle.types.js'
+import type { OracleScenario, OracleGolden, OracleInvariant } from '../db/oracle.types.js'
 import {
   CONFORMANCE_DIR, IMPACT_DIR, buildConformanceAuthorPlan, selectConformanceTestFiles,
   selectAuthoredTestFiles, buildGoldenDiffAuthorPlan,
+  PROPERTY_DIR, propertyStem, buildInvariantAuthorPlan,
 } from './conformance.js'
 
 const wp = { id: 'wp-7', storyId: 'story-1', owningRole: 'developer', acceptanceCriteria: ['AC-1'], oracleRef: null, dependsOn: [] } as unknown as WorkPackage
@@ -114,5 +115,36 @@ describe('buildGoldenDiffAuthorPlan', () => {
     expect(plan).toContain('strip ts')
     expect(plan).toContain('do not modify')
     expect(plan.length).toBeLessThanOrEqual(4000)
+  })
+})
+
+describe('property channel scaffolding', () => {
+  const wp = { id: 'wp-7', storyId: 's1' } as never
+  const invariants: OracleInvariant[] = [
+    { id: 'i1', statement: '30분 경과 토큰 거부', domain: '토큰 생성기', property: 'age>30 => reject', status: 'human_approved' },
+  ]
+
+  test('PROPERTY_DIR·propertyStem 컨벤션', () => {
+    expect(PROPERTY_DIR).toBe('.xzawed/property')
+    expect(propertyStem('wp-7')).toBe('.xzawed/property/wp-7')
+  })
+
+  test('buildInvariantAuthorPlan: 경로·no-modify·invariant 렌더·4000 클램프', () => {
+    const plan = buildInvariantAuthorPlan(wp, invariants)
+    expect(plan).toContain('.xzawed/property/wp-7')
+    expect(plan).toContain('do not modify')
+    expect(plan).toContain('i1')
+    expect(plan).toContain('age>30 => reject')
+    expect(plan.length).toBeLessThanOrEqual(4000)
+  })
+
+  test('selectAuthoredTestFiles(PROPERTY_DIR): 좌측앵커·확장자 필터', () => {
+    const arts = [
+      '.xzawed/property/wp-7.test.ts',     // ✓
+      '.xzawed/property/wp-70.test.ts',    // ✗ 인접 wpId
+      '.xzawed/property/wp-7.md',          // ✗ 비테스트 확장자
+      'node_modules/x/.xzawed/property/wp-7.test.ts', // ✗ 깊은 경로
+    ]
+    expect(selectAuthoredTestFiles(arts, PROPERTY_DIR, 'wp-7')).toEqual(['.xzawed/property/wp-7.test.ts'])
   })
 })
