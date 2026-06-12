@@ -9,7 +9,7 @@ import { LeaseSweeper } from './lease-sweeper.js'
 import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
 import type { AdvisoryStore } from './advisory.js'
-import type { ClaudeLike } from '@xzawed/agent-streams'
+import type { ClaudeLike, WpRisk } from '@xzawed/agent-streams'
 import type { ConformanceOracleStore, ImpactOracleStore, InvariantOracleStore } from './conformance.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
@@ -144,6 +144,11 @@ export interface SupervisorConfig {
   wpImpact?: boolean
   /** P4 property/invariants 채널 활성(=MANAGER_WP_PROPERTY). off면 impact까지와 동일(회귀 0). oracleStore 동반 필요. */
   wpProperty?: boolean
+  /** P4 mutation θ_risk 채널 활성(=MANAGER_WP_MUTATION). oracle 미소비. */
+  wpMutation?: boolean
+  mutationTheta?: number
+  mutationMinRisk?: WpRisk
+  mutationMaxMutants?: number
   /** P6: 결함 의사결정 브리프(escalation→DecisionRequest) 활성(=MANAGER_DECISION_BRIEF). decisionStore 동반 필요. */
   decisionBrief?: boolean
   /** P4 advisory 채널(=MANAGER_WP_ADVISORY). off면 워커 동작 P4b와 동일(회귀 0). advisoryStore 동반 필요. */
@@ -181,6 +186,11 @@ export function buildWorkerConsumerDeps(
     impactEnabled: config.wpImpact === true && deps.oracleStore != null,
     // P4 property: flag + oracleStore 둘 다 있어야 활성(검증 우회 무음 방지·행동 단언).
     propertyEnabled: config.wpProperty === true && deps.oracleStore != null,
+    // P4 mutation: flag만으로 활성(oracle 미소비). handler 부재는 runMutationCheck가 fail-closed.
+    mutationEnabled: config.wpMutation === true,
+    ...(config.mutationTheta !== undefined && { mutationTheta: config.mutationTheta }),
+    ...(config.mutationMinRisk && { mutationMinRisk: config.mutationMinRisk }),
+    ...(config.mutationMaxMutants !== undefined && { mutationMaxMutants: config.mutationMaxMutants }),
     // P4 advisory: flag + advisoryStore 둘 다 있어야 활성(검증 우회 무음 방지·행동 단언). LLM seam 동반 스레딩.
     advisoryEnabled: config.wpAdvisory === true && deps.advisoryStore != null,
     ...(deps.advisoryStore && { advisoryStore: deps.advisoryStore }),
