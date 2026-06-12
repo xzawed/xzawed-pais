@@ -189,7 +189,7 @@ export function buildWorkerConsumerDeps(
     // P4 mutation: flag만으로 활성(oracle 미소비). handler 부재는 runMutationCheck가 fail-closed.
     mutationEnabled: config.wpMutation === true,
     ...(config.mutationTheta !== undefined && { mutationTheta: config.mutationTheta }),
-    ...(config.mutationMinRisk && { mutationMinRisk: config.mutationMinRisk }),
+    ...(config.mutationMinRisk !== undefined && { mutationMinRisk: config.mutationMinRisk }),
     ...(config.mutationMaxMutants !== undefined && { mutationMaxMutants: config.mutationMaxMutants }),
     // P4 advisory: flag + advisoryStore 둘 다 있어야 활성(검증 우회 무음 방지·행동 단언). LLM seam 동반 스레딩.
     advisoryEnabled: config.wpAdvisory === true && deps.advisoryStore != null,

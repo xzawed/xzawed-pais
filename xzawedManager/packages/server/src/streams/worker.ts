@@ -209,7 +209,7 @@ async function runVerifyGate(
     propertyEnabled: deps.propertyEnabled === true,
     mutationEnabled: deps.mutationEnabled === true,
     ...(deps.mutationTheta !== undefined && { mutationTheta: deps.mutationTheta }),
-    ...(deps.mutationMinRisk && { mutationMinRisk: deps.mutationMinRisk }),
+    ...(deps.mutationMinRisk !== undefined && { mutationMinRisk: deps.mutationMinRisk }),
     ...(deps.mutationMaxMutants !== undefined && { mutationMaxMutants: deps.mutationMaxMutants }),
   })
   if (verdict.ok) return null
