@@ -106,6 +106,20 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // P4 mutation θ_risk 게이트(기본 false·N8 강화). true면 HIGH-risk develop_code WP 검증에 자가단언 mutation
+    // 하니스(impl mutate+기존 테스트 재실행+killed/total)를 실행해 mutation_score≥θ를 요구한다(미만이면 blocking).
+    // oracle 미소비. 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY. ⚠️ mutation은 스위트를 K회 재실행 →
+    //   WP당 비용 최대 → MANAGER_LEASE_VISIBILITY_MS 상향 강력 권장(server.ts 경고).
+    MANAGER_WP_MUTATION: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
+    // mutation 통과 floor(killed/total ≥ θ). 캘리브레이션 잠정값 0.6.
+    MANAGER_MUTATION_THETA: z.coerce.number().min(0).max(1).default(0.6),
+    // mutation 최소 실행 risk 등급(이 등급 이상 WP만). 기본 HIGH(비용 bound). 불량값은 HIGH로 폴백.
+    MANAGER_MUTATION_MIN_RISK: z.enum(['LOW', 'MEDIUM', 'HIGH']).catch('HIGH').default('HIGH'),
+    // mutation 하니스가 생성할 최대 mutant 수(비용 캡).
+    MANAGER_MUTATION_MAX_MUTANTS: z.coerce.number().int().positive().default(10),
     // P6 결함 의사결정 브리프(기본 false). true면 lease 상한 초과 escalation을 DecisionRequest(defect_brief)로
     // 영속해 사람 도달 구조화 핸드오프로 폐합(M8 무음 통과 금지·M9 영속). 전제: TASK_MANAGER_ENABLED+DATABASE_URL
     // (Supervisor·LeaseSweeper 가동 + DecisionRepo). off면 escalation 시 브리프 미생성(회귀 0).
