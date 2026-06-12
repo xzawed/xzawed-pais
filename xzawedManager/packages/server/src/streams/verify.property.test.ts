@@ -54,6 +54,7 @@ describe('verifyWp property/invariants (conformance lens)', () => {
     const v = await verifyWp('develop_code', devWp, okResult,
       baseDeps({ oracleStore: store as never, propertyEnabled: true, handlers: { build_project: okBuilder, run_tests: failTester, develop_code: author } }))
     expect(v.ok).toBe(false)
+    expect(v.ok === false && v.reason).toContain('run_tests')
   })
 
   test('author 미작성(테스트 파일 0) → fail-closed(PROPERTY_DIR)', async () => {

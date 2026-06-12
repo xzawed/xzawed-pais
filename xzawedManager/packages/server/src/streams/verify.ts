@@ -171,7 +171,7 @@ function runImpactCheck(wp: WorkPackage, deps: VerifyDeps): Promise<Verification
   })
 }
 
-/** P4 property 채널(conformance 렌즈): 사람 승인 invariants를 boundary+명시 속성 단언 테스트로 소비(N1·N6·N7 읽기만). 위반이면 fail(blocking). */
+/** P4 property 채널(conformance 렌즈): 사람 승인 invariants를 boundary+명시 속성 단언 테스트로 소비(N1·N6·invariants 읽기전용). 위반이면 fail(blocking). */
 function runPropertyCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
   return runAuthoredCheck(wp, deps, {
     enabled: deps.propertyEnabled === true,
