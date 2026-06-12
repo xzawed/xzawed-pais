@@ -25,6 +25,7 @@ xzawedManager는 시스템의 두 번째 계층이다. `orchestrator:to-manager:
 - **검증 게이트** (`streams/verify.ts`, P4b-1) — 워커가 완료 발행 전 실행 ground truth 검증을 fail-closed로 수행(tester/builder 결과-근거 판정 + develop_code WP는 빌드·테스트 실 재실행). 실패 시 완료 미발행 → lease 백스톱이 reclaim→escalate. `MANAGER_WP_VERIFY` flag.
 - **Oracle conformance 검증** (`streams/verify.ts` + `streams/conformance.ts`, P4b-2) — develop_code WP 검증에 사람 승인 오라클 GWT 시나리오를 실행 ground truth로 소비한다. 독립 develop_code 호출이 승인 시나리오로 conformance 테스트를 작성(격리 세션·구현 수정 금지)하고 Tester가 실행해 그 결과로 게이트 — 구현자가 게이트 명령을 통제하는 P4b-1 N6 한계를 봉합(N1·N6). 승인 오라클 부재면 skip(회귀 0). `MANAGER_WP_CONFORMANCE` flag.
 - **검증 vacuous-pass 봉합** (`streams/verify.ts`, P4b-3) — `judgePrimaryResult('run_tests')`에 `passed>0` floor를 추가해 0-test가 `failed:0`으로 통과하던 빈 스위트·빈 conformance를 fail-closed로 차단(primary·파생·conformance 균일·N8 선행). 함께 `db/oracle.types.ts`에 invariants(§4)·golden_refs(§5) 스키마(migration 010·additive·default `[]`·현재 검증 미소비 — impact/property 채널 선결)를 추가했다. `MANAGER_WP_VERIFY` 게이트 안.
+- **impact 채널 (N8) — golden differential** (`streams/verify.ts` + `db/oracle.repo.ts`, P4·#294) — 검증 3채널(§9)의 셋째 렌즈 impact 첫 슬라이스. develop_code WP 산출물이 **사람 사인오프 golden 기준 출력에서 벗어났는지**(drift) 실행으로 검증해 drift면 **blocking**. 미소비로 남던 oracle `golden_refs`(migration 010)를 처음 소비하고 **N7(골든 자동 갱신 금지·읽기만)** 가드를 활성화. P4b-2 author→run 골격을 제네릭 `runAuthoredCheck<T>`로 추출해 conformance·impact가 공유(CPD 0)·`executeAuthoredTest` 추출로 S3776 ≤15. 독립 develop_code(`impact-author` 격리)가 `.xzawed/impact/`에 differential 테스트 작성→Tester(`impact-run`) 실행→결과 게이트. `verifyWp`가 conformance→impact 순서 hard-AND. `MANAGER_WP_IMPACT` flag(전제 `MANAGER_TASK_WORKER`+`MANAGER_WP_VERIFY`+OracleRepo)·off면 회귀 0. 잔여: affected-story 회귀+결합도-냄새→advisory 라우팅·property 채널·mutation θ_risk.
 - **advisory 채널 (N3)** (`streams/advisory.ts` + `db/advisory.repo.ts` + migration 013, P4·#292) — 검증 3채널(§9) 중 optimization 렌즈 **비차단 큐**. correctness(차단) 게이트와 분리해 "더 나은 점" 제안을 영속한다 — **advisory는 절대 게이트를 막지 않는다(N3)**. `verify.ts`(차단 게이트)는 advisory를 전혀 모르고, 워커가 `verdict.ok` 후 develop_code WP에 한해 `produceAdvisory`(best-effort never-throw·`runStage` 재사용 LLM 1회→순위 findings·MAX 8 절단·fail-soft)를 호출 → `AdvisoryRepo.recordFindings` 단일 tx 아웃박스(`wp.advisory.found` + manager_outbox + advisory_findings 투영·M5/M7·멱등 `(wf,wpId,attempt,rank)` M6). `MANAGER_WP_ADVISORY` flag. 잔여: impact 라우팅·깊은 적대 생성·조회 API/UI·mutation θ_risk.
 - **§13 횡단 회복탄력성** (`claude/runner.ts` + `tools/` + shared `budget/`·`resilience/`) — 병렬-비용/장애/동시성 폭발 선제 보호. (a) **budget 서킷**: 러너 tool-loop이 호출 전 누적 USD 비용 `check`(워크플로/일 상한 초과 시 fail-closed throw→error 발행)·호출 후 `record`, `MANAGER_BUDGET_PER_WORKFLOW_USD`·`MANAGER_BUDGET_DAILY_USD`(0=비활성). (b) **provider 서킷**: provider(Anthropic) 지속 장애(429/5xx/529·연결/타임아웃)를 추적, 연속 실패 임계 도달 시 회로 open→cooldown 동안 fail-fast, `MANAGER_PROVIDER_CIRCUIT` flag. (c) **벌크헤드**: 7개 `RedisAgentHandler`에 공유 주입해 에이전트 종류별 동시 RPC를 캡·초과 시 큐잉(백프레셔·드롭 없음), `MANAGER_BULKHEAD_GLOBAL`·`MANAGER_BULKHEAD_PER_AGENT`(0=무제한). 트립은 강등 모드(P6) 신호 입력.
 - **DLQ 재처리 운영 라우트** (`api/admin.route.ts`) — `POST /api/admin/dlq/redrive`가 shared `redriveDlq`로 격리된 poison 메시지를 멱등 마커 선삭제 후 원 스트림에 재발행한다(reason 필터·count 배치 상한). **인증 필수**(authHook 없으면 server.ts가 미등록 — open admin endpoint 금지).
@@ -33,7 +34,7 @@ xzawedManager는 시스템의 두 번째 계층이다. `orchestrator:to-manager:
 - **P2r-2 리스크 분류 영속** (`db/risk-classification.repo.ts` + migration 012) — P2r-1 결정론 코어가 산출한 `RiskClassification` 아티팩트를 영속하고 **사람 승인으로 라우팅을 확정**한다(N6: `approvedForWorkflow`는 승인된 분류만 반환). 재채점=재승인(upsert version++·pending 리셋). P2r-3 생산자·P2r-4 소비는 후속 — **미배선·additive**.
 - **P6 결함 의사결정 브리프** (`streams/decision-brief.ts` + `streams/lease.ts`) — lease 상한 초과로 ESCALATED되는 WP를 `defect_brief` `DecisionRequest`로 영속해 사람 도달 핸드오프로 폐합한다(§15·M8). `handleLeaseSweep`의 `onEscalated`(best-effort)가 `buildDefectBrief`(§4 choice 옵션)→`DecisionRepo.createRequest`를 호출. **M9 DecisionRepo의 첫 런타임 소비**. `MANAGER_DECISION_BRIEF` flag(전제 `TASK_MANAGER_ENABLED`+`DATABASE_URL`). 사람 결정 라우팅·UI는 후속.
 
-> ⚠️ 위 flag들은 전부 기본 `false`(미활성)이며, `MANAGER_TASK_WORKER`·`MANAGER_ORACLE_DRAFT`는 `TASK_MANAGER_ENABLED`+`DATABASE_URL`을, `MANAGER_WP_VERIFY`는 `MANAGER_TASK_WORKER`를, `MANAGER_WP_CONFORMANCE`는 `MANAGER_WP_VERIFY`+OracleRepo(`MANAGER_ORACLE_DOR`||`MANAGER_ORACLE_DRAFT`)를, `MANAGER_WP_ADVISORY`는 `MANAGER_WP_VERIFY`+`DATABASE_URL`을 실질 전제로 한다.
+> ⚠️ 위 flag들은 전부 기본 `false`(미활성)이며, `MANAGER_TASK_WORKER`·`MANAGER_ORACLE_DRAFT`는 `TASK_MANAGER_ENABLED`+`DATABASE_URL`을, `MANAGER_WP_VERIFY`는 `MANAGER_TASK_WORKER`를, `MANAGER_WP_CONFORMANCE`·`MANAGER_WP_IMPACT`는 `MANAGER_WP_VERIFY`+OracleRepo(`MANAGER_ORACLE_DOR`||`MANAGER_ORACLE_DRAFT`)를, `MANAGER_WP_ADVISORY`는 `MANAGER_WP_VERIFY`+`DATABASE_URL`을 실질 전제로 한다.
 
 ---
 
@@ -204,7 +205,7 @@ packages/server/src/
 │   ├── oracle-consumer.ts     # oracle.approved → 재디스패치 (P3-1)
 │   ├── dispatch-signal.ts     # wp.dispatch_signal 트리거 계약 (P4-1)
 │   ├── worker.ts              # 실행 워커 — WP를 owningRole 에이전트로 자율 실행 (P4-1)
-│   ├── verify.ts              # 검증 게이트 — fail-closed 실 검증 코어 + conformance 채널 (P4b-1·P4b-2)
+│   ├── verify.ts              # 검증 게이트 — correctness + conformance + impact golden-differential 채널 (P4b-1·P4b-2·P4 N8)
 │   ├── conformance.ts         # conformance 순수 헬퍼 — author plan·테스트 파일 선별 (P4b-2)
 │   ├── advisory.ts            # advisory 채널 — produceAdvisory 비차단 생산·AdvisoryStore 포트 (P4 N3)
 │   └── redis.client.ts        # ioredis 클라이언트 (공유 + 전용 연결)
@@ -225,6 +226,7 @@ packages/server/src/
     ├── lease.repo.ts          # LeaseStore — reclaim·escalate·완료 (P1d-5b/6)
     ├── oracle.types.ts / oracle.repo.ts # Oracle 스키마·저장소 (P3·P4b-3 invariants/golden_refs)
     ├── decision.types.ts / decision.repo.ts # M9 의사결정 영속 — DecisionRequest/HumanDecision/SignOff (P6·#288)
+    ├── oracle.repo.ts          # ... + approvedGoldensForStory (P4 impact 베이스라인·읽기만 N7·#294)
     ├── advisory.types.ts / advisory.repo.ts # advisory 채널 영속 — recordFindings 단일 tx·findingsByWorkflow (P4 N3·#292)
     ├── risk-classification.types.ts / risk-classification.repo.ts # P2r-2 리스크 분류 영속 — RiskClassification 프로젝션·사람 승인
     └── migrations/            # 001~012 (010 oracle invariants/golden·011 decisions·012 risk_classifications)
@@ -267,6 +269,7 @@ packages/server/src/
 | `MANAGER_WP_VERIFY` | 워커 검증 게이트 — 완료 발행 전 fail-closed 실 검증(결과-근거 판정 + develop_code 파생 빌드·테스트 재실행), 실패 시 완료 미발행 → lease 백스톱 (전제: `MANAGER_TASK_WORKER`) | P4b-1 |
 | `MANAGER_WP_CONFORMANCE` | Oracle conformance 채널 — develop_code WP 검증 시 사람 승인 GWT를 독립 develop_code 호출이 실행 테스트로 작성→Tester 실행→결과 게이트(N1·N6). 승인 오라클 부재면 skip (전제: `MANAGER_WP_VERIFY`+OracleRepo, 가시성 600s↑ 권장) | P4b-2 |
 | `MANAGER_DECISION_BRIEF` | 결함 의사결정 브리프 — lease 상한 초과 escalation을 `defect_brief` DecisionRequest로 영속(사람 도달 핸드오프·M8/M9). 전제: `TASK_MANAGER_ENABLED`+`DATABASE_URL` | P6 |
+| `MANAGER_WP_IMPACT` | impact 채널(N8) golden-differential — develop_code WP 검증 시 사람 사인오프 golden_refs를 실행 ground truth로 소비(독립 develop_code가 differential 테스트 작성→Tester 실행→drift면 blocking). golden 읽기만(N7). 전제: `MANAGER_WP_VERIFY`+OracleRepo, 가시성 상향 권장 | P4 |
 | `MANAGER_WP_ADVISORY` | advisory 채널(N3) — develop_code WP의 verdict.ok 후 비차단 optimization 제안을 `advisory_findings` 투영 + `wp.advisory.found`로 영속(절대 게이트 미차단·best-effort never-throw). 전제: `MANAGER_WP_VERIFY`+`DATABASE_URL` | P4 |
 
 ### §13 횡단 회복탄력성 (병렬-비용/장애/동시성 보호)
