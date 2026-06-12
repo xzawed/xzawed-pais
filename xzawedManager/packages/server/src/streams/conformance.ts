@@ -14,7 +14,8 @@ export const PROPERTY_DIR = '.xzawed/property'
 export const MUTATION_DIR = '.xzawed/mutation'
 
 /** author develop_code 호출이 작성할 파일 경로 stem(확장자는 프로젝트 프레임워크에 맞춰 author가 선택).
- *  conformanceStem = conformance 채널, impactStem = golden-differential 채널, propertyStem = property(invariants) 채널. */
+ *  conformanceStem = conformance 채널, impactStem = golden-differential 채널, propertyStem = property(invariants) 채널,
+ *  mutationStem = mutation θ_risk 채널(자가단언 하니스 — impl 복사본/in-memory mutate→killed/total→score<theta면 fail). */
 export const conformanceStem = (wpId: string): string => `${CONFORMANCE_DIR}/${wpId}`
 export const impactStem = (wpId: string): string => `${IMPACT_DIR}/${wpId}`
 export const propertyStem = (wpId: string): string => `${PROPERTY_DIR}/${wpId}`
@@ -120,9 +121,10 @@ export function buildMutationHarnessPlan(wp: WorkPackage, opts: { theta: number;
   const plan = [
     `Author an executable self-asserting MUTATION-TESTING harness for story ${wp.storyId}, work package ${wp.id}.`,
     `Write the harness as ONE test file to \`${mutationStem(wp.id)}\` choosing the extension that matches this project's test framework (e.g. .test.ts / .spec.ts / _test.py).`,
+    `First identify the implementation source file(s) THIS work package implemented — the non-test files in the workspace that define this WP's behavior — and read them to target the mutations.`,
     `구현 파일을 수정하지 말라(do not modify any implementation file) — copy or in-memory mutation only; write only the harness test file.`,
     `At RUNTIME the harness MUST:`,
-    `1. Apply up to ${opts.maxMutants} small semantic mutations (mutants) to THIS work package's implementation module(s) — operator flips, boundary changes, early returns — on a COPY or in memory (never edit the real source).`,
+    `1. Apply up to ${opts.maxMutants} small semantic mutations (mutants) to those implementation file(s) — operator flips (>,>=,===,&&/||), boundary/off-by-one changes, early returns, negated conditions — on a COPY or in memory (never edit the real source). Prefer a mutation framework for this project's language (e.g. Stryker for TypeScript/JavaScript, mutmut for Python); if none is available, apply each mutation by writing a TEMPORARY copy of the implementation file with the change and running the test runner against that copy, restoring afterward.`,
     `2. For EACH mutant, run this work package's existing tests against the mutated code; count it KILLED if the suite fails on that mutant.`,
     `3. Compute mutation_score = killed / total.`,
     `4. FAIL the test (assert / throw) with a clear message if mutation_score < ${opts.theta}. The test PASSES only when mutation_score >= ${opts.theta}.`,

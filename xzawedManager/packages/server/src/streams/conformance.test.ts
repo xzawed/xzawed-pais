@@ -174,6 +174,9 @@ describe('mutation channel scaffolding', () => {
     expect(plan).toContain('0.6')
     expect(plan).toContain('10')
     expect(plan.length).toBeLessThanOrEqual(4000)
+    expect(plan).toContain('mutation_score')
+    expect(plan).toContain('KILLED')
+    expect(plan).toContain('REAL execution')
   })
 
   test('selectAuthoredTestFiles(MUTATION_DIR): 좌측앵커·확장자 필터', () => {
