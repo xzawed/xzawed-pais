@@ -5,6 +5,7 @@ import {
   CONFORMANCE_DIR, IMPACT_DIR, buildConformanceAuthorPlan, selectConformanceTestFiles,
   selectAuthoredTestFiles, buildGoldenDiffAuthorPlan,
   PROPERTY_DIR, propertyStem, buildInvariantAuthorPlan,
+  MUTATION_DIR, mutationStem, buildMutationHarnessPlan,
 } from './conformance.js'
 
 const wp = { id: 'wp-7', storyId: 'story-1', owningRole: 'developer', acceptanceCriteria: ['AC-1'], oracleRef: null, dependsOn: [] } as unknown as WorkPackage
@@ -155,5 +156,33 @@ describe('property channel scaffolding', () => {
       'node_modules/x/.xzawed/property/wp-7.test.ts', // ✗ 깊은 경로
     ]
     expect(selectAuthoredTestFiles(arts, PROPERTY_DIR, 'wp-7')).toEqual(['.xzawed/property/wp-7.test.ts'])
+  })
+})
+
+describe('mutation channel scaffolding', () => {
+  const wp = { id: 'wp-7', storyId: 's1' } as unknown as WorkPackage
+
+  test('MUTATION_DIR·mutationStem 컨벤션', () => {
+    expect(MUTATION_DIR).toBe('.xzawed/mutation')
+    expect(mutationStem('wp-7')).toBe('.xzawed/mutation/wp-7')
+  })
+
+  test('buildMutationHarnessPlan: 경로·no-modify·θ·maxMutants·자체fail·4000 클램프', () => {
+    const plan = buildMutationHarnessPlan(wp, { theta: 0.6, maxMutants: 10 })
+    expect(plan).toContain('.xzawed/mutation/wp-7')
+    expect(plan).toContain('do not modify')
+    expect(plan).toContain('0.6')
+    expect(plan).toContain('10')
+    expect(plan.length).toBeLessThanOrEqual(4000)
+  })
+
+  test('selectAuthoredTestFiles(MUTATION_DIR): 좌측앵커·확장자 필터', () => {
+    const arts = [
+      '.xzawed/mutation/wp-7.test.ts',
+      '.xzawed/mutation/wp-70.test.ts',
+      '.xzawed/mutation/wp-7.md',
+      'node_modules/x/.xzawed/mutation/wp-7.test.ts',
+    ]
+    expect(selectAuthoredTestFiles(arts, MUTATION_DIR, 'wp-7')).toEqual(['.xzawed/mutation/wp-7.test.ts'])
   })
 })
