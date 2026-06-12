@@ -1,7 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, test, expect } from 'vitest'
 import type { WorkPackage } from '@xzawed/agent-streams'
-import type { OracleScenario } from '../db/oracle.types.js'
-import { CONFORMANCE_DIR, buildConformanceAuthorPlan, selectConformanceTestFiles } from './conformance.js'
+import type { OracleScenario, OracleGolden } from '../db/oracle.types.js'
+import {
+  CONFORMANCE_DIR, IMPACT_DIR, buildConformanceAuthorPlan, selectConformanceTestFiles,
+  selectAuthoredTestFiles, buildGoldenDiffAuthorPlan,
+} from './conformance.js'
 
 const wp = { id: 'wp-7', storyId: 'story-1', owningRole: 'developer', acceptanceCriteria: ['AC-1'], oracleRef: null, dependsOn: [] } as unknown as WorkPackage
 const scenarios: OracleScenario[] = [
@@ -80,5 +83,36 @@ describe('selectConformanceTestFiles', () => {
   it('excludes a conformance-dir substring embedded deeper in the path (not left-anchored)', () => {
     const artifacts = ['node_modules/x/.xzawed/conformance/wp-7.test.ts', 'vendor/copy/.xzawed/conformance/wp-7.spec.ts']
     expect(selectConformanceTestFiles(artifacts, 'wp-7')).toEqual([])
+  })
+})
+
+describe('selectAuthoredTestFiles (일반화)', () => {
+  test('dir 파라미터로 좌측 앵커 — impact 디렉토리 테스트만 선별(인접 wpId·비테스트·conformance 디렉토리 제외)', () => {
+    const arts = [
+      `${IMPACT_DIR}/wp-1.test.ts`, `${IMPACT_DIR}/wp-10.test.ts`,
+      `${IMPACT_DIR}/wp-1.md`, `${CONFORMANCE_DIR}/wp-1.test.ts`,
+    ]
+    expect(selectAuthoredTestFiles(arts, IMPACT_DIR, 'wp-1')).toEqual([`${IMPACT_DIR}/wp-1.test.ts`])
+  })
+
+  test('selectConformanceTestFiles는 selectAuthoredTestFiles(CONFORMANCE_DIR) 위임(동작 보존)', () => {
+    const arts = [`${CONFORMANCE_DIR}/wp-1.test.ts`, `${IMPACT_DIR}/wp-1.test.ts`]
+    expect(selectConformanceTestFiles(arts, 'wp-1')).toEqual([`${CONFORMANCE_DIR}/wp-1.test.ts`])
+  })
+})
+
+describe('buildGoldenDiffAuthorPlan', () => {
+  const golden: OracleGolden[] = [
+    { id: 'g1', inputFixture: 'IN-FIX', normalizedOutput: 'OUT-EXP', normalizers: ['strip ts'], frozenAt: '', frozenBy: 'po', fromDecision: null, version: 1 },
+  ]
+
+  test('golden별 inputFixture·normalizedOutput·normalizers를 담고 IMPACT_DIR 경로·구현 수정 금지·4000 클램프', () => {
+    const plan = buildGoldenDiffAuthorPlan(wp, golden)
+    expect(plan).toContain(`${IMPACT_DIR}/wp-7`)
+    expect(plan).toContain('IN-FIX')
+    expect(plan).toContain('OUT-EXP')
+    expect(plan).toContain('strip ts')
+    expect(plan).toContain('do not modify')
+    expect(plan.length).toBeLessThanOrEqual(4000)
   })
 })
