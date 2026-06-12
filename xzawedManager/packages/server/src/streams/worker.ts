@@ -9,6 +9,8 @@ import type { ConformanceOracleStore } from './conformance.js'
 import { WpDispatchSignalSchema, type WpDispatchSignalMessage } from './dispatch-signal.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
 import { verifyWp, publishVerificationFailed } from './verify.js'
+import { produceAdvisory, type AdvisoryStore } from './advisory.js'
+import type { ClaudeLike } from '@xzawed/agent-streams'
 import { DONE_STATE, ESCALATED_STATE } from './dispatch-constants.js'
 
 const WORKER_GROUP = 'manager-worker-consumers'
@@ -44,6 +46,13 @@ export interface WorkerDeps {
   leaseStore?: { renewLease(workflowId: string, wpId: string, expectedAttempt: number, visibilityMs: number): Promise<boolean> }
   /** lease 가시성 ms — 하트비트 연장량 + 갱신 주기(visibilityMs/3) 도출. */
   visibilityMs?: number
+  /** P4 advisory 채널(=MANAGER_WP_ADVISORY && advisoryStore 주입). develop_code WP의 verdict.ok 후 비차단 생산. */
+  advisoryEnabled?: boolean
+  advisoryStore?: AdvisoryStore
+  /** P4 advisory 생산자 LLM seam(produceAdvisory용). advisoryEnabled 시 동반 주입. */
+  claude?: ClaudeLike
+  model?: string
+  timeoutMs?: number
 }
 
 export type WorkerOutcome =
@@ -163,28 +172,54 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
       return { status: 'failed', reason: 'agent_error' } // 신호 미발행 → lease 타임아웃 reclaim
     }
     // P4b-1 검증 게이트: trivial(무예외=성공)을 실행 ground truth fail-closed 판정으로 교체(N1).
-    // 실패 = 완료 미발행(lease 백스톱 reclaim→escalate·N5) + 관측 이벤트(best-effort 추적용).
-    if (deps.verifyEnabled) {
-      const verdict = await verifyWp(tool, wp, result, {
-        handlers: deps.handlers, buildInput: deps.buildInput ?? buildWorkerInput, userContext, workflowId,
-        attempt: msg.payload.attempt,
-        ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
-        conformanceEnabled: deps.conformanceEnabled === true,
-      })
-      if (!verdict.ok) {
-        try {
-          await publishVerificationFailed(deps.publish, workflowId, wpId, msg.payload.attempt, verdict.reason, deps.now?.())
-        } catch (err) {
-          console.error('[worker] wp.verification.failed 발행 실패(완료 부재가 reclaim 보장):', err)
-        }
-        return { status: 'verification_failed', wpId, reason: verdict.reason }
-      }
-    }
+    const gate = await runVerifyGate(tool, wp, result, msg, userContext, deps)
+    if (gate) return gate // 실패 = 완료 미발행(lease 백스톱 reclaim→escalate·N5) + 관측 이벤트.
+    // P4 advisory(N3): verdict가 이미 확정된 뒤에만 비차단 생산 — 게이트는 advisory를 모른다.
+    await maybeProduceAdvisory(tool, workflowId, wp, msg.payload.attempt, result, deps)
     await publishCompletion(deps, workflowId, wpId, msg.payload.attempt)
     return { status: 'completed', wpId }
   } finally {
     heartbeat?.stop()
   }
+}
+
+/** P4b 검증 게이트(verifyEnabled): verdict 실패면 관측 이벤트 발행 + outcome 반환, ok/비활성이면 null(계속).
+ *  handleWpDispatchSignal의 인지복잡도를 낮추려 추출(동작 불변·N1). */
+async function runVerifyGate(
+  tool: string, wp: WorkPackage, result: unknown, msg: WpDispatchSignalMessage,
+  userContext: UserContext | undefined, deps: WorkerDeps,
+): Promise<WorkerOutcome | null> {
+  if (!deps.verifyEnabled) return null
+  const { workflowId } = msg.envelope
+  const verdict = await verifyWp(tool, wp, result, {
+    handlers: deps.handlers, buildInput: deps.buildInput ?? buildWorkerInput, userContext, workflowId,
+    attempt: msg.payload.attempt,
+    ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
+    conformanceEnabled: deps.conformanceEnabled === true,
+  })
+  if (verdict.ok) return null
+  try {
+    await publishVerificationFailed(deps.publish, workflowId, msg.payload.wpId, msg.payload.attempt, verdict.reason, deps.now?.())
+  } catch (err) {
+    console.error('[worker] wp.verification.failed 발행 실패(완료 부재가 reclaim 보장):', err)
+  }
+  return { status: 'verification_failed', wpId: msg.payload.wpId, reason: verdict.reason }
+}
+
+/** P4 advisory(N3): develop_code WP의 verdict.ok 후 비차단 optimization 제안을 생산한다(produceAdvisory는
+ *  best-effort never-throw — 게이트·완료에 영향 0). flag+LLM seam+advisoryStore 전부 주입 시에만 동작. */
+async function maybeProduceAdvisory(
+  tool: string, workflowId: string, wp: WorkPackage, attempt: number, result: unknown, deps: WorkerDeps,
+): Promise<void> {
+  if (
+    !deps.advisoryEnabled || tool !== 'develop_code' ||
+    !deps.advisoryStore || !deps.claude || !deps.model || deps.timeoutMs === undefined
+  ) {
+    return
+  }
+  await produceAdvisory(workflowId, wp, attempt, result, {
+    claude: deps.claude, model: deps.model, timeoutMs: deps.timeoutMs, advisoryStore: deps.advisoryStore,
+  })
 }
 
 export function buildWorkerHandler(deps: WorkerDeps): (msg: WpDispatchSignalMessage) => Promise<void> {

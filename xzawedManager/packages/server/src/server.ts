@@ -38,6 +38,7 @@ import { DispatchStore } from './db/dispatch.repo.js'
 import { LeaseStore } from './db/lease.repo.js'
 import { OracleRepo } from './db/oracle.repo.js'
 import { DecisionRepo } from './db/decision.repo.js'
+import { AdvisoryRepo } from './db/advisory.repo.js'
 import { oracleRoute } from './api/oracle.route.js'
 import { createSupervisor, shouldWireSupervisor, type Supervisor } from './streams/supervisor.js'
 import type { ProduceDeps } from './decompose/producer.js'
@@ -173,7 +174,8 @@ export async function buildServer(
       config.TASK_MANAGER_ENABLED ||
       config.MANAGER_ORACLE_DOR ||
       config.MANAGER_ORACLE_DRAFT ||
-      config.MANAGER_DECOMPOSE_ENABLED)
+      config.MANAGER_DECOMPOSE_ENABLED ||
+      config.MANAGER_WP_ADVISORY)
   ) {
     outboxRelay = new OutboxRelay(pool, producer, config.MANAGER_OUTBOX_POLL_MS)
     outboxRelay.start()
@@ -189,6 +191,8 @@ export async function buildServer(
       : undefined
   // P6: 결함 의사결정 브리프 영속소(escalation→DecisionRequest). MANAGER_DECISION_BRIEF + pool 시만 생성(회귀 0).
   const decisionStore = pool && config.MANAGER_DECISION_BRIEF ? new DecisionRepo(pool) : undefined
+  // P4: advisory 채널 영속소(verdict.ok 후 optimization 제안). MANAGER_WP_ADVISORY + pool 시만 생성(회귀 0).
+  const advisoryStore = pool && config.MANAGER_WP_ADVISORY ? new AdvisoryRepo(pool) : undefined
 
   // D5: 초안 영속은 decomposition consumer(=Supervisor)가 돌아야 하므로 TASK_MANAGER_ENABLED+DATABASE_URL이 전제다.
   // DRAFT만 켜고 그 전제가 없으면 producer가 oracleDrafts를 emit해도 소비자 부재로 영속되지 않는다 — 오진 방지 경고.
@@ -237,6 +241,16 @@ export async function buildServer(
     )
   }
 
+  // P4: advisory는 verdict.ok 후(verifyWp 경로) develop_code WP에만 생산되므로 MANAGER_WP_VERIFY가 꺼져 있으면
+  // 무동작(무음 no-op). 전제 없이 켜면 사용자가 제안을 기대하나 아무 일도 없으므로 오진 방지 경고.
+  if (config.MANAGER_WP_ADVISORY && !config.MANAGER_WP_VERIFY) {
+    app.log.warn('MANAGER_WP_ADVISORY=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 advisory 채널이 동작하지 않습니다(verdict.ok 경로 미경유).')
+  }
+  // P4: advisory는 AdvisoryRepo(=DATABASE_URL)가 없으면 영속되지 않는다(advisoryStore 부재 → advisoryEnabled=false). 가시화.
+  if (config.MANAGER_WP_ADVISORY && !pool) {
+    app.log.warn('MANAGER_WP_ADVISORY=true 이지만 DATABASE_URL이 없어 advisory가 영속되지 않습니다(AdvisoryRepo 부재).')
+  }
+
   // Task Manager Supervisor 배선(P1d-7): flag on + pool이면 decomposition 소비→디스패치·lease sweep·
   // completion 소비→재디스패치를 가동. 생산자(P2) 미도착이라 빈 스트림 구독(동작 준비). flag off면 미배선.
   let supervisor: Supervisor | undefined
@@ -264,6 +278,9 @@ export async function buildServer(
         ...(config.MANAGER_TASK_WORKER && { handlers: workerHandlers }),
         // P6: 결함 브리프 영속소(=MANAGER_DECISION_BRIEF). createSupervisor가 config.decisionBrief로 onEscalated 배선.
         ...(decisionStore && { decisionStore }),
+        // P4: advisory 영속소 + LLM seam(=MANAGER_WP_ADVISORY). buildWorkerConsumerDeps가 advisoryStore 동반 시만 활성.
+        ...(advisoryStore && { advisoryStore }),
+        ...(config.MANAGER_WP_ADVISORY && { claude: client, model: config.CLAUDE_MODEL, timeoutMs: config.CLAUDE_TIMEOUT_MS }),
       },
       {
         sweepMs: config.MANAGER_LEASE_SWEEP_MS,
@@ -279,6 +296,8 @@ export async function buildServer(
         wpConformance: config.MANAGER_WP_CONFORMANCE,
         // P6: 결함 브리프(=MANAGER_DECISION_BRIEF). off면 escalation 시 브리프 미생성(회귀 0). decisionStore 동반 시만 배선.
         decisionBrief: config.MANAGER_DECISION_BRIEF,
+        // P4: advisory 채널(=MANAGER_WP_ADVISORY). off면 워커 동작 P4b와 동일(회귀 0). advisoryStore 동반 시만 활성.
+        wpAdvisory: config.MANAGER_WP_ADVISORY,
       },
     )
     supervisor.start()

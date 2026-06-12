@@ -83,6 +83,13 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // P4 advisory 채널(기본 false). true면 develop_code WP의 verdict.ok 후 비차단 optimization 제안을
+    // 생산해 advisory_findings 투영 + manager_events(wp.advisory.found)로 영속한다(N3 — 절대 게이트 미차단).
+    // 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY(verdict.ok 경로) + DATABASE_URL(AdvisoryRepo).
+    MANAGER_WP_ADVISORY: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
     // P6 결함 의사결정 브리프(기본 false). true면 lease 상한 초과 escalation을 DecisionRequest(defect_brief)로
     // 영속해 사람 도달 구조화 핸드오프로 폐합(M8 무음 통과 금지·M9 영속). 전제: TASK_MANAGER_ENABLED+DATABASE_URL
     // (Supervisor·LeaseSweeper 가동 + DecisionRepo). off면 escalation 시 브리프 미생성(회귀 0).
