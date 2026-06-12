@@ -33,3 +33,19 @@ describe('buildWorkerConsumerDeps advisory 배선', () => {
     expect(deps.advisoryEnabled).toBe(false)
   })
 })
+
+describe('buildWorkerConsumerDeps impact 배선', () => {
+  const oracleStore = { approvedOracleForStory: vi.fn(), approvedGoldensForStory: vi.fn() }
+  test('wpImpact && oracleStore면 impactEnabled=true', () => {
+    const deps = buildWorkerConsumerDeps({ ...base, oracleStore } as never, cfg({ wpImpact: true }))
+    expect(deps.impactEnabled).toBe(true)
+  })
+  test('wpImpact만 켜고 oracleStore 부재면 impactEnabled=false(무음 no-op 방지·행동 단언)', () => {
+    const deps = buildWorkerConsumerDeps({ ...base }, cfg({ wpImpact: true }))
+    expect(deps.impactEnabled).toBe(false)
+  })
+  test('wpImpact off면 impactEnabled=false(회귀 0)', () => {
+    const deps = buildWorkerConsumerDeps({ ...base, oracleStore } as never, cfg({ wpImpact: false }))
+    expect(deps.impactEnabled).toBe(false)
+  })
+})

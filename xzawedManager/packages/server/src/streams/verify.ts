@@ -4,7 +4,10 @@ import type { WorkPackage } from '@xzawed/agent-streams'
 import type { UserContext } from '../types/user-context.js'
 import { defaultInconsistentStream, type Publish } from './decomposition-consumer.js'
 import type { AgentExecutor } from './worker.js'
-import { buildConformanceAuthorPlan, selectConformanceTestFiles, type ConformanceOracleStore } from './conformance.js'
+import {
+  buildConformanceAuthorPlan, buildGoldenDiffAuthorPlan, selectAuthoredTestFiles,
+  CONFORMANCE_DIR, IMPACT_DIR, type ConformanceOracleStore, type ImpactOracleStore,
+} from './conformance.js'
 
 export const WP_VERIFICATION_FAILED = 'wp.verification.failed'
 /** 관측 이벤트 reason 상한 — 에이전트 오류 메시지 폭주가 페이로드를 키우지 않도록. */
@@ -62,10 +65,12 @@ export interface VerifyDeps {
   workflowId: string
   /** 신호의 attempt — 체크 세션 격리 키에 포함(attempt 간 좀비 응답 교차 귀속 차단). */
   attempt: number
-  /** P4b-2: 승인 오라클 조회 포트(주입 + conformanceEnabled + develop_code면 conformance 채널 동작). */
-  oracleStore?: ConformanceOracleStore
+  /** P4b-2/P4: 승인 오라클 조회 포트(conformance scenarios + impact golden_refs). OracleRepo가 둘 다 구현. */
+  oracleStore?: ConformanceOracleStore & ImpactOracleStore
   /** P4b-2: conformance 채널 활성(=MANAGER_WP_CONFORMANCE && oracleStore 주입). */
   conformanceEnabled?: boolean
+  /** P4: impact golden-differential 채널 활성(=MANAGER_WP_IMPACT && oracleStore 주입). */
+  impactEnabled?: boolean
 }
 
 /** 검증 체크 전용 세션 키. RedisAgentHandler의 응답 매칭은 무상관(스트림 위치+type뿐)이라 워크플로 공유
@@ -93,39 +98,75 @@ async function execConformanceStep(
   }
 }
 
+interface AuthoredCheckConfig<T> {
+  enabled: boolean
+  dir: string
+  authorSuffix: string
+  runSuffix: string
+  /** 사람 승인 베이스라인 조회. null이면 skip(ok). */
+  baseline: () => Promise<T | null>
+  /** 베이스라인을 author develop_code plan으로 인코딩. */
+  buildPlan: (baseline: T) => string
+}
+
 /**
- * P4b-2 conformance 채널: develop_code WP의 story 승인 오라클을 독립 develop_code 호출이 실행 테스트로 작성하고
- * Tester가 실행해 그 결과로 판정. never-throw·fail-closed(불확실=실패, N1). 미주입/미활성/오라클 부재면 skip(ok).
+ * author→run 검증 골격(P4b-2 conformance·P4 impact 공유). 사람 승인 베이스라인을 독립 develop_code 호출이
+ * 실행 테스트로 인코딩(격리 세션·N6)→Tester가 그 testFiles 실행→결과-근거 판정(passed>0 floor 포함). never-throw·
+ * fail-closed(불확실=실패, N1). 미활성/베이스라인 부재면 skip(ok·회귀 0).
  */
-async function runConformanceCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
-  if (!deps.conformanceEnabled || !deps.oracleStore) return { ok: true }
-  let oracle: Awaited<ReturnType<ConformanceOracleStore['approvedOracleForStory']>>
+async function runAuthoredCheck<T>(wp: WorkPackage, deps: VerifyDeps, cfg: AuthoredCheckConfig<T>): Promise<VerificationVerdict> {
+  if (!cfg.enabled || !deps.oracleStore) return { ok: true }
+  let baseline: T | null
   try {
-    oracle = await deps.oracleStore.approvedOracleForStory(deps.workflowId, wp.storyId)
+    baseline = await cfg.baseline()
   } catch (err) {
-    return { ok: false, reason: `conformance: 오라클 조회 실패 — ${err instanceof Error ? err.message : String(err)}` }
+    return { ok: false, reason: `${cfg.dir}: 베이스라인 조회 실패 — ${err instanceof Error ? err.message : String(err)}` }
   }
-  if (!oracle) return { ok: true } // 승인 오라클 없음 → skip(회귀 0)
+  if (baseline == null) return { ok: true } // 승인 베이스라인 없음 → skip(회귀 0)
   if (!deps.userContext?.workspaceRoot) {
-    return { ok: false, reason: 'conformance: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)' }
+    return { ok: false, reason: `${cfg.dir}: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)` }
   }
   if (!deps.handlers['develop_code'] || !deps.handlers['run_tests']) {
-    return { ok: false, reason: 'conformance: develop_code/run_tests 핸들러 미주입' }
+    return { ok: false, reason: `${cfg.dir}: develop_code/run_tests 핸들러 미주입` }
   }
+  return executeAuthoredTest(wp, deps, cfg.buildPlan(baseline), cfg.dir, cfg.authorSuffix, cfg.runSuffix)
+}
 
-  // ① 독립 develop_code 호출(격리 세션)이 conformance 테스트 작성 — 구현 호출과 분리된 컨텍스트(N6).
-  const authored = await execConformanceStep(deps, wp, { plan: buildConformanceAuthorPlan(wp, oracle.scenarios) }, 'develop_code', 'conf-author')
+/** author→run→judge 실행부(runAuthoredCheck 가드 통과 후). ①독립 develop_code가 테스트 작성(격리 세션·N6)
+ *  →②Tester가 그 testFiles만 실행→결과-근거 판정. 인지복잡도 분리용 추출(동작 불변). */
+async function executeAuthoredTest(
+  wp: WorkPackage, deps: VerifyDeps, plan: string, dir: string, authorSuffix: string, runSuffix: string,
+): Promise<VerificationVerdict> {
+  const authored = await execConformanceStep(deps, wp, { plan }, 'develop_code', authorSuffix)
   if (!authored.ok) return authored
   const authorResult = authored.result as { artifacts?: unknown } | null | undefined
   const rawArtifacts = authorResult?.artifacts
   const artifacts = Array.isArray(rawArtifacts) ? rawArtifacts.filter((a): a is string => typeof a === 'string') : []
-  const testFiles = selectConformanceTestFiles(artifacts, wp.id)
-  if (testFiles.length === 0) return { ok: false, reason: 'conformance: author가 테스트 파일 미생성(fail-closed)' }
-
-  // ② Tester가 그 파일만 실행(격리 세션) → 결과-근거 판정 재사용.
-  const ran = await execConformanceStep(deps, wp, { testFiles }, 'run_tests', 'conf-run')
+  const testFiles = selectAuthoredTestFiles(artifacts, dir, wp.id)
+  if (testFiles.length === 0) return { ok: false, reason: `${dir}: author가 테스트 파일 미생성(fail-closed)` }
+  const ran = await execConformanceStep(deps, wp, { testFiles }, 'run_tests', runSuffix)
   if (!ran.ok) return ran
   return judgePrimaryResult('run_tests', ran.result)
+}
+
+/** P4b-2 conformance 채널: 사람 승인 GWT 시나리오를 실행 테스트로 소비(N1·N6). 미주입/미활성/오라클 부재면 skip. */
+function runConformanceCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
+  return runAuthoredCheck(wp, deps, {
+    enabled: deps.conformanceEnabled === true,
+    dir: CONFORMANCE_DIR, authorSuffix: 'conf-author', runSuffix: 'conf-run',
+    baseline: async () => (await deps.oracleStore?.approvedOracleForStory(deps.workflowId, wp.storyId)) ?? null,
+    buildPlan: (oracle) => buildConformanceAuthorPlan(wp, oracle.scenarios),
+  })
+}
+
+/** P4 impact 채널: 사람 사인오프 golden을 differential 실행 테스트로 소비(golden 읽기만·N7·N8). drift면 fail(blocking). */
+function runImpactCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
+  return runAuthoredCheck(wp, deps, {
+    enabled: deps.impactEnabled === true,
+    dir: IMPACT_DIR, authorSuffix: 'impact-author', runSuffix: 'impact-run',
+    baseline: async () => (await deps.oracleStore?.approvedGoldensForStory(deps.workflowId, wp.storyId)) ?? null,
+    buildPlan: (goldens) => buildGoldenDiffAuthorPlan(wp, goldens),
+  })
 }
 
 /**
@@ -158,7 +199,11 @@ export async function verifyWp(
     const verdict = judgePrimaryResult(check, checkResult)
     if (!verdict.ok) return verdict
   }
-  if (tool === 'develop_code') return runConformanceCheck(wp, deps)
+  if (tool === 'develop_code') {
+    const conf = await runConformanceCheck(wp, deps)
+    if (!conf.ok) return conf
+    return runImpactCheck(wp, deps) // P4 impact golden-differential hard-AND(conformance 통과 후)
+  }
   return { ok: true }
 }
 
