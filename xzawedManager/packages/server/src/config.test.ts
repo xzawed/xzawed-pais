@@ -241,36 +241,6 @@ describe('MANAGER_WP_IMPACT flag', () => {
   })
 })
 
-describe('MANAGER_WP_PROPERTY flag', () => {
-  let savedMode: string | undefined
-  let savedKey: string | undefined
-
-  beforeEach(() => {
-    savedMode = process.env['MODE']
-    savedKey = process.env['ANTHROPIC_API_KEY']
-    process.env['MODE'] = 'local'
-    process.env['ANTHROPIC_API_KEY'] = 'k'
-  })
-
-  afterEach(() => {
-    if (savedMode !== undefined) process.env['MODE'] = savedMode
-    else delete process.env['MODE']
-    if (savedKey !== undefined) process.env['ANTHROPIC_API_KEY'] = savedKey
-    else delete process.env['ANTHROPIC_API_KEY']
-    delete process.env['MANAGER_WP_PROPERTY']
-  })
-
-  it('기본 false', () => {
-    delete process.env['MANAGER_WP_PROPERTY']
-    expect(loadConfig().MANAGER_WP_PROPERTY).toBe(false)
-  })
-
-  it("'true'면 true", () => {
-    process.env['MANAGER_WP_PROPERTY'] = 'true'
-    expect(loadConfig().MANAGER_WP_PROPERTY).toBe(true)
-  })
-})
-
 describe('MANAGER_WP_ADVISORY flag', () => {
   let savedMode: string | undefined
   let savedKey: string | undefined
