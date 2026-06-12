@@ -43,6 +43,8 @@ export interface WorkerDeps {
   conformanceEnabled?: boolean
   /** P4: impact golden-differential 채널 활성(=MANAGER_WP_IMPACT && oracleStore 주입). verifyWp로 전달. */
   impactEnabled?: boolean
+  /** P4: property/invariants 채널 활성(=MANAGER_WP_PROPERTY && oracleStore 주입). verifyWp로 전달. */
+  propertyEnabled?: boolean
   /** 하드닝: lease 하트비트 — 실행 중 renewLease로 가시성 연장(verify/conformance 다단계 호출 중 false reclaim 방지).
    *  leaseStore+visibilityMs 둘 다 주입 시에만 활성(미주입=P4b 동작 보존·회귀 0). */
   leaseStore?: { renewLease(workflowId: string, wpId: string, expectedAttempt: number, visibilityMs: number): Promise<boolean> }
@@ -199,6 +201,7 @@ async function runVerifyGate(
     ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
     conformanceEnabled: deps.conformanceEnabled === true,
     impactEnabled: deps.impactEnabled === true,
+    propertyEnabled: deps.propertyEnabled === true,
   })
   if (verdict.ok) return null
   try {
