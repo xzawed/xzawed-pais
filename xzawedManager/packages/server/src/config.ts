@@ -98,6 +98,14 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // P4 property/invariants 채널(기본 false·conformance 렌즈). true면 develop_code WP 검증에 사람 승인 invariants를
+    // boundary+명시 속성 단언 테스트로 컴파일해 실행 ground truth로 소비(독립 develop_code가 작성→Tester 실행→위반이면 blocking).
+    // invariants 읽기전용. 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY + OracleRepo(MANAGER_ORACLE_DOR||MANAGER_ORACLE_DRAFT).
+    // ⚠️ conformance+impact+property 동시 시 develop_code WP당 에이전트 호출 최대 ~9단계 → MANAGER_LEASE_VISIBILITY_MS 상향 권장.
+    MANAGER_WP_PROPERTY: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
     // P6 결함 의사결정 브리프(기본 false). true면 lease 상한 초과 escalation을 DecisionRequest(defect_brief)로
     // 영속해 사람 도달 구조화 핸드오프로 폐합(M8 무음 통과 금지·M9 영속). 전제: TASK_MANAGER_ENABLED+DATABASE_URL
     // (Supervisor·LeaseSweeper 가동 + DecisionRepo). off면 escalation 시 브리프 미생성(회귀 0).

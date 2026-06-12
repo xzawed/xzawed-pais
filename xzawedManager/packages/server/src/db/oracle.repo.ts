@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from 'pg'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import type { ApprovedOracleView } from '@xzawed/agent-streams'
 import {
-  OracleScenarioSchema, OracleGoldenSchema, coveredCriteria, oracleIdFor,
+  OracleScenarioSchema, OracleGoldenSchema, OracleInvariantSchema, coveredCriteria, oracleIdFor,
   ORACLE_PENDING, ORACLE_APPROVED, ORACLE_APPROVED_EVENT, ORACLE_ACTOR, ORACLE_STREAM, SCENARIO_APPROVED,
 } from './oracle.types.js'
 import type { Oracle, OracleScenario, OracleInvariant, OracleGolden } from './oracle.types.js'
@@ -105,6 +105,21 @@ export class OracleRepo {
     if (!row) return null
     const goldens = OracleGoldenSchema.array().parse(row.golden_refs ?? [])
     return goldens.length > 0 ? goldens : null
+  }
+
+  /** P4 property: 특정 story의 approved 오라클(최신 version)에서 human_approved invariants 반환.
+   *  property author가 인코딩할 베이스라인. 승인 행 없음·human_approved 0개면 null(→ property skip). 읽기만(N7). */
+  async approvedInvariantsForStory(workflowId: string, storyId: string): Promise<OracleInvariant[] | null> {
+    const { rows } = await this.pool.query<{ invariants: OracleInvariant[] }>(
+      `SELECT invariants FROM oracles
+       WHERE workflow_id = $1 AND story_id = $2 AND status = $3
+       ORDER BY version DESC LIMIT 1`,
+      [workflowId, storyId, ORACLE_APPROVED],
+    )
+    const row = rows[0]
+    if (!row) return null
+    const invariants = OracleInvariantSchema.array().parse(row.invariants ?? []).filter((i) => i.status === SCENARIO_APPROVED)
+    return invariants.length > 0 ? invariants : null
   }
 
   /** 승인: SELECT FOR UPDATE → (status≠pending이면 null·blocker#8) → drafted 시나리오 human_approved 전이 →

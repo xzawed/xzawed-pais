@@ -1,5 +1,5 @@
 import type { WorkPackage } from '@xzawed/agent-streams'
-import type { OracleScenario, OracleGolden } from '../db/oracle.types.js'
+import type { OracleScenario, OracleGolden, OracleInvariant } from '../db/oracle.types.js'
 
 /** conformance 테스트 작성 컨벤션 디렉토리(워크스페이스 상대). author가 여기에 파일을 쓰고 Tester가 실행. */
 export const CONFORMANCE_DIR = '.xzawed/conformance'
@@ -7,9 +7,14 @@ export const CONFORMANCE_DIR = '.xzawed/conformance'
 /** golden-differential 테스트 작성 컨벤션 디렉토리(conformance와 분리 — 테스트 파일 충돌 방지·P4 impact). */
 export const IMPACT_DIR = '.xzawed/impact'
 
-/** author develop_code 호출이 작성할 파일 경로 stem(확장자는 프로젝트 프레임워크에 맞춰 author가 선택). */
+/** property(invariants) 테스트 작성 컨벤션 디렉토리(conformance/impact와 분리·P4 property 채널). */
+export const PROPERTY_DIR = '.xzawed/property'
+
+/** author develop_code 호출이 작성할 파일 경로 stem(확장자는 프로젝트 프레임워크에 맞춰 author가 선택).
+ *  conformanceStem = conformance 채널, impactStem = golden-differential 채널, propertyStem = property(invariants) 채널. */
 export const conformanceStem = (wpId: string): string => `${CONFORMANCE_DIR}/${wpId}`
 export const impactStem = (wpId: string): string => `${IMPACT_DIR}/${wpId}`
+export const propertyStem = (wpId: string): string => `${PROPERTY_DIR}/${wpId}`
 
 /** verify.ts가 deps로 받는 최소 오라클 조회 포트(OracleRepo가 구조적으로 만족). */
 export interface ConformanceOracleStore {
@@ -21,6 +26,11 @@ export interface ConformanceOracleStore {
 /** P4 impact: golden-differential 베이스라인 조회 포트(OracleRepo가 구조적으로 만족). */
 export interface ImpactOracleStore {
   approvedGoldensForStory(workflowId: string, storyId: string): Promise<OracleGolden[] | null>
+}
+
+/** P4 property: 사람 승인 invariants 조회 포트(OracleRepo가 구조적으로 만족·human_approved만 반환). */
+export interface InvariantOracleStore {
+  approvedInvariantsForStory(workflowId: string, storyId: string): Promise<OracleInvariant[] | null>
 }
 
 /** 사람 승인 GWT 시나리오를 conformance 테스트로 작성하라는 develop_code plan. 4000자 클램프(planner/developer 정합).
@@ -77,6 +87,23 @@ export function buildGoldenDiffAuthorPlan(wp: WorkPackage, goldens: OracleGolden
     `Write the test file to \`${impactStem(wp.id)}\` choosing the extension that matches this project's test framework (e.g. .test.ts / .spec.ts / _test.py).`,
     `구현 파일을 수정하지 말라(do not modify any implementation file) — golden-differential 테스트 파일만 작성하라.`,
     `For EACH golden below: run the existing implementation on the input fixture, apply the listed normalizers to the actual output, and assert it EQUALS the expected normalized output. Each golden is at least one test case using the project's existing test framework:`,
+    ``,
+    blocks,
+  ].join('\n')
+  return plan.slice(0, 4000)
+}
+
+/** 사람 승인 invariants를 boundary+명시 속성 단언 테스트로 작성하라는 develop_code plan(결정론·무작위 0).
+ *  구현 수정 금지·4000자 클램프(planner/developer 정합). 호출자는 human_approved invariant만 전달. */
+export function buildInvariantAuthorPlan(wp: WorkPackage, invariants: OracleInvariant[]): string {
+  const blocks = invariants.map((inv) =>
+    `Invariant ${inv.id} — ${inv.statement}\n  Domain: ${inv.domain}\n  Property: ${inv.property}`,
+  ).join('\n\n')
+  const plan = [
+    `Author executable property tests for story ${wp.storyId}, work package ${wp.id}.`,
+    `Write the test file to \`${propertyStem(wp.id)}\` choosing the extension that matches this project's test framework (e.g. .test.ts / .spec.ts / _test.py).`,
+    `구현 파일을 수정하지 말라(do not modify any implementation file) — property 테스트 파일만 작성하라.`,
+    `For EACH invariant below, write DETERMINISTIC test cases (no random fuzzing): (1) boundary-value cases at and around each threshold the property mentions (just-below, at, just-above — at least 3 points), and (2) representative-input cases asserting the property holds. Use the project's existing test framework. Each invariant is at least one test case:`,
     ``,
     blocks,
   ].join('\n')
