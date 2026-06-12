@@ -131,7 +131,7 @@ PR #238에서 반영된 senario 사양(v5) 기반 자율 Task Manager 로드맵(
 | P2r | Wiki Agent 리스크 분류기 (5-슬라이스) | ◐ P2r-1 결정론 코어(#286)+P2r-2 영속(RiskClassification 저장소·사람 승인 전이·migration 012)·**미배선** — P2r-3 LLM 생산자·P2r-4 라우팅+사람게이트·P7 per-WP 재채점·§5 모델 라우팅 배선 잔여 | #286, #289 |
 | 횡단 | WP §7 계약 스키마 정합(S1) + §13 회복탄력성(budget·provider 서킷·벌크헤드) | ✅ 완료 | #282 / #283~#285 |
 | P3 | Oracle DoR 게이트 + 초안 생성 (`MANAGER_ORACLE_DOR`·`MANAGER_ORACLE_DRAFT`) | ◐ 부분 — invariants/golden_refs 미소비·§14 step branch git 워크플로·WP 상태머신(8+2) 잔여 | #267~#268 |
-| P4 | 실행 워커 + 실 검증 오라클 (`MANAGER_TASK_WORKER`·`MANAGER_WP_VERIFY`·`MANAGER_WP_CONFORMANCE`) | ◐ 골격+컨텍스트(4a)+correctness 게이트(4b-1)+오라클 conformance(4b-2)+vacuous-pass `passed>0` floor·Oracle 스키마 invariants/golden_refs(4b-3·migration 010) — 잔여: advisory(N3)·impact(golden differential) 채널·전체 mutation 게이트(N8)·§11 결함 국소화(4c)·Tester/Security 적대 에이전트(4d) | #269, #271, #273~#275 |
+| P4 | 실행 워커 + 실 검증 오라클 (`MANAGER_TASK_WORKER`·`MANAGER_WP_VERIFY`·`MANAGER_WP_CONFORMANCE`·`MANAGER_WP_ADVISORY`) | ◐ 골격+컨텍스트(4a)+correctness 게이트(4b-1)+오라클 conformance(4b-2)+vacuous-pass `passed>0` floor·Oracle 스키마 invariants/golden_refs(4b-3·migration 010)+**advisory 채널(N3·비차단 큐·migration 013)** — 잔여: impact(golden differential) 채널·전체 mutation 게이트(N8)·§11 결함 국소화(4c)·Tester/Security 적대 에이전트(4d) | #269, #271, #273~#275, #292 |
 | P5 | fail-closed 릴리스 게이트(M1·N2)·saga 보상·canary/롤백·워크플로 FSM | ⬜ 미착수 | — |
 | P6 | 의사결정 브리프(§15)·HumanDecision/SignOff 영속(M9)·강등 모드 FSM·관측성/SLO | ◐ M9 영속(migration 011)+**결함 브리프 배선**(lease escalation→defect_brief DecisionRequest·`MANAGER_DECISION_BRIEF`·M9 첫 런타임 소비) — 잔여: verification.failed/decomposition.inconsistent 브리프·사람 결정 라우팅(§11 되먹임)·UI 카드·강등 모드 FSM(N2)·관측성/SLO | #288, #291 |
 
