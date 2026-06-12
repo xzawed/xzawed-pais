@@ -5,7 +5,7 @@ import type { WorkPackage } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { UserContext } from '../types/user-context.js'
 import type { Publish } from './decomposition-consumer.js'
-import type { ConformanceOracleStore, ImpactOracleStore } from './conformance.js'
+import type { ConformanceOracleStore, ImpactOracleStore, InvariantOracleStore } from './conformance.js'
 import { WpDispatchSignalSchema, type WpDispatchSignalMessage } from './dispatch-signal.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
 import { verifyWp, publishVerificationFailed } from './verify.js'
@@ -38,7 +38,7 @@ export interface WorkerDeps {
    *  실패 시 완료 미발행(lease 백스톱이 reclaim→escalate) + wp.verification.failed 관측 이벤트. */
   verifyEnabled?: boolean
   /** P4b-2/P4: 승인 오라클 조회 포트(conformance scenarios + impact golden_refs). verifyWp로 전달. */
-  oracleStore?: ConformanceOracleStore & ImpactOracleStore
+  oracleStore?: ConformanceOracleStore & ImpactOracleStore & InvariantOracleStore
   /** P4b-2: conformance 채널 활성(=MANAGER_WP_CONFORMANCE && oracleStore 주입). */
   conformanceEnabled?: boolean
   /** P4: impact golden-differential 채널 활성(=MANAGER_WP_IMPACT && oracleStore 주입). verifyWp로 전달. */

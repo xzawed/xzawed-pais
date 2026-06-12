@@ -6,7 +6,7 @@ import { defaultInconsistentStream, type Publish } from './decomposition-consume
 import type { AgentExecutor } from './worker.js'
 import {
   buildConformanceAuthorPlan, buildGoldenDiffAuthorPlan, selectAuthoredTestFiles,
-  CONFORMANCE_DIR, IMPACT_DIR, type ConformanceOracleStore, type ImpactOracleStore,
+  CONFORMANCE_DIR, IMPACT_DIR, type ConformanceOracleStore, type ImpactOracleStore, type InvariantOracleStore,
 } from './conformance.js'
 
 export const WP_VERIFICATION_FAILED = 'wp.verification.failed'
@@ -66,7 +66,7 @@ export interface VerifyDeps {
   /** 신호의 attempt — 체크 세션 격리 키에 포함(attempt 간 좀비 응답 교차 귀속 차단). */
   attempt: number
   /** P4b-2/P4: 승인 오라클 조회 포트(conformance scenarios + impact golden_refs). OracleRepo가 둘 다 구현. */
-  oracleStore?: ConformanceOracleStore & ImpactOracleStore
+  oracleStore?: ConformanceOracleStore & ImpactOracleStore & InvariantOracleStore
   /** P4b-2: conformance 채널 활성(=MANAGER_WP_CONFORMANCE && oracleStore 주입). */
   conformanceEnabled?: boolean
   /** P4: impact golden-differential 채널 활성(=MANAGER_WP_IMPACT && oracleStore 주입). */

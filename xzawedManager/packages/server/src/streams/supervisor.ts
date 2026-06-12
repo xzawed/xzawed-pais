@@ -10,7 +10,7 @@ import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.j
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
 import type { AdvisoryStore } from './advisory.js'
 import type { ClaudeLike } from '@xzawed/agent-streams'
-import type { ConformanceOracleStore, ImpactOracleStore } from './conformance.js'
+import type { ConformanceOracleStore, ImpactOracleStore, InvariantOracleStore } from './conformance.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
 import type { LeaseStore } from '../db/lease.repo.js'
@@ -115,7 +115,7 @@ export interface SupervisorDeps {
   publish: Publish
   /** P3-1 dispatch satisfied-set(approvedByWorkflow) + P3-2 consumer upsertDraft 둘 다 노출(blocker#2).
    *  DOR||DRAFT일 때 server.ts가 OracleRepo 주입. DRAFT만 켜도 decompositionConsumer가 upsert로 사용. */
-  oracleStore?: OracleStore & NonNullable<DecompositionDeps['oracleStore']> & ConformanceOracleStore & ImpactOracleStore
+  oracleStore?: OracleStore & NonNullable<DecompositionDeps['oracleStore']> & ConformanceOracleStore & ImpactOracleStore & InvariantOracleStore
   /** P4-1: tool명→에이전트 핸들러(server.ts가 registry.get으로 주입). 주입+taskWorker면 워커 배선. */
   handlers?: Record<string, AgentExecutor>
   /** P6: 결함 브리프 영속소(DecisionRepo 구조). decisionBrief flag + 주입 시 escalation→DecisionRequest. */
