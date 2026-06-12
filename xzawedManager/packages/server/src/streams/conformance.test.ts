@@ -119,7 +119,7 @@ describe('buildGoldenDiffAuthorPlan', () => {
 })
 
 describe('property channel scaffolding', () => {
-  const wp = { id: 'wp-7', storyId: 's1' } as never
+  const wp = { id: 'wp-7', storyId: 's1' } as unknown as WorkPackage
   const invariants: OracleInvariant[] = [
     { id: 'i1', statement: '30분 경과 토큰 거부', domain: '토큰 생성기', property: 'age>30 => reject', status: 'human_approved' },
   ]
@@ -135,7 +135,16 @@ describe('property channel scaffolding', () => {
     expect(plan).toContain('do not modify')
     expect(plan).toContain('i1')
     expect(plan).toContain('age>30 => reject')
+    expect(plan).toContain('30분 경과 토큰 거부') // statement
+    expect(plan).toContain('토큰 생성기')         // domain
     expect(plan.length).toBeLessThanOrEqual(4000)
+  })
+
+  test('buildInvariantAuthorPlan: 대용량 입력 4000자 클램프', () => {
+    const many: OracleInvariant[] = Array.from({ length: 300 }, (_, n) => ({
+      id: `i${n}`, statement: 's'.repeat(40), domain: 'd'.repeat(40), property: 'p'.repeat(40), status: 'human_approved' as const,
+    }))
+    expect(buildInvariantAuthorPlan(wp, many).length).toBe(4000)
   })
 
   test('selectAuthoredTestFiles(PROPERTY_DIR): 좌측앵커·확장자 필터', () => {

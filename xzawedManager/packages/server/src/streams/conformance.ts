@@ -10,7 +10,8 @@ export const IMPACT_DIR = '.xzawed/impact'
 /** property(invariants) 테스트 작성 컨벤션 디렉토리(conformance/impact와 분리·P4 property 채널). */
 export const PROPERTY_DIR = '.xzawed/property'
 
-/** author develop_code 호출이 작성할 파일 경로 stem(확장자는 프로젝트 프레임워크에 맞춰 author가 선택). */
+/** author develop_code 호출이 작성할 파일 경로 stem(확장자는 프로젝트 프레임워크에 맞춰 author가 선택).
+ *  conformanceStem = conformance 채널, impactStem = golden-differential 채널, propertyStem = property(invariants) 채널. */
 export const conformanceStem = (wpId: string): string => `${CONFORMANCE_DIR}/${wpId}`
 export const impactStem = (wpId: string): string => `${IMPACT_DIR}/${wpId}`
 export const propertyStem = (wpId: string): string => `${PROPERTY_DIR}/${wpId}`
