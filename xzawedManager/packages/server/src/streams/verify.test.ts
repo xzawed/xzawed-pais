@@ -1,9 +1,9 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, test, expect, vi } from 'vitest'
 import type { WorkPackage } from '@xzawed/agent-streams'
 import type { UserContext } from '../types/user-context.js'
 import {
   judgePrimaryResult, planVerificationChecks, verifyWp, publishVerificationFailed, verifySessionId,
-  WP_VERIFICATION_FAILED, type VerifyDeps,
+  WP_VERIFICATION_FAILED, meetsMinRisk, type VerifyDeps,
 } from './verify.js'
 
 describe('judgePrimaryResult — 결과-근거 판정(fail-closed)', () => {
@@ -209,6 +209,18 @@ describe('verifyWp conformance (develop_code)', () => {
       baseDeps({ oracleStore: store, conformanceEnabled: true, userContext: undefined, handlers: { build_project: okBuilder, run_tests: okTester, develop_code: author } }) as never)
     expect(v.ok).toBe(false)
     expect(author.execute).not.toHaveBeenCalled()
+  })
+})
+
+describe('meetsMinRisk', () => {
+  test('rank 비교 진리표', () => {
+    expect(meetsMinRisk('HIGH', 'HIGH')).toBe(true)
+    expect(meetsMinRisk('MEDIUM', 'HIGH')).toBe(false)
+    expect(meetsMinRisk('LOW', 'HIGH')).toBe(false)
+    expect(meetsMinRisk('HIGH', 'MEDIUM')).toBe(true)
+    expect(meetsMinRisk('MEDIUM', 'MEDIUM')).toBe(true)
+    expect(meetsMinRisk('LOW', 'MEDIUM')).toBe(false)
+    expect(meetsMinRisk('LOW', 'LOW')).toBe(true)
   })
 })
 

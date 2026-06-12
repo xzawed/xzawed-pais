@@ -213,6 +213,48 @@ describe('handleWpDispatchSignal conformance threading (P4b-2)', () => {
   })
 })
 
+describe('handleWpDispatchSignal — mutation threading (P4)', () => {
+  it('mutationEnabled=true가 runVerifyGate를 통해 verifyWp에 스레딩(mutation 라인 실행)', async () => {
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/ws' }
+    const build = vi.fn().mockResolvedValue({ success: true })
+    const test = vi.fn().mockResolvedValue({ success: true, failed: 0, passed: 1 })
+    const d = deps({
+      verifyEnabled: true,
+      mutationEnabled: true,
+      mutationTheta: 0.7,
+      mutationMinRisk: 'HIGH' as never,
+      mutationMaxMutants: 10,
+      repo: repoMock({ workPackages: [wp()], eventId: null, version: 1, userContext: uc }),
+      handlers: {
+        develop_code: { execute: vi.fn().mockResolvedValue({ artifacts: ['f.ts'] }) },
+        build_project: { execute: build },
+        run_tests: { execute: test },
+      },
+    })
+    // mutation 채널은 oracle 미소비 — 통과 경로로 completed가 발행돼야 함
+    const out = await handleWpDispatchSignal(sig(), d)
+    expect(out.status).toBe('completed')
+  })
+
+  it('mutationEnabled=false이면 해당 필드가 verifyWp에 false로 전달(회귀 0)', async () => {
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/ws' }
+    const build = vi.fn().mockResolvedValue({ success: true })
+    const test = vi.fn().mockResolvedValue({ success: true, failed: 0, passed: 1 })
+    const d = deps({
+      verifyEnabled: true,
+      mutationEnabled: false,
+      repo: repoMock({ workPackages: [wp()], eventId: null, version: 1, userContext: uc }),
+      handlers: {
+        develop_code: { execute: vi.fn().mockResolvedValue({ artifacts: ['f.ts'] }) },
+        build_project: { execute: build },
+        run_tests: { execute: test },
+      },
+    })
+    const out = await handleWpDispatchSignal(sig(), d)
+    expect(out.status).toBe('completed')
+  })
+})
+
 describe('buildWorkerInput / shouldWireWorker', () => {
   it('buildWorkerInput은 AC를 intent에 담고 검증된 union 값을 채움(context=record·target=development·severity=low)', () => {
     const i = buildWorkerInput(wp({ acceptanceCriteria: ['ac1', 'ac2'] })) as Record<string, unknown>
