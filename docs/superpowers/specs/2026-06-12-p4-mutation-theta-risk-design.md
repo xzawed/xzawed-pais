@@ -103,8 +103,9 @@ mutation은 사람 승인 oracle 아티팩트를 읽지 않는다(impl을 mutate
 독립 develop_code에게 지시:
 - story `wp.storyId`·WP `wp.id`의 실행 가능한 **자가단언 mutation 하니스**를 `mutationStem(wp.id)`(프로젝트 테스트 프레임워크 확장자)에 작성.
 - **실 구현 파일 수정 금지**(복사본/in-memory로 mutate) — 하니스 테스트 파일만 작성.
+- 먼저 이 WP가 구현한 **구현 소스 파일을 식별**(워크스페이스의 비-테스트 파일)해 읽고, mutate 대상으로 삼는다.
 - 하니스는 하나의 테스트 케이스로서 런타임에:
-  1. 이 WP가 구현한 모듈에 최대 `{maxMutants}`개의 작은 의미 변형(mutant)을 적용(연산자 뒤집기·경계 변경·조기 반환 등) — **복사본 또는 메모리 상에서**.
+  1. 그 구현 파일에 최대 `{maxMutants}`개의 작은 의미 변형(mutant)을 적용(연산자 뒤집기·경계/off-by-one·조기 반환·조건 부정 등) — **복사본 또는 메모리 상에서**. 가능하면 언어별 mutation 프레임워크(TS/JS=Stryker·Python=mutmut) 선호, 없으면 임시 복사본에 변형 적용 후 테스트 러너 실행·복원.
   2. 각 mutant에 대해 이 WP의 기존 테스트를 실행하고, 스위트가 실패하면 killed로 집계.
   3. `mutation_score = killed / total`을 계산.
   4. `mutation_score < {theta}`이면 명확한 메시지와 함께 테스트를 **실패**시킨다(통과 조건 = score ≥ {theta}).
