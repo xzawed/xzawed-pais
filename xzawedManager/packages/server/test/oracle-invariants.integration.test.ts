@@ -16,6 +16,8 @@ d('OracleRepo.approvedInvariantsForStory (pg)', () => {
   test('approved 오라클의 human_approved invariants만 반환(drafted 제외·pending이면 null)', async () => {
     const repo = new OracleRepo(pool)
     const oracleId = oracleIdFor('wf-inv-1', 'story-1')
+    // 설계: approve()는 scenario 항목만 전이하고 invariant 항목 상태는 전이하지 않는다(초안 생성기 없음·사람이
+    // 직접 저작+승인). 따라서 invariant를 upsert 시점에 직접 status:'human_approved'로 시드한다.
     await repo.upsert({
       oracleId, workflowId: 'wf-inv-1', storyId: 'story-1', version: 1, status: 'pending',
       scenarios: [], goldenRefs: [],
@@ -42,7 +44,7 @@ d('OracleRepo.approvedInvariantsForStory (pg)', () => {
       invariants: [{ id: 'i1', statement: 's', domain: 'd', property: 'p', status: 'drafted' }],
       coverage: {},
     })
-    await repo.approve(oracleId, 'po')
+    expect(await repo.approve(oracleId, 'po')).not.toBeNull()
     expect(await repo.approvedInvariantsForStory('wf-inv-2', 'story-1')).toBeNull()
   })
 })
