@@ -259,6 +259,17 @@ export async function buildServer(
     app.log.warn('MANAGER_WP_PROPERTY=true 이지만 oracleStore(DATABASE_URL+OracleRepo)가 없어 property가 항상 skip됩니다.')
   }
 
+  // P4: mutation은 verifyWp 안 develop_code 경로에서만 동작하므로 MANAGER_WP_VERIFY off면 무음 no-op. 오진 방지 경고.
+  if (config.MANAGER_WP_MUTATION && !config.MANAGER_WP_VERIFY) {
+    app.log.warn('MANAGER_WP_MUTATION=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 mutation 채널이 동작하지 않습니다(verifyWp 미경유).')
+  }
+  // P4: mutation은 스위트를 K회 재실행하므로 WP당 비용이 가장 크다 — lease 가시성이 짧으면 검증 중 false reclaim 위험. 하한 경고.
+  if (config.MANAGER_WP_MUTATION && config.MANAGER_LEASE_VISIBILITY_MS < 600_000) {
+    app.log.warn(
+      `MANAGER_WP_MUTATION=true 인데 MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms < 600000ms — mutation은 스위트 K회 재실행으로 가장 비싸 검증 중 lease 만료(false reclaim) 위험. 가시성 상향 강력 권장.`,
+    )
+  }
+
   // P4: advisory는 verdict.ok 후(verifyWp 경로) develop_code WP에만 생산되므로 MANAGER_WP_VERIFY가 꺼져 있으면
   // 무동작(무음 no-op). 전제 없이 켜면 사용자가 제안을 기대하나 아무 일도 없으므로 오진 방지 경고.
   if (config.MANAGER_WP_ADVISORY && !config.MANAGER_WP_VERIFY) {
@@ -318,6 +329,11 @@ export async function buildServer(
         wpImpact: config.MANAGER_WP_IMPACT,
         // P4: property/invariants 채널(=MANAGER_WP_PROPERTY). off면 impact까지와 동일(회귀 0). oracleStore 동반 시만 활성.
         wpProperty: config.MANAGER_WP_PROPERTY,
+        // P4 mutation θ_risk 채널(=MANAGER_WP_MUTATION). off면 property까지와 동일(회귀 0). oracle 미소비.
+        wpMutation: config.MANAGER_WP_MUTATION,
+        mutationTheta: config.MANAGER_MUTATION_THETA,
+        mutationMinRisk: config.MANAGER_MUTATION_MIN_RISK,
+        mutationMaxMutants: config.MANAGER_MUTATION_MAX_MUTANTS,
         // P4: advisory 채널(=MANAGER_WP_ADVISORY). off면 워커 동작 P4b와 동일(회귀 0). advisoryStore 동반 시만 활성.
         wpAdvisory: config.MANAGER_WP_ADVISORY,
       },
