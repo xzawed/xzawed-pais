@@ -230,7 +230,7 @@ packages/server/src/
     ├── oracle.repo.ts          # ... + approvedGoldensForStory (P4 impact 베이스라인·읽기만 N7·#294) + approvedInvariantsForStory (P4 property 베이스라인·읽기만 N7)
     ├── advisory.types.ts / advisory.repo.ts # advisory 채널 영속 — recordFindings 단일 tx·findingsByWorkflow (P4 N3·#292)
     ├── risk-classification.types.ts / risk-classification.repo.ts # P2r-2 리스크 분류 영속 — RiskClassification 프로젝션·사람 승인
-    └── migrations/            # 001~012 (010 oracle invariants/golden·011 decisions·012 risk_classifications)
+    └── migrations/            # 001~013 (010 oracle invariants/golden·011 decisions·012 risk_classifications·013 advisory_findings)
 ```
 
 ---
