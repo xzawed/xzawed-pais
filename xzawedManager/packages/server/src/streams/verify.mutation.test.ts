@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect, vi, beforeEach } from 'vitest'
 import type { WorkPackage } from '@xzawed/agent-streams'
 import { verifyWp, type VerifyDeps } from './verify.js'
 import { MUTATION_DIR } from './conformance.js'
@@ -26,6 +26,8 @@ function baseDeps(over: Partial<VerifyDeps>): VerifyDeps {
 }
 
 describe('verifyWp mutation θ_risk', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
   test('mutationEnabled off → 미동작', async () => {
     const v = await verifyWp('develop_code', hiWp, okResult,
       baseDeps({ mutationEnabled: false, handlers: { build_project: okBuilder, run_tests: okTester, develop_code: author } }))

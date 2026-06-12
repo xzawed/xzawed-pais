@@ -238,7 +238,7 @@ async function runDerivedChecks(
   return { ok: true }
 }
 
-/** P4 채널 hard-AND(conformance→impact→property). 첫 non-ok에서 단락. 데이터 주도 — 채널 추가 시 이 목록만 수정. */
+/** P4 채널 hard-AND(conformance→impact→property→mutation). 첫 non-ok에서 단락. 데이터 주도 — 채널 추가 시 이 목록만 수정. */
 async function runChannelChecks(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
   for (const runChannel of [runConformanceCheck, runImpactCheck, runPropertyCheck, runMutationCheck]) {
     const verdict = await runChannel(wp, deps)
