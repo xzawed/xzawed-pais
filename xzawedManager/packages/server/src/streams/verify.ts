@@ -1,12 +1,14 @@
 import { z } from 'zod'
 import { makeEnvelope } from '@xzawed/agent-streams'
-import type { WorkPackage } from '@xzawed/agent-streams'
+import type { WorkPackage, WpRisk } from '@xzawed/agent-streams'
 import type { UserContext } from '../types/user-context.js'
 import { defaultInconsistentStream, type Publish } from './decomposition-consumer.js'
 import type { AgentExecutor } from './worker.js'
 import {
-  buildConformanceAuthorPlan, buildGoldenDiffAuthorPlan, buildInvariantAuthorPlan, selectAuthoredTestFiles,
-  CONFORMANCE_DIR, IMPACT_DIR, PROPERTY_DIR, type ConformanceOracleStore, type ImpactOracleStore, type InvariantOracleStore,
+  buildConformanceAuthorPlan, buildGoldenDiffAuthorPlan, buildInvariantAuthorPlan, buildMutationHarnessPlan,
+  selectAuthoredTestFiles,
+  CONFORMANCE_DIR, IMPACT_DIR, PROPERTY_DIR, MUTATION_DIR,
+  type ConformanceOracleStore, type ImpactOracleStore, type InvariantOracleStore,
 } from './conformance.js'
 
 export const WP_VERIFICATION_FAILED = 'wp.verification.failed'
@@ -14,6 +16,11 @@ export const WP_VERIFICATION_FAILED = 'wp.verification.failed'
 const REASON_MAX = 500
 
 export type VerificationVerdict = { ok: true } | { ok: false; reason: string }
+
+/** mutation 게이트 기본값(env 미설정 시). θ는 캘리브레이션 잠정값. */
+const DEFAULT_MUTATION_THETA = 0.6
+const DEFAULT_MUTATION_MAX_MUTANTS = 10
+const RISK_RANK: Record<WpRisk, number> = { LOW: 0, MEDIUM: 1, HIGH: 2 }
 
 /** 판정 전용 minimal 스키마 — 핸들러 outputSchema의 .default()에 기대지 않고
  *  필드 부재=파싱 실패=fail(불확실=실패, senario N1). `passed`는 N8 vacuous-pass 봉합용. */
@@ -73,6 +80,14 @@ export interface VerifyDeps {
   impactEnabled?: boolean
   /** P4 property/invariants 채널 활성(=MANAGER_WP_PROPERTY && oracleStore 주입). */
   propertyEnabled?: boolean
+  /** P4 mutation θ_risk 채널 활성(=MANAGER_WP_MUTATION). oracle 미소비. */
+  mutationEnabled?: boolean
+  /** mutation 통과 floor(killed/total ≥ θ). 미설정 시 DEFAULT_MUTATION_THETA. */
+  mutationTheta?: number
+  /** mutation 최소 실행 risk 등급(이 등급 이상만 실행). 미설정 시 'HIGH'. */
+  mutationMinRisk?: WpRisk
+  /** mutation 하니스가 생성할 최대 mutant 수. 미설정 시 DEFAULT_MUTATION_MAX_MUTANTS. */
+  mutationMaxMutants?: number
 }
 
 /** 검증 체크 전용 세션 키. RedisAgentHandler의 응답 매칭은 무상관(스트림 위치+type뿐)이라 워크플로 공유
@@ -181,6 +196,29 @@ function runPropertyCheck(wp: WorkPackage, deps: VerifyDeps): Promise<Verificati
   })
 }
 
+/** wp.risk가 minRisk 등급 이상인지(rank LOW<MEDIUM<HIGH). mutation 게이팅용. */
+export function meetsMinRisk(wpRisk: WpRisk, minRisk: WpRisk): boolean {
+  return RISK_RANK[wpRisk] >= RISK_RANK[minRisk]
+}
+
+/** P4 mutation θ_risk 채널(N8 강화): HIGH-risk WP의 스위트 강도를 자가단언 하니스로 검증.
+ *  oracle 미소비 — 자체 guard 후 executeAuthoredTest 재사용(CPD0). score<θ면 하니스가 fail→fail(blocking). never-throw. */
+function runMutationCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
+  if (deps.mutationEnabled !== true) return Promise.resolve({ ok: true })
+  if (!meetsMinRisk(wp.risk, deps.mutationMinRisk ?? 'HIGH')) return Promise.resolve({ ok: true })
+  if (!deps.userContext?.workspaceRoot) {
+    return Promise.resolve({ ok: false, reason: `${MUTATION_DIR}: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)` })
+  }
+  if (!deps.handlers['develop_code'] || !deps.handlers['run_tests']) {
+    return Promise.resolve({ ok: false, reason: `${MUTATION_DIR}: develop_code/run_tests 핸들러 미주입` })
+  }
+  const plan = buildMutationHarnessPlan(wp, {
+    theta: deps.mutationTheta ?? DEFAULT_MUTATION_THETA,
+    maxMutants: deps.mutationMaxMutants ?? DEFAULT_MUTATION_MAX_MUTANTS,
+  })
+  return executeAuthoredTest(wp, deps, plan, MUTATION_DIR, 'mut-author', 'mut-run')
+}
+
 /** 파생 체크(build_project·run_tests) 순차 실 재실행(fail-fast). workspaceRoot 가드 통과 후 호출. */
 async function runDerivedChecks(
   checks: string[], wp: WorkPackage, deps: VerifyDeps, checkSession: string,
@@ -202,7 +240,7 @@ async function runDerivedChecks(
 
 /** P4 채널 hard-AND(conformance→impact→property). 첫 non-ok에서 단락. 데이터 주도 — 채널 추가 시 이 목록만 수정. */
 async function runChannelChecks(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
-  for (const runChannel of [runConformanceCheck, runImpactCheck, runPropertyCheck]) {
+  for (const runChannel of [runConformanceCheck, runImpactCheck, runPropertyCheck, runMutationCheck]) {
     const verdict = await runChannel(wp, deps)
     if (!verdict.ok) return verdict
   }
