@@ -195,3 +195,29 @@ describe('buildWorkerConsumerDeps conformance (P4b-2)', () => {
     expect(buildWorkerConsumerDeps({ ...base, oracleStore: store as never }, { ...cfg, wpConformance: true }).oracleStore).toBe(store)
   })
 })
+
+describe('buildWorkerConsumerDeps mutation (P4)', () => {
+  const base = { repo: {} as never, publish: vi.fn(), handlers: { develop_code: { execute: vi.fn() } } }
+  const cfg = { sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: false, taskWorker: true } as never
+
+  it('mutationEnabled = wpMutation === true (oracle 무관)', () => {
+    expect(buildWorkerConsumerDeps(base as never, { ...cfg, wpMutation: true }).mutationEnabled).toBe(true)
+    expect(buildWorkerConsumerDeps(base as never, { ...cfg, wpMutation: false }).mutationEnabled).toBe(false)
+    expect(buildWorkerConsumerDeps(base as never, cfg).mutationEnabled).toBe(false)
+  })
+
+  it('theta/minRisk/maxMutants를 워커 deps에 스레딩', () => {
+    const w = buildWorkerConsumerDeps(base as never, { ...cfg, wpMutation: true, mutationTheta: 0.8, mutationMinRisk: 'MEDIUM', mutationMaxMutants: 5 })
+    expect(w.mutationTheta).toBe(0.8)
+    expect(w.mutationMinRisk).toBe('MEDIUM')
+    expect(w.mutationMaxMutants).toBe(5)
+  })
+
+  it('wpMutation off면 theta/minRisk/maxMutants 미전달(키 미생성)', () => {
+    const w = buildWorkerConsumerDeps(base as never, { ...cfg, wpMutation: false })
+    expect(w.mutationEnabled).toBe(false)
+    expect(w.mutationTheta).toBeUndefined()
+    expect(w.mutationMinRisk).toBeUndefined()
+    expect(w.mutationMaxMutants).toBeUndefined()
+  })
+})
