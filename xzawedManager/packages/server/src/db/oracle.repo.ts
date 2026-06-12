@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from 'pg'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import type { ApprovedOracleView } from '@xzawed/agent-streams'
 import {
-  OracleScenarioSchema, coveredCriteria, oracleIdFor,
+  OracleScenarioSchema, OracleGoldenSchema, coveredCriteria, oracleIdFor,
   ORACLE_PENDING, ORACLE_APPROVED, ORACLE_APPROVED_EVENT, ORACLE_ACTOR, ORACLE_STREAM, SCENARIO_APPROVED,
 } from './oracle.types.js'
 import type { Oracle, OracleScenario, OracleInvariant, OracleGolden } from './oracle.types.js'
@@ -90,6 +90,21 @@ export class OracleRepo {
     const approved = OracleScenarioSchema.array().parse(row.scenarios).filter((s) => s.status === SCENARIO_APPROVED)
     if (approved.length === 0) return null
     return { scenarios: approved, coverage: row.coverage ?? {} }
+  }
+
+  /** P4 impact: 특정 story의 approved 오라클(최신 version)에서 golden_refs 반환.
+   *  golden-differential author가 인코딩할 베이스라인. 승인 행 없음·golden 0개면 null(→ impact skip). */
+  async approvedGoldensForStory(workflowId: string, storyId: string): Promise<OracleGolden[] | null> {
+    const { rows } = await this.pool.query<{ golden_refs: OracleGolden[] }>(
+      `SELECT golden_refs FROM oracles
+       WHERE workflow_id = $1 AND story_id = $2 AND status = $3
+       ORDER BY version DESC LIMIT 1`,
+      [workflowId, storyId, ORACLE_APPROVED],
+    )
+    const row = rows[0]
+    if (!row) return null
+    const goldens = OracleGoldenSchema.array().parse(row.golden_refs ?? [])
+    return goldens.length > 0 ? goldens : null
   }
 
   /** 승인: SELECT FOR UPDATE → (status≠pending이면 null·blocker#8) → drafted 시나리오 human_approved 전이 →

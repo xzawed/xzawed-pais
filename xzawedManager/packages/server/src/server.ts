@@ -186,7 +186,7 @@ export async function buildServer(
   // createSupervisor가 config.oracleDor로 분리 — DRAFT만 켜면 영속만, DoR off.
   // P4b-2: conformance 채널도 approvedOracleForStory(=OracleRepo)를 필요로 하므로 생성 조건에 WP_CONFORMANCE 추가.
   const oracleStore =
-    pool && (config.MANAGER_ORACLE_DOR || config.MANAGER_ORACLE_DRAFT || config.MANAGER_WP_CONFORMANCE)
+    pool && (config.MANAGER_ORACLE_DOR || config.MANAGER_ORACLE_DRAFT || config.MANAGER_WP_CONFORMANCE || config.MANAGER_WP_IMPACT)
       ? new OracleRepo(pool)
       : undefined
   // P6: 결함 의사결정 브리프 영속소(escalation→DecisionRequest). MANAGER_DECISION_BRIEF + pool 시만 생성(회귀 0).
@@ -239,6 +239,15 @@ export async function buildServer(
     app.log.warn(
       `MANAGER_WP_CONFORMANCE=true 인데 MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms < 600000ms(에이전트 타임아웃 120s×최대 5단계) — conformance 검증 도중 lease 만료로 false reclaim 위험. 가시성 상향 권장.`,
     )
+  }
+
+  // P4: impact는 verifyWp 안 develop_code 경로에서만 동작하므로 MANAGER_WP_VERIFY off면 무음 no-op. 오진 방지 경고.
+  if (config.MANAGER_WP_IMPACT && !config.MANAGER_WP_VERIFY) {
+    app.log.warn('MANAGER_WP_IMPACT=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 impact 채널이 동작하지 않습니다(verifyWp 미경유).')
+  }
+  // P4: impact는 approvedGoldensForStory(=OracleRepo)를 필요로 한다 — pool/oracleStore 부재면 항상 skip. 전역 결함 가시화.
+  if (config.MANAGER_WP_IMPACT && !oracleStore) {
+    app.log.warn('MANAGER_WP_IMPACT=true 이지만 oracleStore(DATABASE_URL+OracleRepo)가 없어 impact가 항상 skip됩니다.')
   }
 
   // P4: advisory는 verdict.ok 후(verifyWp 경로) develop_code WP에만 생산되므로 MANAGER_WP_VERIFY가 꺼져 있으면
@@ -296,6 +305,8 @@ export async function buildServer(
         wpConformance: config.MANAGER_WP_CONFORMANCE,
         // P6: 결함 브리프(=MANAGER_DECISION_BRIEF). off면 escalation 시 브리프 미생성(회귀 0). decisionStore 동반 시만 배선.
         decisionBrief: config.MANAGER_DECISION_BRIEF,
+        // P4: impact golden-differential 채널(=MANAGER_WP_IMPACT). off면 conformance까지와 동일(회귀 0). oracleStore 동반 시만 활성.
+        wpImpact: config.MANAGER_WP_IMPACT,
         // P4: advisory 채널(=MANAGER_WP_ADVISORY). off면 워커 동작 P4b와 동일(회귀 0). advisoryStore 동반 시만 활성.
         wpAdvisory: config.MANAGER_WP_ADVISORY,
       },

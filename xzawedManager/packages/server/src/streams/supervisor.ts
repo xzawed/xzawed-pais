@@ -10,7 +10,7 @@ import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.j
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
 import type { AdvisoryStore } from './advisory.js'
 import type { ClaudeLike } from '@xzawed/agent-streams'
-import type { ConformanceOracleStore } from './conformance.js'
+import type { ConformanceOracleStore, ImpactOracleStore } from './conformance.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
 import type { LeaseStore } from '../db/lease.repo.js'
@@ -115,7 +115,7 @@ export interface SupervisorDeps {
   publish: Publish
   /** P3-1 dispatch satisfied-set(approvedByWorkflow) + P3-2 consumer upsertDraft 둘 다 노출(blocker#2).
    *  DOR||DRAFT일 때 server.ts가 OracleRepo 주입. DRAFT만 켜도 decompositionConsumer가 upsert로 사용. */
-  oracleStore?: OracleStore & NonNullable<DecompositionDeps['oracleStore']> & ConformanceOracleStore
+  oracleStore?: OracleStore & NonNullable<DecompositionDeps['oracleStore']> & ConformanceOracleStore & ImpactOracleStore
   /** P4-1: tool명→에이전트 핸들러(server.ts가 registry.get으로 주입). 주입+taskWorker면 워커 배선. */
   handlers?: Record<string, AgentExecutor>
   /** P6: 결함 브리프 영속소(DecisionRepo 구조). decisionBrief flag + 주입 시 escalation→DecisionRequest. */
@@ -140,6 +140,8 @@ export interface SupervisorConfig {
   wpVerify?: boolean
   /** P4b-2: conformance 채널(승인 오라클을 실행 테스트로 검증) 활성(=MANAGER_WP_CONFORMANCE). oracleStore 동반 필요. */
   wpConformance?: boolean
+  /** P4: impact golden-differential 채널 활성(=MANAGER_WP_IMPACT). oracleStore 동반 필요. */
+  wpImpact?: boolean
   /** P6: 결함 의사결정 브리프(escalation→DecisionRequest) 활성(=MANAGER_DECISION_BRIEF). decisionStore 동반 필요. */
   decisionBrief?: boolean
   /** P4 advisory 채널(=MANAGER_WP_ADVISORY). off면 워커 동작 P4b와 동일(회귀 0). advisoryStore 동반 필요. */
@@ -173,6 +175,8 @@ export function buildWorkerConsumerDeps(
     // 미주입이면 키 생략(exactOptionalPropertyTypes). conformanceEnabled는 flag+oracleStore 동반 시에만 true(검증 우회 무음 방지).
     ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
     conformanceEnabled: config.wpConformance === true && deps.oracleStore != null,
+    // P4 impact: flag + oracleStore 둘 다 있어야 활성(검증 우회 무음 방지·행동 단언).
+    impactEnabled: config.wpImpact === true && deps.oracleStore != null,
     // P4 advisory: flag + advisoryStore 둘 다 있어야 활성(검증 우회 무음 방지·행동 단언). LLM seam 동반 스레딩.
     advisoryEnabled: config.wpAdvisory === true && deps.advisoryStore != null,
     ...(deps.advisoryStore && { advisoryStore: deps.advisoryStore }),

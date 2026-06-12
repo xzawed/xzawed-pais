@@ -5,7 +5,7 @@ import type { WorkPackage } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { UserContext } from '../types/user-context.js'
 import type { Publish } from './decomposition-consumer.js'
-import type { ConformanceOracleStore } from './conformance.js'
+import type { ConformanceOracleStore, ImpactOracleStore } from './conformance.js'
 import { WpDispatchSignalSchema, type WpDispatchSignalMessage } from './dispatch-signal.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
 import { verifyWp, publishVerificationFailed } from './verify.js'
@@ -37,10 +37,12 @@ export interface WorkerDeps {
   /** P4b-1: 검증 게이트(=MANAGER_WP_VERIFY). on이면 완료 발행 전 verifyWp fail-closed 판정 —
    *  실패 시 완료 미발행(lease 백스톱이 reclaim→escalate) + wp.verification.failed 관측 이벤트. */
   verifyEnabled?: boolean
-  /** P4b-2: 승인 오라클 조회 포트(conformance 채널). verifyWp로 전달. */
-  oracleStore?: ConformanceOracleStore
+  /** P4b-2/P4: 승인 오라클 조회 포트(conformance scenarios + impact golden_refs). verifyWp로 전달. */
+  oracleStore?: ConformanceOracleStore & ImpactOracleStore
   /** P4b-2: conformance 채널 활성(=MANAGER_WP_CONFORMANCE && oracleStore 주입). */
   conformanceEnabled?: boolean
+  /** P4: impact golden-differential 채널 활성(=MANAGER_WP_IMPACT && oracleStore 주입). verifyWp로 전달. */
+  impactEnabled?: boolean
   /** 하드닝: lease 하트비트 — 실행 중 renewLease로 가시성 연장(verify/conformance 다단계 호출 중 false reclaim 방지).
    *  leaseStore+visibilityMs 둘 다 주입 시에만 활성(미주입=P4b 동작 보존·회귀 0). */
   leaseStore?: { renewLease(workflowId: string, wpId: string, expectedAttempt: number, visibilityMs: number): Promise<boolean> }
@@ -196,6 +198,7 @@ async function runVerifyGate(
     attempt: msg.payload.attempt,
     ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
     conformanceEnabled: deps.conformanceEnabled === true,
+    impactEnabled: deps.impactEnabled === true,
   })
   if (verdict.ok) return null
   try {
