@@ -20,7 +20,8 @@ export const LlmAdvisoryFindingSchema = z.object({
   rationale: z.string().min(1),
 })
 export const AdvisoryFindingsResultSchema = z.object({
-  findings: z.array(LlmAdvisoryFindingSchema).default([]),
+  // findings 키 부재면 safeParse 실패 → runStage가 fallback({findings:[]})로 강등(no-op). 빈 배열은 유효.
+  findings: z.array(LlmAdvisoryFindingSchema),
 })
 export type AdvisoryFindingsResult = z.infer<typeof AdvisoryFindingsResultSchema>
 

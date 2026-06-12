@@ -16,11 +16,12 @@ describe('advisory.types', () => {
     }).success).toBe(false)
   })
 
-  test('AdvisoryFindingsResult은 LLM 출력 {findings:[{title,rationale}]}을 파싱하고 누락 필드는 거부, 부재면 default []', () => {
+  test('AdvisoryFindingsResult은 LLM 출력 {findings:[{title,rationale}]}을 파싱하고, 누락/부재는 거부(→runStage fallback)', () => {
     const ok = AdvisoryFindingsResultSchema.safeParse({ findings: [{ title: 't', rationale: 'r' }] })
     expect(ok.success).toBe(true)
-    expect(AdvisoryFindingsResultSchema.parse({}).findings).toEqual([])
-    expect(AdvisoryFindingsResultSchema.safeParse({ findings: [{ title: 't' }] }).success).toBe(false)
+    expect(AdvisoryFindingsResultSchema.safeParse({ findings: [] }).success).toBe(true) // 빈 배열 유효(no-op)
+    expect(AdvisoryFindingsResultSchema.safeParse({}).success).toBe(false) // findings 키 부재
+    expect(AdvisoryFindingsResultSchema.safeParse({ findings: [{ title: 't' }] }).success).toBe(false) // rationale 누락
   })
 
   test('상수 단일출처', () => {
