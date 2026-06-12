@@ -5,8 +5,8 @@ import type { UserContext } from '../types/user-context.js'
 import { defaultInconsistentStream, type Publish } from './decomposition-consumer.js'
 import type { AgentExecutor } from './worker.js'
 import {
-  buildConformanceAuthorPlan, buildGoldenDiffAuthorPlan, selectAuthoredTestFiles,
-  CONFORMANCE_DIR, IMPACT_DIR, type ConformanceOracleStore, type ImpactOracleStore, type InvariantOracleStore,
+  buildConformanceAuthorPlan, buildGoldenDiffAuthorPlan, buildInvariantAuthorPlan, selectAuthoredTestFiles,
+  CONFORMANCE_DIR, IMPACT_DIR, PROPERTY_DIR, type ConformanceOracleStore, type ImpactOracleStore, type InvariantOracleStore,
 } from './conformance.js'
 
 export const WP_VERIFICATION_FAILED = 'wp.verification.failed'
@@ -71,6 +71,8 @@ export interface VerifyDeps {
   conformanceEnabled?: boolean
   /** P4: impact golden-differential 채널 활성(=MANAGER_WP_IMPACT && oracleStore 주입). */
   impactEnabled?: boolean
+  /** P4 property/invariants 채널 활성(=MANAGER_WP_PROPERTY && oracleStore 주입). */
+  propertyEnabled?: boolean
 }
 
 /** 검증 체크 전용 세션 키. RedisAgentHandler의 응답 매칭은 무상관(스트림 위치+type뿐)이라 워크플로 공유
@@ -169,6 +171,44 @@ function runImpactCheck(wp: WorkPackage, deps: VerifyDeps): Promise<Verification
   })
 }
 
+/** P4 property 채널(conformance 렌즈): 사람 승인 invariants를 boundary+명시 속성 단언 테스트로 소비(N1·N6·N7 읽기만). 위반이면 fail(blocking). */
+function runPropertyCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
+  return runAuthoredCheck(wp, deps, {
+    enabled: deps.propertyEnabled === true,
+    dir: PROPERTY_DIR, authorSuffix: 'prop-author', runSuffix: 'prop-run',
+    baseline: async () => (await deps.oracleStore?.approvedInvariantsForStory(deps.workflowId, wp.storyId)) ?? null,
+    buildPlan: (invariants) => buildInvariantAuthorPlan(wp, invariants),
+  })
+}
+
+/** 파생 체크(build_project·run_tests) 순차 실 재실행(fail-fast). workspaceRoot 가드 통과 후 호출. */
+async function runDerivedChecks(
+  checks: string[], wp: WorkPackage, deps: VerifyDeps, checkSession: string,
+): Promise<VerificationVerdict> {
+  for (const check of checks) {
+    const handler = deps.handlers[check]
+    if (!handler) return { ok: false, reason: `${check}: 체크 핸들러 미주입` }
+    let checkResult: unknown
+    try {
+      checkResult = await handler.execute(deps.buildInput(wp, deps.userContext), checkSession, deps.userContext)
+    } catch (err) {
+      return { ok: false, reason: `${check}: 체크 실행 실패 — ${err instanceof Error ? err.message : String(err)}` }
+    }
+    const verdict = judgePrimaryResult(check, checkResult)
+    if (!verdict.ok) return verdict
+  }
+  return { ok: true }
+}
+
+/** P4 채널 hard-AND(conformance→impact→property). 첫 non-ok에서 단락. 데이터 주도 — 채널 추가 시 이 목록만 수정. */
+async function runChannelChecks(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
+  for (const runChannel of [runConformanceCheck, runImpactCheck, runPropertyCheck]) {
+    const verdict = await runChannel(wp, deps)
+    if (!verdict.ok) return verdict
+  }
+  return { ok: true }
+}
+
 /**
  * WP 검증(P4b-1 correctness 채널 골격): ①결과-근거 판정 ②파생 체크 실 재실행(fail-fast).
  * never-throw — 모든 불확실(핸들러 부재·throw·파싱 실패·검증 대상 경로 불명)은 fail verdict(fail-closed, N1).
@@ -186,24 +226,9 @@ export async function verifyWp(
   if (!deps.userContext?.workspaceRoot) {
     return { ok: false, reason: 'workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)' }
   }
-  const checkSession = verifySessionId(deps.workflowId, wp.id, deps.attempt)
-  for (const check of checks) {
-    const handler = deps.handlers[check]
-    if (!handler) return { ok: false, reason: `${check}: 체크 핸들러 미주입` }
-    let checkResult: unknown
-    try {
-      checkResult = await handler.execute(deps.buildInput(wp, deps.userContext), checkSession, deps.userContext)
-    } catch (err) {
-      return { ok: false, reason: `${check}: 체크 실행 실패 — ${err instanceof Error ? err.message : String(err)}` }
-    }
-    const verdict = judgePrimaryResult(check, checkResult)
-    if (!verdict.ok) return verdict
-  }
-  if (tool === 'develop_code') {
-    const conf = await runConformanceCheck(wp, deps)
-    if (!conf.ok) return conf
-    return runImpactCheck(wp, deps) // P4 impact golden-differential hard-AND(conformance 통과 후)
-  }
+  const derived = await runDerivedChecks(checks, wp, deps, verifySessionId(deps.workflowId, wp.id, deps.attempt))
+  if (!derived.ok) return derived
+  if (tool === 'develop_code') return runChannelChecks(wp, deps)
   return { ok: true }
 }
 
