@@ -8,6 +8,8 @@ import { handleCompletion } from './completion.js'
 import { LeaseSweeper } from './lease-sweeper.js'
 import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
+import type { AdvisoryStore } from './advisory.js'
+import type { ClaudeLike } from '@xzawed/agent-streams'
 import type { ConformanceOracleStore } from './conformance.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
@@ -118,6 +120,12 @@ export interface SupervisorDeps {
   handlers?: Record<string, AgentExecutor>
   /** P6: 결함 브리프 영속소(DecisionRepo 구조). decisionBrief flag + 주입 시 escalation→DecisionRequest. */
   decisionStore?: DecisionBriefStore
+  /** P4 advisory 채널 영속소(AdvisoryRepo). advisoryStore + wpAdvisory면 워커가 produceAdvisory 호출. */
+  advisoryStore?: AdvisoryStore
+  /** P4 advisory 생산자 LLM seam(produceAdvisory용). */
+  claude?: ClaudeLike
+  model?: string
+  timeoutMs?: number
 }
 export interface SupervisorConfig {
   sweepMs: number
@@ -134,6 +142,8 @@ export interface SupervisorConfig {
   wpConformance?: boolean
   /** P6: 결함 의사결정 브리프(escalation→DecisionRequest) 활성(=MANAGER_DECISION_BRIEF). decisionStore 동반 필요. */
   decisionBrief?: boolean
+  /** P4 advisory 채널(=MANAGER_WP_ADVISORY). off면 워커 동작 P4b와 동일(회귀 0). advisoryStore 동반 필요. */
+  wpAdvisory?: boolean
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
@@ -144,7 +154,8 @@ export function shouldWireOracleConsumer(oracleDor: boolean, hasOracleStore: boo
 /** P4b-1: WorkerConsumer deps 조립(순수·D4) — wpVerify→verifyEnabled 스레딩을 행동 단언 가능하게 분리.
  *  instanceOf 단언만으로는 이 한 줄의 누락(undefined→off)이 무음 fail-open 퇴행이 되는 것을 잡지 못한다. */
 export function buildWorkerConsumerDeps(
-  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore'> & { handlers: Record<string, AgentExecutor> },
+  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs'>
+    & { handlers: Record<string, AgentExecutor> },
   config: SupervisorConfig,
 ): WorkerDeps {
   return {
@@ -162,6 +173,12 @@ export function buildWorkerConsumerDeps(
     // 미주입이면 키 생략(exactOptionalPropertyTypes). conformanceEnabled는 flag+oracleStore 동반 시에만 true(검증 우회 무음 방지).
     ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
     conformanceEnabled: config.wpConformance === true && deps.oracleStore != null,
+    // P4 advisory: flag + advisoryStore 둘 다 있어야 활성(검증 우회 무음 방지·행동 단언). LLM seam 동반 스레딩.
+    advisoryEnabled: config.wpAdvisory === true && deps.advisoryStore != null,
+    ...(deps.advisoryStore && { advisoryStore: deps.advisoryStore }),
+    ...(deps.claude && { claude: deps.claude }),
+    ...(deps.model !== undefined && { model: deps.model }),
+    ...(deps.timeoutMs !== undefined && { timeoutMs: deps.timeoutMs }),
   }
 }
 
@@ -230,8 +247,15 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     ? new WorkerConsumer(
         makeRedis(),
         buildWorkerConsumerDeps(
-          // exactOptionalPropertyTypes: oracleStore는 미주입 시 키 생략(undefined 명시 불가). 기존 dispatch deps 조립 idiom.
-          { repo: deps.repo, publish: deps.publish, handlers: deps.handlers, leaseStore: deps.leaseStore, ...(deps.oracleStore && { oracleStore: deps.oracleStore }) },
+          // exactOptionalPropertyTypes: 미주입 deps는 키 생략(undefined 명시 불가). 기존 dispatch deps 조립 idiom.
+          {
+            repo: deps.repo, publish: deps.publish, handlers: deps.handlers, leaseStore: deps.leaseStore,
+            ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
+            ...(deps.advisoryStore && { advisoryStore: deps.advisoryStore }),
+            ...(deps.claude && { claude: deps.claude }),
+            ...(deps.model !== undefined && { model: deps.model }),
+            ...(deps.timeoutMs !== undefined && { timeoutMs: deps.timeoutMs }),
+          },
           config,
         ),
       )
