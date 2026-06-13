@@ -187,9 +187,7 @@ async function executeAuthoredTest(
 ): Promise<VerificationVerdict> {
   const authored = await execConformanceStep(deps, wp, { plan }, 'develop_code', authorSuffix)
   if (!authored.ok) return authored
-  const authorResult = authored.result as { artifacts?: unknown } | null | undefined
-  const rawArtifacts = authorResult?.artifacts
-  const artifacts = Array.isArray(rawArtifacts) ? rawArtifacts.filter((a): a is string => typeof a === 'string') : []
+  const artifacts = extractArtifacts(authored.result)
   const testFiles = selectAuthoredTestFiles(artifacts, dir, wp.id)
   if (testFiles.length === 0) return { ok: false, reason: `${dir}: author가 테스트 파일 미생성(fail-closed)` }
   const ran = await execConformanceStep(deps, wp, { testFiles }, 'run_tests', runSuffix)
@@ -295,9 +293,13 @@ async function runDerivedChecks(
   return { ok: true }
 }
 
-/** P4 채널 hard-AND(conformance→impact→property→mutation). 첫 non-ok에서 단락. 데이터 주도 — 채널 추가 시 이 목록만 수정. */
-async function runChannelChecks(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
-  for (const runChannel of [runConformanceCheck, runImpactCheck, runPropertyCheck, runMutationCheck]) {
+/** P4 채널 hard-AND(conformance→impact→property→mutation→security). 첫 non-ok에서 단락. 데이터 주도. */
+async function runChannelChecks(wp: WorkPackage, deps: VerifyDeps, artifacts: string[]): Promise<VerificationVerdict> {
+  const channels: Array<(w: WorkPackage, d: VerifyDeps) => Promise<VerificationVerdict>> = [
+    runConformanceCheck, runImpactCheck, runPropertyCheck, runMutationCheck,
+    (w, d) => runSecurityCheck(w, artifacts, d),
+  ]
+  for (const runChannel of channels) {
     const verdict = await runChannel(wp, deps)
     if (!verdict.ok) return verdict
   }
@@ -323,7 +325,7 @@ export async function verifyWp(
   }
   const derived = await runDerivedChecks(checks, wp, deps, verifySessionId(deps.workflowId, wp.id, deps.attempt))
   if (!derived.ok) return derived
-  if (tool === 'develop_code') return runChannelChecks(wp, deps)
+  if (tool === 'develop_code') return runChannelChecks(wp, deps, extractArtifacts(result))
   return { ok: true }
 }
 
