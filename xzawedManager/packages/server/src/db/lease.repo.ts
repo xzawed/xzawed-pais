@@ -47,6 +47,10 @@ export interface CompleteInput {
 export type ReclaimResult = { status: 'reclaimed'; eventId: string; seq: number } | { status: 'skipped' }
 export type EscalateResult = { status: 'escalated'; eventId: string; seq: number } | { status: 'skipped' }
 export type CompleteResult = { status: 'completed'; eventId: string; seq: number } | { status: 'skipped' }
+export type ReopenResult = { status: 'reopened'; eventId: string; seq: number } | { status: 'skipped' }
+export interface ReopenInput {
+  workflowId: string; wpId: string; visibilityMs: number; causationId?: string | null
+}
 
 const LEASE_COLS = 'workflow_id, wp_id, attempt, owner, status, expires_at, step_n, event_id'
 
@@ -149,6 +153,29 @@ export class LeaseStore {
       },
     )
     return res === null ? { status: 'skipped' } : { status: 'escalated', ...res }
+  }
+
+  /**
+   * P6 fix_reverify 재진입: escalated lease를 active로 되돌리고 attempt 0 리셋·새 만료 + wp.dispatched
+   * (ESCALATED→DISPATCHED·reason human_fix_reverify) 단일 tx. escalated→active 단방향 가드(0행→skip).
+   * 사람 승인이 새 재시도 풀 부여(N5 — 자동 아님). stepN은 표시용 0(정확 step_n은 후속).
+   */
+  async reopenLease(input: ReopenInput): Promise<ReopenResult> {
+    const now = this.now()
+    const env = wpEnvelope(input.workflowId, input.wpId, 0, now, input.causationId)
+    const expiresAt = now + input.visibilityMs
+    const res = await this.transition(
+      env,
+      `UPDATE wp_leases SET status = $1, attempt = $2, expires_at = $3, event_id = $4, updated_at = NOW()
+        WHERE workflow_id = $5 AND wp_id = $6 AND status = $7
+        RETURNING wp_id`,
+      [LEASE_ACTIVE, 0, expiresAt, env.eventId, input.workflowId, input.wpId, LEASE_ESCALATED],
+      {
+        workflowId: input.workflowId, wpId: input.wpId, attempt: 0, stepN: 0,
+        eventType: WP_DISPATCHED_EVENT, fromState: ESCALATED_STATE, toState: DISPATCHED_STATE, reason: 'human_fix_reverify',
+      },
+    )
+    return res === null ? { status: 'skipped' } : { status: 'reopened', ...res }
   }
 
   /**
