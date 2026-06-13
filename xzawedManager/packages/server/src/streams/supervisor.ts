@@ -9,6 +9,7 @@ import { LeaseSweeper } from './lease-sweeper.js'
 import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
 import type { AdvisoryStore } from './advisory.js'
+import type { SecuritySeverity } from './verify.js'
 import type { ClaudeLike, WpRisk } from '@xzawed/agent-streams'
 import type { ConformanceOracleStore, ImpactOracleStore, InvariantOracleStore } from './conformance.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -153,6 +154,9 @@ export interface SupervisorConfig {
   decisionBrief?: boolean
   /** P4 advisory 채널(=MANAGER_WP_ADVISORY). off면 워커 동작 P4b와 동일(회귀 0). advisoryStore 동반 필요. */
   wpAdvisory?: boolean
+  /** P4 4d security 채널(=MANAGER_WP_SECURITY). oracle 미소비. off면 mutation까지와 동일(회귀 0). */
+  wpSecurity?: boolean
+  securityMinSeverity?: SecuritySeverity
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
@@ -191,6 +195,9 @@ export function buildWorkerConsumerDeps(
     ...(config.mutationTheta !== undefined && { mutationTheta: config.mutationTheta }),
     ...(config.mutationMinRisk !== undefined && { mutationMinRisk: config.mutationMinRisk }),
     ...(config.mutationMaxMutants !== undefined && { mutationMaxMutants: config.mutationMaxMutants }),
+    // P4 4d security: flag만으로 활성(oracle 미소비·mutation 동형). handler 부재는 runSecurityCheck가 fail-closed.
+    securityEnabled: config.wpSecurity === true,
+    ...(config.securityMinSeverity !== undefined && { securityMinSeverity: config.securityMinSeverity }),
     // P4 advisory: flag + advisoryStore 둘 다 있어야 활성(검증 우회 무음 방지·행동 단언). LLM seam 동반 스레딩.
     advisoryEnabled: config.wpAdvisory === true && deps.advisoryStore != null,
     ...(deps.advisoryStore && { advisoryStore: deps.advisoryStore }),
