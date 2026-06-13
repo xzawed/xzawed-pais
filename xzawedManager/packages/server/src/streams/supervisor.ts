@@ -177,6 +177,12 @@ export function shouldWireOracleConsumer(oracleDor: boolean, hasOracleStore: boo
   return oracleDor && hasOracleStore
 }
 
+/** P6: 결정 제출 라우트 배선 판정(순수). 권한 쓰기(재진입 트리거)라 authHook 없으면 미등록(보안 HIGH-3). */
+export function shouldWireDecisionRoute(routing: boolean, hasPool: boolean, hasAuth: boolean): 'wire' | 'warn' | 'skip' {
+  if (!routing || !hasPool) return 'skip'
+  return hasAuth ? 'wire' : 'warn'
+}
+
 /** P4b-1: WorkerConsumer deps 조립(순수·D4) — wpVerify→verifyEnabled 스레딩을 행동 단언 가능하게 분리.
  *  instanceOf 단언만으로는 이 한 줄의 누락(undefined→off)이 무음 fail-open 퇴행이 되는 것을 잡지 못한다. */
 export function buildWorkerConsumerDeps(

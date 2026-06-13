@@ -2,7 +2,7 @@ import { describe, it, test, expect, vi } from 'vitest'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import {
   buildCompletionHandler, CompletionSignalSchema, Supervisor, createSupervisor, shouldWireSupervisor,
-  shouldWireOracleConsumer, buildWorkerConsumerDeps,
+  shouldWireOracleConsumer, shouldWireDecisionRoute, buildWorkerConsumerDeps,
 } from './supervisor.js'
 import type { LeaseStore } from '../db/lease.repo.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -144,6 +144,13 @@ describe('shouldWireOracleConsumer (D4 순수 게이트)', () => {
     expect(shouldWireOracleConsumer(false, false)).toBe(false)
     expect(shouldWireOracleConsumer(true, true)).toBe(true)
   })
+})
+
+describe('shouldWireDecisionRoute (P6)', () => {
+  it('routing + pool + auth → wire', () => { expect(shouldWireDecisionRoute(true, true, true)).toBe('wire') })
+  it('routing + pool + no auth → warn(미등록)', () => { expect(shouldWireDecisionRoute(true, true, false)).toBe('warn') })
+  it('routing off → skip', () => { expect(shouldWireDecisionRoute(false, true, true)).toBe('skip') })
+  it('no pool → skip', () => { expect(shouldWireDecisionRoute(true, false, true)).toBe('skip') })
 })
 
 describe('createSupervisor oracleDor 게이트 (P3-2)', () => {

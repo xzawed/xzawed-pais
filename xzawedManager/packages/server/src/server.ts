@@ -41,7 +41,7 @@ import { DecisionRepo } from './db/decision.repo.js'
 import { AdvisoryRepo } from './db/advisory.repo.js'
 import { oracleRoute } from './api/oracle.route.js'
 import { decisionRoute } from './api/decision.route.js'
-import { createSupervisor, shouldWireSupervisor, type Supervisor } from './streams/supervisor.js'
+import { createSupervisor, shouldWireSupervisor, shouldWireDecisionRoute, type Supervisor } from './streams/supervisor.js'
 import type { ProduceDeps } from './decompose/producer.js'
 
 export async function buildServer(
@@ -464,9 +464,11 @@ export async function buildServer(
   }
   // P6: 결정 제출은 escalated WP 재진입(lease 재오픈→dispatch_signal)을 트리거하는 권한 쓰기 — admin 패턴과 동일하게
   // authHook(서비스 JWT) 없으면 라우트를 등록하지 않는다(무인증 권한 엔드포인트 노출 금지·보안 HIGH-3).
-  if (config.MANAGER_DECISION_ROUTING && pool && authHook) {
-    await app.register(decisionRoute, { ...(decisionStore && { decisionRepo: decisionStore }), authHook })
-  } else if (config.MANAGER_DECISION_ROUTING && pool && !authHook) {
+  const decisionRouteGate = shouldWireDecisionRoute(config.MANAGER_DECISION_ROUTING, pool !== undefined, authHook !== undefined)
+  if (decisionRouteGate === 'wire') {
+    // exactOptionalPropertyTypes: authHook도 안전 스프레드(키 생략). gate==='wire'는 authHook!==undefined일 때만이라 동작 불변.
+    await app.register(decisionRoute, { ...(decisionStore && { decisionRepo: decisionStore }), ...(authHook && { authHook }) })
+  } else if (decisionRouteGate === 'warn') {
     app.log.warn('MANAGER_DECISION_ROUTING=true 이지만 authHook(AUTH=jwt·SERVICE_JWT_SECRET)이 없어 결정 제출 라우트를 등록하지 않습니다(무인증 권한 엔드포인트 금지).')
   }
 
