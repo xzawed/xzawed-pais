@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, test, expect } from 'vitest'
 import {
   DecisionRequestSchema, HumanDecisionSchema, SignOffSchema,
+  DecisionContextSchema, FaultAttributionSchema,
   DECISION_PENDING,
   DECISION_REQUESTED_EVENT, DECISION_RECORDED_EVENT, SIGNOFF_RECORDED_EVENT,
   DECISION_EXPIRED_EVENT, DECISION_SUPERSEDED_EVENT, DECISION_STREAM, DECISION_ACTOR,
@@ -82,6 +83,22 @@ describe('SignOffSchema (§3 risk acceptance, non-repudiable)', () => {
   it('requires scope and approver', () => {
     expect(() => SignOffSchema.parse({ signoffId: 'so1', decisionId: 'd1', approver: 'h' })).toThrow()
     expect(() => SignOffSchema.parse({ signoffId: 'so1', decisionId: 'd1', scope: 's' })).toThrow()
+  })
+})
+
+describe('DecisionContext attribution (P4 4c)', () => {
+  test('FaultAttributionSchema: faultTier + counters 파싱', () => {
+    const a = FaultAttributionSchema.parse({ faultTier: 'impl_exhausted', counters: { impl: 3, task: 0, plan: 0 } })
+    expect(a.faultTier).toBe('impl_exhausted')
+    expect(a.counters).toEqual({ impl: 3, task: 0, plan: 0 })
+  })
+  test('DecisionContextSchema: attribution 라운드트립', () => {
+    const c = DecisionContextSchema.parse({ attribution: { faultTier: 'impl_exhausted', counters: { impl: 1, task: 0, plan: 0 } } })
+    expect(c.attribution?.faultTier).toBe('impl_exhausted')
+  })
+  test('DecisionContextSchema: attribution 미지정 시 undefined(backward-compat)', () => {
+    const c = DecisionContextSchema.parse({ location: 'WP x' })
+    expect(c.attribution).toBeUndefined()
   })
 })
 

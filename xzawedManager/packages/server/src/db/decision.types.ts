@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { AttributionCountersSchema } from '@xzawed/agent-streams'
 
 /**
  * M9 — 의사결정 브리프 & 사인오프 영속 스키마(HUMAN_DECISION_PERSISTENCE.md §3).
@@ -23,6 +24,17 @@ export const DECISION_RESOLVED = 'RESOLVED'
 export const DECISION_EXPIRED = 'EXPIRED'
 export const DECISION_SUPERSEDED = 'SUPERSEDED'
 
+/** §11 결함 귀속 계층. 첫 슬라이스는 impl 소진 단일 값(P6서 task/plan 승급 추가). */
+export const FaultTierSchema = z.enum(['impl_exhausted'])
+export type FaultTier = z.infer<typeof FaultTierSchema>
+
+/** §11 결함 국소화 라벨 — 어느 계층이 소진됐는지 + 계약사슬 3계층 카운터(work-package §7 재사용). */
+export const FaultAttributionSchema = z.object({
+  faultTier: FaultTierSchema,
+  counters: AttributionCountersSchema,
+})
+export type FaultAttribution = z.infer<typeof FaultAttributionSchema>
+
 /** §3 결함 의사결정 브리프 컨텍스트(위치·기대 vs 실제·영향·증거·선택지). */
 export const DecisionContextSchema = z
   .object({
@@ -31,6 +43,8 @@ export const DecisionContextSchema = z
     impact: z.array(z.string()).default([]),
     evidenceRefs: z.array(z.string()).default([]),
     options: z.array(z.string()).default([]),
+    /** §11 결함 국소화 라벨(P4 4c). escalate 시 buildDefectBrief가 채움. */
+    attribution: FaultAttributionSchema.optional(),
   })
   .default({})
 export type DecisionContext = z.infer<typeof DecisionContextSchema>
