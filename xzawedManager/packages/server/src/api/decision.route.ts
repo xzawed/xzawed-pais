@@ -33,9 +33,10 @@ export async function decisionRoute(app: FastifyInstance, opts: DecisionRouteOpt
       if (!opts.decisionRepo) return reply.code(503).send({ error: 'decision repository unavailable' })
       const parsed = BodySchema.safeParse(req.body)
       if (!parsed.success) return reply.code(400).send({ error: 'invalid decision', detail: parsed.error.issues })
-      const { requestId } = req.params
+      const { workflowId, requestId } = req.params
       const existing = await opts.decisionRepo.getRequest(requestId)
-      if (!existing) return reply.code(404).send({ error: 'decision request not found' })
+      // IDOR 게이트(fail-close): 결정 요청이 URL의 workflowId에 속하지 않으면 404(403 아님 — 존재 오라클 회피).
+      if (!existing || existing.workflowId !== workflowId) return reply.code(404).send({ error: 'decision request not found' })
       const { decidedBy, choice, justification } = parsed.data
       const res = await opts.decisionRepo.recordDecision({
         decisionId: `${requestId}:${choice}`,

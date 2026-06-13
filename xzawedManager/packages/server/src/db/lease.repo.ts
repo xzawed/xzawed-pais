@@ -47,7 +47,7 @@ export interface CompleteInput {
 export type ReclaimResult = { status: 'reclaimed'; eventId: string; seq: number } | { status: 'skipped' }
 export type EscalateResult = { status: 'escalated'; eventId: string; seq: number } | { status: 'skipped' }
 export type CompleteResult = { status: 'completed'; eventId: string; seq: number } | { status: 'skipped' }
-export type ReopenResult = { status: 'reopened'; eventId: string; seq: number } | { status: 'skipped' }
+export type ReopenResult = { status: 'reopened'; eventId: string; seq: number; attempt: number } | { status: 'skipped' }
 export interface ReopenInput {
   workflowId: string; wpId: string; visibilityMs: number; causationId?: string | null
 }
@@ -156,26 +156,32 @@ export class LeaseStore {
   }
 
   /**
-   * P6 fix_reverify 재진입: escalated lease를 active로 되돌리고 attempt 0 리셋·새 만료 + wp.dispatched
-   * (ESCALATED→DISPATCHED·reason human_fix_reverify) 단일 tx. escalated→active 단방향 가드(0행→skip).
-   * 사람 승인이 새 재시도 풀 부여(N5 — 자동 아님). stepN은 표시용 0(정확 step_n은 후속).
+   * P6 fix_reverify 재진입: escalated lease를 active로 되돌리고 attempt를 **advance**(현재+1)·새 만료 +
+   * wp.dispatched(ESCALATED→DISPATCHED·reason human_fix_reverify) 단일 tx. escalated→active 단방향 가드(0행→skip,
+   * TOCTOU/동시 reopen 직렬화). ⚠️ attempt 0 리셋 금지 — dispatch_signal 멱등키가 attempt를 포함하므로 0 리셋은
+   * 원래 dispatch(attempt 0)와 키 충돌→워커 dedup(24h)이 재디스패치 신호를 드롭(WP 미재실행). reclaim과 동일하게
+   * attempt+1로 advance해 키 고유성 확보. 사람 승인이 재시도 1회 부여(N5 — 자동 아님·반복은 사람 게이트가 차단).
+   * stepN은 실제 lease step_n 사용. causationId(requestId) 스레딩(M7 provenance).
    */
   async reopenLease(input: ReopenInput): Promise<ReopenResult> {
+    const cur = await this.getLease(input.workflowId, input.wpId)
+    if (!cur || cur.status !== LEASE_ESCALATED) return { status: 'skipped' }
     const now = this.now()
-    const env = wpEnvelope(input.workflowId, input.wpId, 0, now, input.causationId)
+    const newAttempt = cur.attempt + 1
+    const env = wpEnvelope(input.workflowId, input.wpId, newAttempt, now, input.causationId)
     const expiresAt = now + input.visibilityMs
     const res = await this.transition(
       env,
       `UPDATE wp_leases SET status = $1, attempt = $2, expires_at = $3, event_id = $4, updated_at = NOW()
         WHERE workflow_id = $5 AND wp_id = $6 AND status = $7
         RETURNING wp_id`,
-      [LEASE_ACTIVE, 0, expiresAt, env.eventId, input.workflowId, input.wpId, LEASE_ESCALATED],
+      [LEASE_ACTIVE, newAttempt, expiresAt, env.eventId, input.workflowId, input.wpId, LEASE_ESCALATED],
       {
-        workflowId: input.workflowId, wpId: input.wpId, attempt: 0, stepN: 0,
+        workflowId: input.workflowId, wpId: input.wpId, attempt: newAttempt, stepN: cur.stepN,
         eventType: WP_DISPATCHED_EVENT, fromState: ESCALATED_STATE, toState: DISPATCHED_STATE, reason: 'human_fix_reverify',
       },
     )
-    return res === null ? { status: 'skipped' } : { status: 'reopened', ...res }
+    return res === null ? { status: 'skipped' } : { status: 'reopened', attempt: newAttempt, ...res }
   }
 
   /**

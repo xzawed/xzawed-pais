@@ -7,18 +7,21 @@ function recordedMsg(choice: string, requestId = 'wf-1:wp_a:2') {
 function deps(over: Partial<DecisionRoutingDeps> = {}): DecisionRoutingDeps {
   return {
     decisionStore: { getRequest: vi.fn().mockResolvedValue({ workflowId: 'wf-1', wpId: 'wp_a' }) } as never,
-    leaseStore: { reopenLease: vi.fn().mockResolvedValue({ status: 'reopened', eventId: 'e1', seq: 1 }) } as never,
+    leaseStore: { reopenLease: vi.fn().mockResolvedValue({ status: 'reopened', eventId: 'e1', seq: 1, attempt: 3 }) } as never,
     publish: vi.fn().mockResolvedValue(undefined),
     visibilityMs: 300000,
     ...over,
   }
 }
 describe('buildDecisionRecordedHandler (P6 fix_reverify)', () => {
-  it('fix_reverify → reopenLease + dispatch_signal', async () => {
+  it('fix_reverify → reopenLease(causationId=requestId) + dispatch_signal(advanced attempt)', async () => {
     const d = deps()
     await buildDecisionRecordedHandler(d)(recordedMsg('fix_reverify'))
-    expect(d.leaseStore.reopenLease).toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'wf-1', wpId: 'wp_a', visibilityMs: 300000 }))
+    expect(d.leaseStore.reopenLease).toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'wf-1', wpId: 'wp_a', visibilityMs: 300000, causationId: 'wf-1:wp_a:2' }))
     expect(d.publish).toHaveBeenCalled()
+    // dispatch_signal은 reopen이 반환한 advanced attempt(3)로 발행 — attempt 0이면 원 dispatch 멱등키와 충돌해 dedup 드롭
+    const signalMsg = (d.publish as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[1] as { payload?: { attempt?: number } } | undefined
+    expect(signalMsg?.payload?.attempt).toBe(3)
   })
   it('reopen skip → dispatch_signal 미발행', async () => {
     const d = deps({ leaseStore: { reopenLease: vi.fn().mockResolvedValue({ status: 'skipped' }) } as never })

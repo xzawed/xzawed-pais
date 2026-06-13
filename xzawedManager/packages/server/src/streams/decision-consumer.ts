@@ -22,7 +22,7 @@ const RecordedPayloadSchema = z.object({ requestId: z.string().min(1), choice: z
 
 export interface DecisionRoutingDeps {
   decisionStore: { getRequest(requestId: string): Promise<DecisionRequest | null> }
-  leaseStore: { reopenLease(input: { workflowId: string; wpId: string; visibilityMs: number }): Promise<ReopenResult> }
+  leaseStore: { reopenLease(input: { workflowId: string; wpId: string; visibilityMs: number; causationId?: string | null }): Promise<ReopenResult> }
   publish: Publish
   visibilityMs: number
   now?: () => number
@@ -40,9 +40,9 @@ export function buildDecisionRecordedHandler(deps: DecisionRoutingDeps): (msg: D
       if (!p.success || p.data.choice !== 'fix_reverify') return
       const req = await deps.decisionStore.getRequest(p.data.requestId)
       if (!req?.wpId) return
-      const r = await deps.leaseStore.reopenLease({ workflowId: req.workflowId, wpId: req.wpId, visibilityMs: deps.visibilityMs })
+      const r = await deps.leaseStore.reopenLease({ workflowId: req.workflowId, wpId: req.wpId, visibilityMs: deps.visibilityMs, causationId: p.data.requestId })
       if (r.status !== 'reopened') return
-      await publishDispatchSignal(deps.publish, req.workflowId, req.wpId, 0, deps.now?.() ?? Date.now())
+      await publishDispatchSignal(deps.publish, req.workflowId, req.wpId, r.attempt, deps.now?.() ?? Date.now())
     } catch (err) {
       console.warn('[decision-consumer] 라우팅 실패(best-effort·결정은 영속됨):', err)
     }

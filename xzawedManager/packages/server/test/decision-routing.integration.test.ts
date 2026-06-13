@@ -27,7 +27,7 @@ async function dispatchAndEscalate(
 }
 
 describe.skipIf(!url)('P6 결정 라우팅: LeaseStore.reopenLease', () => {
-  it('escalated lease → reopenLease가 active·attempt 0으로 재진입(fix_reverify)', async () => {
+  it('escalated lease → reopenLease가 active·attempt advance(현재+1)로 재진입(fix_reverify)', async () => {
     const pool = createPool(url!)
     try {
       await runMigrations(pool)
@@ -36,17 +36,20 @@ describe.skipIf(!url)('P6 결정 라우팅: LeaseStore.reopenLease', () => {
       const leaseStore = new LeaseStore(pool)
       const wf = `wf-dr-${Date.now()}`
       await dispatchAndEscalate(repo, store, leaseStore, wf)
+      // escalate는 attempt 컬럼을 바꾸지 않음 — recordDispatch가 남긴 attempt(0)가 escalated 시점 attempt.
+      const escalatedAttempt = (await leaseStore.getLease(wf, 'a'))!.attempt
       // 상한 초과 escalate(active→escalated)
       const esc = await leaseStore.recordEscalation({ workflowId: wf, wpId: 'a', attempt: 3, stepN: 0 })
       expect(esc.status).toBe('escalated')
       expect((await leaseStore.getLease(wf, 'a'))?.status).toBe('escalated')
 
-      // reopenLease: escalated→active·attempt 0
+      // reopenLease: escalated→active·attempt advance(0 리셋 아님 — dispatch_signal 멱등키 충돌 회피)
       const res = await leaseStore.reopenLease({ workflowId: wf, wpId: 'a', visibilityMs: 60000 })
       expect(res.status).toBe('reopened')
+      if (res.status === 'reopened') expect(res.attempt).toBe(escalatedAttempt + 1)
       const lease = await leaseStore.getLease(wf, 'a')
       expect(lease?.status).toBe('active')
-      expect(lease?.attempt).toBe(0)
+      expect(lease?.attempt).toBe(escalatedAttempt + 1)
       // wp_state_log에 ESCALATED→DISPATCHED 재진입 전이 기록
       const states = await repo.latestStates(wf)
       expect(states.get('a')?.toState).toBe('DISPATCHED')

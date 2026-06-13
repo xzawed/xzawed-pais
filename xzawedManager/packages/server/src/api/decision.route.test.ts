@@ -9,7 +9,7 @@ function app(decisionRepo?: unknown) {
 describe('decisionRoute (P6)', () => {
   it('fix_reverify → recordDecision(routedTo impl) 200', async () => {
     const recordDecision = vi.fn().mockResolvedValue({ eventId: 'e1' })
-    const getRequest = vi.fn().mockResolvedValue({ requestId: 'r1', status: 'PENDING' })
+    const getRequest = vi.fn().mockResolvedValue({ requestId: 'r1', workflowId: 'wf-1', status: 'PENDING' })
     const f = await app({ recordDecision, getRequest })
     const res = await f.inject({ method: 'POST', url: '/workflows/wf-1/decisions/r1/decision', payload: { decidedBy: 'po', choice: 'fix_reverify' } })
     expect(res.statusCode).toBe(200)
@@ -21,9 +21,17 @@ describe('decisionRoute (P6)', () => {
     expect(res.statusCode).toBe(404)
   })
   it('비-PENDING(recordDecision null) → 409', async () => {
-    const f = await app({ recordDecision: vi.fn().mockResolvedValue(null), getRequest: vi.fn().mockResolvedValue({ requestId: 'r1', status: 'RESOLVED' }) })
+    const f = await app({ recordDecision: vi.fn().mockResolvedValue(null), getRequest: vi.fn().mockResolvedValue({ requestId: 'r1', workflowId: 'wf-1', status: 'RESOLVED' }) })
     const res = await f.inject({ method: 'POST', url: '/workflows/wf-1/decisions/r1/decision', payload: { decidedBy: 'po', choice: 'fix_reverify' } })
     expect(res.statusCode).toBe(409)
+  })
+  it('workflowId 불일치(IDOR) → 404·recordDecision 미호출', async () => {
+    const recordDecision = vi.fn()
+    const getRequest = vi.fn().mockResolvedValue({ requestId: 'r1', workflowId: 'OTHER', status: 'PENDING' })
+    const f = await app({ recordDecision, getRequest })
+    const res = await f.inject({ method: 'POST', url: '/workflows/wf-1/decisions/r1/decision', payload: { decidedBy: 'po', choice: 'fix_reverify' } })
+    expect(res.statusCode).toBe(404)
+    expect(recordDecision).not.toHaveBeenCalled()
   })
   it('잘못된 choice → 400', async () => {
     const f = await app({ recordDecision: vi.fn(), getRequest: vi.fn() })
