@@ -110,7 +110,9 @@ export class ClaudeRunner {
         if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
           const obj = parsed as Record<string, unknown>
           if (Array.isArray(obj['issues'])) {
-            const issues = (obj['issues'] as unknown[]).filter(isSecurityIssue)
+            const issues = (obj['issues'] as unknown[])
+              .filter(isSecurityIssue)
+              .map((i): SecurityIssue => ({ ...i, source: 'llm' }))
             const knowledge = Array.isArray(obj['knowledge'])
               ? (obj['knowledge'] as unknown[]).filter((k): k is string => typeof k === 'string')
               : []
@@ -128,7 +130,10 @@ export class ClaudeRunner {
     try {
       const parsed: unknown = JSON.parse(cleaned.slice(start, end + 1))
       if (!Array.isArray(parsed)) return { issues: [] }
-      return { issues: parsed.filter(isSecurityIssue) }
+      const issues = parsed
+        .filter(isSecurityIssue)
+        .map((i): SecurityIssue => ({ ...i, source: 'llm' }))
+      return { issues }
     } catch {
       return { issues: [] }
     }
@@ -139,7 +144,7 @@ export class ClaudeRunner {
   }
 }
 
-function isSecurityIssue(item: unknown): item is SecurityIssue {
+function isSecurityIssue(item: unknown): item is Omit<SecurityIssue, 'source'> {
   if (typeof item !== 'object' || item === null) return false
   const obj = item as Record<string, unknown>
   return (

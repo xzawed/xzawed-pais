@@ -103,6 +103,13 @@ describe('ClaudeRunner.parseIssues', () => {
   it('returns [] for empty array', () => {
     expect(runner.parseIssues('[]')).toEqual([])
   })
+
+  it('parseResult issue는 source:llm 태그를 가진다', () => {
+    const text = '{"issues":[{"id":"CL-1","severity":"high","category":"injection","file":"a.ts","description":"d","suggestion":"s"}]}'
+    const r = runner.parseResult(text)
+    expect(r.issues).toHaveLength(1)
+    expect(r.issues[0]?.source).toBe('llm')
+  })
 })
 
 describe('ClaudeRunner.answerQuery', () => {
