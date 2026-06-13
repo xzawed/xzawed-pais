@@ -275,6 +275,7 @@ export async function buildServer(
     app.log.warn('MANAGER_WP_SECURITY=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 security 채널이 동작하지 않습니다(verifyWp 미경유).')
   }
   // P4 4d: security는 develop_code WP당 에이전트 호출을 1회 더 추가한다 — 가시성 창이 짧으면 검증 중 false reclaim 위험. 하한 경고.
+  // 360000ms = 기본 가시성 300000ms + 검증 단계 — verify 게이트 하한과 동일.
   if (config.MANAGER_WP_SECURITY && config.MANAGER_LEASE_VISIBILITY_MS < 360_000) {
     app.log.warn(
       `MANAGER_WP_SECURITY=true 인데 MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms < 360000ms — security 채널이 에이전트 호출을 1회 추가해 검증 중 lease 만료(false reclaim) 위험. 가시성 상향 권장.`,
