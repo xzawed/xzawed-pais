@@ -40,7 +40,8 @@ import { OracleRepo } from './db/oracle.repo.js'
 import { DecisionRepo } from './db/decision.repo.js'
 import { AdvisoryRepo } from './db/advisory.repo.js'
 import { oracleRoute } from './api/oracle.route.js'
-import { createSupervisor, shouldWireSupervisor, type Supervisor } from './streams/supervisor.js'
+import { decisionRoute } from './api/decision.route.js'
+import { createSupervisor, shouldWireSupervisor, shouldWireDecisionRoute, type Supervisor } from './streams/supervisor.js'
 import type { ProduceDeps } from './decompose/producer.js'
 
 export async function buildServer(
@@ -168,6 +169,8 @@ export async function buildServer(
   // published_at=NULL로 잔류하지 않도록 relay를 함께 가동(approve 전이는 flag 무관 always-on).
   // 하드닝: MANAGER_DECOMPOSE_ENABLED 포함 — decompose 생산자가 아웃박스 경유로 decomposition.emitted/.inconsistent를
   // 적재(pool 있을 때)하므로 relay 미기동 시 그 행이 잔류해 분해가 소비자에 도달하지 않는다.
+  // P6: MANAGER_DECISION_ROUTING 포함 — 사람 결정(decision.recorded)이 아웃박스에 적재되므로 relay가
+  // 돌지 않으면 그 행이 published_at=NULL로 잔류해 decision 소비자(fix_reverify 재진입)가 신호를 받지 못한다.
   if (
     pool &&
     (config.EVENT_SOURCED_SESSION ||
@@ -175,7 +178,8 @@ export async function buildServer(
       config.MANAGER_ORACLE_DOR ||
       config.MANAGER_ORACLE_DRAFT ||
       config.MANAGER_DECOMPOSE_ENABLED ||
-      config.MANAGER_WP_ADVISORY)
+      config.MANAGER_WP_ADVISORY ||
+      config.MANAGER_DECISION_ROUTING)
   ) {
     outboxRelay = new OutboxRelay(pool, producer, config.MANAGER_OUTBOX_POLL_MS)
     outboxRelay.start()
@@ -189,8 +193,10 @@ export async function buildServer(
     pool && (config.MANAGER_ORACLE_DOR || config.MANAGER_ORACLE_DRAFT || config.MANAGER_WP_CONFORMANCE || config.MANAGER_WP_IMPACT || config.MANAGER_WP_PROPERTY)
       ? new OracleRepo(pool)
       : undefined
-  // P6: 결함 의사결정 브리프 영속소(escalation→DecisionRequest). MANAGER_DECISION_BRIEF + pool 시만 생성(회귀 0).
-  const decisionStore = pool && config.MANAGER_DECISION_BRIEF ? new DecisionRepo(pool) : undefined
+  // P6: 결정 영속소(escalation→DecisionRequest 브리프 + 결정 라우팅 getRequest). BRIEF 또는 ROUTING 중
+  // 하나라도 켜지면(+pool) 생성 — 라우팅 소비자도 같은 DecisionRepo의 getRequest를 사용한다(회귀 0: 둘 다 off면 undefined).
+  const decisionStore =
+    pool && (config.MANAGER_DECISION_BRIEF || config.MANAGER_DECISION_ROUTING) ? new DecisionRepo(pool) : undefined
   // P4: advisory 채널 영속소(verdict.ok 후 optimization 제안). MANAGER_WP_ADVISORY + pool 시만 생성(회귀 0).
   const advisoryStore = pool && config.MANAGER_WP_ADVISORY ? new AdvisoryRepo(pool) : undefined
 
@@ -292,6 +298,12 @@ export async function buildServer(
     app.log.warn('MANAGER_WP_ADVISORY=true 이지만 DATABASE_URL이 없어 advisory가 영속되지 않습니다(AdvisoryRepo 부재).')
   }
 
+  // P6: 결정 라우팅은 라우팅할 결정 브리프(=MANAGER_DECISION_BRIEF가 생성하는 defect_brief DecisionRequest)가 있어야
+  // fix_reverify가 의미를 가진다 — BRIEF off면 escalation이 브리프로 영속되지 않아 라우팅 대상이 비어 있다. 오진 방지 경고.
+  if (config.MANAGER_DECISION_ROUTING && !config.MANAGER_DECISION_BRIEF) {
+    app.log.warn('MANAGER_DECISION_ROUTING=true 이지만 MANAGER_DECISION_BRIEF가 꺼져 있어 라우팅할 결정 브리프가 생성되지 않습니다.')
+  }
+
   // Task Manager Supervisor 배선(P1d-7): flag on + pool이면 decomposition 소비→디스패치·lease sweep·
   // completion 소비→재디스패치를 가동. 생산자(P2) 미도착이라 빈 스트림 구독(동작 준비). flag off면 미배선.
   let supervisor: Supervisor | undefined
@@ -337,6 +349,8 @@ export async function buildServer(
         wpConformance: config.MANAGER_WP_CONFORMANCE,
         // P6: 결함 브리프(=MANAGER_DECISION_BRIEF). off면 escalation 시 브리프 미생성(회귀 0). decisionStore 동반 시만 배선.
         decisionBrief: config.MANAGER_DECISION_BRIEF,
+        // P6: 결정 라우팅(=MANAGER_DECISION_ROUTING). off면 decision 소비자 미배선(회귀 0). decisionStore 동반 시만 배선.
+        decisionRouting: config.MANAGER_DECISION_ROUTING,
         // P4: impact golden-differential 채널(=MANAGER_WP_IMPACT). off면 conformance까지와 동일(회귀 0). oracleStore 동반 시만 활성.
         wpImpact: config.MANAGER_WP_IMPACT,
         // P4: property/invariants 채널(=MANAGER_WP_PROPERTY). off면 impact까지와 동일(회귀 0). oracleStore 동반 시만 활성.
@@ -447,6 +461,15 @@ export async function buildServer(
     await app.register(adminRoute, { redisUrl: config.REDIS_URL, authHook })
   } else {
     app.log.warn('SERVICE_JWT_SECRET 미설정 — DLQ 재처리 운영 라우트(/api/admin/dlq/redrive)를 등록하지 않습니다(인증 필수).')
+  }
+  // P6: 결정 제출은 escalated WP 재진입(lease 재오픈→dispatch_signal)을 트리거하는 권한 쓰기 — admin 패턴과 동일하게
+  // authHook(서비스 JWT) 없으면 라우트를 등록하지 않는다(무인증 권한 엔드포인트 노출 금지·보안 HIGH-3).
+  const decisionRouteGate = shouldWireDecisionRoute(config.MANAGER_DECISION_ROUTING, pool !== undefined, authHook !== undefined)
+  if (decisionRouteGate === 'wire') {
+    // exactOptionalPropertyTypes: authHook도 안전 스프레드(키 생략). gate==='wire'는 authHook!==undefined일 때만이라 동작 불변.
+    await app.register(decisionRoute, { ...(decisionStore && { decisionRepo: decisionStore }), ...(authHook && { authHook }) })
+  } else if (decisionRouteGate === 'warn') {
+    app.log.warn('MANAGER_DECISION_ROUTING=true 이지만 authHook(AUTH=jwt·SERVICE_JWT_SECRET)이 없어 결정 제출 라우트를 등록하지 않습니다(무인증 권한 엔드포인트 금지).')
   }
 
   const startManagedSession = makeSessionStarter({

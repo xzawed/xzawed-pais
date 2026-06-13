@@ -7,6 +7,7 @@ import { buildOracleApprovedHandler, OracleApprovedSchema, type OracleApprovedMe
 import { handleCompletion } from './completion.js'
 import { LeaseSweeper } from './lease-sweeper.js'
 import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
+import { DecisionRecordedConsumer, type DecisionRoutingDeps } from './decision-consumer.js'
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
 import type { AdvisoryStore } from './advisory.js'
 import type { SecuritySeverity } from './verify.js'
@@ -63,6 +64,8 @@ export interface SupervisorComponents {
   oracleConsumer?: ConsumerLike
   /** P4-1: wp.dispatch_signal 소비자(taskWorker+handlers 주입 시만 배선). */
   workerConsumer?: ConsumerLike
+  /** P6: decision.recorded 소비자(decisionRouting+decisionStore 주입 시만 배선). */
+  decisionConsumer?: ConsumerLike
 }
 
 /**
@@ -90,6 +93,9 @@ export class Supervisor {
     this.components.workerConsumer?.start(this.channel).catch((err: unknown) => {
       console.error('[supervisor] worker consumer 시작 실패:', err)
     })
+    this.components.decisionConsumer?.start(this.channel).catch((err: unknown) => {
+      console.error('[supervisor] decision consumer 시작 실패:', err)
+    })
     this.components.leaseSweeper.start()
   }
 
@@ -98,6 +104,7 @@ export class Supervisor {
     this.components.completionConsumer.stop()
     this.components.oracleConsumer?.stop()
     this.components.workerConsumer?.stop()
+    this.components.decisionConsumer?.stop()
     this.components.leaseSweeper.stop()
   }
 }
@@ -119,8 +126,12 @@ export interface SupervisorDeps {
   oracleStore?: OracleStore & NonNullable<DecompositionDeps['oracleStore']> & ConformanceOracleStore & ImpactOracleStore & InvariantOracleStore
   /** P4-1: tool명→에이전트 핸들러(server.ts가 registry.get으로 주입). 주입+taskWorker면 워커 배선. */
   handlers?: Record<string, AgentExecutor>
-  /** P6: 결함 브리프 영속소(DecisionRepo 구조). decisionBrief flag + 주입 시 escalation→DecisionRequest. */
-  decisionStore?: DecisionBriefStore
+  /** P6: 결함 브리프 영속소(DecisionRepo 구조). decisionBrief flag + 주입 시 escalation→DecisionRequest.
+   *  P6 라우팅: getRequest도 노출(decision-consumer가 requestId→wpId 해석에 필요). makeEscalationBrief는
+   *  DecisionBriefStore(createRequest)만 소비하므로 인터섹션이 둘 다 만족(server.ts가 full DecisionRepo 주입). */
+  decisionStore?: DecisionBriefStore & {
+    getRequest(requestId: string): Promise<import('../db/decision.types.js').DecisionRequest | null>
+  }
   /** P4 advisory 채널 영속소(AdvisoryRepo). advisoryStore + wpAdvisory면 워커가 produceAdvisory 호출. */
   advisoryStore?: AdvisoryStore
   /** P4 advisory 생산자 LLM seam(produceAdvisory용). */
@@ -152,6 +163,8 @@ export interface SupervisorConfig {
   mutationMaxMutants?: number
   /** P6: 결함 의사결정 브리프(escalation→DecisionRequest) 활성(=MANAGER_DECISION_BRIEF). decisionStore 동반 필요. */
   decisionBrief?: boolean
+  /** P6: 결정 라우팅(decision.recorded 소비→fix_reverify 재진입) 활성(=MANAGER_DECISION_ROUTING). decisionStore 동반 필요. */
+  decisionRouting?: boolean
   /** P4 advisory 채널(=MANAGER_WP_ADVISORY). off면 워커 동작 P4b와 동일(회귀 0). advisoryStore 동반 필요. */
   wpAdvisory?: boolean
   /** P4 4d security 채널(=MANAGER_WP_SECURITY). oracle 미소비. off면 mutation까지와 동일(회귀 0). */
@@ -162,6 +175,12 @@ export interface SupervisorConfig {
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
 export function shouldWireOracleConsumer(oracleDor: boolean, hasOracleStore: boolean): boolean {
   return oracleDor && hasOracleStore
+}
+
+/** P6: 결정 제출 라우트 배선 판정(순수). 권한 쓰기(재진입 트리거)라 authHook 없으면 미등록(보안 HIGH-3). */
+export function shouldWireDecisionRoute(routing: boolean, hasPool: boolean, hasAuth: boolean): 'wire' | 'warn' | 'skip' {
+  if (!routing || !hasPool) return 'skip'
+  return hasAuth ? 'wire' : 'warn'
 }
 
 /** P4b-1: WorkerConsumer deps 조립(순수·D4) — wpVerify→verifyEnabled 스레딩을 행동 단언 가능하게 분리.
@@ -286,9 +305,23 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
       )
     : undefined
 
+  // P6: 결정 라우팅 = MANAGER_DECISION_ROUTING && decisionStore 주입. fix_reverify→reopenLease→dispatch_signal.
+  const decisionConsumer = config.decisionRouting && deps.decisionStore
+    ? new DecisionRecordedConsumer(
+        makeRedis(),
+        {
+          decisionStore: deps.decisionStore,
+          leaseStore: deps.leaseStore,
+          publish: deps.publish,
+          visibilityMs: config.visibilityMs,
+        } satisfies DecisionRoutingDeps,
+      )
+    : undefined
+
   return new Supervisor({
     decompositionConsumer, completionConsumer, leaseSweeper,
     ...(oracleConsumer && { oracleConsumer }),
     ...(workerConsumer && { workerConsumer }),
+    ...(decisionConsumer && { decisionConsumer }),
   })
 }

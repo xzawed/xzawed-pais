@@ -2,7 +2,7 @@ import { describe, it, test, expect, vi } from 'vitest'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import {
   buildCompletionHandler, CompletionSignalSchema, Supervisor, createSupervisor, shouldWireSupervisor,
-  shouldWireOracleConsumer, buildWorkerConsumerDeps,
+  shouldWireOracleConsumer, shouldWireDecisionRoute, buildWorkerConsumerDeps,
 } from './supervisor.js'
 import type { LeaseStore } from '../db/lease.repo.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -81,6 +81,43 @@ describe('createSupervisor', () => {
     expect(makeRedis).toHaveBeenCalledTimes(2)
     expect(sup).toBeInstanceOf(Supervisor)
   })
+
+  it('decisionRouting=true + decisionStore면 결정 소비자를 배선(전용 연결 1개 추가·start/stop 포함)', () => {
+    const makeRedis = vi.fn(() => ({}) as unknown as Redis)
+    const decisionStore = { createRequest: vi.fn(), getRequest: vi.fn().mockResolvedValue(null) }
+    const sup = createSupervisor(
+      makeRedis,
+      {
+        repo: {} as unknown as TaskGraphRepo,
+        dispatchStore: {} as unknown as DispatchStore,
+        leaseStore: { reopenLease: vi.fn() } as unknown as LeaseStore,
+        publish: vi.fn(),
+        decisionStore,
+      },
+      { sweepMs: 30_000, visibilityMs: 5000, maxAttempts: 3, oracleDor: false, taskWorker: false, decisionRouting: true },
+    )
+    // 기존 2개(decomposition·completion) + decision 소비자 전용 연결 1개 = 3(makeRedis 호출 카운트로 배선 행동 단언).
+    expect(makeRedis).toHaveBeenCalledTimes(3)
+    expect(sup).toBeInstanceOf(Supervisor)
+  })
+
+  it('decisionRouting=false면 결정 소비자 미배선(전용 연결 추가 없음·회귀 0)', () => {
+    const makeRedis = vi.fn(() => ({}) as unknown as Redis)
+    const decisionStore = { createRequest: vi.fn(), getRequest: vi.fn() }
+    const sup = createSupervisor(
+      makeRedis,
+      {
+        repo: {} as unknown as TaskGraphRepo,
+        dispatchStore: {} as unknown as DispatchStore,
+        leaseStore: {} as unknown as LeaseStore,
+        publish: vi.fn(),
+        decisionStore,
+      },
+      { sweepMs: 30_000, visibilityMs: 5000, maxAttempts: 3, oracleDor: false, taskWorker: false, decisionRouting: false },
+    )
+    expect(makeRedis).toHaveBeenCalledTimes(2)
+    expect(sup).toBeInstanceOf(Supervisor)
+  })
 })
 
 describe('Supervisor + oracleConsumer (P3-1)', () => {
@@ -107,6 +144,13 @@ describe('shouldWireOracleConsumer (D4 순수 게이트)', () => {
     expect(shouldWireOracleConsumer(false, false)).toBe(false)
     expect(shouldWireOracleConsumer(true, true)).toBe(true)
   })
+})
+
+describe('shouldWireDecisionRoute (P6)', () => {
+  it('routing + pool + auth → wire', () => { expect(shouldWireDecisionRoute(true, true, true)).toBe('wire') })
+  it('routing + pool + no auth → warn(미등록)', () => { expect(shouldWireDecisionRoute(true, true, false)).toBe('warn') })
+  it('routing off → skip', () => { expect(shouldWireDecisionRoute(false, true, true)).toBe('skip') })
+  it('no pool → skip', () => { expect(shouldWireDecisionRoute(true, false, true)).toBe('skip') })
 })
 
 describe('createSupervisor oracleDor 게이트 (P3-2)', () => {
