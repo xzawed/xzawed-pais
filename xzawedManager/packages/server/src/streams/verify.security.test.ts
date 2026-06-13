@@ -89,4 +89,23 @@ describe('verifyWp security 채널', () => {
       baseDeps({ securityEnabled: true, handlers: { build_project: okBuilder, run_tests: okTester, security_audit: securityAudit } }))
     expect(v.ok).toBe(false)
   })
+
+  test('mixed static:medium + llm:high, floor high → 통과(소스∧severity 필터 합성)', async () => {
+    const securityAudit = sec([
+      { id: 'a', severity: 'medium', source: 'static', category: 'c', file: 'a.ts', description: 'd', suggestion: 's' },
+      { id: 'b', severity: 'high', source: 'llm', category: 'c', file: 'a.ts', description: 'd', suggestion: 's' },
+    ])
+    const v = await verifyWp('develop_code', wp, devResult,
+      baseDeps({ securityEnabled: true, securityMinSeverity: 'high', handlers: { build_project: okBuilder, run_tests: okTester, security_audit: securityAudit } }))
+    expect(v.ok).toBe(true)
+  })
+
+  test('절대경로 artifact는 security_audit 호출 전 필터된다', async () => {
+    const securityAudit = sec([])
+    await verifyWp('develop_code', wp, { artifacts: ['src/a.ts', '/etc/passwd', 'C:\\windows\\x.ts', '../escape.ts'] },
+      baseDeps({ securityEnabled: true, handlers: { build_project: okBuilder, run_tests: okTester, security_audit: securityAudit } }))
+    expect(securityAudit.execute).toHaveBeenCalledTimes(1)
+    const passedArtifacts = (securityAudit.execute.mock.calls[0]?.[0] as { artifacts?: string[] })?.artifacts
+    expect(passedArtifacts).toEqual(['src/a.ts'])
+  })
 })
