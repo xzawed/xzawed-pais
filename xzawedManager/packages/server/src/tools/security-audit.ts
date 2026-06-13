@@ -13,6 +13,7 @@ interface SecurityAuditInput {
 interface SecurityIssue {
   id: string
   severity: 'low' | 'medium' | 'high' | 'critical'
+  source: 'static' | 'deps' | 'llm'
   category: string
   file: string
   line?: number
@@ -43,6 +44,7 @@ const inputSchema = {
 const securityIssueSchema = z.object({
   id: z.string(),
   severity: z.enum(['low', 'medium', 'high', 'critical']),
+  source: z.enum(['static', 'deps', 'llm']),
   category: z.string(),
   file: z.string(),
   line: z.number().optional(),
