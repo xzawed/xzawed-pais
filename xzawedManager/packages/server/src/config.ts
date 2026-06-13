@@ -135,6 +135,9 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // P6 사람 결정 라우팅(기본 false). true면 decision.recorded 소비자 + 결정 제출 라우트 배선 →
+    // fix_reverify가 escalated WP를 재진입(lease 재오픈→dispatch_signal). 전제: MANAGER_DECISION_BRIEF(브리프 생성)+DATABASE_URL.
+    MANAGER_DECISION_ROUTING: z.string().optional().transform((v) => v === 'true'),
     // §13 budget 서킷브레이커(USD 비용 상한). 0/미설정이면 비활성. 둘 중 하나라도 >0이면
     // 러너 tool-loop이 호출 전 누적 비용을 검사(상한 초과 시 fail-closed 차단)·호출 후 비용 누적.
     // 워크플로(세션)당 상한 + 일(UTC) 전체 상한. 인메모리(재시작 시 일 카운터 소실·캘리브레이션 비차단).
