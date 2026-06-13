@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (263 테스트 통과)**
+**현재 상태: 구현 완료 (264 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -197,7 +197,7 @@ import type { WorkPackage, WpRisk } from '@xzawed/agent-streams'
 
 - **§7 필드**: `id`(content-hash)·`storyId`·`epicId`(nullable)·`owningRole`·`inputs`·`outputs`·`oracleRef`·`acceptanceCriteria`·`dependencies`·`risk`(LOW/MEDIUM/HIGH)·`attributionCounters`·`status`.
 - **`risk`**: Wiki Agent 리스크 분류기(P2 잔여)가 채우기 전 기본 `MEDIUM`(중립·보수적). θ_risk 게이트·모델 라우팅 입력.
-- **`attributionCounters`**: 계약 사슬 3계층 고정 `{impl, task, plan}`(자유형 record 아님 — 미지 키는 strip·부분 입력은 0으로 채움). P4c 진동 차단(N5) 입력.
+- **`attributionCounters`**: 계약 사슬 3계층 고정 `{impl, task, plan}`(자유형 record 아님 — 미지 키는 strip·부분 입력은 0으로 채움). P4c 진동 차단(N5) 입력. **`AttributionCountersSchema`는 배럴(`src/index.ts`) export**(이전엔 모듈 내부) — Manager `decision-brief.ts`의 §11 결함 국소화(`FaultAttribution.counters`)가 동일 계약을 재사용해 드리프트 0(단일출처).
 - **id 정체성 분리(N4)**: `contentHashId`는 `storyId·owningRole·acceptanceCriteria`만 해싱 — `risk·inputs·outputs·epicId`(§7 추가분)·status·oracleRef·dependencies·attributionCounters는 **제외**. 리스크 재분류·계약 정련이 id를 바꾸지 않는다.
 - **backward-compat(additive)**: 추가 필드는 전부 default 보유 → 레거시 영속 WP(필드 부재·`attributionCounters:{}`)도 재parse 시 기본값으로 정규화. ⚠️ `owningRole`은 WP0 #3(토폴로지) 미해결로 아직 자유 string(enum 보류).
 
