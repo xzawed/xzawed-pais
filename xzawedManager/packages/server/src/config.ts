@@ -120,6 +120,14 @@ const configSchema = z
     MANAGER_MUTATION_MIN_RISK: z.enum(['LOW', 'MEDIUM', 'HIGH']).catch('HIGH').default('HIGH'),
     // mutation 하니스가 생성할 최대 mutant 수(비용 캡).
     MANAGER_MUTATION_MAX_MUTANTS: z.coerce.number().int().positive().default(10),
+    // P4 4d security 채널(기본 false). true면 develop_code WP 검증에 결정론 SAST(static+npm audit)를
+    // 산출물에 실행해 source∈{static,deps} ∧ severity≥floor findings면 차단. 전제: TASK_WORKER + WP_VERIFY.
+    MANAGER_WP_SECURITY: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
+    // security 차단 최소 severity(이 등급 이상 차단). static 규칙이 high/critical이라 high가 자연 경계. 불량값 high 폴백.
+    MANAGER_WP_SECURITY_MIN_SEVERITY: z.enum(['low', 'medium', 'high', 'critical']).catch('high').default('high'),
     // P6 결함 의사결정 브리프(기본 false). true면 lease 상한 초과 escalation을 DecisionRequest(defect_brief)로
     // 영속해 사람 도달 구조화 핸드오프로 폐합(M8 무음 통과 금지·M9 영속). 전제: TASK_MANAGER_ENABLED+DATABASE_URL
     // (Supervisor·LeaseSweeper 가동 + DecisionRepo). off면 escalation 시 브리프 미생성(회귀 0).

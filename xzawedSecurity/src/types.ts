@@ -5,6 +5,7 @@ import { collaborationPayloadFields } from '@xzawed/agent-streams'
 export interface SecurityIssue {
   id: string
   severity: 'low' | 'medium' | 'high' | 'critical'
+  source: 'static' | 'deps' | 'llm'
   category: string
   file: string
   line?: number

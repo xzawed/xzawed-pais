@@ -8,7 +8,7 @@ import type { Publish } from './decomposition-consumer.js'
 import type { ConformanceOracleStore, ImpactOracleStore, InvariantOracleStore } from './conformance.js'
 import { WpDispatchSignalSchema, type WpDispatchSignalMessage } from './dispatch-signal.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
-import { verifyWp, publishVerificationFailed } from './verify.js'
+import { verifyWp, publishVerificationFailed, type SecuritySeverity } from './verify.js'
 import { produceAdvisory, type AdvisoryStore } from './advisory.js'
 import type { ClaudeLike } from '@xzawed/agent-streams'
 import { DONE_STATE, ESCALATED_STATE } from './dispatch-constants.js'
@@ -50,6 +50,9 @@ export interface WorkerDeps {
   mutationTheta?: number
   mutationMinRisk?: WpRisk
   mutationMaxMutants?: number
+  /** P4 4d security 채널 활성(=MANAGER_WP_SECURITY). oracle 미소비. verifyWp로 전달. */
+  securityEnabled?: boolean
+  securityMinSeverity?: SecuritySeverity
   /** 하드닝: lease 하트비트 — 실행 중 renewLease로 가시성 연장(verify/conformance 다단계 호출 중 false reclaim 방지).
    *  leaseStore+visibilityMs 둘 다 주입 시에만 활성(미주입=P4b 동작 보존·회귀 0). */
   leaseStore?: { renewLease(workflowId: string, wpId: string, expectedAttempt: number, visibilityMs: number): Promise<boolean> }
@@ -211,6 +214,8 @@ async function runVerifyGate(
     ...(deps.mutationTheta !== undefined && { mutationTheta: deps.mutationTheta }),
     ...(deps.mutationMinRisk !== undefined && { mutationMinRisk: deps.mutationMinRisk }),
     ...(deps.mutationMaxMutants !== undefined && { mutationMaxMutants: deps.mutationMaxMutants }),
+    securityEnabled: deps.securityEnabled === true,
+    ...(deps.securityMinSeverity !== undefined && { securityMinSeverity: deps.securityMinSeverity }),
   })
   if (verdict.ok) return null
   try {

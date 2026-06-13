@@ -350,3 +350,41 @@ describe('MANAGER_WP_MUTATION flag + mutation env', () => {
     expect(loadConfig().MANAGER_MUTATION_MAX_MUTANTS).toBe(10)
   })
 })
+
+describe('MANAGER_WP_SECURITY flag + min severity', () => {
+  let savedMode: string | undefined
+  let savedKey: string | undefined
+
+  beforeEach(() => {
+    savedMode = process.env['MODE']
+    savedKey = process.env['ANTHROPIC_API_KEY']
+    process.env['MODE'] = 'local'
+    process.env['ANTHROPIC_API_KEY'] = 'k'
+  })
+
+  afterEach(() => {
+    if (savedMode !== undefined) process.env['MODE'] = savedMode
+    else delete process.env['MODE']
+    if (savedKey !== undefined) process.env['ANTHROPIC_API_KEY'] = savedKey
+    else delete process.env['ANTHROPIC_API_KEY']
+    delete process.env['MANAGER_WP_SECURITY']
+    delete process.env['MANAGER_WP_SECURITY_MIN_SEVERITY']
+  })
+
+  it('MANAGER_WP_SECURITY 기본 false', () => {
+    delete process.env['MANAGER_WP_SECURITY']
+    expect(loadConfig().MANAGER_WP_SECURITY).toBe(false)
+  })
+  it("MANAGER_WP_SECURITY 'true'면 true", () => {
+    process.env['MANAGER_WP_SECURITY'] = 'true'
+    expect(loadConfig().MANAGER_WP_SECURITY).toBe(true)
+  })
+  it('MANAGER_WP_SECURITY_MIN_SEVERITY 기본 high·파싱·불량값 catch', () => {
+    delete process.env['MANAGER_WP_SECURITY_MIN_SEVERITY']
+    expect(loadConfig().MANAGER_WP_SECURITY_MIN_SEVERITY).toBe('high')
+    process.env['MANAGER_WP_SECURITY_MIN_SEVERITY'] = 'critical'
+    expect(loadConfig().MANAGER_WP_SECURITY_MIN_SEVERITY).toBe('critical')
+    process.env['MANAGER_WP_SECURITY_MIN_SEVERITY'] = 'garbage'
+    expect(loadConfig().MANAGER_WP_SECURITY_MIN_SEVERITY).toBe('high')
+  })
+})

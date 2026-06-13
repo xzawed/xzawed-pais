@@ -10,9 +10,11 @@ interface SecurityAuditInput {
   context: Record<string, unknown>
 }
 
+// ⚠️ xzawedSecurity/src/types.ts의 SecurityIssue 미러(서비스 간 직접 import 금지·Redis 계약). 필드 추가 시 동기화. source는 P4 security 채널이 결정론 SAST findings 판별에 사용.
 interface SecurityIssue {
   id: string
   severity: 'low' | 'medium' | 'high' | 'critical'
+  source: 'static' | 'deps' | 'llm'
   category: string
   file: string
   line?: number
@@ -43,6 +45,7 @@ const inputSchema = {
 const securityIssueSchema = z.object({
   id: z.string(),
   severity: z.enum(['low', 'medium', 'high', 'critical']),
+  source: z.enum(['static', 'deps', 'llm']),
   category: z.string(),
   file: z.string(),
   line: z.number().optional(),

@@ -92,6 +92,7 @@ describe('auditDeps', () => {
     expect(result.some((i) => i.id === 'DEP-lodash')).toBe(true)
     expect(result.find((i) => i.id === 'DEP-lodash')?.severity).toBe('high')
     expect(result.find((i) => i.id === 'DEP-minimist')?.severity).toBe('critical')
+    expect(result.every((i) => i.source === 'deps')).toBe(true)
   })
 
   it('reads stdout from error object when npm audit exits non-zero', async () => {

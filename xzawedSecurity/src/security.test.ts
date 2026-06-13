@@ -60,21 +60,21 @@ describe('calculateScore', () => {
 
   it('deducts 40 per critical issue', () => {
     const issues: SecurityIssue[] = [
-      { id: 'x', severity: 'critical', category: 'c', file: 'f', description: 'd', suggestion: 's' },
+      { id: 'x', severity: 'critical', source: 'static', category: 'c', file: 'f', description: 'd', suggestion: 's' },
     ]
     expect(calculateScore(issues)).toBe(60)
   })
 
   it('deducts 15 per high issue', () => {
     const issues: SecurityIssue[] = [
-      { id: 'x', severity: 'high', category: 'c', file: 'f', description: 'd', suggestion: 's' },
+      { id: 'x', severity: 'high', source: 'static', category: 'c', file: 'f', description: 'd', suggestion: 's' },
     ]
     expect(calculateScore(issues)).toBe(85)
   })
 
   it('deducts 5 per medium and 1 per low', () => {
-    const medium: SecurityIssue = { id: 'x', severity: 'medium', category: 'c', file: 'f', description: 'd', suggestion: 's' }
-    const low: SecurityIssue = { id: 'y', severity: 'low', category: 'c', file: 'f', description: 'd', suggestion: 's' }
+    const medium: SecurityIssue = { id: 'x', severity: 'medium', source: 'static', category: 'c', file: 'f', description: 'd', suggestion: 's' }
+    const low: SecurityIssue = { id: 'y', severity: 'low', source: 'static', category: 'c', file: 'f', description: 'd', suggestion: 's' }
     expect(calculateScore([medium, low])).toBe(94)
   })
 
@@ -82,6 +82,7 @@ describe('calculateScore', () => {
     const issues: SecurityIssue[] = Array.from({ length: 10 }, (_, i) => ({
       id: `x${i}`,
       severity: 'critical' as const,
+      source: 'static' as const,
       category: 'c',
       file: 'f',
       description: 'd',
@@ -93,10 +94,10 @@ describe('calculateScore', () => {
 
 describe('filterBySeverity', () => {
   const issues: SecurityIssue[] = [
-    { id: 'l', severity: 'low', category: 'c', file: 'f', description: 'd', suggestion: 's' },
-    { id: 'm', severity: 'medium', category: 'c', file: 'f', description: 'd', suggestion: 's' },
-    { id: 'h', severity: 'high', category: 'c', file: 'f', description: 'd', suggestion: 's' },
-    { id: 'cr', severity: 'critical', category: 'c', file: 'f', description: 'd', suggestion: 's' },
+    { id: 'l', severity: 'low', source: 'static', category: 'c', file: 'f', description: 'd', suggestion: 's' },
+    { id: 'm', severity: 'medium', source: 'static', category: 'c', file: 'f', description: 'd', suggestion: 's' },
+    { id: 'h', severity: 'high', source: 'static', category: 'c', file: 'f', description: 'd', suggestion: 's' },
+    { id: 'cr', severity: 'critical', source: 'static', category: 'c', file: 'f', description: 'd', suggestion: 's' },
   ]
 
   it('low includes all', () => {
@@ -141,9 +142,9 @@ describe('Security.handle', () => {
   })
 
   it('merges issues from all three analyzers', async () => {
-    const staticIssue: SecurityIssue = { id: 'S-1', severity: 'high', category: 'xss', file: 'f', description: 'd', suggestion: 's' }
-    const depsIssue: SecurityIssue = { id: 'D-1', severity: 'medium', category: 'dep', file: 'f', description: 'd', suggestion: 's' }
-    const claudeIssue: SecurityIssue = { id: 'C-1', severity: 'low', category: 'config', file: 'f', description: 'd', suggestion: 's' }
+    const staticIssue: SecurityIssue = { id: 'S-1', severity: 'high', source: 'static', category: 'xss', file: 'f', description: 'd', suggestion: 's' }
+    const depsIssue: SecurityIssue = { id: 'D-1', severity: 'medium', source: 'deps', category: 'dep', file: 'f', description: 'd', suggestion: 's' }
+    const claudeIssue: SecurityIssue = { id: 'C-1', severity: 'low', source: 'llm', category: 'config', file: 'f', description: 'd', suggestion: 's' }
 
     mockStaticAnalyze.mockResolvedValueOnce([staticIssue])
     mockDepsAudit.mockResolvedValueOnce([depsIssue])
@@ -158,8 +159,8 @@ describe('Security.handle', () => {
   })
 
   it('filters reported issues by severity but scores all', async () => {
-    const low: SecurityIssue = { id: 'L-1', severity: 'low', category: 'c', file: 'f', description: 'd', suggestion: 's' }
-    const high: SecurityIssue = { id: 'H-1', severity: 'high', category: 'c', file: 'f', description: 'd', suggestion: 's' }
+    const low: SecurityIssue = { id: 'L-1', severity: 'low', source: 'static', category: 'c', file: 'f', description: 'd', suggestion: 's' }
+    const high: SecurityIssue = { id: 'H-1', severity: 'high', source: 'static', category: 'c', file: 'f', description: 'd', suggestion: 's' }
 
     mockStaticAnalyze.mockResolvedValueOnce([low, high])
 
@@ -175,7 +176,7 @@ describe('Security.handle', () => {
 
   it('continues if one analyzer fails', async () => {
     mockStaticAnalyze.mockRejectedValueOnce(new Error('static error'))
-    const depsIssue: SecurityIssue = { id: 'D-1', severity: 'high', category: 'dep', file: 'f', description: 'd', suggestion: 's' }
+    const depsIssue: SecurityIssue = { id: 'D-1', severity: 'high', source: 'deps', category: 'dep', file: 'f', description: 'd', suggestion: 's' }
     mockDepsAudit.mockResolvedValueOnce([depsIssue])
 
     await security.handle(makeRequest({ severity: 'low' }))
@@ -214,7 +215,7 @@ describe('Security.handle', () => {
   })
 
   it('deps 분석기가 실패하면 빈 배열로 대체한다', async () => {
-    const staticIssue: SecurityIssue = { id: 'S-1', severity: 'high', category: 'xss', file: 'f', description: 'd', suggestion: 's' }
+    const staticIssue: SecurityIssue = { id: 'S-1', severity: 'high', source: 'static', category: 'xss', file: 'f', description: 'd', suggestion: 's' }
     mockStaticAnalyze.mockResolvedValueOnce([staticIssue])
     mockDepsAudit.mockRejectedValueOnce(new Error('deps error'))
 
@@ -227,7 +228,7 @@ describe('Security.handle', () => {
   })
 
   it('claude 분석기가 실패하면 빈 배열로 대체한다', async () => {
-    const staticIssue: SecurityIssue = { id: 'S-2', severity: 'medium', category: 'config', file: 'f', description: 'd', suggestion: 's' }
+    const staticIssue: SecurityIssue = { id: 'S-2', severity: 'medium', source: 'static', category: 'config', file: 'f', description: 'd', suggestion: 's' }
     mockStaticAnalyze.mockResolvedValueOnce([staticIssue])
     mockAnalyzeArtifacts.mockRejectedValueOnce(new Error('claude error'))
 

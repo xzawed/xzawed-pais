@@ -110,6 +110,7 @@ async function runNpmAudit(npmPath: string, validPath: string): Promise<Security
     const issue: SecurityIssue = {
       id: `DEP-${pkgName}`,
       severity: mapSeverity(vuln.severity),
+      source: 'deps',
       category: 'dependency',
       file: path.join(validPath, 'package.json'),
       description: firstObj?.title ?? `취약한 의존성: ${pkgName}`,
@@ -150,6 +151,7 @@ async function runPnpmAudit(pnpmPath: string, validPath: string): Promise<Securi
     const issue: SecurityIssue = {
       id: `DEP-PNPM-${id}`,
       severity: mapSeverity(adv.severity),
+      source: 'deps',
       category: 'dependency',
       file: path.join(validPath, 'package.json'),
       description: adv.title ?? '취약한 의존성 (pnpm audit)',

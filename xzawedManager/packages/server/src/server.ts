@@ -270,6 +270,18 @@ export async function buildServer(
     )
   }
 
+  // P4 4d: security는 verifyWp 안 develop_code 경로에서만 동작하므로 MANAGER_WP_VERIFY off면 무음 no-op. 오진 방지 경고.
+  if (config.MANAGER_WP_SECURITY && !config.MANAGER_WP_VERIFY) {
+    app.log.warn('MANAGER_WP_SECURITY=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 security 채널이 동작하지 않습니다(verifyWp 미경유).')
+  }
+  // P4 4d: security는 develop_code WP당 에이전트 호출을 1회 더 추가한다 — 가시성 창이 짧으면 검증 중 false reclaim 위험. 하한 경고.
+  // 360000ms = 기본 가시성 300000ms + 검증 단계 — verify 게이트 하한과 동일.
+  if (config.MANAGER_WP_SECURITY && config.MANAGER_LEASE_VISIBILITY_MS < 360_000) {
+    app.log.warn(
+      `MANAGER_WP_SECURITY=true 인데 MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms < 360000ms — security 채널이 에이전트 호출을 1회 추가해 검증 중 lease 만료(false reclaim) 위험. 가시성 상향 권장.`,
+    )
+  }
+
   // P4: advisory는 verdict.ok 후(verifyWp 경로) develop_code WP에만 생산되므로 MANAGER_WP_VERIFY가 꺼져 있으면
   // 무동작(무음 no-op). 전제 없이 켜면 사용자가 제안을 기대하나 아무 일도 없으므로 오진 방지 경고.
   if (config.MANAGER_WP_ADVISORY && !config.MANAGER_WP_VERIFY) {
@@ -334,6 +346,9 @@ export async function buildServer(
         mutationTheta: config.MANAGER_MUTATION_THETA,
         mutationMinRisk: config.MANAGER_MUTATION_MIN_RISK,
         mutationMaxMutants: config.MANAGER_MUTATION_MAX_MUTANTS,
+        // P4 4d security 채널(=MANAGER_WP_SECURITY). off면 mutation까지와 동일(회귀 0). oracle 미소비.
+        wpSecurity: config.MANAGER_WP_SECURITY,
+        securityMinSeverity: config.MANAGER_WP_SECURITY_MIN_SEVERITY,
         // P4: advisory 채널(=MANAGER_WP_ADVISORY). off면 워커 동작 P4b와 동일(회귀 0). advisoryStore 동반 시만 활성.
         wpAdvisory: config.MANAGER_WP_ADVISORY,
       },

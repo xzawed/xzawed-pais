@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, test, expect, vi } from 'vitest'
 import type { WorkPackage } from '@xzawed/agent-streams'
 import { handleWpDispatchSignal, buildWorkerInput, shouldWireWorker, startLeaseHeartbeat, type WorkerDeps } from './worker.js'
 import { WP_DISPATCH_SIGNAL } from './dispatch-signal.js'
@@ -75,6 +75,28 @@ describe('handleWpDispatchSignal', () => {
     })
     expect((await handleWpDispatchSignal(sig(), d)).status).toBe('completed')
     expect(run).toHaveBeenCalled()
+  })
+
+  test('verifyEnabled+securityEnabled → security_audit 핸들러가 검증 중 호출된다', async () => {
+    const securityAudit = { execute: vi.fn().mockResolvedValue({ issues: [] }) }
+    const okBuilder = { execute: vi.fn().mockResolvedValue({ success: true }) }
+    const okTester = { execute: vi.fn().mockResolvedValue({ success: true, passed: 1, failed: 0 }) }
+    const developer = { execute: vi.fn().mockResolvedValue({ artifacts: ['src/a.ts'] }) }
+    const repo = {
+      getGraph: vi.fn().mockResolvedValue({
+        workPackages: [{ id: 'wp-1', storyId: 's1', owningRole: 'developer', acceptanceCriteria: ['AC1'], risk: 'MEDIUM', dependencies: [], attributionCounters: {}, status: 'draft', inputs: [], outputs: [] }],
+        userContext: { userId: 'u', projectId: 'p', workspaceRoot: '/abs/ws' },
+      }),
+      latestStates: vi.fn().mockResolvedValue(new Map()),
+    }
+    const publish = vi.fn().mockResolvedValue(undefined)
+    const msg = { envelope: { workflowId: 'wf-1' }, type: 'wp.dispatch_signal', payload: { wpId: 'wp-1', attempt: 0 } } as never
+    await handleWpDispatchSignal(msg, {
+      repo: repo as never, publish,
+      handlers: { develop_code: developer, build_project: okBuilder, run_tests: okTester, security_audit: securityAudit },
+      verifyEnabled: true, securityEnabled: true,
+    })
+    expect(securityAudit.execute).toHaveBeenCalled()
   })
 })
 

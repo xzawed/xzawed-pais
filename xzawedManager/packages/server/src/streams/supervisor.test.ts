@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, test, expect, vi } from 'vitest'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import {
   buildCompletionHandler, CompletionSignalSchema, Supervisor, createSupervisor, shouldWireSupervisor,
@@ -219,5 +219,24 @@ describe('buildWorkerConsumerDeps mutation (P4)', () => {
     expect(w.mutationTheta).toBeUndefined()
     expect(w.mutationMinRisk).toBeUndefined()
     expect(w.mutationMaxMutants).toBeUndefined()
+  })
+})
+
+describe('buildWorkerConsumerDeps security (P4 4d)', () => {
+  test('buildWorkerConsumerDeps: wpSecurity true → securityEnabled true', () => {
+    const deps = buildWorkerConsumerDeps(
+      { repo: {} as never, publish: vi.fn(), handlers: {} },
+      { sweepMs: 1, visibilityMs: 1, maxAttempts: 1, oracleDor: false, taskWorker: true, wpSecurity: true, securityMinSeverity: 'high' },
+    )
+    expect(deps.securityEnabled).toBe(true)
+    expect(deps.securityMinSeverity).toBe('high')
+  })
+
+  test('buildWorkerConsumerDeps: wpSecurity 미설정 → securityEnabled false', () => {
+    const deps = buildWorkerConsumerDeps(
+      { repo: {} as never, publish: vi.fn(), handlers: {} },
+      { sweepMs: 1, visibilityMs: 1, maxAttempts: 1, oracleDor: false, taskWorker: true },
+    )
+    expect(deps.securityEnabled).toBe(false)
   })
 })

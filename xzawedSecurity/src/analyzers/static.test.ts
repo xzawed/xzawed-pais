@@ -103,3 +103,12 @@ describe('analyzeFiles', () => {
     expect(issues.some(i => i.id.startsWith('S020'))).toBe(true)
   })
 })
+
+describe('static analyzer source tag', () => {
+  it('모든 static issue는 source:static 태그를 가진다', async () => {
+    mockReadFile.mockResolvedValueOnce('eval("danger")\n' as never)
+    const issues = await analyzeFiles(['/workspace/vuln.ts'], '/workspace')
+    expect(issues.length).toBeGreaterThan(0)
+    expect(issues.every((i) => i.source === 'static')).toBe(true)
+  })
+})

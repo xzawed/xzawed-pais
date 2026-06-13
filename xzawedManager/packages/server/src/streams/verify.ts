@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path'
 import { z } from 'zod'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import type { WorkPackage, WpRisk } from '@xzawed/agent-streams'
@@ -21,6 +22,26 @@ export type VerificationVerdict = { ok: true } | { ok: false; reason: string }
 const DEFAULT_MUTATION_THETA = 0.6
 const DEFAULT_MUTATION_MAX_MUTANTS = 10
 const RISK_RANK: Record<WpRisk, number> = { LOW: 0, MEDIUM: 1, HIGH: 2 }
+
+/** 결정론 SAST 소스(게이트 차단 대상). LLM findings는 제외(N6). */
+const SECURITY_SOURCES = new Set<string>(['static', 'deps'])
+const SECURITY_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const
+export type SecuritySeverity = (typeof SECURITY_SEVERITIES)[number]
+const SEVERITY_RANK: Record<SecuritySeverity, number> = { low: 0, medium: 1, high: 2, critical: 3 }
+const DEFAULT_SECURITY_MIN_SEVERITY: SecuritySeverity = 'high'
+
+/** security 채널 판정 전용 minimal 스키마 — severity·source required(부재=파싱 실패=fail-closed·N1). */
+const SecurityResultSchema = z.object({
+  issues: z.array(z.object({
+    severity: z.enum(SECURITY_SEVERITIES),
+    source: z.enum(['static', 'deps', 'llm']),
+  })),
+})
+
+/** sev가 floor 등급 이상인지(LOW<MEDIUM<HIGH<CRITICAL). security 게이팅용. */
+export function meetsMinSeverity(sev: SecuritySeverity, floor: SecuritySeverity): boolean {
+  return SEVERITY_RANK[sev] >= SEVERITY_RANK[floor]
+}
 
 /** 판정 전용 minimal 스키마 — 핸들러 outputSchema의 .default()에 기대지 않고
  *  필드 부재=파싱 실패=fail(불확실=실패, senario N1). `passed`는 N8 vacuous-pass 봉합용. */
@@ -88,6 +109,10 @@ export interface VerifyDeps {
   mutationMinRisk?: WpRisk
   /** mutation 하니스가 생성할 최대 mutant 수. 미설정 시 DEFAULT_MUTATION_MAX_MUTANTS. */
   mutationMaxMutants?: number
+  /** P4 4d security 채널 활성(=MANAGER_WP_SECURITY). oracle 미소비. */
+  securityEnabled?: boolean
+  /** security 차단 최소 severity(이 등급 이상 차단). 미설정 시 'high'. */
+  securityMinSeverity?: SecuritySeverity
 }
 
 /** 검증 체크 전용 세션 키. RedisAgentHandler의 응답 매칭은 무상관(스트림 위치+type뿐)이라 워크플로 공유
@@ -149,6 +174,12 @@ async function runAuthoredCheck<T>(wp: WorkPackage, deps: VerifyDeps, cfg: Autho
   return executeAuthoredTest(wp, deps, cfg.buildPlan(baseline), cfg.dir, cfg.authorSuffix, cfg.runSuffix)
 }
 
+/** 산출물 result에서 문자열 artifact 경로만 추출(executeAuthoredTest·security 채널 공유). */
+export function extractArtifacts(result: unknown): string[] {
+  const raw = (result as { artifacts?: unknown } | null | undefined)?.artifacts
+  return Array.isArray(raw) ? raw.filter((a): a is string => typeof a === 'string') : []
+}
+
 /** author→run→judge 실행부(runAuthoredCheck 가드 통과 후). ①독립 develop_code가 테스트 작성(격리 세션·N6)
  *  →②Tester가 그 testFiles만 실행→결과-근거 판정. 인지복잡도 분리용 추출(동작 불변). */
 async function executeAuthoredTest(
@@ -156,9 +187,7 @@ async function executeAuthoredTest(
 ): Promise<VerificationVerdict> {
   const authored = await execConformanceStep(deps, wp, { plan }, 'develop_code', authorSuffix)
   if (!authored.ok) return authored
-  const authorResult = authored.result as { artifacts?: unknown } | null | undefined
-  const rawArtifacts = authorResult?.artifacts
-  const artifacts = Array.isArray(rawArtifacts) ? rawArtifacts.filter((a): a is string => typeof a === 'string') : []
+  const artifacts = extractArtifacts(authored.result)
   const testFiles = selectAuthoredTestFiles(artifacts, dir, wp.id)
   if (testFiles.length === 0) return { ok: false, reason: `${dir}: author가 테스트 파일 미생성(fail-closed)` }
   const ran = await execConformanceStep(deps, wp, { testFiles }, 'run_tests', runSuffix)
@@ -219,6 +248,32 @@ function runMutationCheck(wp: WorkPackage, deps: VerifyDeps): Promise<Verificati
   return executeAuthoredTest(wp, deps, plan, MUTATION_DIR, 'mut-author', 'mut-run')
 }
 
+/** P4 4d security 채널: develop_code 산출물에 SAST(security_audit)를 실행하고 결정론 findings(source∈{static,deps})
+ *  중 severity≥floor가 있으면 fail(blocking). LLM findings 제외(N6). never-throw·fail-closed. oracle 미소비. */
+async function runSecurityCheck(wp: WorkPackage, artifacts: string[], deps: VerifyDeps): Promise<VerificationVerdict> {
+  if (deps.securityEnabled !== true) return { ok: true }
+  if (!deps.userContext?.workspaceRoot) {
+    return { ok: false, reason: 'security: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)' }
+  }
+  if (!deps.handlers['security_audit']) return { ok: false, reason: 'security: security_audit 핸들러 미주입' }
+  // security 메시지 스키마는 상대경로(`..` 없는)만 허용 — 위반 artifact는 메시지 거부를 유발하므로 선제 필터.
+  const relArtifacts = artifacts.filter((a) => !isAbsolute(a) && !a.includes('..'))
+  const ran = await execConformanceStep(
+    deps, wp, { artifacts: relArtifacts, projectPath: deps.userContext.workspaceRoot, severity: 'low' },
+    'security_audit', 'security',
+  )
+  if (!ran.ok) return ran
+  const parsed = SecurityResultSchema.safeParse(ran.result)
+  if (!parsed.success) return { ok: false, reason: 'security: 결과 파싱 실패(issues/severity/source 부재)' }
+  const floor = deps.securityMinSeverity ?? DEFAULT_SECURITY_MIN_SEVERITY
+  const blocking = parsed.data.issues.filter((i) => SECURITY_SOURCES.has(i.source) && meetsMinSeverity(i.severity, floor))
+  if (blocking.length > 0) {
+    const summary = blocking.slice(0, 3).map((i) => `${i.severity}:${i.source}`).join(', ')
+    return { ok: false, reason: `security: 결정론 SAST ${blocking.length}건 차단(${summary})`.slice(0, REASON_MAX) }
+  }
+  return { ok: true }
+}
+
 /** 파생 체크(build_project·run_tests) 순차 실 재실행(fail-fast). workspaceRoot 가드 통과 후 호출. */
 async function runDerivedChecks(
   checks: string[], wp: WorkPackage, deps: VerifyDeps, checkSession: string,
@@ -238,9 +293,13 @@ async function runDerivedChecks(
   return { ok: true }
 }
 
-/** P4 채널 hard-AND(conformance→impact→property→mutation). 첫 non-ok에서 단락. 데이터 주도 — 채널 추가 시 이 목록만 수정. */
-async function runChannelChecks(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
-  for (const runChannel of [runConformanceCheck, runImpactCheck, runPropertyCheck, runMutationCheck]) {
+/** P4 채널 hard-AND(conformance→impact→property→mutation→security). 첫 non-ok에서 단락. 데이터 주도. */
+async function runChannelChecks(wp: WorkPackage, deps: VerifyDeps, artifacts: string[]): Promise<VerificationVerdict> {
+  const channels: Array<(w: WorkPackage, d: VerifyDeps) => Promise<VerificationVerdict>> = [
+    runConformanceCheck, runImpactCheck, runPropertyCheck, runMutationCheck,
+    (w, d) => runSecurityCheck(w, artifacts, d),
+  ]
+  for (const runChannel of channels) {
     const verdict = await runChannel(wp, deps)
     if (!verdict.ok) return verdict
   }
@@ -266,7 +325,7 @@ export async function verifyWp(
   }
   const derived = await runDerivedChecks(checks, wp, deps, verifySessionId(deps.workflowId, wp.id, deps.attempt))
   if (!derived.ok) return derived
-  if (tool === 'develop_code') return runChannelChecks(wp, deps)
+  if (tool === 'develop_code') return runChannelChecks(wp, deps, extractArtifacts(result))
   return { ok: true }
 }
 

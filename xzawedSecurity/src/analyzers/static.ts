@@ -140,6 +140,7 @@ function buildIssue(rule: StaticRule, filePath: string, lineNumber: number): Sec
   const issue: SecurityIssue = {
     id: `${rule.id}-${path.basename(filePath)}-${lineNumber}`,
     severity: rule.severity,
+    source: 'static',
     category: rule.category,
     file: filePath,
     line: lineNumber,
