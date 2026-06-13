@@ -39,7 +39,9 @@ export function localizeFault(info: EscalationInfo): FaultAttribution {
  */
 export function buildDefectBrief(info: EscalationInfo): DecisionRequestInput {
   const { workflowId, wpId, attempt, stepN } = info
-  const tries = attempt + 1
+  // attribution을 단일 출처로 산출하고 시도 횟수(tries)는 거기서 파생 — attempt+1을 한 곳에서만 계산.
+  const attribution = localizeFault(info)
+  const tries = attribution.counters.impl
   return {
     requestId: `${workflowId}:${wpId}:${attempt}`,
     type: 'defect_brief',
@@ -53,7 +55,7 @@ export function buildDefectBrief(info: EscalationInfo): DecisionRequestInput {
       impact: ['이 WP에 의존하는 후행 작업이 차단됨(lease escalated).'],
       evidenceRefs: [`wp.escalated@${workflowId}/${wpId}`, `attempt=${tries}`],
       options: ['fix_reverify', 'spec_fix', 'accept_known', 'reject'],
-      attribution: localizeFault(info),
+      attribution,
     },
   }
 }
