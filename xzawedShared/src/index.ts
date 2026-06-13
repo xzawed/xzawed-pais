@@ -17,7 +17,7 @@ export type { MainOutcome, CollabMessage, MessageBase, CollaborativeAgentDeps } 
 export { formatDomainKnowledge } from './prompt/domain-knowledge.js'
 export { EventEnvelopeSchema, makeEnvelope } from './types/event-envelope.js'
 export type { EventEnvelope, EnvelopeParts, EnvelopedMessage } from './types/event-envelope.js'
-export { WorkPackageSchema, WpRiskSchema } from './types/work-package.js'
+export { WorkPackageSchema, WpRiskSchema, AttributionCountersSchema } from './types/work-package.js'
 export type { WorkPackage, WpRisk } from './types/work-package.js'
 export { buildTaskGraph, detectCycle, topoSort, isReady, readyNodes } from './task-graph/index.js'
 export type { TaskGraph, ReadinessOptions } from './task-graph/index.js'

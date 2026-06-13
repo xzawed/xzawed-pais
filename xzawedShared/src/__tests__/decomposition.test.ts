@@ -1,7 +1,8 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, test, expect } from 'vitest'
 import { coverageMatrix, contentHashId, mergeKeepInflight } from '../decomposition/index.js'
 import { buildTaskGraph } from '../task-graph/index.js'
 import { WorkPackageSchema, type WorkPackage } from '../types/work-package.js'
+import { AttributionCountersSchema } from '../index.js'
 
 /** 테스트 WP 생성 헬퍼 — 스키마 parse로 §7 포함 모든 기본값을 채우고 핵심 필드만 override(추가 필드 내성). */
 function wp(id: string, over: Partial<WorkPackage> = {}): WorkPackage {
@@ -241,5 +242,12 @@ describe('package export', () => {
     expect(typeof pkg.coverageMatrix).toBe('function')
     expect(typeof pkg.contentHashId).toBe('function')
     expect(typeof pkg.mergeKeepInflight).toBe('function')
+  })
+})
+
+describe('AttributionCountersSchema export', () => {
+  test('shared 배럴에서 AttributionCountersSchema를 노출한다', () => {
+    expect(AttributionCountersSchema).toBeDefined()
+    expect(AttributionCountersSchema.parse({})).toEqual({ impl: 0, task: 0, plan: 0 })
   })
 })
