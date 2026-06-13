@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildDefectBrief, makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
+import { buildDefectBrief, makeEscalationBrief, localizeFault, type DecisionBriefStore } from './decision-brief.js'
 
 const INFO = { workflowId: 'wf-1', wpId: 'wp_abc', attempt: 2, stepN: 3 }
 
@@ -22,6 +22,33 @@ describe('buildDefectBrief (§15 결함 의사결정 브리프)', () => {
 
   it('expectedVsActual에 시도 횟수(attempt+1) 반영', () => {
     expect(buildDefectBrief(INFO).context?.expectedVsActual).toContain('3') // attempt 2 → 3회 시도
+  })
+})
+
+describe('localizeFault (§11 결정론 귀속)', () => {
+  it('escalate = impl 계층 소진: counters.impl = attempt+1', () => {
+    expect(localizeFault({ workflowId: 'wf-1', wpId: 'wp_abc', attempt: 2, stepN: 3 }))
+      .toEqual({ faultTier: 'impl_exhausted', counters: { impl: 3, task: 0, plan: 0 } })
+  })
+  it('attempt 0 → impl 1회', () => {
+    expect(localizeFault({ workflowId: 'w', wpId: 'p', attempt: 0, stepN: 0 }).counters.impl).toBe(1)
+  })
+})
+
+describe('buildDefectBrief §11 귀속 강화', () => {
+  it('context.attribution = impl_exhausted 라벨', () => {
+    const b = buildDefectBrief({ workflowId: 'wf-1', wpId: 'wp_abc', attempt: 2, stepN: 3 })
+    expect(b.context?.attribution).toEqual({ faultTier: 'impl_exhausted', counters: { impl: 3, task: 0, plan: 0 } })
+  })
+  it('expectedVsActual에 계약사슬 귀속 문구(Task/plan 검토)', () => {
+    const b = buildDefectBrief({ workflowId: 'wf-1', wpId: 'wp_abc', attempt: 2, stepN: 3 })
+    expect(b.context?.expectedVsActual).toContain('구현')
+    expect(b.context?.expectedVsActual).toMatch(/Task|plan/)
+  })
+  it('impact·evidenceRefs를 채운다(빈 배열 아님)', () => {
+    const b = buildDefectBrief({ workflowId: 'wf-1', wpId: 'wp_abc', attempt: 2, stepN: 3 })
+    expect(b.context?.impact?.length).toBeGreaterThan(0)
+    expect(b.context?.evidenceRefs?.length).toBeGreaterThan(0)
   })
 })
 

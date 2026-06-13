@@ -1,4 +1,4 @@
-import type { DecisionRequest } from '../db/decision.types.js'
+import type { DecisionRequest, FaultAttribution } from '../db/decision.types.js'
 
 /** lease 상한 초과로 ESCALATED된 WP 정보(handleLeaseSweep이 전달). */
 export interface EscalationInfo {
@@ -25,12 +25,21 @@ export interface DecisionBriefStore {
 }
 
 /**
+ * §11 결정론 결함 귀속(LLM 0·N6): escalate = impl 계층 K회(maxAttempts) 정직 재시도 소진.
+ * 구현으로 해소 안 됨 → 계약사슬 상위(Task/plan) 검토 신호. 상위 귀속 확정은 사람 결정(P6 라우팅).
+ */
+export function localizeFault(info: EscalationInfo): FaultAttribution {
+  return { faultTier: 'impl_exhausted', counters: { impl: info.attempt + 1, task: 0, plan: 0 } }
+}
+
+/**
  * §15 결함 의사결정 브리프: WP 에스컬레이션(lease 상한 초과)을 **사람 결정 요청**으로 구조화한다.
  * 사람에게 위치·기대 vs 실제·선택지를 제공하고(§15), 결정은 §4 choice로 다운스트림 라우팅된다.
  * requestId는 (wf,wpId,attempt) 결정론 → 재호출 멱등(`createRequest` ON CONFLICT DO NOTHING).
  */
 export function buildDefectBrief(info: EscalationInfo): DecisionRequestInput {
   const { workflowId, wpId, attempt, stepN } = info
+  const tries = attempt + 1
   return {
     requestId: `${workflowId}:${wpId}:${attempt}`,
     type: 'defect_brief',
@@ -40,10 +49,11 @@ export function buildDefectBrief(info: EscalationInfo): DecisionRequestInput {
     severity: 'blocking',
     context: {
       location: `WP ${wpId} (step ${stepN})`,
-      expectedVsActual: `WP가 ${attempt + 1}회 시도 후에도 완료되지 못함 — lease 만료·max_attempts 초과(검증/실행 반복 실패).`,
-      impact: [],
-      evidenceRefs: [`wp.escalated@${workflowId}`],
+      expectedVsActual: `구현 계층에서 ${tries}회 정직 재시도 모두 검증 실패 — 구현으로 해소 불가. 계약 사슬상 Task(스펙 모호/불가능) 또는 plan(기획 모순) 검토 필요.`,
+      impact: ['이 WP에 의존하는 후행 작업이 차단됨(lease escalated).'],
+      evidenceRefs: [`wp.escalated@${workflowId}/${wpId}`, `attempt=${tries}`],
       options: ['fix_reverify', 'spec_fix', 'accept_known', 'reject'],
+      attribution: localizeFault(info),
     },
   }
 }
