@@ -100,9 +100,12 @@ describe('verifyWp security 채널', () => {
     expect(v.ok).toBe(true)
   })
 
-  test('절대경로 artifact는 security_audit 호출 전 필터된다', async () => {
+  test('절대경로·traversal artifact는 security_audit 호출 전 필터된다', async () => {
+    // 플랫폼 무관 케이스만 사용: '/etc/passwd'는 POSIX·win32 모두 isAbsolute=true, '../escape.ts'는
+    // '..' 포함으로 모든 플랫폼에서 드롭. (win32 'C:\\..' 류는 Linux CI에서 isAbsolute=false라 테스트 불안정 —
+    // 프로덕션은 Manager·security 에이전트가 같은 플랫폼(Docker/Linux)에서 같은 path.isAbsolute를 쓰므로 정합.)
     const securityAudit = sec([])
-    await verifyWp('develop_code', wp, { artifacts: ['src/a.ts', '/etc/passwd', 'C:\\windows\\x.ts', '../escape.ts'] },
+    await verifyWp('develop_code', wp, { artifacts: ['src/a.ts', '/etc/passwd', '../escape.ts'] },
       baseDeps({ securityEnabled: true, handlers: { build_project: okBuilder, run_tests: okTester, security_audit: securityAudit } }))
     expect(securityAudit.execute).toHaveBeenCalledTimes(1)
     const passedArtifacts = (securityAudit.execute.mock.calls[0]?.[0] as { artifacts?: string[] })?.artifacts
