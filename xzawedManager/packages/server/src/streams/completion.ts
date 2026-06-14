@@ -59,7 +59,7 @@ async function maybeEvaluateReleaseGate(workflowId: string, deps: CompletionDeps
     await deps.releaseStore.recordGate(workflowId, version, result)
     return result.status
   } catch (err) {
-    console.error('[completion] 릴리스 게이트 평가 실패(fail-closed: 미발행은 promote 차단):', err)
+    console.error('[completion] 릴리스 게이트 평가 실패 — best-effort 미발행(gate.passed 없음 → 후속 promote는 닫힌 채 유지). 완료는 정상 진행:', err)
     return undefined
   }
 }

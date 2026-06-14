@@ -101,7 +101,9 @@ export class ReleaseGateRepo {
   /** 워크플로의 증거를 wpId→ChannelOutcome[]로. 게이트 평가 입력. */
   async evidenceForWorkflow(workflowId: string): Promise<Map<string, ChannelOutcome[]>> {
     const { rows } = await this.pool.query<{ wp_id: string; channel: string; outcome: string }>(
-      `SELECT wp_id, channel, outcome FROM wp_verification_results WHERE workflow_id = $1 ORDER BY wp_id, channel`,
+      `SELECT DISTINCT ON (wp_id, channel) wp_id, channel, outcome
+   FROM wp_verification_results WHERE workflow_id = $1
+  ORDER BY wp_id, channel, attempt DESC`,
       [workflowId],
     )
     const out = new Map<string, ChannelOutcome[]>()

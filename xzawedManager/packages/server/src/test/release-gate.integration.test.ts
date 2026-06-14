@@ -36,6 +36,16 @@ d('ReleaseGateRepo (pg)', () => {
     expect(m.get('wp-a')).toContainEqual({ channel: 'tc', outcome: 'passed' })
   })
 
+  it('evidenceForWorkflow returns the latest attempt per (wp,channel) — rework clears stale skips', async () => {
+    const repo = new ReleaseGateRepo(pool)
+    const wf2 = 'wf-rg-attempt'
+    await repo.recordEvidence(wf2, 'wp-x', 0, [{ channel: 'tc', outcome: 'passed' }, { channel: 'conformance', outcome: 'skipped' }])
+    await repo.recordEvidence(wf2, 'wp-x', 1, [{ channel: 'tc', outcome: 'passed' }, { channel: 'conformance', outcome: 'passed' }])
+    const m = await repo.evidenceForWorkflow(wf2)
+    const ch = (m.get('wp-x') ?? []).find((o) => o.channel === 'conformance')
+    expect(ch?.outcome).toBe('passed') // attempt 1 (latest) wins, not the stale attempt-0 'skipped'
+  })
+
   it('recordGate persists release_gates + events + outbox; same version idempotent (no double emit)', async () => {
     const repo = new ReleaseGateRepo(pool)
     const result = { status: 'blocked' as const, perWp: [{ wpId: 'wp-a', proven: false, unverifiable: true, missingChannels: [] }], blockingReasons: ['wp wp-a: 검증 증거 없음'] }
