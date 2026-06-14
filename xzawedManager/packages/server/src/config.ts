@@ -159,6 +159,11 @@ const configSchema = z
     // 에이전트 종류(agentName)별 동시 RPC를 캡(초과 시 큐잉·백프레셔·드롭 없음)·한 종류 폭주가 다른 풀을 잠식 차단(§3).
     MANAGER_BULKHEAD_GLOBAL: z.coerce.number().int().nonnegative().default(0),
     MANAGER_BULKHEAD_PER_AGENT: z.coerce.number().int().nonnegative().default(0),
+    // P5-1 릴리스 게이트(M1): all-WP-done 시 검증 증거를 hard-AND 집계해 gate.passed/blocked. 증거 부재=CLOSED(fail-closed).
+    MANAGER_RELEASE_GATE: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

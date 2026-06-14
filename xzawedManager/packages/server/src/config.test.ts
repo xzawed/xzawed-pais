@@ -351,6 +351,33 @@ describe('MANAGER_WP_MUTATION flag + mutation env', () => {
   })
 })
 
+describe('MANAGER_RELEASE_GATE flag', () => {
+  let savedMode: string | undefined
+  let savedKey: string | undefined
+
+  beforeEach(() => {
+    savedMode = process.env['MODE']
+    savedKey = process.env['ANTHROPIC_API_KEY']
+    process.env['MODE'] = 'local'
+    process.env['ANTHROPIC_API_KEY'] = 'k'
+  })
+
+  afterEach(() => {
+    if (savedMode !== undefined) process.env['MODE'] = savedMode
+    else delete process.env['MODE']
+    if (savedKey !== undefined) process.env['ANTHROPIC_API_KEY'] = savedKey
+    else delete process.env['ANTHROPIC_API_KEY']
+    delete process.env['MANAGER_RELEASE_GATE']
+  })
+
+  it('defaults false; "true" → true', () => {
+    delete process.env['MANAGER_RELEASE_GATE']
+    expect(loadConfig().MANAGER_RELEASE_GATE).toBe(false)
+    process.env['MANAGER_RELEASE_GATE'] = 'true'
+    expect(loadConfig().MANAGER_RELEASE_GATE).toBe(true)
+  })
+})
+
 describe('MANAGER_WP_SECURITY flag + min severity', () => {
   let savedMode: string | undefined
   let savedKey: string | undefined
