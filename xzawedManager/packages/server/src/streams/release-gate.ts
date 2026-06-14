@@ -9,7 +9,7 @@ export function evaluateReleaseGate(
 ): ReleaseGateResult {
   const perWp: WpGateView[] = []
   const blockingReasons: string[] = []
-  const sorted = [...workPackages].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  const sorted = [...workPackages].sort((a, b) => a.id.localeCompare(b.id))
   for (const wp of sorted) {
     const outcomes = evidenceByWp.get(wp.id) ?? []
     if (outcomes.length === 0) {
@@ -39,9 +39,13 @@ export function allWpDone(
 export function doneSetVersion(states: Map<string, { toState: string; seq: number }>): string {
   const done: string[] = []
   for (const [wpId, rec] of states) if (rec.toState === DONE_STATE) done.push(`${wpId}:${rec.seq}`)
-  done.sort()
-  let h = 5381
+  done.sort((a, b) => a.localeCompare(b))
   const s = done.join('|')
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
+  // FNV-1a 32-bit (결정론). Math.imul로 32비트 곱셈 오버플로를 안전 처리(bitwise `| 0` 회피).
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.codePointAt(i) ?? 0
+    h = Math.imul(h, 0x01000193)
+  }
   return (h >>> 0).toString(16)
 }

@@ -225,13 +225,7 @@ async function runVerifyGate(
     ...(collect && { recordOutcome: (c: ChannelOutcome['channel'], o: ChannelOutcome['outcome']) => evidence.push({ channel: c, outcome: o }) }),
   })
   if (verdict.ok) {
-    if (collect && evidence.length > 0) {
-      try {
-        await deps.releaseStore!.recordEvidence(workflowId, msg.payload.wpId, msg.payload.attempt, evidence)
-      } catch (err) {
-        console.error('[worker] wp.verified 증거 영속 실패(게이트는 증거 부재를 un-proven 처리):', err)
-      }
-    }
+    if (collect) await persistVerificationEvidence(deps, workflowId, msg, evidence)
     return null
   }
   try {
@@ -240,6 +234,18 @@ async function runVerifyGate(
     console.error('[worker] wp.verification.failed 발행 실패(완료 부재가 reclaim 보장):', err)
   }
   return { status: 'verification_failed', wpId: msg.payload.wpId, reason: verdict.reason }
+}
+
+/** P5-1: verdict.ok 시 수집한 채널 증거를 best-effort 영속(완료를 막지 않음·게이트는 증거 부재를 un-proven 처리). */
+async function persistVerificationEvidence(
+  deps: WorkerDeps, workflowId: string, msg: WpDispatchSignalMessage, evidence: ChannelOutcome[],
+): Promise<void> {
+  if (evidence.length === 0 || !deps.releaseStore) return
+  try {
+    await deps.releaseStore.recordEvidence(workflowId, msg.payload.wpId, msg.payload.attempt, evidence)
+  } catch (err) {
+    console.error('[worker] wp.verified 증거 영속 실패(게이트는 증거 부재를 un-proven 처리):', err)
+  }
 }
 
 /** P4 advisory(N3): develop_code WP의 verdict.ok 후 비차단 optimization 제안을 생산한다(produceAdvisory는
