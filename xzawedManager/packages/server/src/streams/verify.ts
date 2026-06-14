@@ -2,6 +2,7 @@ import { isAbsolute } from 'node:path'
 import { z } from 'zod'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import type { WorkPackage, WpRisk } from '@xzawed/agent-streams'
+import type { ChannelName, ChannelOutcomeKind } from '../db/release-gate.types.js'
 import type { UserContext } from '../types/user-context.js'
 import { defaultInconsistentStream, type Publish } from './decomposition-consumer.js'
 import type { AgentExecutor } from './worker.js'
@@ -113,6 +114,8 @@ export interface VerifyDeps {
   securityEnabled?: boolean
   /** security 차단 최소 severity(이 등급 이상 차단). 미설정 시 'high'. */
   securityMinSeverity?: SecuritySeverity
+  /** P5-1 릴리스 게이트: 채널 outcome(passed/skipped) 표면화. 미주입이면 no-op(회귀 0). */
+  recordOutcome?: (channel: ChannelName, outcome: ChannelOutcomeKind) => void
 }
 
 /** 검증 체크 전용 세션 키. RedisAgentHandler의 응답 매칭은 무상관(스트림 위치+type뿐)이라 워크플로 공유
@@ -142,6 +145,7 @@ async function execConformanceStep(
 
 interface AuthoredCheckConfig<T> {
   enabled: boolean
+  channel: ChannelName
   dir: string
   authorSuffix: string
   runSuffix: string
@@ -157,21 +161,23 @@ interface AuthoredCheckConfig<T> {
  * fail-closed(불확실=실패, N1). 미활성/베이스라인 부재면 skip(ok·회귀 0).
  */
 async function runAuthoredCheck<T>(wp: WorkPackage, deps: VerifyDeps, cfg: AuthoredCheckConfig<T>): Promise<VerificationVerdict> {
-  if (!cfg.enabled || !deps.oracleStore) return { ok: true }
+  if (!cfg.enabled || !deps.oracleStore) { deps.recordOutcome?.(cfg.channel, 'skipped'); return { ok: true } }
   let baseline: T | null
   try {
     baseline = await cfg.baseline()
   } catch (err) {
     return { ok: false, reason: `${cfg.dir}: 베이스라인 조회 실패 — ${err instanceof Error ? err.message : String(err)}` }
   }
-  if (baseline == null) return { ok: true } // 승인 베이스라인 없음 → skip(회귀 0)
+  if (baseline == null) { deps.recordOutcome?.(cfg.channel, 'skipped'); return { ok: true } } // 승인 베이스라인 없음 → skip(회귀 0)
   if (!deps.userContext?.workspaceRoot) {
     return { ok: false, reason: `${cfg.dir}: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)` }
   }
   if (!deps.handlers['develop_code'] || !deps.handlers['run_tests']) {
     return { ok: false, reason: `${cfg.dir}: develop_code/run_tests 핸들러 미주입` }
   }
-  return executeAuthoredTest(wp, deps, cfg.buildPlan(baseline), cfg.dir, cfg.authorSuffix, cfg.runSuffix)
+  const verdict = await executeAuthoredTest(wp, deps, cfg.buildPlan(baseline), cfg.dir, cfg.authorSuffix, cfg.runSuffix)
+  if (verdict.ok) deps.recordOutcome?.(cfg.channel, 'passed')
+  return verdict
 }
 
 /** 산출물 result에서 문자열 artifact 경로만 추출(executeAuthoredTest·security 채널 공유). */
@@ -199,6 +205,7 @@ async function executeAuthoredTest(
 function runConformanceCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
   return runAuthoredCheck(wp, deps, {
     enabled: deps.conformanceEnabled === true,
+    channel: 'conformance',
     dir: CONFORMANCE_DIR, authorSuffix: 'conf-author', runSuffix: 'conf-run',
     baseline: async () => (await deps.oracleStore?.approvedOracleForStory(deps.workflowId, wp.storyId)) ?? null,
     buildPlan: (oracle) => buildConformanceAuthorPlan(wp, oracle.scenarios),
@@ -209,6 +216,7 @@ function runConformanceCheck(wp: WorkPackage, deps: VerifyDeps): Promise<Verific
 function runImpactCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
   return runAuthoredCheck(wp, deps, {
     enabled: deps.impactEnabled === true,
+    channel: 'impact',
     dir: IMPACT_DIR, authorSuffix: 'impact-author', runSuffix: 'impact-run',
     baseline: async () => (await deps.oracleStore?.approvedGoldensForStory(deps.workflowId, wp.storyId)) ?? null,
     buildPlan: (goldens) => buildGoldenDiffAuthorPlan(wp, goldens),
@@ -219,6 +227,7 @@ function runImpactCheck(wp: WorkPackage, deps: VerifyDeps): Promise<Verification
 function runPropertyCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
   return runAuthoredCheck(wp, deps, {
     enabled: deps.propertyEnabled === true,
+    channel: 'property',
     dir: PROPERTY_DIR, authorSuffix: 'prop-author', runSuffix: 'prop-run',
     baseline: async () => (await deps.oracleStore?.approvedInvariantsForStory(deps.workflowId, wp.storyId)) ?? null,
     buildPlan: (invariants) => buildInvariantAuthorPlan(wp, invariants),
@@ -233,8 +242,8 @@ export function meetsMinRisk(wpRisk: WpRisk, minRisk: WpRisk): boolean {
 /** P4 mutation θ_risk 채널(N8 강화): HIGH-risk WP의 스위트 강도를 자가단언 하니스로 검증.
  *  oracle 미소비 — 자체 guard 후 executeAuthoredTest 재사용(CPD0). score<θ면 하니스가 fail→fail(blocking). never-throw. */
 function runMutationCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
-  if (deps.mutationEnabled !== true) return Promise.resolve({ ok: true })
-  if (!meetsMinRisk(wp.risk, deps.mutationMinRisk ?? 'HIGH')) return Promise.resolve({ ok: true })
+  if (deps.mutationEnabled !== true) { deps.recordOutcome?.('mutation', 'skipped'); return Promise.resolve({ ok: true }) }
+  if (!meetsMinRisk(wp.risk, deps.mutationMinRisk ?? 'HIGH')) { deps.recordOutcome?.('mutation', 'skipped'); return Promise.resolve({ ok: true }) }
   if (!deps.userContext?.workspaceRoot) {
     return Promise.resolve({ ok: false, reason: `${MUTATION_DIR}: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)` })
   }
@@ -245,13 +254,16 @@ function runMutationCheck(wp: WorkPackage, deps: VerifyDeps): Promise<Verificati
     theta: deps.mutationTheta ?? DEFAULT_MUTATION_THETA,
     maxMutants: deps.mutationMaxMutants ?? DEFAULT_MUTATION_MAX_MUTANTS,
   })
-  return executeAuthoredTest(wp, deps, plan, MUTATION_DIR, 'mut-author', 'mut-run')
+  return executeAuthoredTest(wp, deps, plan, MUTATION_DIR, 'mut-author', 'mut-run').then((v) => {
+    if (v.ok) deps.recordOutcome?.('mutation', 'passed')
+    return v
+  })
 }
 
 /** P4 4d security 채널: develop_code 산출물에 SAST(security_audit)를 실행하고 결정론 findings(source∈{static,deps})
  *  중 severity≥floor가 있으면 fail(blocking). LLM findings 제외(N6). never-throw·fail-closed. oracle 미소비. */
 async function runSecurityCheck(wp: WorkPackage, artifacts: string[], deps: VerifyDeps): Promise<VerificationVerdict> {
-  if (deps.securityEnabled !== true) return { ok: true }
+  if (deps.securityEnabled !== true) { deps.recordOutcome?.('security', 'skipped'); return { ok: true } }
   if (!deps.userContext?.workspaceRoot) {
     return { ok: false, reason: 'security: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)' }
   }
@@ -271,6 +283,7 @@ async function runSecurityCheck(wp: WorkPackage, artifacts: string[], deps: Veri
     const summary = blocking.slice(0, 3).map((i) => `${i.severity}:${i.source}`).join(', ')
     return { ok: false, reason: `security: 결정론 SAST ${blocking.length}건 차단(${summary})`.slice(0, REASON_MAX) }
   }
+  deps.recordOutcome?.('security', 'passed')
   return { ok: true }
 }
 
@@ -316,6 +329,7 @@ export async function verifyWp(
 ): Promise<VerificationVerdict> {
   const primary = judgePrimaryResult(tool, result)
   if (!primary.ok) return primary
+  if (tool === 'run_tests' || tool === 'build_project') deps.recordOutcome?.('tc', 'passed')
   const checks = planVerificationChecks(tool)
   if (checks.length === 0) return { ok: true }
   // 파생 체크는 검증 대상 워크스페이스 경로가 명시돼야만 의미가 있다 — 부재 시 '.'로 돌리면 에이전트
@@ -325,7 +339,10 @@ export async function verifyWp(
   }
   const derived = await runDerivedChecks(checks, wp, deps, verifySessionId(deps.workflowId, wp.id, deps.attempt))
   if (!derived.ok) return derived
-  if (tool === 'develop_code') return runChannelChecks(wp, deps, extractArtifacts(result))
+  if (tool === 'develop_code') {
+    deps.recordOutcome?.('tc', 'passed')
+    return runChannelChecks(wp, deps, extractArtifacts(result))
+  }
   return { ok: true }
 }
 
