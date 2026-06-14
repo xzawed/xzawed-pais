@@ -20,5 +20,10 @@
   },
   "dependencies": {
     "@octokit/rest": "^22.0.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "esbuild": ">=0.28.1"
+    }
   }
 }
