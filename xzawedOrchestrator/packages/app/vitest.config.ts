@@ -3,6 +3,11 @@ import react from '@vitejs/plugin-react'
 import { playwright } from '@vitest/browser-playwright'
 
 export default defineConfig({
+  // esbuild 0.28+ dropped legacy syntax lowering; pin a modern target so the vite6
+  // default (chrome87/es2020) lowering path is not taken in source transform and
+  // dep pre-bundling (GHSA-gv7w-rqvm-qjhr fix).
+  esbuild: { target: 'es2022' },
+  optimizeDeps: { esbuildOptions: { target: 'es2022' } },
   test: {
     projects: [
       {
@@ -17,6 +22,8 @@ export default defineConfig({
       },
       {
         plugins: [react()],
+        esbuild: { target: 'es2022' },
+        optimizeDeps: { esbuildOptions: { target: 'es2022' } },
         resolve: {
           conditions: ['import', 'module', 'browser', 'default'],
         },
