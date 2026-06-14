@@ -35,4 +35,17 @@ d('ReleaseGateRepo (pg)', () => {
     const m = await repo.evidenceForWorkflow(wf)
     expect(m.get('wp-a')).toContainEqual({ channel: 'tc', outcome: 'passed' })
   })
+
+  it('recordGate persists release_gates + events + outbox; same version idempotent (no double emit)', async () => {
+    const repo = new ReleaseGateRepo(pool)
+    const result = { status: 'blocked' as const, perWp: [{ wpId: 'wp-a', proven: false, unverifiable: true, missingChannels: [] }], blockingReasons: ['wp wp-a: 검증 증거 없음'] }
+    const first = await repo.recordGate('wf-rg-gate-1', 'v-abc', result)
+    expect(first).not.toBeNull()
+    const dup = await repo.recordGate('wf-rg-gate-1', 'v-abc', result)
+    expect(dup).toBeNull()
+    const rows = await pool.query('SELECT status FROM release_gates WHERE workflow_id=$1 AND gate_version=$2', ['wf-rg-gate-1', 'v-abc'])
+    expect(rows.rows).toEqual([{ status: 'blocked' }])
+    const ev = await pool.query("SELECT COUNT(*)::int n FROM manager_events WHERE session_id='wf-rg-gate-1' AND event_type='gate.blocked'", [])
+    expect(ev.rows[0].n).toBe(1)
+  })
 })

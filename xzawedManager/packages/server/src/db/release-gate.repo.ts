@@ -1,8 +1,8 @@
 import type { Pool, PoolClient } from 'pg'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import {
-  WP_VERIFIED_EVENT, RELEASE_GATE_STREAM, RELEASE_GATE_ACTOR,
-  type ChannelOutcome,
+  WP_VERIFIED_EVENT, GATE_PASSED_EVENT, GATE_BLOCKED_EVENT, RELEASE_GATE_STREAM, RELEASE_GATE_ACTOR,
+  type ChannelOutcome, type ReleaseGateResult,
 } from './release-gate.types.js'
 
 /** ROLLBACK 자체 실패(연결 손상)해도 무시 — 원본 흐름 보존(OracleRepo·AdvisoryRepo 패턴). */
@@ -51,6 +51,46 @@ export class ReleaseGateRepo {
         )
       }
       await client.query('COMMIT')
+    } catch (err) {
+      await safeRollback(client); throw err
+    } finally {
+      client.release()
+    }
+  }
+
+  /** 게이트 결과를 단일 tx로 영속 + gate.passed/blocked 발행. 동일 (wf,version) 재평가는 ON CONFLICT → null(이중 emit 차단·M6). */
+  async recordGate(workflowId: string, gateVersion: string, result: ReleaseGateResult): Promise<{ eventId: string } | null> {
+    const eventType = result.status === 'passed' ? GATE_PASSED_EVENT : GATE_BLOCKED_EVENT
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const ins = await client.query(
+        `INSERT INTO release_gates (workflow_id, gate_version, status, per_wp, blocking_reasons, event_id)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (workflow_id, gate_version) DO NOTHING
+         RETURNING id`,
+        [workflowId, gateVersion, result.status, JSON.stringify(result.perWp), JSON.stringify(result.blockingReasons), null],
+      )
+      if (ins.rowCount === 0) { await safeRollback(client); return null }
+      const env = makeEnvelope(
+        { correlationId: workflowId, causationId: null, workflowId, stepId: `${eventType}:${gateVersion}`, attemptId: 0 },
+        this.now(),
+      )
+      const payload = { workflowId, gateVersion, status: result.status, perWp: result.perWp, blockingReasons: result.blockingReasons }
+      await client.query(
+        `INSERT INTO manager_events
+           (event_id, session_id, event_type, payload, correlation_id, causation_id, idempotency_key, actor, occurred_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [env.eventId, workflowId, eventType, JSON.stringify(payload),
+          env.correlationId, env.causationId, env.idempotencyKey, RELEASE_GATE_ACTOR, env.occurredAt],
+      )
+      await client.query(
+        `INSERT INTO manager_outbox (event_id, stream, message) VALUES ($1,$2,$3)`,
+        [env.eventId, RELEASE_GATE_STREAM, JSON.stringify({ envelope: env, type: eventType, payload })],
+      )
+      await client.query(`UPDATE release_gates SET event_id = $1 WHERE workflow_id = $2 AND gate_version = $3`, [env.eventId, workflowId, gateVersion])
+      await client.query('COMMIT')
+      return { eventId: env.eventId }
     } catch (err) {
       await safeRollback(client); throw err
     } finally {
