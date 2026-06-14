@@ -16,6 +16,7 @@ import type { ConformanceOracleStore, ImpactOracleStore, InvariantOracleStore } 
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
 import type { LeaseStore } from '../db/lease.repo.js'
+import type { ReleaseGateRepo } from '../db/release-gate.repo.js'
 
 const COMPLETION_GROUP = 'manager-completion-consumers'
 const COMPLETION_PREFIX = 'manager:completions'
@@ -34,6 +35,9 @@ export type CompletionSignalMessage = z.infer<typeof CompletionSignalSchema>
 export interface CompletionHandlerDeps {
   leaseStore: LeaseStore
   dispatch: DispatchDeps
+  /** P5-1 릴리스 게이트: all-WP-done 시 평가·영속(best-effort). 미주입이면 미평가(회귀 0). */
+  releaseGateEnabled?: boolean
+  releaseStore?: ReleaseGateRepo
 }
 
 /** 완료 신호 소비 핸들러: handleCompletion(lease release·DONE·후행 재디스패치). */
@@ -44,6 +48,8 @@ export function buildCompletionHandler(
     await handleCompletion(msg.envelope.workflowId, msg.payload.wpId, {
       leaseStore: deps.leaseStore,
       dispatch: deps.dispatch,
+      ...(deps.releaseGateEnabled !== undefined && { releaseGateEnabled: deps.releaseGateEnabled }),
+      ...(deps.releaseStore && { releaseStore: deps.releaseStore }),
     })
   }
 }
@@ -138,6 +144,8 @@ export interface SupervisorDeps {
   claude?: ClaudeLike
   model?: string
   timeoutMs?: number
+  /** P5-1: 릴리스 게이트 증거/결과 영속소(ReleaseGateRepo). releaseGate flag + 주입 시 게이트 평가. */
+  releaseStore?: ReleaseGateRepo
 }
 export interface SupervisorConfig {
   sweepMs: number
@@ -170,6 +178,8 @@ export interface SupervisorConfig {
   /** P4 4d security 채널(=MANAGER_WP_SECURITY). oracle 미소비. off면 mutation까지와 동일(회귀 0). */
   wpSecurity?: boolean
   securityMinSeverity?: SecuritySeverity
+  /** P5-1: 릴리스 게이트(all-WP-done 시 채널 증거 집계·영속) 활성(=MANAGER_RELEASE_GATE). releaseStore 동반 필요. */
+  releaseGate?: boolean
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
@@ -186,7 +196,7 @@ export function shouldWireDecisionRoute(routing: boolean, hasPool: boolean, hasA
 /** P4b-1: WorkerConsumer deps 조립(순수·D4) — wpVerify→verifyEnabled 스레딩을 행동 단언 가능하게 분리.
  *  instanceOf 단언만으로는 이 한 줄의 누락(undefined→off)이 무음 fail-open 퇴행이 되는 것을 잡지 못한다. */
 export function buildWorkerConsumerDeps(
-  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs'>
+  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs' | 'releaseStore'>
     & { handlers: Record<string, AgentExecutor> },
   config: SupervisorConfig,
 ): WorkerDeps {
@@ -223,6 +233,9 @@ export function buildWorkerConsumerDeps(
     ...(deps.claude && { claude: deps.claude }),
     ...(deps.model !== undefined && { model: deps.model }),
     ...(deps.timeoutMs !== undefined && { timeoutMs: deps.timeoutMs }),
+    // P5-1 릴리스 게이트: flag + releaseStore 둘 다 있어야 활성(검증 우회 무음 방지·행동 단언). oracle 미소비.
+    releaseGateEnabled: config.releaseGate === true && deps.releaseStore != null,
+    ...(deps.releaseStore && { releaseStore: deps.releaseStore }),
   }
 }
 
@@ -253,7 +266,12 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
 
   const completionConsumer = new BaseConsumer<CompletionSignalMessage>(
     makeRedis(),
-    buildCompletionHandler({ leaseStore: deps.leaseStore, dispatch }),
+    buildCompletionHandler({
+      leaseStore: deps.leaseStore,
+      dispatch,
+      releaseGateEnabled: config.releaseGate === true && deps.releaseStore != null,
+      ...(deps.releaseStore && { releaseStore: deps.releaseStore }),
+    }),
     COMPLETION_GROUP,
     `manager-completion-${process.pid}`,
     COMPLETION_PREFIX,
@@ -299,6 +317,7 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
             ...(deps.claude && { claude: deps.claude }),
             ...(deps.model !== undefined && { model: deps.model }),
             ...(deps.timeoutMs !== undefined && { timeoutMs: deps.timeoutMs }),
+            ...(deps.releaseStore && { releaseStore: deps.releaseStore }),
           },
           config,
         ),

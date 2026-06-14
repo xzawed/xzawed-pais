@@ -284,3 +284,22 @@ describe('buildWorkerConsumerDeps security (P4 4d)', () => {
     expect(deps.securityEnabled).toBe(false)
   })
 })
+
+describe('buildWorkerConsumerDeps releaseGate (P5-1)', () => {
+  it('threads releaseGate flag + store into WorkerDeps (P5-1)', () => {
+    const releaseStore = { recordEvidence: async () => {} }
+    const deps = buildWorkerConsumerDeps(
+      { repo: {} as never, publish: async () => {}, handlers: {}, leaseStore: {} as never, releaseStore } as never,
+      { sweepMs: 1, visibilityMs: 1, maxAttempts: 1, oracleDor: false, taskWorker: true, releaseGate: true } as never,
+    )
+    expect(deps.releaseGateEnabled).toBe(true)
+    expect(deps.releaseStore).toBe(releaseStore)
+  })
+  it('releaseGateEnabled false when flag off (regression 0)', () => {
+    const deps = buildWorkerConsumerDeps(
+      { repo: {} as never, publish: async () => {}, handlers: {}, leaseStore: {} as never } as never,
+      { sweepMs: 1, visibilityMs: 1, maxAttempts: 1, oracleDor: false, taskWorker: true } as never,
+    )
+    expect(deps.releaseGateEnabled).toBe(false)
+  })
+})
