@@ -39,6 +39,8 @@ import { LeaseStore } from './db/lease.repo.js'
 import { OracleRepo } from './db/oracle.repo.js'
 import { DecisionRepo } from './db/decision.repo.js'
 import { AdvisoryRepo } from './db/advisory.repo.js'
+import { ReleaseGateRepo } from './db/release-gate.repo.js'
+import { releaseGateWarnings } from './streams/server-release-gate.js'
 import { oracleRoute } from './api/oracle.route.js'
 import { decisionRoute } from './api/decision.route.js'
 import { createSupervisor, shouldWireSupervisor, shouldWireDecisionRoute, type Supervisor } from './streams/supervisor.js'
@@ -179,7 +181,8 @@ export async function buildServer(
       config.MANAGER_ORACLE_DRAFT ||
       config.MANAGER_DECOMPOSE_ENABLED ||
       config.MANAGER_WP_ADVISORY ||
-      config.MANAGER_DECISION_ROUTING)
+      config.MANAGER_DECISION_ROUTING ||
+      config.MANAGER_RELEASE_GATE)
   ) {
     outboxRelay = new OutboxRelay(pool, producer, config.MANAGER_OUTBOX_POLL_MS)
     outboxRelay.start()
@@ -199,6 +202,8 @@ export async function buildServer(
     pool && (config.MANAGER_DECISION_BRIEF || config.MANAGER_DECISION_ROUTING) ? new DecisionRepo(pool) : undefined
   // P4: advisory 채널 영속소(verdict.ok 후 optimization 제안). MANAGER_WP_ADVISORY + pool 시만 생성(회귀 0).
   const advisoryStore = pool && config.MANAGER_WP_ADVISORY ? new AdvisoryRepo(pool) : undefined
+  // P5-1: 릴리스 게이트 증거/결과 영속소(recordEvidence·recordGate·evidenceForWorkflow). MANAGER_RELEASE_GATE + pool 시만 생성(회귀 0).
+  const releaseStore = pool && config.MANAGER_RELEASE_GATE ? new ReleaseGateRepo(pool) : undefined
 
   // D5: 초안 영속은 decomposition consumer(=Supervisor)가 돌아야 하므로 TASK_MANAGER_ENABLED+DATABASE_URL이 전제다.
   // DRAFT만 켜고 그 전제가 없으면 producer가 oracleDrafts를 emit해도 소비자 부재로 영속되지 않는다 — 오진 방지 경고.
@@ -304,6 +309,12 @@ export async function buildServer(
     app.log.warn('MANAGER_DECISION_ROUTING=true 이지만 MANAGER_DECISION_BRIEF가 꺼져 있어 라우팅할 결정 브리프가 생성되지 않습니다.')
   }
 
+  // P5-1: 릴리스 게이트 전제 누락 시 오진 방지 경고(순수 헬퍼 위임·테스트 가능).
+  for (const msg of releaseGateWarnings({
+    releaseGate: config.MANAGER_RELEASE_GATE, taskManager: config.TASK_MANAGER_ENABLED,
+    wpVerify: config.MANAGER_WP_VERIFY, hasPool: pool !== undefined,
+  })) app.log.warn(msg)
+
   // Task Manager Supervisor 배선(P1d-7): flag on + pool이면 decomposition 소비→디스패치·lease sweep·
   // completion 소비→재디스패치를 가동. 생산자(P2) 미도착이라 빈 스트림 구독(동작 준비). flag off면 미배선.
   let supervisor: Supervisor | undefined
@@ -334,6 +345,8 @@ export async function buildServer(
         // P4: advisory 영속소 + LLM seam(=MANAGER_WP_ADVISORY). buildWorkerConsumerDeps가 advisoryStore 동반 시만 활성.
         ...(advisoryStore && { advisoryStore }),
         ...(config.MANAGER_WP_ADVISORY && { claude: client, model: config.CLAUDE_MODEL, timeoutMs: config.CLAUDE_TIMEOUT_MS }),
+        // P5-1: 릴리스 게이트 증거/결과 영속소(ReleaseGateRepo). releaseGate flag + 주입 시 게이트 평가.
+        ...(releaseStore && { releaseStore }),
       },
       {
         sweepMs: config.MANAGER_LEASE_SWEEP_MS,
@@ -365,6 +378,8 @@ export async function buildServer(
         securityMinSeverity: config.MANAGER_WP_SECURITY_MIN_SEVERITY,
         // P4: advisory 채널(=MANAGER_WP_ADVISORY). off면 워커 동작 P4b와 동일(회귀 0). advisoryStore 동반 시만 활성.
         wpAdvisory: config.MANAGER_WP_ADVISORY,
+        // P5-1: 릴리스 게이트(=MANAGER_RELEASE_GATE). off면 완료 흐름과 동일(회귀 0). releaseStore 동반 시만 활성.
+        releaseGate: config.MANAGER_RELEASE_GATE,
       },
     )
     supervisor.start()

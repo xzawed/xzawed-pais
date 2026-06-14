@@ -9,6 +9,7 @@ import type { ConformanceOracleStore, ImpactOracleStore, InvariantOracleStore } 
 import { WpDispatchSignalSchema, type WpDispatchSignalMessage } from './dispatch-signal.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
 import { verifyWp, publishVerificationFailed, type SecuritySeverity } from './verify.js'
+import type { ChannelOutcome } from '../db/release-gate.types.js'
 import { produceAdvisory, type AdvisoryStore } from './advisory.js'
 import type { ClaudeLike } from '@xzawed/agent-streams'
 import { DONE_STATE, ESCALATED_STATE } from './dispatch-constants.js'
@@ -65,6 +66,9 @@ export interface WorkerDeps {
   claude?: ClaudeLike
   model?: string
   timeoutMs?: number
+  /** P5-1 릴리스 게이트: verdict.ok 시 채널 증거를 영속(best-effort). off면 미주입(회귀 0). */
+  releaseGateEnabled?: boolean
+  releaseStore?: { recordEvidence(workflowId: string, wpId: string, attempt: number, outcomes: ChannelOutcome[]): Promise<void> }
 }
 
 export type WorkerOutcome =
@@ -203,6 +207,8 @@ async function runVerifyGate(
 ): Promise<WorkerOutcome | null> {
   if (!deps.verifyEnabled) return null
   const { workflowId } = msg.envelope
+  const collect = deps.releaseGateEnabled === true && deps.releaseStore !== undefined
+  const evidence: ChannelOutcome[] = []
   const verdict = await verifyWp(tool, wp, result, {
     handlers: deps.handlers, buildInput: deps.buildInput ?? buildWorkerInput, userContext, workflowId,
     attempt: msg.payload.attempt,
@@ -216,14 +222,30 @@ async function runVerifyGate(
     ...(deps.mutationMaxMutants !== undefined && { mutationMaxMutants: deps.mutationMaxMutants }),
     securityEnabled: deps.securityEnabled === true,
     ...(deps.securityMinSeverity !== undefined && { securityMinSeverity: deps.securityMinSeverity }),
+    ...(collect && { recordOutcome: (c: ChannelOutcome['channel'], o: ChannelOutcome['outcome']) => evidence.push({ channel: c, outcome: o }) }),
   })
-  if (verdict.ok) return null
+  if (verdict.ok) {
+    if (collect) await persistVerificationEvidence(deps, workflowId, msg, evidence)
+    return null
+  }
   try {
     await publishVerificationFailed(deps.publish, workflowId, msg.payload.wpId, msg.payload.attempt, verdict.reason, deps.now?.())
   } catch (err) {
     console.error('[worker] wp.verification.failed 발행 실패(완료 부재가 reclaim 보장):', err)
   }
   return { status: 'verification_failed', wpId: msg.payload.wpId, reason: verdict.reason }
+}
+
+/** P5-1: verdict.ok 시 수집한 채널 증거를 best-effort 영속(완료를 막지 않음·게이트는 증거 부재를 un-proven 처리). */
+async function persistVerificationEvidence(
+  deps: WorkerDeps, workflowId: string, msg: WpDispatchSignalMessage, evidence: ChannelOutcome[],
+): Promise<void> {
+  if (evidence.length === 0 || !deps.releaseStore) return
+  try {
+    await deps.releaseStore.recordEvidence(workflowId, msg.payload.wpId, msg.payload.attempt, evidence)
+  } catch (err) {
+    console.error('[worker] wp.verified 증거 영속 실패(게이트는 증거 부재를 un-proven 처리):', err)
+  }
 }
 
 /** P4 advisory(N3): develop_code WP의 verdict.ok 후 비차단 optimization 제안을 생산한다(produceAdvisory는

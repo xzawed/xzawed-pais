@@ -5,6 +5,34 @@ import {
   judgePrimaryResult, planVerificationChecks, verifyWp, publishVerificationFailed, verifySessionId,
   WP_VERIFICATION_FAILED, meetsMinRisk, type VerifyDeps,
 } from './verify.js'
+import type { ChannelName, ChannelOutcomeKind } from '../db/release-gate.types.js'
+
+function collectorDeps(base: Partial<VerifyDeps>): { deps: VerifyDeps; outcomes: Array<{ c: ChannelName; o: ChannelOutcomeKind }> } {
+  const outcomes: Array<{ c: ChannelName; o: ChannelOutcomeKind }> = []
+  const deps = {
+    handlers: {}, buildInput: () => ({}), workflowId: 'wf-rg', attempt: 0,
+    recordOutcome: (c: ChannelName, o: ChannelOutcomeKind) => outcomes.push({ c, o }),
+    ...base,
+  } as VerifyDeps
+  return { deps, outcomes }
+}
+
+describe('verifyWp recordOutcome (P5-1a)', () => {
+  it('records tc:passed for a passing run_tests WP', async () => {
+    const { deps, outcomes } = collectorDeps({})
+    const wp = { id: 'wp-1', storyId: 's1', owningRole: 'tester', acceptanceCriteria: [], risk: 'MEDIUM' } as never
+    const verdict = await verifyWp('run_tests', wp, { success: true, passed: 3, failed: 0 }, deps)
+    expect(verdict.ok).toBe(true)
+    expect(outcomes).toContainEqual({ c: 'tc', o: 'passed' })
+  })
+  it('does NOT record tc when primary fails (vacuous run_tests)', async () => {
+    const { deps, outcomes } = collectorDeps({})
+    const wp = { id: 'wp-2', storyId: 's1', owningRole: 'tester', acceptanceCriteria: [], risk: 'MEDIUM' } as never
+    const verdict = await verifyWp('run_tests', wp, { success: true, passed: 0, failed: 0 }, deps)
+    expect(verdict.ok).toBe(false)
+    expect(outcomes).toEqual([])
+  })
+})
 
 describe('judgePrimaryResult — 결과-근거 판정(fail-closed)', () => {
   it('run_tests: success=true·failed=0 → ok', () => {

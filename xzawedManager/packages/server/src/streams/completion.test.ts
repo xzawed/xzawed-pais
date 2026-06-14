@@ -9,8 +9,8 @@ const wp = (id: string, deps: string[] = []): WorkPackage => ({
   acceptanceCriteria: [], dependencies: deps, attributionCounters: {}, status: 'draft',
 })
 const stored = (wps: WorkPackage[]): StoredGraph => ({ workflowId: 'wf-1', workPackages: wps, eventId: null, version: 1, userContext: null })
-const stateRec = (wpId: string, toState: string): WpStateRecord => ({
-  seq: 1, workflowId: 'wf-1', wpId, fromState: null, toState, eventId: null, reason: null, occurredAt: 0,
+const stateRec = (wpId: string, toState: string, seq = 1): WpStateRecord => ({
+  seq, workflowId: 'wf-1', wpId, fromState: null, toState, eventId: null, reason: null, occurredAt: 0,
 })
 const activeLease = (over: Partial<LeaseRecord> = {}): LeaseRecord => ({
   workflowId: 'wf-1', wpId: 'a', attempt: 0, owner: null, status: 'active', expiresAt: 0, stepN: 0, eventId: null, ...over,
@@ -22,6 +22,8 @@ function makeDeps(opts: {
   completeResult?: { status: 'completed'; eventId: string; seq: number } | { status: 'skipped' }
   redispatchGraph?: StoredGraph
   redispatchStates?: Map<string, WpStateRecord>
+  releaseGateEnabled?: boolean
+  releaseStore?: CompletionDeps['releaseStore']
 }) {
   const leaseStore = {
     getLease: vi.fn().mockResolvedValue(opts.lease),
@@ -33,7 +35,12 @@ function makeDeps(opts: {
     latestStates: vi.fn().mockResolvedValue(opts.redispatchStates ?? new Map()),
   }
   const store = { recordDispatch: vi.fn().mockImplementation(() => Promise.resolve({ status: 'recorded', eventId: `d${n++}`, seq: n })) }
-  const deps = { leaseStore, dispatch: { repo, store } } as unknown as CompletionDeps
+  const deps = {
+    leaseStore,
+    dispatch: { repo, store },
+    ...(opts.releaseGateEnabled !== undefined && { releaseGateEnabled: opts.releaseGateEnabled }),
+    ...(opts.releaseStore !== undefined && { releaseStore: opts.releaseStore }),
+  } as unknown as CompletionDeps
   return { deps, leaseStore, repo, store }
 }
 
@@ -74,5 +81,79 @@ describe('handleCompletion', () => {
     const out = await handleCompletion('wf-1', 'a', deps)
     expect(out).toEqual({ status: 'skipped', dispatched: [] })
     expect(repo.getGraph).not.toHaveBeenCalled() // handleDispatch 미호출
+  })
+
+  // P5-1b: all-WP-done 시 릴리스 게이트 평가·영속
+  it('evaluates release gate when all WPs DONE (P5-1b)', async () => {
+    const gates: Array<{ version: string; status: string }> = []
+    const releaseStore: CompletionDeps['releaseStore'] = {
+      evidenceForWorkflow: async () => new Map([['wp-a', [{ channel: 'tc', outcome: 'passed' }]]]),
+      recordGate: async (_wf: string, version: string, result: { status: string }) => {
+        gates.push({ version, status: result.status })
+        return { eventId: 'e1' }
+      },
+    }
+    // 단일 WP 'wp-a'가 DONE → allWpDone=true → 게이트 평가
+    const graph = stored([wp('wp-a')])
+    const states = new Map([['wp-a', stateRec('wp-a', 'DONE', 5)]])
+    const { deps } = makeDeps({
+      lease: activeLease({ wpId: 'wp-a' }),
+      redispatchGraph: graph,
+      redispatchStates: states,
+      releaseGateEnabled: true,
+      releaseStore,
+    })
+    const out = await handleCompletion('wf-c', 'wp-a', deps)
+    expect(out.status).toBe('completed')
+    expect(gates).toHaveLength(1)
+    expect(gates[0]!.status).toBe('passed')
+    expect(out.gate).toBe('passed')
+  })
+
+  it('does NOT evaluate gate when a WP still not DONE', async () => {
+    const gates: Array<{ version: string; status: string }> = []
+    const releaseStore: CompletionDeps['releaseStore'] = {
+      evidenceForWorkflow: async () => new Map(),
+      recordGate: async (_wf, version, result) => { gates.push({ version, status: result.status }); return { eventId: 'e2' } },
+    }
+    // wp-a DONE, wp-b ESCALATED → allWpDone=false → recordGate 미호출
+    const graph = stored([wp('wp-a'), wp('wp-b')])
+    const states = new Map([
+      ['wp-a', stateRec('wp-a', 'DONE')],
+      ['wp-b', stateRec('wp-b', 'ESCALATED')],
+    ])
+    const { deps } = makeDeps({
+      lease: activeLease({ wpId: 'wp-a' }),
+      redispatchGraph: graph,
+      redispatchStates: states,
+      releaseGateEnabled: true,
+      releaseStore,
+    })
+    const out = await handleCompletion('wf-c', 'wp-a', deps)
+    expect(out.status).toBe('completed')
+    expect(gates).toHaveLength(0)
+    expect(out.gate).toBeUndefined()
+  })
+
+  it('no gate eval when releaseGate disabled (regression 0)', async () => {
+    const gates: Array<{ version: string; status: string }> = []
+    const releaseStore: CompletionDeps['releaseStore'] = {
+      evidenceForWorkflow: async () => new Map([['wp-a', [{ channel: 'tc', outcome: 'passed' }]]]),
+      recordGate: async (_wf, version, result) => { gates.push({ version, status: result.status }); return { eventId: 'e3' } },
+    }
+    // releaseGateEnabled 미주입 → 게이트 평가 없음(회귀 0)
+    const graph = stored([wp('wp-a')])
+    const states = new Map([['wp-a', stateRec('wp-a', 'DONE', 3)]])
+    const { deps } = makeDeps({
+      lease: activeLease({ wpId: 'wp-a' }),
+      redispatchGraph: graph,
+      redispatchStates: states,
+      // releaseGateEnabled: undefined — 의도적 미주입
+      releaseStore,
+    })
+    const out = await handleCompletion('wf-c', 'wp-a', deps)
+    expect(out.status).toBe('completed')
+    expect(gates).toHaveLength(0)
+    expect(out.gate).toBeUndefined()
   })
 })

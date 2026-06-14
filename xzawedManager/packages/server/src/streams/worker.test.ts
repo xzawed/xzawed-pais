@@ -327,6 +327,59 @@ describe('startLeaseHeartbeat (하드닝)', () => {
   })
 })
 
+describe('P5-1a 릴리스 게이트 증거 영속', () => {
+  it('persists collected evidence when releaseStore injected and verdict ok (P5-1a)', async () => {
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/ws' }
+    const recorded: Array<{ wpId: string; outcomes: unknown }> = []
+    const releaseStore = {
+      recordEvidence: async (_wf: string, wpId: string, _a: number, outcomes: unknown) => {
+        recorded.push({ wpId, outcomes })
+      },
+    }
+    const build = vi.fn().mockResolvedValue({ success: true })
+    const test = vi.fn().mockResolvedValue({ success: true, failed: 0, passed: 1 })
+    const d = deps({
+      verifyEnabled: true,
+      releaseGateEnabled: true,
+      releaseStore,
+      repo: repoMock({ workPackages: [wp()], eventId: null, version: 1, userContext: uc }),
+      handlers: {
+        develop_code: { execute: vi.fn().mockResolvedValue({ artifacts: ['f.ts'] }) },
+        build_project: { execute: build },
+        run_tests: { execute: test },
+      },
+    })
+    const outcome = await handleWpDispatchSignal(sig(), d)
+    expect(outcome.status).toBe('completed')
+    expect(recorded.length).toBe(1)
+    expect(recorded[0]!.wpId).toBe('a')
+    expect(Array.isArray(recorded[0]!.outcomes)).toBe(true)
+  })
+
+  it('releaseGateEnabled 미지정이면 recordEvidence 미호출(회귀 0)', async () => {
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/ws' }
+    const recorded: unknown[] = []
+    const releaseStore = {
+      recordEvidence: async (_wf: string, _wpId: string, _a: number, _outcomes: unknown) => {
+        recorded.push(_wpId)
+      },
+    }
+    const d = deps({
+      verifyEnabled: true,
+      releaseStore,
+      repo: repoMock({ workPackages: [wp()], eventId: null, version: 1, userContext: uc }),
+      handlers: {
+        develop_code: { execute: vi.fn().mockResolvedValue({ artifacts: ['f.ts'] }) },
+        build_project: { execute: vi.fn().mockResolvedValue({ success: true }) },
+        run_tests: { execute: vi.fn().mockResolvedValue({ success: true, failed: 0, passed: 1 }) },
+      },
+    })
+    const outcome = await handleWpDispatchSignal(sig(), d)
+    expect(outcome.status).toBe('completed')
+    expect(recorded.length).toBe(0)
+  })
+})
+
 describe('handleWpDispatchSignal — lease 하트비트(하드닝)', () => {
   it('leaseStore/visibilityMs 주입 시 실행 동안 주기적 renewLease·완료 후 stop', async () => {
     vi.useFakeTimers()
