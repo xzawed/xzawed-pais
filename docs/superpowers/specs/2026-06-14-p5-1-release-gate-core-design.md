@@ -51,10 +51,14 @@ interface ChannelOutcome { channel: ChannelName; outcome: ChannelOutcomeKind; de
 - `not_applicable`: 이 WP 도구 유형에 채널이 해당 없음(예: develop_code 아닌 WP의 conformance).
 - `failed`는 **게이트가 보는 증거에 나타나지 않는다** — verifyWp hard-AND에서 fail이면 완료 미발행→DONE 미도달→게이트 미집계. 즉 DONE WP의 모든 채널 outcome ∈ {passed, skipped, not_applicable}.
 
-### 5.2 verify.ts 보강 (회귀 0)
-- `runConformanceCheck`·`runImpactCheck`·`runPropertyCheck`·`runMutationCheck`·`runSecurityCheck`가 기존 `{ok}` 외에 `ChannelOutcome`을 산출하도록 보강. **verdict 결정 로직·hard-AND·단락(fail에서만)·never-throw fail-closed는 불변** — 성공 WP는 전 채널이 평가되므로 outcome 분해가 완전하다.
-- `verifyWp`가 verdict와 함께 `channelOutcomes: ChannelOutcome[]`를 반환(추가 필드·기존 호출부 회귀 0). 게이트 flag off면 워커가 이 필드를 무시.
-- TC(테스트 통과)는 develop_code 파생 `run_tests`(P4b-1·`passed>0` floor) 결과를 `channel:'tc'` outcome으로 환원.
+### 5.2 verify.ts 보강 (additive·회귀 0) — recon 후 구현 정제
+`VerificationVerdict`(`{ok:true}|{ok:false,reason}`)는 verify.ts 내 ~10개 반환 지점에서 쓰여 반환 타입 변경이 침습적(916 테스트 영향). 대신 **`VerifyDeps`에 optional `recordOutcome?: (channel, outcome) => void` 콜백을 추가**(additive)하고 각 채널이 skip/pass 지점에서 호출한다:
+- `runAuthoredCheck`(conformance/impact/property 공유): `AuthoredCheckConfig`에 `channel` 추가 → skip 2지점(`!enabled||!oracleStore`, `baseline==null`)은 `'skipped'`, `executeAuthoredTest` 성공은 `'passed'`.
+- `runMutationCheck`: skip 2지점(`!enabled`, risk<floor) `'skipped'`, 성공 `'passed'`.
+- `runSecurityCheck`: skip(`!enabled`) `'skipped'`, blocking 없음 `'passed'`.
+- `verifyWp`: develop_code 파생 체크(build+test) 통과 후 `tc` `'passed'` 기록(P4b-1·`passed>0` floor 계승).
+- **verdict 결정·hard-AND·단락·never-throw 불변.** FAIL은 WP가 DONE 미도달이라 evidence 무의미. 게이트 flag off면 워커가 `recordOutcome` 미주입→`?.` no-op→바이트 회귀 0.
+- `ChannelOutcomeKind = 'passed' | 'skipped'`만. 채널은 develop_code의 `runChannelChecks`에서만 도므로 `not_applicable`은 채널 outcome이 아니라 §6.3 게이트의 WP-수준 판정(검증불가 도구)에서 처리.
 
 ### 5.3 증거 영속
 - 워커가 `verifyEnabled` 통과(DONE 발행) 직전, `releaseGateEnabled`이면 `EvidenceStore.recordEvidence(wf, wpId, attempt, channelOutcomes)` 호출.
@@ -80,6 +84,7 @@ function evaluateReleaseGate(
 //   unverifiable=true ⇒ 검증 불가 도구 유형(required 미정의·design_ui 등)·categorically un-proven
 ```
 - LLM/IO 0·결정론(다른 순수 코어 패턴). 입력 WP를 id 사전순 안정 정렬.
+- **evidence가 required 집합을 인코딩**(recon 정제): develop_code WP만 evidence 행을 남기며, 각 행은 enabled 채널의 `passed`/`skipped`(+ 항상 `tc:passed`). 따라서 `evidenceByWp.get(wpId)`이 비어있으면(=비-develop_code 또는 미영속) `unverifiable:true`→un-proven. 비어있지 않으면 `proven = (tc:passed 행 존재) AND (모든 행 outcome === 'passed', 즉 'skipped' 행 0)`. `missingChannels` = outcome이 'skipped'인 채널 + tc 부재면 'tc'. `ReleaseGatePolicy`는 향후 확장 여지(예: 특정 채널 강제)로 두되 P5-1 기본 규칙은 위와 같다.
 
 ### 6.3 required-channel 정책 (핵심)
 - **검증 가능 도구 유형 + required(wp)**:
