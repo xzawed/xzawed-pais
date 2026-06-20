@@ -18,6 +18,7 @@ import { StreamProducer } from './streams/producer.js'
 import { StreamConsumer } from './streams/consumer.js'
 import { healthRoutes } from './api/health.route.js'
 import { knowledgeRoutes } from './api/knowledge.route.js'
+import { decisionsRoutes } from './api/decisions.route.js'
 import { sessionsRoutes } from './api/sessions.route.js'
 import { sessionWsRoutes } from './ws/session.ws.js'
 import { authRoutes } from './api/auth.route.js'
@@ -136,6 +137,11 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     ? (): string => app.jwt.sign({ svc: 'knowledge-proxy' }, { expiresIn: '60s' })
     : undefined
   await app.register(knowledgeRoutes, {
+    managerUrl: config.managerUrl,
+    ...(userAuthHook && { userAuthHook }),
+    ...(signServiceToken && { signServiceToken }),
+  })
+  await app.register(decisionsRoutes, {
     managerUrl: config.managerUrl,
     ...(userAuthHook && { userAuthHook }),
     ...(signServiceToken && { signServiceToken }),
