@@ -3,6 +3,11 @@ import { DEFAULT_MAX_ATTEMPTS, DEFAULT_VISIBILITY_MS } from './dispatch-constant
 import { publishDispatchSignal } from './dispatch-signal.js'
 import type { Publish } from './decomposition-consumer.js'
 
+/** projectId 조회용 좁은 포트(TaskGraphRepo가 구조적 충족). 결정 브리프에 프로젝트 스코프 부여. */
+export interface GraphQueryPort {
+  getGraph(workflowId: string): Promise<{ userContext: { projectId: string } | null } | null>
+}
+
 export interface ReclaimItem {
   workflowId: string
   wpId: string
@@ -39,7 +44,9 @@ export interface SweepDeps {
   /** P4-1: 주입 시 reclaim 후 wp.dispatch_signal 발행(워커 재실행 트리거). 미주입이면 무발행. */
   publish?: Publish
   /** P6: 주입 시 escalate 성공 후 결함 브리프(DecisionRequest) 생성. best-effort(throw는 sweep 비차단). */
-  onEscalated?: (info: { workflowId: string; wpId: string; attempt: number; stepN: number }) => Promise<void>
+  onEscalated?: (info: { workflowId: string; wpId: string; attempt: number; stepN: number; projectId?: string | null }) => Promise<void>
+  /** C0/C1: 주입 시 escalate 결함 브리프에 projectId(getGraph.userContext) 부여. 미주입/실패는 null(N3). */
+  graphStore?: GraphQueryPort
 }
 
 export interface SweepOutcome {
@@ -59,6 +66,17 @@ async function reclaimOne(item: ReclaimItem, deps: SweepDeps, visibilityMs: numb
   outcome.reclaimed.push({ workflowId: item.workflowId, wpId: item.wpId, nextAttempt: item.nextAttempt, eventId: r.eventId })
 }
 
+/** 그래프에서 projectId 조회 — 미주입·미존재·실패는 null(N3 never-throw: lease escalation 비차단). */
+async function resolveProjectId(graphStore: GraphQueryPort | undefined, workflowId: string): Promise<string | null> {
+  if (!graphStore) return null
+  try {
+    return (await graphStore.getGraph(workflowId))?.userContext?.projectId ?? null
+  } catch (err) {
+    console.warn('[lease-sweep] projectId 조회 실패(best-effort·null 강등):', err)
+    return null
+  }
+}
+
 /** 한 항목 escalate: 성공 시 outcome.escalated에 추가 + 결함 브리프(P6·best-effort), skip이면 outcome.skipped++. */
 async function escalateOne(item: ReclaimItem, deps: SweepDeps, outcome: SweepOutcome): Promise<void> {
   const r = await deps.store.recordEscalation({
@@ -66,8 +84,9 @@ async function escalateOne(item: ReclaimItem, deps: SweepDeps, outcome: SweepOut
   })
   if (r.status !== 'escalated') { outcome.skipped += 1; return }
   if (deps.onEscalated) {
+    const projectId = await resolveProjectId(deps.graphStore, item.workflowId)
     try {
-      await deps.onEscalated({ workflowId: item.workflowId, wpId: item.wpId, attempt: item.attempt, stepN: item.stepN })
+      await deps.onEscalated({ workflowId: item.workflowId, wpId: item.wpId, attempt: item.attempt, stepN: item.stepN, projectId })
     } catch (err) {
       console.warn('[lease-sweep] 결함 브리프 생성 실패(best-effort·escalation 이벤트는 진실원천):', err)
     }
