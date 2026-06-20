@@ -171,6 +171,11 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // P5-2b: gate.passed/사인오프 → deploy 하드 전제. 전제: MANAGER_RELEASE_GATE+DATABASE_URL. off면 회귀 0.
+    MANAGER_DEPLOY_GATE: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

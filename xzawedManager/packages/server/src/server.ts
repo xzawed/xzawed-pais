@@ -29,6 +29,7 @@ import { createGithubOpsHandler } from './tools/github-ops.js'
 import { createRegisterProjectHandler } from './tools/register-project.js'
 import { createSwitchProjectHandler } from './tools/switch-project.js'
 import { createDeployProjectHandler } from './tools/deploy-project.js'
+import { ReleaseDeployGate } from './tools/deploy-gate.js'
 import { SessionGatewayConsumer } from './streams/session-gateway.js'
 import { WatcherEventConsumer } from './streams/watcher-event-consumer.js'
 import { getRedisClient, createRedisClient } from './streams/redis.client.js'
@@ -103,7 +104,6 @@ export async function buildServer(
   registry.register(createSecurityAuditHandler(config.REDIS_URL, bulkhead))
   if (config.GITHUB_TOKEN) {
     registry.register(createGithubOpsHandler(config.GITHUB_TOKEN))
-    registry.register(createDeployProjectHandler(config.GITHUB_TOKEN, config.REDIS_URL))
   } else {
     app.log.warn(
       'GITHUB_TOKEN이 설정되지 않았습니다. GitHub 관련 작업(repo 생성, 코드 push, PR 생성 등)을 요청하면 "Unknown tool: github_ops" 오류가 발생합니다. .env 파일에 GITHUB_TOKEN을 추가하세요.',
@@ -205,6 +205,26 @@ export async function buildServer(
   const advisoryStore = pool && config.MANAGER_WP_ADVISORY ? new AdvisoryRepo(pool) : undefined
   // P5-1: 릴리스 게이트 증거/결과 영속소(recordEvidence·recordGate·evidenceForWorkflow). MANAGER_RELEASE_GATE + pool 시만 생성(회귀 0).
   const releaseStore = pool && config.MANAGER_RELEASE_GATE ? new ReleaseGateRepo(pool) : undefined
+
+  // P5-2b: 릴리스 게이트 통과/사인오프를 deploy_project 하드 전제로. pool 가드로 truthy 보장.
+  const deployGate =
+    pool && config.MANAGER_DEPLOY_GATE && config.MANAGER_RELEASE_GATE
+      ? new ReleaseDeployGate(
+          releaseStore ?? new ReleaseGateRepo(pool),
+          decisionStore ?? new DecisionRepo(pool),
+        )
+      : undefined
+  if (config.GITHUB_TOKEN) {
+    registry.register(createDeployProjectHandler(config.GITHUB_TOKEN, config.REDIS_URL, deployGate))
+  }
+
+  // P5-2b: 전제 누락 시 오진 방지 경고.
+  if (config.MANAGER_DEPLOY_GATE && !config.MANAGER_RELEASE_GATE) {
+    app.log.warn('MANAGER_DEPLOY_GATE=true 이지만 MANAGER_RELEASE_GATE가 꺼져 있어 게이트가 기록되지 않아 deploy 검사가 항상 허용됩니다.')
+  }
+  if (config.MANAGER_DEPLOY_GATE && !pool) {
+    app.log.warn('MANAGER_DEPLOY_GATE=true 이지만 DATABASE_URL이 없어 게이트 조회 불가 — deploy 검사가 비활성입니다.')
+  }
 
   // D5: 초안 영속은 decomposition consumer(=Supervisor)가 돌아야 하므로 TASK_MANAGER_ENABLED+DATABASE_URL이 전제다.
   // DRAFT만 켜고 그 전제가 없으면 producer가 oracleDrafts를 emit해도 소비자 부재로 영속되지 않는다 — 오진 방지 경고.

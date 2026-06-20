@@ -190,6 +190,23 @@ export class DecisionRepo {
     return rows.map(rowToRequest)
   }
 
+  /**
+   * P5-2b: 해당 workflow에 scope='release' 사인오프가 존재하는지. sign_offs ⋈ human_decisions ⋈ decision_requests
+   * 조인으로 워크플로 매칭. 존재 = 사람이 degraded 릴리스를 명시 수용(비부인 M9). deploy 게이트 우회 근거.
+   */
+  async hasApprovedReleaseSignoff(workflowId: string): Promise<boolean> {
+    const { rows } = await this.pool.query<{ ok: number }>(
+      `SELECT 1 AS ok
+         FROM sign_offs s
+         JOIN human_decisions h ON h.decision_id = s.decision_id
+         JOIN decision_requests r ON r.request_id = h.request_id
+        WHERE r.workflow_id = $1 AND s.scope = 'release'
+        LIMIT 1`,
+      [workflowId],
+    )
+    return rows.length > 0
+  }
+
   async decisionsForRequest(requestId: string): Promise<HumanDecision[]> {
     const { rows } = await this.pool.query<DecisionRow>(
       `SELECT * FROM human_decisions WHERE request_id = $1 ORDER BY decided_at`,
