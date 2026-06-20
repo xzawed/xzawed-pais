@@ -103,7 +103,8 @@ MANAGER_DECISION_SWEEP_MS: z.coerce.number().int().positive().default(60_000),  
 - `config.MANAGER_DECISION_EXPIRY`·`MANAGER_DECISION_SWEEP_MS`(ms·무변환)·**`MANAGER_DECISION_TTL_HOURS * 3_600_000`(시간→ms 변환·`decisionTtlMs`로 주입)**을 `createSupervisor`에 전달. ⚠️ TTL은 시간→ms 변환, SWEEP_MS는 이미 ms(무변환) — 혼동 시 72배 오계산.
 - **`decisionStore` 생성 조건을 `pool && (MANAGER_DECISION_BRIEF || MANAGER_DECISION_ROUTING || MANAGER_DECISION_EXPIRY)`로 확장**(EXPIRY-only 토글 시에도 sweep용 `DecisionRepo` 생성 — 현재 `BRIEF||ROUTING`만이라 EXPIRY-only면 store 부재로 Sweeper 미구성).
 - **OutboxRelay 기동 조건에 `MANAGER_DECISION_EXPIRY` 추가**(`decision.expired` 아웃박스→Redis 발행 필수 — 없으면 published_at=NULL 잔류·**M8 비-무음 위반**).
-- 전제 경고: `MANAGER_DECISION_EXPIRY`인데 `decisionStore` 없음(pool 부재)이면 `app.log.warn`(Sweeper 미구성 통지).
+- 전제 경고 2종(`app.log.warn`): ①`MANAGER_DECISION_EXPIRY`인데 pool 부재(`decisionStore` 미생성). ②`MANAGER_DECISION_EXPIRY`+pool인데 `TASK_MANAGER_ENABLED` off — **DecisionSweeper는 `createSupervisor`(=`shouldWireSupervisor(TASK_MANAGER_ENABLED, pool)`) 안에서만 구성**되므로 Supervisor 미배선 시 sweep·expiresAt 주입 모두 비활성(무음 no-op 방지).
+- **전제: `TASK_MANAGER_ENABLED`+`DATABASE_URL`**(`MANAGER_DECISION_BRIEF`/`ROUTING`과 동일 — sweep/expiresAt 주입이 Supervisor 배선에 의존).
 
 ## 결정 (승인됨)
 
