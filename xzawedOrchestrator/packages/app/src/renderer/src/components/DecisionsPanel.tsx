@@ -27,7 +27,10 @@ export function DecisionsPanel(): React.JSX.Element {
   const fetchDecisions = useCallback(
     (signal?: { active: boolean }): Promise<void> => {
       if (!projectId) {
-        setItems([])
+        if (!signal || signal.active) {
+          setItems([])
+          setLoading(false)
+        }
         return Promise.resolve()
       }
       setLoading(true)
