@@ -55,18 +55,21 @@ describe.skipIf(!DB)('DecisionRepo.expiredPendingRequests + expire loop (통합)
     const ids = await repo.expiredPendingRequests(now, 100)
     expect(ids).not.toContain(id)
   })
-  it('LIMIT 준수', async () => {
+  it('LIMIT 준수 + ORDER BY expires_at ASC(오래된 것 먼저)', async () => {
     const now = Date.now()
-    await seedReq(repo, `${PFX}l1`, now - 1000)
-    await seedReq(repo, `${PFX}l2`, now - 2000)
-    expect((await repo.expiredPendingRequests(now, 1)).length).toBe(1)
+    await seedReq(repo, `${PFX}l1`, now - 1000)         // 더 최근
+    const older = await seedReq(repo, `${PFX}l2`, now - 2000) // 더 오래됨 → ASC 첫 행
+    const result = await repo.expiredPendingRequests(now, 1)
+    expect(result.length).toBe(1)
+    expect(result[0]).toBe(older)
   })
   it('e2e: 만료 → expireRequest → EXPIRED + decision.expired 이벤트', async () => {
     const now = Date.now()
     const id = await seedReq(repo, `${PFX}e2e`, now - 1000)
     const [expId] = await repo.expiredPendingRequests(now, 100)
     expect(expId).toBe(id)
-    const r = await repo.expireRequest(expId!)
+    if (!expId) return // 타입 내로잉 — 위 단언 실패 시 undefined로 진행 방지(I-1)
+    const r = await repo.expireRequest(expId)
     expect(r).not.toBeNull()
     const req = await repo.getRequest(id)
     expect(req?.status).toBe(DECISION_EXPIRED)
