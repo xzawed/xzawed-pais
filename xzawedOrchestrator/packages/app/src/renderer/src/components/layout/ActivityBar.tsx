@@ -9,11 +9,12 @@ import { cn } from '../../lib/utils.js'
 interface NavItem { panel: ActivePanel; icon: string }
 
 const NAV_ITEMS: NavItem[] = [
-  { panel: 'chat',    icon: '💬' },
-  { panel: 'github',  icon: '🐙' },
-  { panel: 'mcp',     icon: '🔌' },
-  { panel: 'plugins', icon: '🧩' },
-  { panel: 'wiki',    icon: '📚' },
+  { panel: 'chat',      icon: '💬' },
+  { panel: 'github',    icon: '🐙' },
+  { panel: 'mcp',       icon: '🔌' },
+  { panel: 'plugins',   icon: '🧩' },
+  { panel: 'wiki',      icon: '📚' },
+  { panel: 'decisions', icon: '📋' },
 ]
 
 export function ActivityBar(): React.JSX.Element {
