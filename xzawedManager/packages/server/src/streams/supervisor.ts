@@ -337,9 +337,12 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
       )
     : undefined
 
-  // P5-2a: gate.blocked → 사인오프 DecisionRequest = releaseSignoff && decisionStore && releaseStore.
+  // P5-2a: gate.blocked → 사인오프 DecisionRequest = releaseSignoff && decisionRouting && decisionStore && releaseStore.
   //   release 게이트가 발행(releaseStore)·결정 라우팅이 소비(decisionStore)·graphStore=repo(projectId).
-  const signoffConsumer = config.releaseSignoff && deps.decisionStore && deps.releaseStore
+  //   decisionRouting 전제 필수: accept_known 처리는 DecisionRecordedConsumer(decisionRouting 게이트) 안에서만
+  //   동작하므로 decisionRouting=false 상태에서 signoffConsumer만 활성화하면 사인오프 요청이 생성되지만
+  //   영원히 소비되지 않는 구조적 불완전 상태가 된다 — fail-closed.
+  const signoffConsumer = config.releaseSignoff && config.decisionRouting && deps.decisionStore && deps.releaseStore
     ? new ReleaseSignoffConsumer(makeRedis(), { onBlocked: makeSignoffBrief(deps.decisionStore, deps.repo) })
     : undefined
 
