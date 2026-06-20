@@ -4,6 +4,9 @@
  * ReleaseDeployGate 구현체는 Task 4에서 같은 파일에 additive로 추가된다.
  */
 
+import type { ReleaseGateRepo } from '../db/release-gate.repo.js'
+import type { DecisionRepo } from '../db/decision.repo.js'
+
 /** Orchestrator가 프로젝트 미선택 세션에 보내는 마법 문자열(sessions.route.ts:118). 부재와 동일 취급(fail-open). */
 export const PROJECTLESS_SENTINEL = 'default'
 
@@ -37,5 +40,31 @@ export function evaluateDeployGate(input: {
     reason:
       `릴리스 게이트가 BLOCKED(workflow ${gate.workflowId})이고 승인된 릴리스 사인오프가 없습니다. ` +
       `차단 WP를 해소하거나 릴리스 사인오프(accept_known)를 받은 뒤 배포하세요.`,
+  }
+}
+
+/**
+ * DeployGatePort 구현체. projectId 가드 + DB 조회 + never-throw catch(fail-open) 2케이스를 처리하고,
+ * 게이트/사인오프 판정은 순수 evaluateDeployGate에 위임한다.
+ */
+export class ReleaseDeployGate implements DeployGatePort {
+  constructor(
+    private readonly gates: ReleaseGateRepo,
+    private readonly decisions: DecisionRepo,
+  ) {}
+
+  async checkDeploy(projectId: string | undefined): Promise<DeployGateVerdict> {
+    if (!projectId || projectId === PROJECTLESS_SENTINEL) return { allowed: true } // fail-open: 식별 불가
+    try {
+      const gate = await this.gates.latestGateByProject(projectId)
+      const hasApprovedSignoff =
+        gate?.status === 'blocked'
+          ? await this.decisions.hasApprovedReleaseSignoff(gate.workflowId) // blocked일 때만 조회
+          : false
+      return evaluateDeployGate({ gate, hasApprovedSignoff })
+    } catch (err) {
+      console.warn('[deploy-gate] checkDeploy 실패 — fail-open 허용', err) // never-throw(N3)
+      return { allowed: true }
+    }
   }
 }
