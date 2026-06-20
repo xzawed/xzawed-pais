@@ -50,4 +50,18 @@ describe('LeaseSweeper', () => {
     vi.advanceTimersByTime(3000)
     expect(store.expiredActiveLeases).toHaveBeenCalledTimes(1) // stop 후 추가 호출 없음
   })
+
+  it('graphStore를 handleLeaseSweep으로 전달해 onEscalated에 projectId 부여', async () => {
+    const onEscalated = vi.fn().mockResolvedValue(undefined)
+    const graphStore = { getGraph: vi.fn().mockResolvedValue({ userContext: { projectId: 'proj-1' } }) }
+    const expired = [{ workflowId: 'wf-1', wpId: 'c', attempt: 2, owner: null, status: 'active', expiresAt: 0, stepN: 0, eventId: null }]
+    const store = {
+      expiredActiveLeases: vi.fn().mockResolvedValue(expired),
+      recordReclaim: vi.fn(),
+      recordEscalation: vi.fn().mockResolvedValue({ status: 'escalated', eventId: 'x1', seq: 1 }),
+    }
+    const sweeper = new LeaseSweeper({ store: store as never, maxAttempts: 1, visibilityMs: 1000, onEscalated, graphStore }, 30_000)
+    await sweeper.pollOnce()
+    expect(onEscalated).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'proj-1' }))
+  })
 })
