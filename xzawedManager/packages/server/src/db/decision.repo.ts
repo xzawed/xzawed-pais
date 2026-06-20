@@ -191,6 +191,21 @@ export class DecisionRepo {
   }
 
   /**
+   * B1: 만료된 PENDING 결정의 requestId 조회(sweep 입력). now는 ms epoch → to_timestamp 변환.
+   * expires_at IS NOT NULL로 레거시(만료 미설정) 행 제외(소급 만료 0). strictly-before(<)·UTC.
+   */
+  async expiredPendingRequests(now: number, limit: number): Promise<string[]> {
+    const { rows } = await this.pool.query<{ request_id: string }>(
+      `SELECT request_id FROM decision_requests
+        WHERE status = 'PENDING' AND expires_at IS NOT NULL AND expires_at < to_timestamp($1 / 1000.0)
+        ORDER BY expires_at ASC
+        LIMIT $2`,
+      [now, limit],
+    )
+    return rows.map((r) => r.request_id)
+  }
+
+  /**
    * P5-2b: 해당 workflow에 scope='release' 사인오프가 존재하는지. sign_offs ⋈ human_decisions ⋈ decision_requests
    * 조인으로 워크플로 매칭. 존재 = 사람이 degraded 릴리스를 명시 수용(비부인 M9). deploy 게이트 우회 근거.
    */
