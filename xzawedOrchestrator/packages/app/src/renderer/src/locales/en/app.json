@@ -28,6 +28,7 @@
     "mcp": "MCP Servers",
     "plugins": "Plugins",
     "wiki": "Wiki",
+    "decisions": "Decisions",
     "settings": "Settings"
   },
   "status_bar": {
@@ -137,6 +138,24 @@
     "remember_auto": "Auto-approve this step from now on",
     "save_to_wiki": "Save this decision to the wiki",
     "wiki_summary": "Summary to save to the wiki (editable)"
+  },
+  "decisions": {
+    "title": "Pending Decisions",
+    "empty": "No pending decisions",
+    "loading": "Loading…",
+    "refresh": "Refresh",
+    "location": "Location",
+    "expected_vs_actual": "Expected vs Actual",
+    "impact": "Impact",
+    "evidence": "Evidence",
+    "attribution": "Attribution",
+    "choice_fix_reverify": "Fix & re-verify",
+    "choice_spec_fix": "Spec fix",
+    "choice_accept_known": "Accept known issue",
+    "choice_reject": "Reject",
+    "choice_noop_hint": "Recorded only · no action yet",
+    "submit_failed": "Failed to submit decision",
+    "submitted": "Decision recorded"
   },
   "wiki": {
     "title": "Project Wiki",

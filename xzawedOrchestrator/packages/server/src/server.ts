@@ -18,6 +18,7 @@ import { StreamProducer } from './streams/producer.js'
 import { StreamConsumer } from './streams/consumer.js'
 import { healthRoutes } from './api/health.route.js'
 import { knowledgeRoutes } from './api/knowledge.route.js'
+import { decisionsRoutes } from './api/decisions.route.js'
 import { sessionsRoutes } from './api/sessions.route.js'
 import { sessionWsRoutes } from './ws/session.ws.js'
 import { authRoutes } from './api/auth.route.js'
@@ -139,6 +140,14 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     managerUrl: config.managerUrl,
     ...(userAuthHook && { userAuthHook }),
     ...(signServiceToken && { signServiceToken }),
+  })
+  const signDecisionToken = (config.auth === 'jwt' && config.serviceJwtSecret)
+    ? (): string => app.jwt.sign({ svc: 'decision-proxy' }, { expiresIn: '60s' })
+    : undefined
+  await app.register(decisionsRoutes, {
+    managerUrl: config.managerUrl,
+    ...(userAuthHook && { userAuthHook }),
+    ...(signDecisionToken && { signServiceToken: signDecisionToken }),
   })
 
   await app.register(sessionsRoutes, {

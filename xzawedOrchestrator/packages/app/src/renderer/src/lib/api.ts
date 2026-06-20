@@ -197,6 +197,52 @@ export async function restoreKnowledge(
   if (!res.ok) throw new Error(`restoreKnowledge failed: ${res.status}`)
 }
 
+/** 결함 의사결정 브리프(Manager DecisionRequest의 UI 소비 부분집합). */
+export interface PendingDecision {
+  requestId: string
+  type: string
+  context?: {
+    location?: string
+    expectedVsActual?: string
+    impact?: string[]
+    evidenceRefs?: string[]
+    attribution?: { faultTier?: string; counters?: { impl?: number; task?: number; plan?: number } }
+  }
+}
+
+/** 프로젝트의 pending 결정을 조회한다(Orchestrator → Manager 프록시). 실패 시 빈 배열. */
+export async function getPendingDecisions(baseUrl: string, projectId: string): Promise<PendingDecision[]> {
+  validateBaseUrl(baseUrl)
+  const res = await fetch(`${baseUrl}/projects/${projectId}/decisions/pending`)
+  if (!res.ok) return []
+  const data = await res.json() as { items?: PendingDecision[] }
+  return Array.isArray(data.items) ? data.items : []
+}
+
+/**
+ * 사람 결정을 제출한다(Orchestrator → Manager 프록시, POST).
+ * decidedBy는 서버가 인증 사용자 신원으로 주입하므로 보내지 않는다(choice·justification만). non-ok면 throw.
+ */
+export async function submitDecision(
+  baseUrl: string,
+  projectId: string,
+  requestId: string,
+  choice: string,
+  justification?: string,
+  accessToken?: string,
+): Promise<void> {
+  validateBaseUrl(baseUrl)
+  const res = await fetch(`${baseUrl}/projects/${projectId}/decisions/${requestId}/decision`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify({ choice, ...(justification ? { justification } : {}) }),
+  })
+  if (!res.ok) throw new Error(`submitDecision failed: ${res.status}`)
+}
+
 export async function checkHealth(baseUrl: string): Promise<boolean> {
   try {
     validateBaseUrl(baseUrl)
