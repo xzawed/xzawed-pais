@@ -102,6 +102,17 @@ describe('DecisionContext attribution (P4 4c)', () => {
   })
 })
 
+describe('DecisionRequestSchema projectId (C0/C1)', () => {
+  test('projectId 미지정 시 기본 null', () => {
+    const r = DecisionRequestSchema.parse({ requestId: 'r', type: 'defect_brief', workflowId: 'wf', correlationId: 'wf' })
+    expect(r.projectId).toBeNull()
+  })
+  test('projectId 지정 시 보존', () => {
+    const r = DecisionRequestSchema.parse({ requestId: 'r', type: 'defect_brief', workflowId: 'wf', correlationId: 'wf', projectId: 'proj-1' })
+    expect(r.projectId).toBe('proj-1')
+  })
+})
+
 describe('constants (single source for event types·stream·actor)', () => {
   it('exposes decision lifecycle event types', () => {
     expect(DECISION_REQUESTED_EVENT).toBe('decision.requested')

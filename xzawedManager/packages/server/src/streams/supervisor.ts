@@ -285,6 +285,7 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
       store: deps.leaseStore, maxAttempts: config.maxAttempts, visibilityMs: config.visibilityMs,
       ...(workerActive && { publish: deps.publish }),
       ...(briefStore && { onEscalated: makeEscalationBrief(briefStore) }),
+      ...(briefStore && { graphStore: deps.repo }),
     },
     config.sweepMs,
   )

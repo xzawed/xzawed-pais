@@ -98,7 +98,7 @@ describe('handleLeaseSweep onEscalated (P6 결함 브리프)', () => {
     const onEscalated = vi.fn().mockResolvedValue(undefined)
     const { deps } = makeSweepDeps([lease('c', 2, { stepN: 5 })], { maxAttempts: 3, onEscalated })
     await handleLeaseSweep(1000, deps)
-    expect(onEscalated).toHaveBeenCalledWith({ workflowId: 'wf-1', wpId: 'c', attempt: 2, stepN: 5 })
+    expect(onEscalated).toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'wf-1', wpId: 'c', attempt: 2, stepN: 5 }))
   })
 
   it('reclaim은 onEscalated를 호출하지 않음', async () => {
@@ -127,5 +127,29 @@ describe('handleLeaseSweep onEscalated (P6 결함 브리프)', () => {
     const { deps } = makeSweepDeps([lease('c', 2)], { maxAttempts: 3 })
     const out = await handleLeaseSweep(1000, deps)
     expect(out.escalated.length).toBe(1)
+  })
+})
+
+describe('handleLeaseSweep projectId 조회 (C0/C1)', () => {
+  it('escalate 시 graphStore로 projectId 조회→onEscalated 전달', async () => {
+    const onEscalated = vi.fn().mockResolvedValue(undefined)
+    const graphStore = { getGraph: vi.fn().mockResolvedValue({ userContext: { projectId: 'proj-1' } }) }
+    const { deps } = makeSweepDeps([lease('c', 2)], { maxAttempts: 3, onEscalated, graphStore })
+    await handleLeaseSweep(1000, deps)
+    expect(onEscalated).toHaveBeenCalledWith(expect.objectContaining({ wpId: 'c', projectId: 'proj-1' }))
+  })
+  it('graphStore.getGraph throw → projectId null·escalation 비차단(N3)', async () => {
+    const onEscalated = vi.fn().mockResolvedValue(undefined)
+    const graphStore = { getGraph: vi.fn().mockRejectedValue(new Error('boom')) }
+    const { deps } = makeSweepDeps([lease('c', 2)], { maxAttempts: 3, onEscalated, graphStore })
+    const out = await handleLeaseSweep(1000, deps)
+    expect(onEscalated).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }))
+    expect(out.escalated.length).toBe(1)
+  })
+  it('graphStore 미주입 → projectId null', async () => {
+    const onEscalated = vi.fn().mockResolvedValue(undefined)
+    const { deps } = makeSweepDeps([lease('c', 2)], { maxAttempts: 3, onEscalated })
+    await handleLeaseSweep(1000, deps)
+    expect(onEscalated).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }))
   })
 })

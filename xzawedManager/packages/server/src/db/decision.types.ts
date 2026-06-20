@@ -56,6 +56,8 @@ export const DecisionRequestSchema = z.object({
   wpId: z.string().nullable().default(null),
   /** 워크플로 이벤트 로그(spec §16) 상관키 — 보통 workflowId. */
   correlationId: z.string().min(1),
+  /** C0/C1: 프로젝트 스코프(생성 시점 graph_dag.userContext.projectId). legacy/미해석은 null. */
+  projectId: z.string().nullable().default(null),
   context: DecisionContextSchema,
   severity: z.enum(['blocking', 'advisory']).default('blocking'),
   status: z.enum(['PENDING', 'RESOLVED', 'EXPIRED', 'SUPERSEDED']).default('PENDING'),

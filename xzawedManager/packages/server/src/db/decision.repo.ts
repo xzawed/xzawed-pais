@@ -16,7 +16,7 @@ async function safeRollback(client: PoolClient): Promise<void> {
 interface RequestRow {
   request_id: string; type: string; workflow_id: string; wp_id: string | null
   correlation_id: string; context: unknown; severity: string; status: string
-  language: string; expires_at: string | null
+  language: string; expires_at: string | null; project_id: string | null
 }
 interface DecisionRow {
   decision_id: string; request_id: string; decided_by: string; authority: string | null
@@ -27,7 +27,7 @@ function rowToRequest(r: RequestRow): DecisionRequest {
   return DecisionRequestSchema.parse({
     requestId: r.request_id, type: r.type, workflowId: r.workflow_id, wpId: r.wp_id,
     correlationId: r.correlation_id, context: r.context ?? {}, severity: r.severity,
-    status: r.status, language: r.language, expiresAt: r.expires_at,
+    status: r.status, language: r.language, expiresAt: r.expires_at, projectId: r.project_id,
   })
 }
 function rowToDecision(r: DecisionRow): HumanDecision {
@@ -49,7 +49,7 @@ export class DecisionRepo {
   async createRequest(req: {
     requestId: string; type: DecisionRequest['type']; workflowId: string; correlationId: string
     wpId?: string | null; context?: DecisionRequest['context']; severity?: DecisionRequest['severity']
-    language?: string; expiresAt?: string | null
+    language?: string; expiresAt?: string | null; projectId?: string | null
   }): Promise<{ eventId: string } | null> {
     const parsed = DecisionRequestSchema.parse({ ...req, status: DECISION_PENDING })
     const client = await this.pool.connect()
@@ -57,11 +57,11 @@ export class DecisionRepo {
       await client.query('BEGIN')
       const ins = await client.query(
         `INSERT INTO decision_requests
-           (request_id, type, workflow_id, wp_id, correlation_id, context, severity, status, language, expires_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+           (request_id, type, workflow_id, wp_id, correlation_id, context, severity, status, language, expires_at, project_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (request_id) DO NOTHING`,
         [parsed.requestId, parsed.type, parsed.workflowId, parsed.wpId, parsed.correlationId,
-          JSON.stringify(parsed.context), parsed.severity, parsed.status, parsed.language, parsed.expiresAt],
+          JSON.stringify(parsed.context), parsed.severity, parsed.status, parsed.language, parsed.expiresAt, parsed.projectId],
       )
       if (ins.rowCount === 0) { await safeRollback(client); return null }
       const eventId = await this.appendEvent(client, {
@@ -178,6 +178,14 @@ export class DecisionRepo {
     const { rows } = await this.pool.query<RequestRow>(
       `SELECT * FROM decision_requests WHERE workflow_id = $1 AND status = $2 ORDER BY created_at`,
       [workflowId, DECISION_PENDING],
+    )
+    return rows.map(rowToRequest)
+  }
+
+  async pendingByProject(projectId: string): Promise<DecisionRequest[]> {
+    const { rows } = await this.pool.query<RequestRow>(
+      `SELECT * FROM decision_requests WHERE project_id = $1 AND status = $2 ORDER BY created_at`,
+      [projectId, DECISION_PENDING],
     )
     return rows.map(rowToRequest)
   }

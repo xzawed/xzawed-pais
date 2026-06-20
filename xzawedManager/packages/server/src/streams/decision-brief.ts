@@ -6,6 +6,8 @@ export interface EscalationInfo {
   wpId: string
   attempt: number
   stepN: number
+  /** C0/C1: 생성 시점 프로젝트 스코프(graph_dag.userContext.projectId). 미해석은 null. */
+  projectId?: string | null
 }
 
 /** `DecisionRepo.createRequest` 입력의 구조적 부분집합 — repo 직접 결합 회피(M3). */
@@ -17,6 +19,7 @@ export interface DecisionRequestInput {
   wpId?: string | null
   context?: DecisionRequest['context']
   severity?: DecisionRequest['severity']
+  projectId?: string | null
 }
 
 /** DecisionRepo의 createRequest만 의존(구조적). */
@@ -49,6 +52,7 @@ export function buildDefectBrief(info: EscalationInfo): DecisionRequestInput {
     correlationId: workflowId,
     wpId,
     severity: 'blocking',
+    projectId: info.projectId ?? null,
     context: {
       location: `WP ${wpId} (step ${stepN})`,
       expectedVsActual: `구현 계층에서 ${tries}회 정직 재시도 모두 검증 실패 — 구현으로 해소 불가. 계약 사슬상 Task(스펙 모호/불가능) 또는 plan(기획 모순) 검토 필요.`,

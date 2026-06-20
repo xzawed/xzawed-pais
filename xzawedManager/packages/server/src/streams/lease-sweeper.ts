@@ -10,6 +10,8 @@ export interface LeaseSweeperDeps {
   publish?: Publish
   /** P6: escalate 시 결함 브리프(DecisionRequest) 생성. createSupervisor가 decisionBrief 시 주입. */
   onEscalated?: SweepDeps['onEscalated']
+  /** C0/C1: escalate 결함 브리프에 projectId 부여. createSupervisor가 decisionBrief 시 repo 주입. */
+  graphStore?: SweepDeps['graphStore']
 }
 
 /**
@@ -50,6 +52,7 @@ export class LeaseSweeper {
         visibilityMs: this.deps.visibilityMs,
         ...(this.deps.publish && { publish: this.deps.publish }),
         ...(this.deps.onEscalated && { onEscalated: this.deps.onEscalated }),
+        ...(this.deps.graphStore && { graphStore: this.deps.graphStore }),
       })
     } catch (err) {
       console.warn('[lease-sweeper] sweep 실패 — 다음 주기 재시도:', err)

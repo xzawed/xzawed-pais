@@ -62,3 +62,12 @@ describe('makeEscalationBrief (onEscalated 핸들러)', () => {
     }))
   })
 })
+
+describe('buildDefectBrief projectId 스레딩 (C0/C1)', () => {
+  it('projectId를 DecisionRequestInput에 전파', () => {
+    expect(buildDefectBrief({ ...INFO, projectId: 'proj-1' }).projectId).toBe('proj-1')
+  })
+  it('projectId 미지정 시 null', () => {
+    expect(buildDefectBrief(INFO).projectId).toBeNull()
+  })
+})
