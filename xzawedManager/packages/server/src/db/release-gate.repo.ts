@@ -98,6 +98,27 @@ export class ReleaseGateRepo {
     }
   }
 
+  /**
+   * P5-2b: projectId로 최신 릴리스 게이트를 역방향 조회. release_gates ⋈ task_graphs(workflow_id),
+   * graph_dag.userContext.projectId 필터, created_at·id DESC tiebreak로 최신 1건.
+   * status가 'passed'/'blocked'가 아니면(미지 값) null 반환(fail-open). userContext 없는 행은 JSONB NULL로 자동 탈락.
+   */
+  async latestGateByProject(projectId: string): Promise<{ status: 'passed' | 'blocked'; workflowId: string } | null> {
+    const { rows } = await this.pool.query<{ status: string; workflow_id: string }>(
+      `SELECT g.status, g.workflow_id
+         FROM release_gates g
+         JOIN task_graphs t ON t.workflow_id = g.workflow_id
+        WHERE t.graph_dag->'userContext'->>'projectId' = $1
+        ORDER BY g.created_at DESC, g.id DESC
+        LIMIT 1`,
+      [projectId],
+    )
+    const row = rows[0]
+    if (!row) return null
+    if (row.status !== 'passed' && row.status !== 'blocked') return null
+    return { status: row.status, workflowId: row.workflow_id }
+  }
+
   /** 워크플로의 증거를 wpId→ChannelOutcome[]로. 게이트 평가 입력. */
   async evidenceForWorkflow(workflowId: string): Promise<Map<string, ChannelOutcome[]>> {
     const { rows } = await this.pool.query<{ wp_id: string; channel: string; outcome: string }>(
