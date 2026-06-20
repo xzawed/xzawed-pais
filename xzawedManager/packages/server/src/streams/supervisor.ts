@@ -8,6 +8,8 @@ import { handleCompletion } from './completion.js'
 import { LeaseSweeper } from './lease-sweeper.js'
 import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
 import { DecisionRecordedConsumer, type DecisionRoutingDeps } from './decision-consumer.js'
+import { ReleaseSignoffConsumer } from './release-consumer.js'
+import { makeSignoffBrief } from './signoff-brief.js'
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
 import type { AdvisoryStore } from './advisory.js'
 import type { SecuritySeverity } from './verify.js'
@@ -72,6 +74,8 @@ export interface SupervisorComponents {
   workerConsumer?: ConsumerLike
   /** P6: decision.recorded 소비자(decisionRouting+decisionStore 주입 시만 배선). */
   decisionConsumer?: ConsumerLike
+  /** P5-2a: gate.blocked 소비자(releaseSignoff+decisionStore+releaseStore 주입 시만 배선). */
+  signoffConsumer?: ConsumerLike
 }
 
 /**
@@ -102,6 +106,9 @@ export class Supervisor {
     this.components.decisionConsumer?.start(this.channel).catch((err: unknown) => {
       console.error('[supervisor] decision consumer 시작 실패:', err)
     })
+    this.components.signoffConsumer?.start(this.channel).catch((err: unknown) => {
+      console.error('[supervisor] signoff consumer 시작 실패:', err)
+    })
     this.components.leaseSweeper.start()
   }
 
@@ -111,6 +118,7 @@ export class Supervisor {
     this.components.oracleConsumer?.stop()
     this.components.workerConsumer?.stop()
     this.components.decisionConsumer?.stop()
+    this.components.signoffConsumer?.stop()
     this.components.leaseSweeper.stop()
   }
 }
@@ -134,9 +142,11 @@ export interface SupervisorDeps {
   handlers?: Record<string, AgentExecutor>
   /** P6: 결함 브리프 영속소(DecisionRepo 구조). decisionBrief flag + 주입 시 escalation→DecisionRequest.
    *  P6 라우팅: getRequest도 노출(decision-consumer가 requestId→wpId 해석에 필요). makeEscalationBrief는
-   *  DecisionBriefStore(createRequest)만 소비하므로 인터섹션이 둘 다 만족(server.ts가 full DecisionRepo 주입). */
+   *  DecisionBriefStore(createRequest)만 소비하므로 인터섹션이 둘 다 만족(server.ts가 full DecisionRepo 주입).
+   *  P5-2a: recordSignOff 추가(accept_known 사인오프 활성·DecisionRepo가 충족). */
   decisionStore?: DecisionBriefStore & {
     getRequest(requestId: string): Promise<import('../db/decision.types.js').DecisionRequest | null>
+    recordSignOff(input: { signoffId: string; decisionId: string; scope: string; approver: string; risk?: string; reason?: string | null }): Promise<{ eventId: string } | null>
   }
   /** P4 advisory 채널 영속소(AdvisoryRepo). advisoryStore + wpAdvisory면 워커가 produceAdvisory 호출. */
   advisoryStore?: AdvisoryStore
@@ -180,6 +190,8 @@ export interface SupervisorConfig {
   securityMinSeverity?: SecuritySeverity
   /** P5-1: 릴리스 게이트(all-WP-done 시 채널 증거 집계·영속) 활성(=MANAGER_RELEASE_GATE). releaseStore 동반 필요. */
   releaseGate?: boolean
+  /** P5-2a: gate.blocked→사인오프 DecisionRequest 라우팅(=MANAGER_RELEASE_SIGNOFF). 전제 releaseGate+decisionRouting. */
+  releaseSignoff?: boolean
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
@@ -325,6 +337,12 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
       )
     : undefined
 
+  // P5-2a: gate.blocked → 사인오프 DecisionRequest = releaseSignoff && decisionStore && releaseStore.
+  //   release 게이트가 발행(releaseStore)·결정 라우팅이 소비(decisionStore)·graphStore=repo(projectId).
+  const signoffConsumer = config.releaseSignoff && deps.decisionStore && deps.releaseStore
+    ? new ReleaseSignoffConsumer(makeRedis(), { onBlocked: makeSignoffBrief(deps.decisionStore, deps.repo) })
+    : undefined
+
   // P6: 결정 라우팅 = MANAGER_DECISION_ROUTING && decisionStore 주입. fix_reverify→reopenLease→dispatch_signal.
   const decisionConsumer = config.decisionRouting && deps.decisionStore
     ? new DecisionRecordedConsumer(
@@ -334,6 +352,8 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
           leaseStore: deps.leaseStore,
           publish: deps.publish,
           visibilityMs: config.visibilityMs,
+          // P5-2a: accept_known 사인오프 활성 — decisionConsumer가 signoffStore로 사인오프 영속.
+          ...(config.releaseSignoff && deps.decisionStore && { signoffStore: deps.decisionStore }),
         } satisfies DecisionRoutingDeps,
       )
     : undefined
@@ -343,5 +363,6 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     ...(oracleConsumer && { oracleConsumer }),
     ...(workerConsumer && { workerConsumer }),
     ...(decisionConsumer && { decisionConsumer }),
+    ...(signoffConsumer && { signoffConsumer }),
   })
 }
