@@ -4,6 +4,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { ToolHandler } from './handler.interface.js'
 import type { UserContext } from '../types/user-context.js'
+import type { DeployGatePort } from './deploy-gate.js'
 
 interface DeployProjectInput {
   projectPath: string
@@ -79,13 +80,20 @@ class DeployProjectHandler implements ToolHandler<DeployProjectInput, DeployProj
   constructor(
     private readonly githubToken: string,
     private readonly _redisUrl: string,
+    private readonly gate?: DeployGatePort,
   ) {}
 
   async execute(
     input: DeployProjectInput,
     _sessionId: string,
-    _userContext?: UserContext,
+    userContext?: UserContext,
   ): Promise<DeployProjectOutput> {
+    if (this.gate) {
+      const verdict = await this.gate.checkDeploy(userContext?.projectId)
+      if (!verdict.allowed) {
+        throw new Error(`deploy_project 차단: ${verdict.reason}`)
+      }
+    }
     const octokit = new Octokit({ auth: this.githubToken })
     const { projectPath, owner, repo, branch, commitMessage, createRepo, makePrivate } = input
 
@@ -177,6 +185,7 @@ class DeployProjectHandler implements ToolHandler<DeployProjectInput, DeployProj
 export function createDeployProjectHandler(
   githubToken: string,
   redisUrl: string,
+  gate?: DeployGatePort,
 ): ToolHandler<DeployProjectInput, DeployProjectOutput> {
-  return new DeployProjectHandler(githubToken, redisUrl)
+  return new DeployProjectHandler(githubToken, redisUrl, gate)
 }
