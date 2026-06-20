@@ -54,7 +54,8 @@ export class ReleaseDeployGate implements DeployGatePort {
   ) {}
 
   async checkDeploy(projectId: string | undefined): Promise<DeployGateVerdict> {
-    if (!projectId || projectId === PROJECTLESS_SENTINEL) return { allowed: true } // fail-open: 식별 불가
+    // projectId 부재 또는 'default'(프로젝트 미선택 sentinel) → 게이트 식별 불가·프로젝트리스 취급 → fail-open
+    if (!projectId || projectId === PROJECTLESS_SENTINEL) return { allowed: true }
     try {
       const gate = await this.gates.latestGateByProject(projectId)
       const hasApprovedSignoff =
