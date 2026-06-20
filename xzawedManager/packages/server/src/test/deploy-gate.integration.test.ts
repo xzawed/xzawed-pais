@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest'
 import { Pool } from 'pg'
 import { runMigrations } from '../db/pool.js'
 import { ReleaseGateRepo } from '../db/release-gate.repo.js'
+import { DecisionRepo } from '../db/decision.repo.js'
 
 const DB = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL']
 const PFX = 'wf-dg-'
@@ -69,5 +70,55 @@ describe.skipIf(!DB)('ReleaseGateRepo.latestGateByProject (통합)', () => {
     await seedGraph(pool, `${PFX}leg`, null)
     await seedGate(pool, `${PFX}leg`, 'v1', 'blocked')
     expect(await repo.latestGateByProject(`${PFX}proj-leg`)).toBeNull()
+  })
+})
+
+// 컬럼은 migration 011 검증 완료. NOT NULL(default 없음): decision_requests=request_id/type/workflow_id/correlation_id;
+// human_decisions=decision_id/request_id/decided_by/choice/correlation_id; sign_offs=signoff_id/decision_id/scope/approver.
+// 나머지(status/context/severity/language/risk·created_at/decided_at)는 default. occurred_at·updated_at 컬럼 없음.
+async function seedSignoff(pool: Pool, wf: string, reqId: string, scope: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO decision_requests (request_id, type, workflow_id, correlation_id, status)
+     VALUES ($1, 'degraded_release', $2, $2, 'RESOLVED')`,
+    [reqId, wf],
+  )
+  await pool.query(
+    `INSERT INTO human_decisions (decision_id, request_id, decided_by, choice, correlation_id)
+     VALUES ($1, $2, 'po-1', 'accept_known', $3)`,
+    [`${reqId}:dec`, reqId, wf],
+  )
+  await pool.query(
+    `INSERT INTO sign_offs (signoff_id, decision_id, scope, approver)
+     VALUES ($1, $2, $3, 'po-1')`,
+    [`${reqId}:so`, `${reqId}:dec`, scope],
+  )
+}
+
+describe.skipIf(!DB)('DecisionRepo.hasApprovedReleaseSignoff (통합)', () => {
+  let pool: Pool
+  let repo: DecisionRepo
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: DB })
+    await runMigrations(pool)
+    repo = new DecisionRepo(pool)
+  })
+  afterEach(async () => {
+    await pool.query(`DELETE FROM sign_offs WHERE decision_id LIKE '${PFX}%'`)
+    await pool.query(`DELETE FROM human_decisions WHERE request_id LIKE '${PFX}%'`)
+    await pool.query(`DELETE FROM decision_requests WHERE request_id LIKE '${PFX}%'`)
+  })
+  afterAll(async () => { await pool.end() })
+
+  it('scope=release 사인오프 존재 → true', async () => {
+    await seedSignoff(pool, `${PFX}wf1`, `${PFX}req1`, 'release')
+    expect(await repo.hasApprovedReleaseSignoff(`${PFX}wf1`)).toBe(true)
+  })
+  it('scope 불일치(release 아님) → false', async () => {
+    await seedSignoff(pool, `${PFX}wf2`, `${PFX}req2`, 'other')
+    expect(await repo.hasApprovedReleaseSignoff(`${PFX}wf2`)).toBe(false)
+  })
+  it('workflow 불일치 → false', async () => {
+    await seedSignoff(pool, `${PFX}wf3`, `${PFX}req3`, 'release')
+    expect(await repo.hasApprovedReleaseSignoff(`${PFX}wf-other`)).toBe(false)
   })
 })
