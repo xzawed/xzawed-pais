@@ -6,6 +6,7 @@ settings:
 
 overrides:
   esbuild: '>=0.28.1'
+  vite: 7.3.5
 
 importers:
 
@@ -69,7 +70,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.1.6
-        version: 4.1.8(@types/node@22.19.19)(@vitest/coverage-istanbul@4.1.8)(vite@7.3.3(@types/node@22.19.19)(tsx@4.22.0))
+        version: 4.1.8(@types/node@22.19.19)(@vitest/coverage-istanbul@4.1.8)(vite@7.3.5(@types/node@22.19.19)(tsx@4.22.0))
 
 packages:
 
@@ -604,7 +605,7 @@ packages:
     resolution: {integrity: sha512-LEiN/xe4OSIbKe9HQIp5OC24agGD9J5CnmMgsLohVVoOPWL9a2sBoR6VBx43jQZb7Kr1l4RCuyCJzcAa0+dojw==}
     peerDependencies:
       msw: ^2.4.9
-      vite: ^6.0.0 || ^7.0.0 || ^8.0.0
+      vite: 7.3.5
     peerDependenciesMeta:
       msw:
         optional: true
@@ -1167,8 +1168,8 @@ packages:
     peerDependencies:
       browserslist: '>= 4.21.0'
 
-  vite@7.3.3:
-    resolution: {integrity: sha512-/4XH147Ui7OGTjg3HbdWe5arnZQSbfuRzdr9Ec7TQi5I7R+ir0Rlc9GIvD4v0XZurELqA035KVXJXpR61xhiTA==}
+  vite@7.3.5:
+    resolution: {integrity: sha512-KuOaNhcnGFN2zIPGA7wRmzF+lJA1sea7rHq17aiJ++9lzY1WWG6Jpwqwe1KNbRVPIqHmr8GLYx7jbrQcN/7/ww==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -1223,7 +1224,7 @@ packages:
       '@vitest/ui': 4.1.8
       happy-dom: '*'
       jsdom: '*'
-      vite: ^6.0.0 || ^7.0.0 || ^8.0.0
+      vite: 7.3.5
     peerDependenciesMeta:
       '@edge-runtime/vm':
         optional: true
@@ -1695,7 +1696,7 @@ snapshots:
       magicast: 0.5.3
       obug: 2.1.1
       tinyrainbow: 3.1.0
-      vitest: 4.1.8(@types/node@22.19.19)(@vitest/coverage-istanbul@4.1.8)(vite@7.3.3(@types/node@22.19.19)(tsx@4.22.0))
+      vitest: 4.1.8(@types/node@22.19.19)(@vitest/coverage-istanbul@4.1.8)(vite@7.3.5(@types/node@22.19.19)(tsx@4.22.0))
     transitivePeerDependencies:
       - supports-color
 
@@ -1708,13 +1709,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.0
 
-  '@vitest/mocker@4.1.8(vite@7.3.3(@types/node@22.19.19)(tsx@4.22.0))':
+  '@vitest/mocker@4.1.8(vite@7.3.5(@types/node@22.19.19)(tsx@4.22.0))':
     dependencies:
       '@vitest/spy': 4.1.8
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 7.3.3(@types/node@22.19.19)(tsx@4.22.0)
+      vite: 7.3.5(@types/node@22.19.19)(tsx@4.22.0)
 
   '@vitest/pretty-format@4.1.8':
     dependencies:
@@ -2284,7 +2285,7 @@ snapshots:
       escalade: 3.2.0
       picocolors: 1.1.1
 
-  vite@7.3.3(@types/node@22.19.19)(tsx@4.22.0):
+  vite@7.3.5(@types/node@22.19.19)(tsx@4.22.0):
     dependencies:
       esbuild: 0.28.1
       fdir: 6.5.0(picomatch@4.0.4)
@@ -2297,10 +2298,10 @@ snapshots:
       fsevents: 2.3.3
       tsx: 4.22.0
 
-  vitest@4.1.8(@types/node@22.19.19)(@vitest/coverage-istanbul@4.1.8)(vite@7.3.3(@types/node@22.19.19)(tsx@4.22.0)):
+  vitest@4.1.8(@types/node@22.19.19)(@vitest/coverage-istanbul@4.1.8)(vite@7.3.5(@types/node@22.19.19)(tsx@4.22.0)):
     dependencies:
       '@vitest/expect': 4.1.8
-      '@vitest/mocker': 4.1.8(vite@7.3.3(@types/node@22.19.19)(tsx@4.22.0))
+      '@vitest/mocker': 4.1.8(vite@7.3.5(@types/node@22.19.19)(tsx@4.22.0))
       '@vitest/pretty-format': 4.1.8
       '@vitest/runner': 4.1.8
       '@vitest/snapshot': 4.1.8
@@ -2317,7 +2318,7 @@ snapshots:
       tinyexec: 1.2.4
       tinyglobby: 0.2.16
       tinyrainbow: 3.1.0
-      vite: 7.3.3(@types/node@22.19.19)(tsx@4.22.0)
+      vite: 7.3.5(@types/node@22.19.19)(tsx@4.22.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 22.19.19
