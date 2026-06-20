@@ -91,7 +91,7 @@ class DeployProjectHandler implements ToolHandler<DeployProjectInput, DeployProj
     if (this.gate) {
       const verdict = await this.gate.checkDeploy(userContext?.projectId)
       if (!verdict.allowed) {
-        throw new Error(`deploy_project 차단: ${verdict.reason}`)
+        throw new Error(`deploy_project 차단: ${verdict.reason ?? '릴리스 게이트 차단(사유 미상)'}`)
       }
     }
     const octokit = new Octokit({ auth: this.githubToken })
