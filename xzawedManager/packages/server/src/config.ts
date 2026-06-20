@@ -164,6 +164,13 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // P5-2a: gate.blocked → 사인오프 DecisionRequest 라우팅(기본 false). gate.blocked 이벤트 소비 →
+    // degraded_release DecisionRequest 생성 + decision.recorded accept_known → SignOff 영속.
+    // 전제: MANAGER_RELEASE_GATE(gate.blocked 발행)+MANAGER_DECISION_ROUTING(결정 소비). off면 회귀 0.
+    MANAGER_RELEASE_SIGNOFF: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

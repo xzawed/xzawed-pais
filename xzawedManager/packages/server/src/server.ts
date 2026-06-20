@@ -182,7 +182,8 @@ export async function buildServer(
       config.MANAGER_DECOMPOSE_ENABLED ||
       config.MANAGER_WP_ADVISORY ||
       config.MANAGER_DECISION_ROUTING ||
-      config.MANAGER_RELEASE_GATE)
+      config.MANAGER_RELEASE_GATE ||
+      config.MANAGER_RELEASE_SIGNOFF)
   ) {
     outboxRelay = new OutboxRelay(pool, producer, config.MANAGER_OUTBOX_POLL_MS)
     outboxRelay.start()
@@ -308,6 +309,11 @@ export async function buildServer(
   if (config.MANAGER_DECISION_ROUTING && !config.MANAGER_DECISION_BRIEF) {
     app.log.warn('MANAGER_DECISION_ROUTING=true 이지만 MANAGER_DECISION_BRIEF가 꺼져 있어 라우팅할 결정 브리프가 생성되지 않습니다.')
   }
+  // P5-2a: 사인오프 라우팅은 릴리스 게이트(gate.blocked 발행)와 결정 라우팅(decision.recorded 소비) 전제.
+  // 하나라도 off면 gate.blocked 미발행/미소비로 사인오프 미생성 — 오진 방지 경고.
+  if (config.MANAGER_RELEASE_SIGNOFF && (!config.MANAGER_RELEASE_GATE || !config.MANAGER_DECISION_ROUTING)) {
+    app.log.warn('MANAGER_RELEASE_SIGNOFF는 MANAGER_RELEASE_GATE+MANAGER_DECISION_ROUTING 전제 — gate.blocked 미발행/미소비 시 사인오프 미생성')
+  }
 
   // P5-1: 릴리스 게이트 전제 누락 시 오진 방지 경고(순수 헬퍼 위임·테스트 가능).
   for (const msg of releaseGateWarnings({
@@ -380,6 +386,8 @@ export async function buildServer(
         wpAdvisory: config.MANAGER_WP_ADVISORY,
         // P5-1: 릴리스 게이트(=MANAGER_RELEASE_GATE). off면 완료 흐름과 동일(회귀 0). releaseStore 동반 시만 활성.
         releaseGate: config.MANAGER_RELEASE_GATE,
+        // P5-2a: gate.blocked→사인오프(=MANAGER_RELEASE_SIGNOFF). off면 gate.blocked 무시·회귀 0.
+        releaseSignoff: config.MANAGER_RELEASE_SIGNOFF,
       },
     )
     supervisor.start()
