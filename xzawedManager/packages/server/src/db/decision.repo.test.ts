@@ -169,6 +169,7 @@ describe('DecisionRepo project scope (C0/C1)', () => {
     const m = makeMockPool({ selectRows: [row] })
     const res = await new DecisionRepo(m.pool, () => 1000).pendingByProject('proj-1')
     expect(callFor(m.query, /WHERE project_id = \$1 AND status/i)).toBeTruthy()
+    expect(callFor(m.query, /ORDER BY created_at/i)).toBeTruthy()
     expect(res[0]?.projectId).toBe('proj-1')
   })
 })
@@ -177,7 +178,7 @@ describe('DecisionRepo queries', () => {
   const dbRow = {
     request_id: 'req-1', type: 'defect_brief', workflow_id: 'wf1', wp_id: null, correlation_id: 'wf1',
     context: { impact: [], evidenceRefs: [], options: [] }, severity: 'blocking', status: 'PENDING',
-    language: 'ko', expires_at: null,
+    language: 'ko', expires_at: null, project_id: null,
   }
 
   it('getRequest: snake_case 행을 DecisionRequest로 매핑·parse(미존재→null)', async () => {

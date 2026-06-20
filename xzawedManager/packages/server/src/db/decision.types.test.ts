@@ -103,11 +103,11 @@ describe('DecisionContext attribution (P4 4c)', () => {
 })
 
 describe('DecisionRequestSchema projectId (C0/C1)', () => {
-  it('projectId 미지정 시 기본 null', () => {
+  test('projectId 미지정 시 기본 null', () => {
     const r = DecisionRequestSchema.parse({ requestId: 'r', type: 'defect_brief', workflowId: 'wf', correlationId: 'wf' })
     expect(r.projectId).toBeNull()
   })
-  it('projectId 지정 시 보존', () => {
+  test('projectId 지정 시 보존', () => {
     const r = DecisionRequestSchema.parse({ requestId: 'r', type: 'defect_brief', workflowId: 'wf', correlationId: 'wf', projectId: 'proj-1' })
     expect(r.projectId).toBe('proj-1')
   })

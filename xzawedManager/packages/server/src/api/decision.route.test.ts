@@ -8,7 +8,7 @@ function app(decisionRepo?: unknown) {
 }
 const okRepo = (over: Record<string, unknown> = {}) => ({
   recordDecision: vi.fn().mockResolvedValue({ eventId: 'e1' }),
-  getRequest: vi.fn().mockResolvedValue({ requestId: 'r1', projectId: 'proj-1', workflowId: 'wf-1', status: 'PENDING' }),
+  getRequest: vi.fn().mockResolvedValue({ requestId: 'r1', projectId: 'proj-1', status: 'PENDING' }),
   pendingByProject: vi.fn().mockResolvedValue([{ requestId: 'r1', projectId: 'proj-1' }]),
   ...over,
 })
