@@ -16,17 +16,12 @@ export const ReleaseEventSchema = z.object({
 })
 export type ReleaseEventMessage = z.infer<typeof ReleaseEventSchema>
 
-/** gate.blocked 페이로드(release-gate.repo recordGate). unverifiable·missingChannels 포함(WpGateView 충족). */
+/** gate.blocked 페이로드(release-gate.repo recordGate). passthrough()로 추가 필드 보존. */
 const GateBlockedPayloadSchema = z.object({
   workflowId: z.string().min(1),
   gateVersion: z.string().min(1),
   blockingReasons: z.array(z.string()).default([]),
-  perWp: z.array(z.object({
-    wpId: z.string(),
-    proven: z.boolean(),
-    unverifiable: z.boolean().default(false),
-    missingChannels: z.array(z.string()).default([]),
-  }).passthrough()).default([]),
+  perWp: z.array(z.object({ wpId: z.string(), proven: z.boolean() }).passthrough()).default([]),
 })
 
 export interface ReleaseSignoffDeps {
@@ -47,7 +42,7 @@ export function buildGateBlockedHandler(deps: ReleaseSignoffDeps): (msg: Release
         workflowId: p.data.workflowId,
         gateVersion: p.data.gateVersion,
         blockingReasons: p.data.blockingReasons,
-        perWp: p.data.perWp as unknown as SignoffBriefInfo['perWp'],
+        perWp: p.data.perWp,
       })
     } catch (err) {
       console.warn('[release-consumer] 사인오프 브리프 생성 실패(best-effort·게이트 이벤트는 진실원천):', err)

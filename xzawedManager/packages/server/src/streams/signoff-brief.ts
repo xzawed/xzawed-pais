@@ -1,13 +1,12 @@
 import type { DecisionRequestInput, DecisionBriefStore } from './decision-brief.js'
 import type { GraphQueryPort } from './lease.js'
-import type { WpGateView } from '../db/release-gate.types.js'
 
 /** gate.blocked 페이로드의 사인오프 브리프 입력(release-consumer가 전달). */
 export interface SignoffBriefInfo {
   workflowId: string
   gateVersion: string
   blockingReasons: string[]
-  perWp: WpGateView[]
+  perWp: Array<{ wpId: string; proven: boolean }>
 }
 
 /**
