@@ -18,7 +18,7 @@ export const DecisionEventSchema = z.object({
 })
 export type DecisionEventMessage = z.infer<typeof DecisionEventSchema>
 
-const RecordedPayloadSchema = z.object({ requestId: z.string().min(1), choice: z.string() })
+const RecordedPayloadSchema = z.object({ requestId: z.string().min(1), choice: z.string(), decisionId: z.string().optional(), decidedBy: z.string().optional() })
 
 export interface DecisionRoutingDeps {
   decisionStore: { getRequest(requestId: string): Promise<DecisionRequest | null> }
@@ -26,23 +26,41 @@ export interface DecisionRoutingDeps {
   publish: Publish
   visibilityMs: number
   now?: () => number
+  /** P5-2a: accept_known on degraded_release → 사인오프(휴면 recordSignOff 활성). 미주입이면 no-op. */
+  signoffStore?: { recordSignOff(input: { signoffId: string; decisionId: string; scope: string; approver: string; risk?: string; reason?: string | null }): Promise<{ eventId: string } | null> }
 }
 
 /**
- * decision.recorded 소비 → §11 되먹임. 첫 슬라이스는 fix_reverify만 실동작(escalated WP lease 재오픈→
- * dispatch_signal 재발행). 다른/미지 choice는 no-op(폐루프 미차단). never-throw(어떤 실패도 흡수).
+ * decision.recorded 소비 → §11 되먹임. fix_reverify는 escalated WP lease 재오픈→dispatch_signal 재발행.
+ * accept_known + degraded_release는 signoffStore 주입 시 사인오프 영속(P5-2a).
+ * 다른/미지 choice는 no-op(폐루프 미차단). never-throw(어떤 실패도 흡수).
  */
 export function buildDecisionRecordedHandler(deps: DecisionRoutingDeps): (msg: DecisionEventMessage) => Promise<void> {
   return async (msg) => {
     try {
       if (msg.type !== DECISION_RECORDED_EVENT) return
       const p = RecordedPayloadSchema.safeParse(msg.payload)
-      if (!p.success || p.data.choice !== 'fix_reverify') return
-      const req = await deps.decisionStore.getRequest(p.data.requestId)
-      if (!req?.wpId) return
-      const r = await deps.leaseStore.reopenLease({ workflowId: req.workflowId, wpId: req.wpId, visibilityMs: deps.visibilityMs, causationId: p.data.requestId })
-      if (r.status !== 'reopened') return
-      await publishDispatchSignal(deps.publish, req.workflowId, req.wpId, r.attempt, deps.now?.() ?? Date.now())
+      if (!p.success) return
+      if (p.data.choice === 'fix_reverify') {
+        const req = await deps.decisionStore.getRequest(p.data.requestId)
+        if (!req?.wpId) return
+        const r = await deps.leaseStore.reopenLease({ workflowId: req.workflowId, wpId: req.wpId, visibilityMs: deps.visibilityMs, causationId: p.data.requestId })
+        if (r.status !== 'reopened') return
+        await publishDispatchSignal(deps.publish, req.workflowId, req.wpId, r.attempt, deps.now?.() ?? Date.now())
+        return
+      }
+      if (p.data.choice === 'accept_known' && deps.signoffStore && p.data.decisionId && p.data.decidedBy) {
+        const req = await deps.decisionStore.getRequest(p.data.requestId)
+        if (req?.type !== 'degraded_release') return
+        await deps.signoffStore.recordSignOff({
+          signoffId: `${p.data.decisionId}:signoff`,
+          decisionId: p.data.decisionId,
+          scope: 'release',
+          approver: p.data.decidedBy,
+          risk: 'HIGH',
+          reason: '릴리스 게이트 차단 사인오프',
+        })
+      }
     } catch (err) {
       console.warn('[decision-consumer] 라우팅 실패(best-effort·결정은 영속됨):', err)
     }
