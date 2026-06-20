@@ -400,6 +400,31 @@ describe('config MANAGER_DEPLOY_GATE', () => {
   })
 })
 
+describe('config MANAGER_DECISION_EXPIRY / TTL / SWEEP', () => {
+  let savedMode: string | undefined
+  let savedKey: string | undefined
+  beforeEach(() => {
+    savedMode = process.env['MODE']; savedKey = process.env['ANTHROPIC_API_KEY']
+    process.env['MODE'] = 'local'; process.env['ANTHROPIC_API_KEY'] = 'k'
+  })
+  afterEach(() => {
+    if (savedMode !== undefined) process.env['MODE'] = savedMode; else delete process.env['MODE']
+    if (savedKey !== undefined) process.env['ANTHROPIC_API_KEY'] = savedKey; else delete process.env['ANTHROPIC_API_KEY']
+    delete process.env['MANAGER_DECISION_EXPIRY']; delete process.env['MANAGER_DECISION_TTL_HOURS']; delete process.env['MANAGER_DECISION_SWEEP_MS']
+  })
+  it('EXPIRY 미설정 → false·TTL 기본 72·SWEEP 기본 60000', () => {
+    const c = loadConfig()
+    expect(c.MANAGER_DECISION_EXPIRY).toBe(false)
+    expect(c.MANAGER_DECISION_TTL_HOURS).toBe(72)
+    expect(c.MANAGER_DECISION_SWEEP_MS).toBe(60_000)
+  })
+  it('EXPIRY "true" → true·TTL/SWEEP env 적용', () => {
+    process.env['MANAGER_DECISION_EXPIRY'] = 'true'; process.env['MANAGER_DECISION_TTL_HOURS'] = '24'; process.env['MANAGER_DECISION_SWEEP_MS'] = '5000'
+    const c = loadConfig()
+    expect(c.MANAGER_DECISION_EXPIRY).toBe(true); expect(c.MANAGER_DECISION_TTL_HOURS).toBe(24); expect(c.MANAGER_DECISION_SWEEP_MS).toBe(5000)
+  })
+})
+
 describe('MANAGER_WP_SECURITY flag + min severity', () => {
   let savedMode: string | undefined
   let savedKey: string | undefined

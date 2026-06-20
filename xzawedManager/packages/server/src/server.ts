@@ -183,7 +183,8 @@ export async function buildServer(
       config.MANAGER_WP_ADVISORY ||
       config.MANAGER_DECISION_ROUTING ||
       config.MANAGER_RELEASE_GATE ||
-      config.MANAGER_RELEASE_SIGNOFF)
+      config.MANAGER_RELEASE_SIGNOFF ||
+      config.MANAGER_DECISION_EXPIRY)
   ) {
     outboxRelay = new OutboxRelay(pool, producer, config.MANAGER_OUTBOX_POLL_MS)
     outboxRelay.start()
@@ -200,7 +201,7 @@ export async function buildServer(
   // P6: 결정 영속소(escalation→DecisionRequest 브리프 + 결정 라우팅 getRequest). BRIEF 또는 ROUTING 중
   // 하나라도 켜지면(+pool) 생성 — 라우팅 소비자도 같은 DecisionRepo의 getRequest를 사용한다(회귀 0: 둘 다 off면 undefined).
   const decisionStore =
-    pool && (config.MANAGER_DECISION_BRIEF || config.MANAGER_DECISION_ROUTING) ? new DecisionRepo(pool) : undefined
+    pool && (config.MANAGER_DECISION_BRIEF || config.MANAGER_DECISION_ROUTING || config.MANAGER_DECISION_EXPIRY) ? new DecisionRepo(pool) : undefined
   // P4: advisory 채널 영속소(verdict.ok 후 optimization 제안). MANAGER_WP_ADVISORY + pool 시만 생성(회귀 0).
   const advisoryStore = pool && config.MANAGER_WP_ADVISORY ? new AdvisoryRepo(pool) : undefined
   // P5-1: 릴리스 게이트 증거/결과 영속소(recordEvidence·recordGate·evidenceForWorkflow). MANAGER_RELEASE_GATE + pool 시만 생성(회귀 0).
@@ -335,6 +336,11 @@ export async function buildServer(
     app.log.warn('MANAGER_RELEASE_SIGNOFF는 MANAGER_RELEASE_GATE+MANAGER_DECISION_ROUTING 전제 — gate.blocked 미발행/미소비 시 사인오프 미생성')
   }
 
+  // B1: 결정 만료 sweep은 pool(=DATABASE_URL)이 필수 — pool 없으면 DecisionRepo 미생성·sweep 미배선.
+  if (config.MANAGER_DECISION_EXPIRY && !pool) {
+    app.log.warn('MANAGER_DECISION_EXPIRY=true 이지만 DATABASE_URL이 없어 결정 만료 sweep이 비활성입니다.')
+  }
+
   // P5-1: 릴리스 게이트 전제 누락 시 오진 방지 경고(순수 헬퍼 위임·테스트 가능).
   for (const msg of releaseGateWarnings({
     releaseGate: config.MANAGER_RELEASE_GATE, taskManager: config.TASK_MANAGER_ENABLED,
@@ -408,6 +414,10 @@ export async function buildServer(
         releaseGate: config.MANAGER_RELEASE_GATE,
         // P5-2a: gate.blocked→사인오프(=MANAGER_RELEASE_SIGNOFF). off면 gate.blocked 무시·회귀 0.
         releaseSignoff: config.MANAGER_RELEASE_SIGNOFF,
+        // B1: 결정 만료 sweep(=MANAGER_DECISION_EXPIRY). off면 sweep 미배선·expiresAt 미주입(회귀 0). decisionStore 동반 시만 배선.
+        decisionExpiry: config.MANAGER_DECISION_EXPIRY,
+        decisionSweepMs: config.MANAGER_DECISION_SWEEP_MS,
+        decisionTtlMs: config.MANAGER_DECISION_TTL_HOURS * 3_600_000, // 시간→ms
       },
     )
     supervisor.start()
