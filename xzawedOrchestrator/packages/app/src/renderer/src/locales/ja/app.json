@@ -148,6 +148,7 @@
     "expected_vs_actual": "期待 vs 実際",
     "impact": "影響",
     "evidence": "証拠",
+    "attribution": "帰属",
     "choice_fix_reverify": "実装を再試行して再検証",
     "choice_spec_fix": "仕様修正",
     "choice_accept_known": "既知の問題を受容",

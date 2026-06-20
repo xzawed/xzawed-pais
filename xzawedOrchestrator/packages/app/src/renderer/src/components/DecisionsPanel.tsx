@@ -108,6 +108,12 @@ export function DecisionsPanel(): React.JSX.Element {
                   {t('decisions.evidence')}: {d.context.evidenceRefs.join(', ')}
                 </p>
               )}
+              {d.context?.attribution && (
+                <p className="text-[10px] text-fg-ghost">
+                  {t('decisions.attribution')}: {d.context.attribution.faultTier}
+                  {' '}(impl {d.context.attribution.counters?.impl ?? 0} · task {d.context.attribution.counters?.task ?? 0} · plan {d.context.attribution.counters?.plan ?? 0})
+                </p>
+              )}
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
                 {CHOICES.map((c) => (
                   <button

@@ -70,4 +70,13 @@ describe('DecisionsPanel', () => {
     fireEvent.click(screen.getByTestId('decisions-refresh'))
     await waitFor(() => expect(getPendingDecisions).toHaveBeenCalledTimes(2))
   })
+
+  test('attribution이 있으면 카드에 faultTier를 렌더', async () => {
+    getPendingDecisions.mockResolvedValue([{
+      ...BRIEF,
+      context: { ...BRIEF.context, attribution: { faultTier: 'impl_exhausted', counters: { impl: 3, task: 0, plan: 0 } } },
+    }])
+    renderAt('p1')
+    await waitFor(() => expect(screen.getByTestId('decisions-item')).toHaveTextContent('impl_exhausted'))
+  })
 })

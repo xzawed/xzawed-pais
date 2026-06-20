@@ -148,6 +148,7 @@
     "expected_vs_actual": "기대 vs 실제",
     "impact": "영향",
     "evidence": "증거",
+    "attribution": "귀속",
     "choice_fix_reverify": "구현 재시도 + 재검증",
     "choice_spec_fix": "스펙 수정",
     "choice_accept_known": "알려진 문제 수용",
