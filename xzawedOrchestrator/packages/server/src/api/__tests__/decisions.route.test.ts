@@ -47,6 +47,15 @@ describe('decisionsRoutes (proxy)', () => {
     await app.close()
   })
 
+  it('GET pending: Manager non-ok이면 빈 목록 폴백', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false } as Response))
+    const app = await build()
+    const res = await app.inject({ method: 'GET', url: '/projects/p1/decisions/pending' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ items: [] })
+    await app.close()
+  })
+
   it('POST submit: decidedBy를 인증 사용자 sub로 주입(body 무시)하고 Manager에 서비스 토큰 전달', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       status: 200, headers: new Headers({ 'content-type': 'application/json' }),

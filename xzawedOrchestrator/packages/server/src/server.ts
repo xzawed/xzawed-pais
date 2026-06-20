@@ -141,10 +141,13 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     ...(userAuthHook && { userAuthHook }),
     ...(signServiceToken && { signServiceToken }),
   })
+  const signDecisionToken = (config.auth === 'jwt' && config.serviceJwtSecret)
+    ? (): string => app.jwt.sign({ svc: 'decision-proxy' }, { expiresIn: '60s' })
+    : undefined
   await app.register(decisionsRoutes, {
     managerUrl: config.managerUrl,
     ...(userAuthHook && { userAuthHook }),
-    ...(signServiceToken && { signServiceToken }),
+    ...(signDecisionToken && { signServiceToken: signDecisionToken }),
   })
 
   await app.register(sessionsRoutes, {
