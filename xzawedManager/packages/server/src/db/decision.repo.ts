@@ -16,7 +16,7 @@ async function safeRollback(client: PoolClient): Promise<void> {
 interface RequestRow {
   request_id: string; type: string; workflow_id: string; wp_id: string | null
   correlation_id: string; context: unknown; severity: string; status: string
-  language: string; expires_at: string | null; project_id: string | null
+  language: string; expires_at: Date | string | null; project_id: string | null
 }
 interface DecisionRow {
   decision_id: string; request_id: string; decided_by: string; authority: string | null
@@ -27,7 +27,10 @@ function rowToRequest(r: RequestRow): DecisionRequest {
   return DecisionRequestSchema.parse({
     requestId: r.request_id, type: r.type, workflowId: r.workflow_id, wpId: r.wp_id,
     correlationId: r.correlation_id, context: r.context ?? {}, severity: r.severity,
-    status: r.status, language: r.language, expiresAt: r.expires_at, projectId: r.project_id,
+    // pg는 TIMESTAMPTZ를 Date로 반환 — 스키마(string|null)에 맞춰 ISO 정규화(B1: expires_at 첫 비-null 읽기 경로 노출).
+    status: r.status, language: r.language,
+    expiresAt: r.expires_at instanceof Date ? r.expires_at.toISOString() : r.expires_at,
+    projectId: r.project_id,
   })
 }
 function rowToDecision(r: DecisionRow): HumanDecision {
