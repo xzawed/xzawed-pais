@@ -1,4 +1,5 @@
 import type { DecisionRequestInput, DecisionBriefStore } from './decision-brief.js'
+import { expiresAtFrom } from './decision-brief.js'
 import type { GraphQueryPort } from './lease.js'
 
 /** gate.blocked 페이로드의 사인오프 브리프 입력(release-consumer가 전달). */
@@ -49,9 +50,15 @@ async function resolveProjectId(graphStore: GraphQueryPort | undefined, workflow
  * gate.blocked → DecisionRequest 핸들러(makeEscalationBrief 패턴). projectId 스레딩 후 createRequest.
  * throw 방어는 호출자(release-consumer)가 best-effort로 감싼다.
  */
-export function makeSignoffBrief(store: DecisionBriefStore, graphStore?: GraphQueryPort): (info: SignoffBriefInfo) => Promise<void> {
+export function makeSignoffBrief(
+  store: DecisionBriefStore,
+  graphStore?: GraphQueryPort,
+  opts?: { now?: () => number; ttlMs?: number },
+): (info: SignoffBriefInfo) => Promise<void> {
   return async (info) => {
     const projectId = await resolveProjectId(graphStore, info.workflowId)
-    await store.createRequest(buildSignoffBrief(info, projectId))
+    const nowFn = opts?.now ?? Date.now
+    const expiresAt = expiresAtFrom(nowFn(), opts?.ttlMs)
+    await store.createRequest({ ...buildSignoffBrief(info, projectId), ...(expiresAt && { expiresAt }) })
   }
 }
