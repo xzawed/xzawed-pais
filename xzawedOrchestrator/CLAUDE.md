@@ -42,6 +42,7 @@ packages/
 │       ├── api/
 │       │   ├── sessions.route.ts     # POST /sessions, GET /sessions/:id/tasks, POST /sessions/:id/ui-actions(승인·명확화 결정 → info_response 발행); resolveSession() 헬퍼로 중복 검증 통합 (PR #129)
 │       │   ├── knowledge.route.ts    # GET|PATCH|DELETE /projects/:id/knowledge[/:id] — Manager 위키 프록시(상태코드 pass-through, GET 실패 시 빈 목록 폴백; GET 비인증·읽기, PATCH/DELETE는 AUTH=jwt 시 user JWT + Manager 호출에 서비스 토큰 발급·전달 #213)
+│       │   ├── decisions.route.ts     # GET /projects/:id/decisions/pending(open·graceful {items:[]})|POST /projects/:id/decisions/:requestId/decision — Manager 결정 프록시(C1·#306). POST는 userAuthHook + decidedBy를 인증 사용자 JWT subject로 권위 주입(**client body 절대 미도달·M9 비부인**) + 전용 {svc:'decision-proxy'} 서비스 토큰. knowledge.route 패턴 복제
 │       │   ├── auth.route.ts         # POST /auth/register|login|refresh|logout, GET /auth/me (IP Rate Limiting)
 │       │   └── projects.route.ts     # CRUD + PUT|DELETE /projects/:id/github-token, GET /projects/:id/github-token/status
 │       ├── auth/
@@ -130,9 +131,10 @@ packages/
             │   └── UiSpecPreview.tsx  # 승인 게이트용 UISpec 읽기 전용 데모 렌더러(form 필드 행 / mockup·progress content는 MarkdownContent로 마크다운 리치 렌더 #214; 상호작용 없음)
             ├── App.tsx                # 4패널 레이아웃 (TooltipProvider, ActivityBar, Sidebar, ChatView, RightPanel, StatusBar, CommandPalette, SettingsModal, Toaster)
             ├── Sidebar.tsx            # Slack 스타일 재설계
-            ├── ChatLayout.tsx         # ActivityBar 탭(activePanel) 분기 — wiki 탭에서 WikiPanel 렌더
+            ├── ChatLayout.tsx         # ActivityBar 탭(activePanel) 분기 — wiki 탭에서 WikiPanel·decisions 탭에서 DecisionsPanel 렌더(#306)
             ├── ChatView.tsx           # AgentTimelineCard + PipelineStrip + UserBubble 통합; pendingInfoRequest.approval 시 승인 카드(승인/수정/중단 + rememberAuto + 지식성 단계 한정 위키저장 체크박스 + 저장 전 wikiSummary 편집 #212) 렌더 → postUiAction으로 결정 JSON 전송; handleSend는 전역 settings.gateMode를 postMessage로 전달 #215
             ├── WikiPanel.tsx          # 도메인 위키 뷰어 — 검색·출처(source_agent)·분류(category) 필터, category 배지, 인라인 편집·삭제(getKnowledge/updateKnowledge/deleteKnowledge)
+            ├── DecisionsPanel.tsx     # C1 결정 대기함(#306) — 프로젝트 pending 결정(결함 브리프) 카드(location·expectedVsActual·impact·evidence·attribution faultTier/counters) + 4 choice 버튼(fix_reverify만 즉시 #299 폐루프·나머지 3종 "기록만·후속 동작 없음" 정직 라벨·전부 M9 영속)·WikiPanel signal-abort fetch+refreshKey idiom·getPendingDecisions/submitDecision
             ├── MessageInput.tsx       # Framer Motion focus glow + aria-label
             ├── CommandPalette.tsx     # ⌘K Spotlight 스타일 완전 구현
             ├── SettingsModal.tsx      # shadcn Dialog 기반 — serverUrl·mode·userId·language + 전역 승인 게이트 모드(gateMode: manual/auto) 설정 #215
@@ -169,8 +171,8 @@ packages/
 
 - **Vitest 3** + `vitest.config.ts` `projects` API — `unit` (node) + `browser` (playwright/chromium) 두 프로젝트 분리
   - `unit`: `test/**/*.test.ts` + `src/renderer/src/lib/parseAgentSteps.test.ts` (store, main 프로세스, 파서 유닛 테스트)
-  - `browser`: `src/renderer/src/__tests__/**/*.browser.test.tsx` (App·Sidebar·ChatView(승인 카드)·WikiPanel·SettingsModal·CommandPalette·GitHubPanel·McpPanel·PluginPanel·detect-locale·app.store 등 컴포넌트·스토어 렌더링)
-  - 총 `pnpm test`: **214건** (app) + **422건** (server, Redis/DB 없으면 15건 skip → 407 pass) + **76건** (ui, jsdom) = **~712건**
+  - `browser`: `src/renderer/src/__tests__/**/*.browser.test.tsx` (App·Sidebar·ChatView(승인 카드)·WikiPanel·**DecisionsPanel**·**ChatLayout.decisions**·**decisions-api**·SettingsModal·CommandPalette·GitHubPanel·McpPanel·PluginPanel·detect-locale·app.store 등 컴포넌트·스토어 렌더링)
+  - 총 `pnpm test`: **238건** (app) + **430건** (server, Redis/DB 없으면 15건 skip → 415 pass) + **76건** (ui, jsdom) = **~744건**
 - **@vitest/browser + playwright** — 실제 Chromium에서 React 컴포넌트 렌더링 검증
 - **@testing-library/react** — 브라우저 모드 렌더링; `afterEach(cleanup)` 명시 필요
 - **@playwright/test** + `playwright._electron` — Electron E2E (`e2e/`, 110건/17 spec 파일, `pnpm test:e2e`)
@@ -213,11 +215,21 @@ ActivityBar의 **위키 탭**(`activePanel === 'wiki'`)에서 `WikiPanel`이 프
 - 항목별 category 배지 + 출처 표시, 인라인 편집(content·category)·삭제(확인 단계). 변이 성공 시 `refreshKey`로 refetch(stale clobber 방지).
 - 위키 GET(읽기)은 비인증 PO 도구(프록시 GET 실패 시 빈 목록 폴백). 쓰기(PATCH/DELETE)는 `AUTH=jwt` 시 user JWT 필요 — 프록시가 Manager 호출 시 `app.jwt.sign`으로 서비스 토큰을 발급·전달(#213 defense-in-depth).
 
+### 결정 대기함 뷰어 (C1·#306)
+
+ActivityBar의 **결정 탭**(`activePanel === 'decisions'`)에서 `DecisionsPanel`이 프로젝트의 pending 사람 결정(`defect_brief`)을 표시하고 PO가 choice를 제출한다. **Pull 모델** — 결정은 백그라운드 lease sweep이 세션과 무관하게 비동기 생성하므로 WS push가 아니라 HTTP 프록시(`decisions.route.ts`)로 가져온다(`knowledge.route.ts` 패턴 복제).
+
+- **조회**: `getPendingDecisions`(`lib/api.ts`) → Orchestrator GET `/projects/:id/decisions/pending`(open) → Manager `pendingByProject`. 실패 시 빈 목록 폴백. `WikiPanel`의 signal-abort fetch + `refreshKey` idiom(stale clobber 방지)·새로고침 버튼·제출 후 refetch.
+- **카드(결함 브리프)**: `context.location`·`expectedVsActual`·`impact[]`·`evidenceRefs[]`·**`attribution`(faultTier·counters impl/task/plan, PR-A 4c #298)** 렌더.
+- **4 choice 정직 라벨(M8)**: `fix_reverify`만 주 액션(즉시 #299 폐루프)·`spec_fix`/`accept_known`/`reject`는 보조 스타일 + "기록만·후속 동작 없음" hint(전부 제출되어 M9 영속·다운스트림 효과 차이만 정직 표기).
+- **제출·비부인(M9)**: `submitDecision`은 `{choice, justification?}`만 보낸다(`decidedBy` 미전송). 프록시 POST가 `userAuthHook` 뒤에서 `decidedBy = req.authUser?.sub ?? 'local-user'`로 **권위 주입**(client body 절대 미도달) + 전용 서비스 토큰으로 Manager 호출. 제출→toast→refetch.
+- ⚠️ Task Manager flag-off라 실 결정 생성 0(데모/테스트는 seed). AUTH=none 로컬은 `decidedBy='local-user'` 폴백.
+
 ### i18n 네임스페이스
 
 `locales/{ko,en,ja}/app.json`에 `wiki.*`(title·empty·source·search_placeholder·all_sources·all_categories·edit·delete·save·cancel·delete_confirm·category_none·save_failed·delete_failed), `approval.*`(title·approve·revise·abort·feedback_placeholder·remember_auto·save_to_wiki·**wiki_summary** #212), `settings.*`(server_url·mode·user_id·language·lang_*·**gate_mode**·gate_mode_manual·gate_mode_auto #215) 네임스페이스가 추가되어 있다.
 
-**내비/패널 i18n 일괄(#227):** `activity_bar.*`(chat·github·mcp·plugins·**wiki**·settings)·`status_bar.*`(server·running·stopped·checking·mcp_count)·`right_panel.*`(output_title·waiting·tokens·elapsed·modified_files) 네임스페이스 신규 + `github.*`·`plugins.*`·`command_palette.*`·`sidebar.*` 확장. `ActivityBar`·`StatusBar`·`RightPanel`·`Sidebar`·`GitHubPanel`·`PluginPanel`·`CommandPalette`가 `useTranslation('app')`로 렌더(CommandPalette의 cmdk `value=`는 로케일 무관 필터 식별자로 유지). app.json **123키** 3로케일 동기화(`node scripts/check-i18n.js`). ⚠️ 잔여 하드코딩 한국어(후속 i18n 배치 예정): `ChatView`(empty-state 안내)·`McpPanel`(env 파싱 toast)·`MessageInput`(전송 aria-label)·`AgentTimelineCard`·`CodeBlock`·`PipelineStrip`·`ProjectContextBar`.
+**내비/패널 i18n 일괄(#227):** `activity_bar.*`(chat·github·mcp·plugins·**wiki**·**decisions** #306·settings)·`status_bar.*`(server·running·stopped·checking·mcp_count)·`right_panel.*`(output_title·waiting·tokens·elapsed·modified_files) 네임스페이스 신규 + `github.*`·`plugins.*`·`command_palette.*`·`sidebar.*` 확장. **`decisions.*`(title·empty·loading·refresh·location·expected_vs_actual·impact·evidence·attribution·choice_*×4·choice_noop_hint·submit_failed·submitted, #306)**. `ActivityBar`·`StatusBar`·`RightPanel`·`Sidebar`·`GitHubPanel`·`PluginPanel`·`CommandPalette`가 `useTranslation('app')`로 렌더(CommandPalette의 cmdk `value=`는 로케일 무관 필터 식별자로 유지). app.json **153키** 3로케일 동기화(`node scripts/check-i18n.js`). ⚠️ 잔여 하드코딩 한국어(후속 i18n 배치 예정): `ChatView`(empty-state 안내)·`McpPanel`(env 파싱 toast)·`MessageInput`(전송 aria-label)·`AgentTimelineCard`·`CodeBlock`·`PipelineStrip`·`ProjectContextBar`.
 
 문자열 추가 시 3개 로케일 동기화 필수.
 
