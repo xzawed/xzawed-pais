@@ -28,6 +28,7 @@
     "mcp": "MCPサーバー",
     "plugins": "プラグイン",
     "wiki": "ウィキ",
+    "decisions": "決定",
     "settings": "設定"
   },
   "status_bar": {
@@ -137,6 +138,23 @@
     "remember_auto": "このステップを今後自動承認",
     "save_to_wiki": "この決定をWikiに保存",
     "wiki_summary": "Wikiに保存する要約（編集可能）"
+  },
+  "decisions": {
+    "title": "保留中の決定",
+    "empty": "保留中の決定はありません",
+    "loading": "読み込み中…",
+    "refresh": "更新",
+    "location": "場所",
+    "expected_vs_actual": "期待 vs 実際",
+    "impact": "影響",
+    "evidence": "証拠",
+    "choice_fix_reverify": "実装を再試行して再検証",
+    "choice_spec_fix": "仕様修正",
+    "choice_accept_known": "既知の問題を受容",
+    "choice_reject": "却下",
+    "choice_noop_hint": "記録のみ · 後続動作なし",
+    "submit_failed": "決定の送信に失敗しました",
+    "submitted": "決定を記録しました"
   },
   "wiki": {
     "title": "プロジェクトWiki",

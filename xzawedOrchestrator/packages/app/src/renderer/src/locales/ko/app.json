@@ -28,6 +28,7 @@
     "mcp": "MCP 서버",
     "plugins": "플러그인",
     "wiki": "위키",
+    "decisions": "결정",
     "settings": "설정"
   },
   "status_bar": {
@@ -137,6 +138,23 @@
     "remember_auto": "이 단계 앞으로 자동 승인",
     "save_to_wiki": "이 결정을 위키에 저장",
     "wiki_summary": "위키에 저장할 요약 (편집 가능)"
+  },
+  "decisions": {
+    "title": "결정 대기함",
+    "empty": "대기 중인 결정이 없습니다",
+    "loading": "불러오는 중…",
+    "refresh": "새로고침",
+    "location": "위치",
+    "expected_vs_actual": "기대 vs 실제",
+    "impact": "영향",
+    "evidence": "증거",
+    "choice_fix_reverify": "구현 재시도 + 재검증",
+    "choice_spec_fix": "스펙 수정",
+    "choice_accept_known": "알려진 문제 수용",
+    "choice_reject": "거부",
+    "choice_noop_hint": "기록만 · 후속 동작 없음",
+    "submit_failed": "결정 제출 실패",
+    "submitted": "결정이 기록되었습니다"
   },
   "wiki": {
     "title": "프로젝트 위키",
