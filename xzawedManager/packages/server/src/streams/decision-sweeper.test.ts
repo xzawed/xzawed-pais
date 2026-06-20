@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { handleDecisionSweep, DecisionSweeper } from './decision-sweeper.js'
 
 describe('handleDecisionSweep', () => {
@@ -23,9 +23,14 @@ describe('handleDecisionSweep', () => {
     await handleDecisionSweep(1, { store: { expiredPendingRequests: q, expireRequest: async () => null }, batchLimit: 7 })
     expect(q).toHaveBeenCalledWith(1, 7)
   })
+  it('expiredPendingRequests throw → {expired:0, skipped:0}(never-throw·외부 쿼리)', async () => {
+    const store = { expiredPendingRequests: async () => { throw new Error('db') }, expireRequest: async () => null }
+    await expect(handleDecisionSweep(1, { store })).resolves.toEqual({ expired: 0, skipped: 0 })
+  })
 })
 
 describe('DecisionSweeper', () => {
+  afterEach(() => { vi.useRealTimers() })
   it('pollOnce 재진입 가드(sweeping 중 재호출 noop)', async () => {
     let resolve: () => void = () => {}
     const gate = new Promise<void>((r) => { resolve = r })

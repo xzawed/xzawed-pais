@@ -10,9 +10,15 @@ export interface DecisionSweepDeps {
 
 const DEFAULT_BATCH_LIMIT = 100
 
-/** 만료 PENDING을 조회해 항목별 expireRequest(PENDING→EXPIRED·decision.expired 발행). never-throw(항목별 try/catch). */
+/** 만료 PENDING을 조회해 항목별 expireRequest(PENDING→EXPIRED·decision.expired 발행). never-throw(외부 쿼리·항목별 try/catch). */
 export async function handleDecisionSweep(now: number, deps: DecisionSweepDeps): Promise<{ expired: number; skipped: number }> {
-  const ids = await deps.store.expiredPendingRequests(now, deps.batchLimit ?? DEFAULT_BATCH_LIMIT)
+  let ids: string[]
+  try {
+    ids = await deps.store.expiredPendingRequests(now, deps.batchLimit ?? DEFAULT_BATCH_LIMIT)
+  } catch (err) {
+    console.warn('[decision-sweeper] expiredPendingRequests 실패 — 빈 sweep:', err)
+    return { expired: 0, skipped: 0 }
+  }
   let expired = 0
   let skipped = 0
   for (const id of ids) {
