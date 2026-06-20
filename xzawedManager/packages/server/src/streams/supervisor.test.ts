@@ -303,3 +303,49 @@ describe('buildWorkerConsumerDeps releaseGate (P5-1)', () => {
     expect(deps.releaseGateEnabled).toBe(false)
   })
 })
+
+describe('createSupervisor B1 decisionSweeper', () => {
+  // 기존 createSupervisor 테스트 패턴 — makeRedis는 ({}) as Redis 반환, deps는 as never 캐스팅.
+  // decisionStore에 expiredPendingRequests/expireRequest 포함 — SupervisorDeps 인터섹션 만족 단언.
+  const makeRedis = () => ({}) as unknown as Redis
+  const baseDecisionStore = () => ({
+    createRequest: vi.fn(),
+    getRequest: vi.fn().mockResolvedValue(null),
+    recordSignOff: vi.fn(),
+    expiredPendingRequests: vi.fn(async () => []),
+    expireRequest: vi.fn(),
+  })
+  const baseDeps = () => ({
+    repo: {} as never,
+    dispatchStore: {} as never,
+    leaseStore: {} as never,
+    publish: vi.fn(),
+    decisionStore: baseDecisionStore() as never,
+  })
+  const cfg = (over: Record<string, unknown> = {}) =>
+    ({ sweepMs: 1, visibilityMs: 1, maxAttempts: 1, oracleDor: false, taskWorker: false, ...over })
+
+  it('decisionExpiry+decisionStore → start/stop이 throw 없이 동작(decisionSweeper 배선)', () => {
+    const sup = createSupervisor(
+      makeRedis,
+      baseDeps(),
+      cfg({ decisionExpiry: true, decisionSweepMs: 1000, decisionTtlMs: 3_600_000 }) as never,
+    )
+    expect(() => { sup.start(); sup.stop() }).not.toThrow()
+  })
+
+  it('decisionExpiry off → 회귀(start/stop throw 0)', () => {
+    const sup = createSupervisor(
+      makeRedis,
+      baseDeps(),
+      cfg({ decisionExpiry: false }) as never,
+    )
+    expect(() => { sup.start(); sup.stop() }).not.toThrow()
+  })
+
+  it('decisionExpiry true, decisionStore 미주입 → decisionSweeper 미배선(조립 성공·회귀 0)', () => {
+    const deps = { repo: {} as never, dispatchStore: {} as never, leaseStore: {} as never, publish: vi.fn() }
+    const sup = createSupervisor(makeRedis, deps, cfg({ decisionExpiry: true, decisionSweepMs: 1000 }) as never)
+    expect(() => { sup.start(); sup.stop() }).not.toThrow()
+  })
+})
