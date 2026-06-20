@@ -156,6 +156,23 @@ describe('DecisionRepo.expireRequest / supersedeRequest (M8 — 무음 통과 �
   })
 })
 
+describe('DecisionRepo project scope (C0/C1)', () => {
+  it('createRequest INSERT 파라미터에 project_id 포함', async () => {
+    const m = makeMockPool()
+    await new DecisionRepo(m.pool, () => 1000).createRequest({ ...REQ, projectId: 'proj-1' })
+    const ins = callFor(m.query, /INSERT INTO decision_requests/i)![1] as unknown[]
+    expect(ins).toContain('proj-1')
+  })
+
+  it('pendingByProject: project_id=$1 AND status=PENDING 필터', async () => {
+    const row = { request_id: 'r1', type: 'defect_brief', workflow_id: 'wf', wp_id: null, correlation_id: 'wf', context: {}, severity: 'blocking', status: 'PENDING', language: 'ko', expires_at: null, project_id: 'proj-1' }
+    const m = makeMockPool({ selectRows: [row] })
+    const res = await new DecisionRepo(m.pool, () => 1000).pendingByProject('proj-1')
+    expect(callFor(m.query, /WHERE project_id = \$1 AND status/i)).toBeTruthy()
+    expect(res[0]?.projectId).toBe('proj-1')
+  })
+})
+
 describe('DecisionRepo queries', () => {
   const dbRow = {
     request_id: 'req-1', type: 'defect_brief', workflow_id: 'wf1', wp_id: null, correlation_id: 'wf1',
