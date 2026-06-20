@@ -176,7 +176,7 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
-    // B1: 결정 만료 sweep(=true). off면 expiresAt 미설정+sweep 미배선=현재 동작. 전제 DATABASE_URL.
+    // B1: 결정 만료 sweep(=true). off면 expiresAt 미설정+sweep 미배선=현재 동작. 전제 TASK_MANAGER_ENABLED+DATABASE_URL.
     MANAGER_DECISION_EXPIRY: z.string().optional().transform((v) => v === 'true'),
     // B1: 결정 TTL(시간). server가 *3_600_000(ms)로 변환해 주입. 사람 대면이라 기본 72h.
     MANAGER_DECISION_TTL_HOURS: z.coerce.number().int().positive().default(72),

@@ -340,6 +340,11 @@ export async function buildServer(
   if (config.MANAGER_DECISION_EXPIRY && !pool) {
     app.log.warn('MANAGER_DECISION_EXPIRY=true 이지만 DATABASE_URL이 없어 결정 만료 sweep이 비활성입니다.')
   }
+  // B1: sweep·expiresAt 주입은 Supervisor 안에서만 동작 — Supervisor는 TASK_MANAGER_ENABLED+pool 시만 배선됨.
+  // TASK_MANAGER_ENABLED=false면 createSupervisor 미호출 → DecisionSweeper 미생성 → silent no-op.
+  if (config.MANAGER_DECISION_EXPIRY && pool && !config.TASK_MANAGER_ENABLED) {
+    app.log.warn('MANAGER_DECISION_EXPIRY=true 이지만 TASK_MANAGER_ENABLED가 꺼져 있어 Supervisor가 미배선 — 결정 만료 sweep·expiresAt 주입이 비활성입니다.')
+  }
 
   // P5-1: 릴리스 게이트 전제 누락 시 오진 방지 경고(순수 헬퍼 위임·테스트 가능).
   for (const msg of releaseGateWarnings({
