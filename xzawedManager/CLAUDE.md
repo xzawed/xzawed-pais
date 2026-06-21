@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 989/1058 테스트 — 로컬 69 skip, CI는 pg 통합 포함 실행)**
+현재 상태: **구현 완료 (server 1001/1072 테스트 — 로컬 71 skip, CI는 pg 통합 포함 실행)**
 
 > **통합 테스트 게이트**: `test/*.integration.test.ts`는 `TEST_DATABASE_URL ?? DATABASE_URL`로 게이트(CI turborepo 잡이 `TEST_DATABASE_URL` 주입 — 이전엔 `DATABASE_URL`만 읽어 **CI에서 한 번도 실행되지 않았음**). cleanup은 전부 파일별 prefix 스코프(`wf-comp-`·`wf-disp-`·`wf-lease-`·`wf-dc-`·`wf-tgp-`·`wf-ew-`·`wf-orc-`·`es-it`) — 비스코프 DELETE는 병렬 형제 테스트의 행을 지워 간헐 실패를 만든다. `runMigrations`는 pg advisory lock으로 동시 실행 직렬화(병렬 테스트·다중 인스턴스 기동 공통 방어). — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
@@ -408,6 +408,18 @@ P2r-3(#314)이 만든 pending 리스크 분류를 **사람 승인으로 소비**
 - **배선(`supervisor.ts`·`server.ts`·`config.ts`)**: `SupervisorConfig.riskRouting`·`shouldWireRiskConsumer(riskRouting, hasGraphStore)` 순수 게이트·riskConsumer 조건부 배선(write-back 대상=`deps.repo`=TaskGraphRepo). **양쪽 silent-no-op seam 필수 배선**: ①`createSupervisor` config에 `riskRouting: config.MANAGER_RISK_ROUTING`(없으면 소비자 미배선) ②`OutboxRelay` 기동 조건에 `MANAGER_RISK_ROUTING`(없으면 risk.approved 아웃박스→소비자 발행 불발·write-back 무음 미발생). `riskStore`는 `MANAGER_RISK_CLASSIFY||MANAGER_RISK_ROUTING`로 P2r-3 생산자와 공유.
 - **E2E DB 통합**(`test/risk-routing.integration.test.ts`, skip-if-no-DB·`wf-rr-` prefix·**CI pg 실행 PASS**): classify(HIGH)→upsert(pending)→upsertGraph(WP risk MEDIUM)→approve→`buildRiskApprovedHandler` 소비→`getGraph` WP risk=HIGH·**`meetsMinRisk` MEDIUM(false)→HIGH(true) 전이 실증**(mutation 게이트 활성).
 - **한계(후속)**: C5 리스크 승인 UI·디스패치 게이팅(INTAKE→DECOMPOSING)·**D5 모델 라우팅 소비**(risk.approved.modelRouting 미소비)·P7 per-WP 재채점·재분해 시 risk 보존(E10).
+
+## C5 리스크 승인 UI (#318)
+
+P2r-4(#316)의 백엔드 키스톤 위에 **사람 승인 경로를 C1 결정 대기함에 surface**한다. 신규 UI 없이 기존 `DecisionsPanel`·`decisions.route.ts`·`DecisionRecordedConsumer`를 재사용(P5-2a signoff-brief 패턴 반복).
+
+- **`streams/risk-decision-producer.ts`(신규)**: `RiskDecisionProducer` — `humanGate.required=true` 리스크 분류 생성 시 `buildRiskBrief`로 표준 `DecisionContext` 매핑(P5-2a `buildSignoffBrief` 미러)→`DecisionRepo.createRequest`(requestId=`{workflowId}:risk:{version}`·멱등·type=`risk_classification`)·아웃박스 단일 tx. `MANAGER_RISK_DECISION` flag 내 배선·`MANAGER_RISK_CLASSIFY` 생산자 뒤 조건부 실행.
+- **`decision-consumer.ts` approve 분기 확장**: `decision.recorded` + choice=`approve` + type=`risk_classification` → `RiskClassificationRepo.approve(req.workflowId, decidedBy)`(기존·risk.approved 발행)·decidedBy=인증 JWT subject(**실 비부인**·M9). 분기 추가만(소비자 재배선 없음).
+- **`buildRiskBrief`(`decisions/risk-brief.ts`)**: `RiskClassification`→`DecisionContext`(location=workflowId·expectedVsActual=분류 요약·impact=risk 등급·choice 목록). 표준 DecisionContext 계약 준수로 **Orchestrator C1 카드 변경 0**.
+- **배선**: `shouldWireRiskDecision(config)` 순수 게이트(전제 `MANAGER_RISK_CLASSIFY+MANAGER_DECISION_ROUTING+DATABASE_URL`)·생산자/소비자 동시 활성화 대칭(`MANAGER_RISK_DECISION` 단일 flag). **migration 0**(기존 `decisions` 테이블 재사용·type 컬럼 값 확장만).
+- **`MANAGER_RISK_DECISION` flag**(기본 false·전제 `MANAGER_RISK_CLASSIFY+MANAGER_DECISION_ROUTING+DATABASE_URL`): off면 humanGate.required도 DecisionRequest 미발행·회귀 0.
+- **DB 통합**: `test/risk-decision.integration.test.ts`(skip-if-no-DB·`wf-rd-` prefix) — classify(HIGH·humanGate.required)→brief 발행→pending 조회→approve→`RiskClassificationRepo.getByWorkflow` approved 확인.
+- **Orchestrator**: `DecisionsPanel` `context.options` 구동 렌더 리팩터(type별 DEFAULT_CHOICES 폴백 제거·per-decision options 렌더)→`risk_classification` choice 카드 표시·stale "기록만" 블랭킷 라벨 부채 해소. i18n `choice_approve`/`choice_hint` 추가·`choice_noop_hint` 제거(#318).
 
 ## AgentQuery 교차질의
 
