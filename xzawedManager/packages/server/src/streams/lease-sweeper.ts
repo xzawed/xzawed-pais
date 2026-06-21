@@ -1,6 +1,7 @@
 import { handleLeaseSweep, type SweepDeps } from './lease.js'
 import type { LeaseStore } from '../db/lease.repo.js'
 import type { Publish } from './decomposition-consumer.js'
+import { IntervalSweeper } from './interval-sweeper.js'
 
 export interface LeaseSweeperDeps {
   store: LeaseStore
@@ -18,46 +19,25 @@ export interface LeaseSweeperDeps {
  * lease 만료 sweep 폴러 — setInterval로 주기마다 handleLeaseSweep(reclaim/escalate)을 돌린다(OutboxRelay 패턴).
  * 재진입 가드로 느린 sweep이 틱과 겹쳐도 동시 sweep을 막는다(단일 인스턴스 전제). never-throw.
  */
-export class LeaseSweeper {
-  private timer: ReturnType<typeof setInterval> | null = null
-  private sweeping = false
-
+export class LeaseSweeper extends IntervalSweeper {
   constructor(
     private readonly deps: LeaseSweeperDeps,
-    private readonly sweepMs = 30_000,
-    private readonly now: () => number = () => Date.now(),
-  ) {}
-
-  start(): void {
-    if (this.timer) return
-    this.timer = setInterval(() => {
-      void this.pollOnce()
-    }, this.sweepMs)
+    sweepMs = 30_000,
+    now: () => number = () => Date.now(),
+  ) {
+    super(sweepMs, now)
   }
-
-  stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer)
-      this.timer = null
-    }
+  protected async tick(now: number): Promise<void> {
+    await handleLeaseSweep(now, {
+      store: this.deps.store,
+      maxAttempts: this.deps.maxAttempts,
+      visibilityMs: this.deps.visibilityMs,
+      ...(this.deps.publish && { publish: this.deps.publish }),
+      ...(this.deps.onEscalated && { onEscalated: this.deps.onEscalated }),
+      ...(this.deps.graphStore && { graphStore: this.deps.graphStore }),
+    })
   }
-
-  async pollOnce(): Promise<void> {
-    if (this.sweeping) return
-    this.sweeping = true
-    try {
-      await handleLeaseSweep(this.now(), {
-        store: this.deps.store,
-        maxAttempts: this.deps.maxAttempts,
-        visibilityMs: this.deps.visibilityMs,
-        ...(this.deps.publish && { publish: this.deps.publish }),
-        ...(this.deps.onEscalated && { onEscalated: this.deps.onEscalated }),
-        ...(this.deps.graphStore && { graphStore: this.deps.graphStore }),
-      })
-    } catch (err) {
-      console.warn('[lease-sweeper] sweep 실패 — 다음 주기 재시도:', err)
-    } finally {
-      this.sweeping = false
-    }
+  protected onError(err: unknown): void {
+    console.warn('[lease-sweeper] sweep 실패 — 다음 주기 재시도:', err)
   }
 }

@@ -1,3 +1,5 @@
+import { IntervalSweeper } from './interval-sweeper.js'
+
 /** B1: 결정 만료 sweep — DecisionRepo가 구조적으로 만족(SupervisorDeps.decisionStore 인터섹션 포함). */
 export interface DecisionSweepStore {
   expiredPendingRequests(now: number, limit: number): Promise<string[]>
@@ -38,39 +40,18 @@ export async function handleDecisionSweep(now: number, deps: DecisionSweepDeps):
  * 결정 만료 sweep 폴러 — setInterval로 주기마다 handleDecisionSweep을 돌린다(LeaseSweeper 패턴).
  * 재진입 가드로 느린 sweep이 틱과 겹쳐도 동시 sweep을 막는다(단일 인스턴스 전제). never-throw.
  */
-export class DecisionSweeper {
-  private timer: ReturnType<typeof setInterval> | null = null
-  private sweeping = false
-
+export class DecisionSweeper extends IntervalSweeper {
   constructor(
     private readonly deps: DecisionSweepDeps,
-    private readonly sweepMs = 60_000, // 결정 TTL은 시간 단위라 분 단위 sweep으로 충분(LeaseSweeper 30s와 의도적 차등)
-    private readonly now: () => number = () => Date.now(),
-  ) {}
-
-  start(): void {
-    if (this.timer) return
-    this.timer = setInterval(() => {
-      void this.pollOnce()
-    }, this.sweepMs)
+    sweepMs = 60_000, // 결정 TTL은 시간 단위라 분 단위 sweep으로 충분(LeaseSweeper 30s와 의도적 차등)
+    now: () => number = () => Date.now(),
+  ) {
+    super(sweepMs, now)
   }
-
-  stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer)
-      this.timer = null
-    }
+  protected async tick(now: number): Promise<void> {
+    await handleDecisionSweep(now, this.deps)
   }
-
-  async pollOnce(): Promise<void> {
-    if (this.sweeping) return
-    this.sweeping = true
-    try {
-      await handleDecisionSweep(this.now(), this.deps)
-    } catch (err) {
-      console.warn('[decision-sweeper] sweep 실패 — 다음 주기 재시도:', err)
-    } finally {
-      this.sweeping = false
-    }
+  protected onError(err: unknown): void {
+    console.warn('[decision-sweeper] sweep 실패 — 다음 주기 재시도:', err)
   }
 }
