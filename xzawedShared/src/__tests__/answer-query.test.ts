@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { answerViaClaude, stripJsonFences, extractClaudeText } from '../claude/answer-query.js'
+import { answerViaClaude, stripJsonFences, extractClaudeText, callClaudeTextWithUsage } from '../claude/answer-query.js'
 
 describe('stripJsonFences', () => {
   it('```json 펜스를 제거한다', () => {
@@ -57,5 +57,28 @@ describe('answerViaClaude', () => {
     })
     const answer = await answerViaClaude({ messages: { create } }, 'm', 's', 'q', {})
     expect(answer).toBe('답변')
+  })
+})
+
+describe('callClaudeTextWithUsage', () => {
+  it('callClaudeTextWithUsage가 텍스트와 usage를 함께 반환한다', async () => {
+    const client = {
+      messages: {
+        create: async () => ({
+          content: [{ type: 'text', text: '{"ok":1}' }],
+          usage: { input_tokens: 10, output_tokens: 5 },
+        }),
+      },
+    }
+    const r = await callClaudeTextWithUsage(client as never, 'claude-opus-4-8', 256, 'sys', 'user', 1000)
+    expect(r.text).toBe('{"ok":1}')
+    expect(r.usage).toEqual({ input_tokens: 10, output_tokens: 5 })
+  })
+
+  it('usage 필드가 없으면 undefined를 반환한다(기존 callClaudeText 경로 불변)', async () => {
+    const client = { messages: { create: async () => ({ content: [{ type: 'text', text: 'hi' }] }) } }
+    const r = await callClaudeTextWithUsage(client as never, 'm', 16, 's', 'u', 1000)
+    expect(r.text).toBe('hi')
+    expect(r.usage).toBeUndefined()
   })
 })

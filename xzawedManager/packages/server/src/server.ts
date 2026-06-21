@@ -17,7 +17,7 @@ import { createOutboxPublish } from './streams/outbox-publish.js'
 import { createPool, runMigrations, closePool } from './db/pool.js'
 import type { Pool } from 'pg'
 import { ToolRegistry } from './tools/registry.js'
-import { ClaudeRunner, type BudgetRunnerDeps, type ProviderRunnerDeps } from './claude/runner.js'
+import { ClaudeRunner, type BudgetRunnerDeps, type ProviderRunnerDeps, isProviderFailure } from './claude/runner.js'
 import { createPlanTaskHandler } from './tools/plan-task.js'
 import { createDevelopCodeHandler } from './tools/develop-code.js'
 import { createDesignUiHandler } from './tools/design-ui.js'
@@ -46,6 +46,8 @@ import { oracleRoute } from './api/oracle.route.js'
 import { decisionRoute } from './api/decision.route.js'
 import { createSupervisor, shouldWireSupervisor, shouldWireDecisionRoute, type Supervisor } from './streams/supervisor.js'
 import type { ProduceDeps } from './decompose/producer.js'
+import type { RiskClassifyDeps } from './decompose/risk-producer.js'
+import { RiskClassificationRepo } from './db/risk-classification.repo.js'
 
 export async function buildServer(
   config: Config,
@@ -456,6 +458,26 @@ export async function buildServer(
     }
   }
 
+  // P2r-3: 리스크 분류 생산자(flag on + pool). 러너와 동일 budget/provider breaker 인스턴스 공유(누적 회계 정합).
+  const riskStore = pool && config.MANAGER_RISK_CLASSIFY ? new RiskClassificationRepo(pool) : undefined
+  const riskClassify: RiskClassifyDeps | undefined = riskStore
+    ? {
+        claude: client,
+        model: config.CLAUDE_MODEL,
+        timeoutMs: config.CLAUDE_TIMEOUT_MS,
+        repo: riskStore,
+        ...(budget && { budget: budget.breaker }),
+        ...(providerCircuit && { provider: providerCircuit.breaker }),
+        isProviderFailure,
+        log: (msg, data) => app.log.info(data ?? {}, msg),
+      }
+    : undefined
+  if (config.MANAGER_RISK_CLASSIFY) {
+    if (!pool) app.log.warn('[risk] MANAGER_RISK_CLASSIFY=true이나 DATABASE_URL 없음 — 분류 영속 불가(미배선)')
+    else if (!config.MANAGER_DECOMPOSE_ENABLED) app.log.warn('[risk] MANAGER_RISK_CLASSIFY=true이나 MANAGER_DECOMPOSE_ENABLED off — decompose_request 핸들러 미도달로 분류 미발생(no-op)')
+    else app.log.info('[risk] P2r-3 리스크 분류 생산자 배선(pending·N6 미승인)')
+  }
+
   const authHook = config.SERVICE_JWT_SECRET ? verifyServiceToken : undefined
 
   const watcherEventConsumer = new WatcherEventConsumer(
@@ -511,6 +533,7 @@ export async function buildServer(
     watcherEventConsumer,
     ...(authHook && { authHook }),
     ...(decompose && { decompose }),
+    ...(riskClassify && { riskClassify }),
   })
   // 운영 라우트: DLQ 재처리(redriveDlq). 격리된 poison 메시지를 원 스트림으로 되돌린다.
   // 부수효과(원 스트림 재발행→자율 에이전트 실행 트리거)가 있는 권한 엔드포인트라 인증이 **필수**다 —
@@ -534,6 +557,7 @@ export async function buildServer(
     redisUrl: config.REDIS_URL, runner, producer, sessionStore, activeConsumers,
     watcherEventConsumer,
     ...(decompose && { decompose }),
+    ...(riskClassify && { riskClassify }),
     log: { error: (obj, msg) => app.log.error(obj, msg) },
   })
 

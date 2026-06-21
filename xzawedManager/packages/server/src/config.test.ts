@@ -467,3 +467,33 @@ describe('MANAGER_WP_SECURITY flag + min severity', () => {
     expect(loadConfig().MANAGER_WP_SECURITY_MIN_SEVERITY).toBe('high')
   })
 })
+
+describe('MANAGER_RISK_CLASSIFY flag', () => {
+  let savedMode: string | undefined
+  let savedKey: string | undefined
+
+  beforeEach(() => {
+    savedMode = process.env['MODE']
+    savedKey = process.env['ANTHROPIC_API_KEY']
+    process.env['MODE'] = 'local'
+    process.env['ANTHROPIC_API_KEY'] = 'k'
+  })
+
+  afterEach(() => {
+    if (savedMode !== undefined) process.env['MODE'] = savedMode
+    else delete process.env['MODE']
+    if (savedKey !== undefined) process.env['ANTHROPIC_API_KEY'] = savedKey
+    else delete process.env['ANTHROPIC_API_KEY']
+    delete process.env['MANAGER_RISK_CLASSIFY']
+  })
+
+  it('기본 false', () => {
+    delete process.env['MANAGER_RISK_CLASSIFY']
+    expect(loadConfig().MANAGER_RISK_CLASSIFY).toBe(false)
+  })
+
+  it("'true'면 true", () => {
+    process.env['MANAGER_RISK_CLASSIFY'] = 'true'
+    expect(loadConfig().MANAGER_RISK_CLASSIFY).toBe(true)
+  })
+})

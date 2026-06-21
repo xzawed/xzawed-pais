@@ -1,3 +1,5 @@
+import type { TokenUsage } from '../budget/budget-circuit.js'
+
 /** Anthropic 클라이언트의 최소 구조적 인터페이스(에이전트 간 질의 답변용). */
 export interface ClaudeLike {
   messages: {
@@ -8,6 +10,12 @@ export interface ClaudeLike {
       messages: { role: 'user'; content: string }[]
     }): Promise<{ content: { type: string; text?: string }[] }>
   }
+}
+
+/** callClaudeTextWithUsage의 반환 타입: 텍스트 + 선택적 사용량. */
+export interface ClaudeTextWithUsage {
+  text: string
+  usage?: TokenUsage
 }
 
 /** Claude 응답 content에서 텍스트 블록만 모아 합친다. */
@@ -29,17 +37,17 @@ export function stripJsonFences(text: string): string {
 }
 
 /**
- * Claude를 호출해 텍스트를 반환하는 공통 로직(타임아웃 race + 텍스트 추출).
- * 여러 에이전트의 generate 계열·answerQuery가 재사용해 중복을 방지한다.
+ * Claude를 호출해 텍스트와 사용량을 반환하는 공통 로직(타임아웃 race + 텍스트 추출 + usage 노출).
+ * callClaudeText의 usage-노출 변형. 여러 에이전트의 generate 계열·answerQuery가 재사용해 중복을 방지한다.
  */
-export async function callClaudeText(
+export async function callClaudeTextWithUsage(
   client: ClaudeLike,
   model: string,
   maxTokens: number,
   system: string,
   userContent: string,
   timeoutMs: number,
-): Promise<string> {
+): Promise<ClaudeTextWithUsage> {
   let timerId: ReturnType<typeof setTimeout> | undefined
   const timeout = new Promise<never>((_, reject) => {
     timerId = setTimeout(() => reject(new Error('Claude API timeout')), timeoutMs)
@@ -55,10 +63,26 @@ export async function callClaudeText(
       }),
       timeout,
     ])
-    return extractClaudeText(response.content)
+    const usage = (response as { usage?: TokenUsage }).usage
+    return { text: extractClaudeText(response.content), ...(usage !== undefined && usage !== null && { usage }) }
   } finally {
     clearTimeout(timerId)
   }
+}
+
+/**
+ * Claude를 호출해 텍스트를 반환하는 공통 로직(타임아웃 race + 텍스트 추출).
+ * callClaudeTextWithUsage에 위임하여 동일 timeout-race를 한 곳에 유지한다.
+ */
+export async function callClaudeText(
+  client: ClaudeLike,
+  model: string,
+  maxTokens: number,
+  system: string,
+  userContent: string,
+  timeoutMs: number,
+): Promise<string> {
+  return (await callClaudeTextWithUsage(client, model, maxTokens, system, userContent, timeoutMs)).text
 }
 
 const ANSWER_TIMEOUT_MS = 120_000
