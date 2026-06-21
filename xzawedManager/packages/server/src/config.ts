@@ -188,6 +188,9 @@ const configSchema = z
     // P2r-4: 기본 false. true면 risk.approved 소비자(→wp.risk write-back) + 승인 라우트 배선(N6).
     //   전제: TASK_MANAGER_ENABLED(Supervisor·graph)+DATABASE_URL. 실효성엔 MANAGER_RISK_CLASSIFY. off면 회귀 0.
     MANAGER_RISK_ROUTING: z.string().optional().transform((v) => v === 'true'),
+    // C5: 기본 false. true면 humanGate.required 리스크 분류를 risk_classification DecisionRequest로 발행 +
+    //   decision-consumer가 approve→RiskClassificationRepo.approve. 전제: MANAGER_RISK_CLASSIFY+MANAGER_DECISION_ROUTING+DATABASE_URL.
+    MANAGER_RISK_DECISION: z.string().optional().transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {
