@@ -171,8 +171,13 @@ export interface SupervisorDeps {
   timeoutMs?: number
   /** P5-1: 릴리스 게이트 증거/결과 영속소(ReleaseGateRepo). releaseGate flag + 주입 시 게이트 평가. */
   releaseStore?: ReleaseGateRepo
-  /** C5: approve→RiskClassificationRepo.approve 분기용. */
-  riskStore?: { approve(workflowId: string, approvedBy: string): Promise<{ eventId: string } | null> }
+  /** C5: approve→RiskClassificationRepo.approve 분기용.
+   *  D5: approvedForWorkflow도 노출(모델 라우팅 조회) — RiskClassificationRepo가 양쪽 모두 구현.
+   *  modelRouting은 Partial(DB 스키마·RiskClassification)이나 resolveWpModel이 undefined tier를 폴백으로 처리. */
+  riskStore?: {
+    approve(workflowId: string, approvedBy: string): Promise<{ eventId: string } | null>
+    approvedForWorkflow(workflowId: string): Promise<{ modelRouting: Partial<Record<import('@xzawed/agent-streams').RoutedAgent, import('@xzawed/agent-streams').ModelTier>> } | null>
+  }
 }
 export interface SupervisorConfig {
   sweepMs: number
@@ -216,6 +221,12 @@ export interface SupervisorConfig {
   decisionTtlMs?: number
   /** P2r-4: risk.approved 소비(→wp.risk write-back) 활성(=MANAGER_RISK_ROUTING). */
   riskRouting?: boolean
+  /** D5: 모델 라우팅 활성(=MANAGER_MODEL_ROUTING). riskStore+modelOpus+modelSonnet 동반 필요. */
+  modelRouting?: boolean
+  /** D5: Opus 모델 식별자(=MANAGER_MODEL_OPUS). modelRouting 활성 시만 사용. */
+  modelOpus?: string
+  /** D5: Sonnet 모델 식별자(=MANAGER_MODEL_SONNET). modelRouting 활성 시만 사용. */
+  modelSonnet?: string
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
@@ -237,7 +248,7 @@ export function shouldWireDecisionRoute(routing: boolean, hasPool: boolean, hasA
 /** P4b-1: WorkerConsumer deps 조립(순수·D4) — wpVerify→verifyEnabled 스레딩을 행동 단언 가능하게 분리.
  *  instanceOf 단언만으로는 이 한 줄의 누락(undefined→off)이 무음 fail-open 퇴행이 되는 것을 잡지 못한다. */
 export function buildWorkerConsumerDeps(
-  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs' | 'releaseStore'>
+  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs' | 'releaseStore' | 'riskStore'>
     & { handlers: Record<string, AgentExecutor> },
   config: SupervisorConfig,
 ): WorkerDeps {
@@ -277,6 +288,13 @@ export function buildWorkerConsumerDeps(
     // P5-1 릴리스 게이트: flag + releaseStore 둘 다 있어야 활성(검증 우회 무음 방지·행동 단언). oracle 미소비.
     releaseGateEnabled: config.releaseGate === true && deps.releaseStore != null,
     ...(deps.releaseStore && { releaseStore: deps.releaseStore }),
+    // D5: 모델 라우팅 — flag + riskStore + ids 주입 시 워커가 디스패치 시 모델 해석.
+    // riskStore.approvedForWorkflow가 Partial<Record<RoutedAgent,ModelTier>>를 반환하나 resolveWpModel이
+    // undefined tier를 폴백으로 처리하므로 WorkerDeps 포트(Record 요구)로 안전하게 캐스트.
+    ...(config.modelRouting === true && deps.riskStore && config.modelOpus && config.modelSonnet && {
+      riskStore: deps.riskStore as NonNullable<WorkerDeps['riskStore']>,
+      modelRouting: { opus: config.modelOpus, sonnet: config.modelSonnet },
+    }),
   }
 }
 
@@ -366,6 +384,8 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
             ...(deps.model !== undefined && { model: deps.model }),
             ...(deps.timeoutMs !== undefined && { timeoutMs: deps.timeoutMs }),
             ...(deps.releaseStore && { releaseStore: deps.releaseStore }),
+            // D5: riskStore 전달(buildWorkerConsumerDeps가 modelRouting flag 게이트로 worker deps에 조건부 주입).
+            ...(deps.riskStore && { riskStore: deps.riskStore }),
           },
           config,
         ),
