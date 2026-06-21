@@ -1,6 +1,6 @@
 import type { ZodType, ZodTypeDef } from 'zod'
-import { callClaudeText, stripJsonFences } from '@xzawed/agent-streams'
-import type { ClaudeLike } from '@xzawed/agent-streams'
+import { callClaudeText, callClaudeTextWithUsage, stripJsonFences } from '@xzawed/agent-streams'
+import type { ClaudeLike, BudgetCircuitBreaker, ProviderCircuitBreaker } from '@xzawed/agent-streams'
 
 /** 단계 LLM 호출에 필요한 주입 의존(테스트 mock 용이). */
 export interface StageDeps {
@@ -32,18 +32,45 @@ function extractJson(text: string): unknown {
   }
 }
 
+/** P2r-3: risk 스테이지만 주입하는 §13 서킷 컨텍스트. 미전달이면 runStage는 기존 경로(회귀 0). */
+export interface StageCircuit {
+  workflowId: string
+  budget?: BudgetCircuitBreaker
+  provider?: ProviderCircuitBreaker
+  isProviderFailure?: (err: unknown) => boolean
+}
+
 /**
  * 단계 1회 실행: callClaudeText → JSON 추출 → safeParse. 어떤 실패(throw·파싱·검증)든 spec.fallback().
  * 4단계가 이 함수만 호출해 call+parse+degrade 보일러플레이트를 1곳으로 모은다(CPD 회피).
+ * circuit 전달 시: provider.before()+budget.check(wf) pre-gate → callClaudeTextWithUsage → onSuccess/record.
+ * circuit 미전달이면 기존 callClaudeText 경로(바이트 동일·회귀 0).
  */
-export async function runStage<T>(deps: StageDeps, spec: StageSpec<T>): Promise<T> {
+export async function runStage<T>(deps: StageDeps, spec: StageSpec<T>, circuit?: StageCircuit): Promise<T> {
+  if (circuit) {
+    try {
+      circuit.provider?.before()
+      circuit.budget?.check(circuit.workflowId)
+    } catch {
+      return spec.fallback() // circuit open / 예산 초과 → best-effort skip
+    }
+  }
   try {
-    const text = await callClaudeText(deps.claude, deps.model, spec.maxTokens, spec.system, spec.user, deps.timeoutMs)
+    let text: string
+    if (circuit) {
+      const r = await callClaudeTextWithUsage(deps.claude, deps.model, spec.maxTokens, spec.system, spec.user, deps.timeoutMs)
+      circuit.provider?.onSuccess()
+      if (r.usage) circuit.budget?.record(circuit.workflowId, deps.model, r.usage)
+      text = r.text
+    } else {
+      text = await callClaudeText(deps.claude, deps.model, spec.maxTokens, spec.system, spec.user, deps.timeoutMs)
+    }
     const raw = extractJson(text)
     if (raw === undefined) return spec.fallback()
     const parsed = spec.schema.safeParse(raw)
     return parsed.success ? parsed.data : spec.fallback()
-  } catch {
+  } catch (err) {
+    if (circuit?.isProviderFailure?.(err)) circuit.provider?.onFailure()
     return spec.fallback()
   }
 }
