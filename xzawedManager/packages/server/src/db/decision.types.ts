@@ -51,7 +51,7 @@ export type DecisionContext = z.infer<typeof DecisionContextSchema>
 
 export const DecisionRequestSchema = z.object({
   requestId: z.string().min(1),
-  type: z.enum(['defect_brief', 'conformance_review', 'gate_override', 'degraded_release', 'oracle_approval', 'golden_diff', 'safe_resume']),
+  type: z.enum(['defect_brief', 'conformance_review', 'gate_override', 'degraded_release', 'oracle_approval', 'golden_diff', 'safe_resume', 'risk_classification']),
   workflowId: z.string().min(1),
   wpId: z.string().nullable().default(null),
   /** 워크플로 이벤트 로그(spec §16) 상관키 — 보통 workflowId. */
@@ -75,7 +75,7 @@ export const HumanDecisionSchema = z.object({
   authority: z.string().nullable().default(null),
   choice: z.enum(['fix_reverify', 'spec_fix', 'accept_known', 'reject', 'approve', 'resume']),
   justification: z.string().nullable().default(null),
-  routedTo: z.enum(['impl', 'task', 'plan', 'gate_override', 'oracle_refine', 'saga_rollback']).nullable().default(null),
+  routedTo: z.enum(['impl', 'task', 'plan', 'gate_override', 'oracle_refine', 'saga_rollback', 'risk_approve']).nullable().default(null),
 })
 export type HumanDecision = z.infer<typeof HumanDecisionSchema>
 
