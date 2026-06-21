@@ -44,6 +44,7 @@ import { ReleaseGateRepo } from './db/release-gate.repo.js'
 import { releaseGateWarnings } from './streams/server-release-gate.js'
 import { oracleRoute } from './api/oracle.route.js'
 import { decisionRoute } from './api/decision.route.js'
+import { riskRoute } from './api/risk.route.js'
 import { createSupervisor, shouldWireSupervisor, shouldWireDecisionRoute, type Supervisor } from './streams/supervisor.js'
 import type { ProduceDeps } from './decompose/producer.js'
 import type { RiskClassifyDeps } from './decompose/risk-producer.js'
@@ -186,7 +187,8 @@ export async function buildServer(
       config.MANAGER_DECISION_ROUTING ||
       config.MANAGER_RELEASE_GATE ||
       config.MANAGER_RELEASE_SIGNOFF ||
-      config.MANAGER_DECISION_EXPIRY)
+      config.MANAGER_DECISION_EXPIRY ||
+      config.MANAGER_RISK_ROUTING) // P2r-4: risk.approved 아웃박스→소비자 발행 필수
   ) {
     outboxRelay = new OutboxRelay(pool, producer, config.MANAGER_OUTBOX_POLL_MS)
     outboxRelay.start()
@@ -425,6 +427,8 @@ export async function buildServer(
         decisionExpiry: config.MANAGER_DECISION_EXPIRY,
         decisionSweepMs: config.MANAGER_DECISION_SWEEP_MS,
         decisionTtlMs: config.MANAGER_DECISION_TTL_HOURS * 3_600_000, // 시간→ms
+        // P2r-4: risk.approved 소비(→wp.risk write-back) 활성(=MANAGER_RISK_ROUTING). off면 riskConsumer 미배선(회귀 0).
+        riskRouting: config.MANAGER_RISK_ROUTING,
       },
     )
     supervisor.start()
@@ -458,8 +462,8 @@ export async function buildServer(
     }
   }
 
-  // P2r-3: 리스크 분류 생산자(flag on + pool). 러너와 동일 budget/provider breaker 인스턴스 공유(누적 회계 정합).
-  const riskStore = pool && config.MANAGER_RISK_CLASSIFY ? new RiskClassificationRepo(pool) : undefined
+  // P2r-3 생산자(MANAGER_RISK_CLASSIFY) + P2r-4 승인 라우트(MANAGER_RISK_ROUTING) 공유 repo.
+  const riskStore = pool && (config.MANAGER_RISK_CLASSIFY || config.MANAGER_RISK_ROUTING) ? new RiskClassificationRepo(pool) : undefined
   const riskClassify: RiskClassifyDeps | undefined = riskStore
     ? {
         claude: client,
@@ -476,6 +480,11 @@ export async function buildServer(
     if (!pool) app.log.warn('[risk] MANAGER_RISK_CLASSIFY=true이나 DATABASE_URL 없음 — 분류 영속 불가(미배선)')
     else if (!config.MANAGER_DECOMPOSE_ENABLED) app.log.warn('[risk] MANAGER_RISK_CLASSIFY=true이나 MANAGER_DECOMPOSE_ENABLED off — decompose_request 핸들러 미도달로 분류 미발생(no-op)')
     else app.log.info('[risk] P2r-3 리스크 분류 생산자 배선(pending·N6 미승인)')
+  }
+  if (config.MANAGER_RISK_ROUTING) {
+    if (!pool) app.log.warn('[risk] MANAGER_RISK_ROUTING=true이나 DATABASE_URL 없음 — 승인/write-back 불가(미배선)')
+    else if (!config.TASK_MANAGER_ENABLED) app.log.warn('[risk] MANAGER_RISK_ROUTING=true이나 TASK_MANAGER_ENABLED off — Supervisor 미배선으로 risk.approved 소비자 미가동(승인 라우트만 동작)')
+    else app.log.info('[risk] P2r-4 리스크 승인 라우팅 배선(risk.approved→wp.risk write-back)')
   }
 
   const authHook = config.SERVICE_JWT_SECRET ? verifyServiceToken : undefined
@@ -523,6 +532,8 @@ export async function buildServer(
     ...(oracleStore && { oracleRepo: oracleStore }),
     ...(authHook && { authHook }),
   })
+  // P2r-4: 리스크 분류 승인 라우트. 쓰기는 authHook 설정 시 보호. repo 없으면 503(graceful).
+  await app.register(riskRoute, { ...(riskStore && { riskRepo: riskStore }), ...(authHook && { authHook }) })
   await app.register(sessionsRoute, {
     redisUrl: config.REDIS_URL,
     runner,

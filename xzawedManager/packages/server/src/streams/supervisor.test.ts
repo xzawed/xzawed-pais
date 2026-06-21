@@ -2,7 +2,7 @@ import { describe, it, test, expect, vi } from 'vitest'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import {
   buildCompletionHandler, CompletionSignalSchema, Supervisor, createSupervisor, shouldWireSupervisor,
-  shouldWireOracleConsumer, shouldWireDecisionRoute, buildWorkerConsumerDeps,
+  shouldWireOracleConsumer, shouldWireDecisionRoute, shouldWireRiskConsumer, buildWorkerConsumerDeps,
 } from './supervisor.js'
 import type { LeaseStore } from '../db/lease.repo.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -143,6 +143,15 @@ describe('shouldWireOracleConsumer (D4 순수 게이트)', () => {
     expect(shouldWireOracleConsumer(true, false)).toBe(false)
     expect(shouldWireOracleConsumer(false, false)).toBe(false)
     expect(shouldWireOracleConsumer(true, true)).toBe(true)
+  })
+})
+
+describe('shouldWireRiskConsumer (P2r-4 순수 게이트)', () => {
+  it('shouldWireRiskConsumer: 둘 다 true여야 배선', () => {
+    expect(shouldWireRiskConsumer(true, true)).toBe(true)
+    expect(shouldWireRiskConsumer(false, true)).toBe(false)
+    expect(shouldWireRiskConsumer(true, false)).toBe(false)
+    expect(shouldWireRiskConsumer(false, false)).toBe(false)
   })
 })
 
