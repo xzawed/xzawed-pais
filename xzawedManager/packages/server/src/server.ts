@@ -390,8 +390,9 @@ export async function buildServer(
         ...(config.MANAGER_WP_ADVISORY && { claude: client, model: config.CLAUDE_MODEL, timeoutMs: config.CLAUDE_TIMEOUT_MS }),
         // P5-1: 릴리스 게이트 증거/결과 영속소(ReleaseGateRepo). releaseGate flag + 주입 시 게이트 평가.
         ...(releaseStore && { releaseStore }),
-        // C5: DecisionRecordedConsumer에 riskStore 주입 → approve 분기 활성.
-        ...(riskStore && { riskStore }),
+        // C5: DecisionRecordedConsumer에 riskStore 주입 → approve 분기 활성. MANAGER_RISK_DECISION 게이트로
+        //   생산자(emit) 측과 대칭 — flag off면 소비자가 riskStore를 받지 않아 'off→바이트 동일' 불변식이 문자 그대로 성립.
+        ...(config.MANAGER_RISK_DECISION && riskStore && { riskStore }),
       },
       {
         sweepMs: config.MANAGER_LEASE_SWEEP_MS,
