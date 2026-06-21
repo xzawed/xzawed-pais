@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 979/1045 테스트 — 로컬 66 skip, CI는 pg 통합 포함 실행)**
+현재 상태: **구현 완료 (server 989/1058 테스트 — 로컬 69 skip, CI는 pg 통합 포함 실행)**
 
 > **통합 테스트 게이트**: `test/*.integration.test.ts`는 `TEST_DATABASE_URL ?? DATABASE_URL`로 게이트(CI turborepo 잡이 `TEST_DATABASE_URL` 주입 — 이전엔 `DATABASE_URL`만 읽어 **CI에서 한 번도 실행되지 않았음**). cleanup은 전부 파일별 prefix 스코프(`wf-comp-`·`wf-disp-`·`wf-lease-`·`wf-dc-`·`wf-tgp-`·`wf-ew-`·`wf-orc-`·`es-it`) — 비스코프 DELETE는 병렬 형제 테스트의 행을 지워 간헐 실패를 만든다. `runMigrations`는 pg advisory lock으로 동시 실행 직렬화(병렬 테스트·다중 인스턴스 기동 공통 방어). — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
@@ -396,6 +396,18 @@ P2r 체인의 **첫 살아있는 생산자**. post-#312 재감사가 지목한 *
 - **배선(`server.ts`·`sessions.route.ts`·`config.ts`)**: `MANAGER_RISK_CLASSIFY`+pool 시 `RiskClassificationRepo`+riskClassify deps 구성 — **러너와 동일 budget/provider breaker 인스턴스 공유**(누적 회계 정합·budget key workflowId=sessionId)·`isProviderFailure`(runner export) 재사용·`decompose`와 동일하게 두 진입점 스레딩·오진 경고 2종(pool 부재·DECOMPOSE off no-op).
 - **DB 통합 테스트**(`test/risk-classification-producer.integration.test.ts`, skip-if-no-DB·`wf-rcp-` prefix): produce→upsert→`getByWorkflow` pending 라운드트립.
 - ⚠️ **플랫폼 의존 테스트 함정**(#314 후속 봉합): userContext를 넘기는 trigger 테스트는 **mock `ensureWs`(8번째 인자)를 반드시 주입**해야 한다 — 누락 시 실제 `ensureWorkspace`가 `mkdir(workspaceRoot)`를 시도해 Linux CI에서 `EACCES`(로컬 Windows는 통과).
+
+## P2r-4 리스크 승인 라우팅 + wp.risk write-back (#316)
+
+P2r-3(#314)이 만든 pending 리스크 분류를 **사람 승인으로 소비**해 `wp.risk`에 반영함으로써, post-#312 재감사가 지목한 **mutation θ게이트 구조적 사망**(wp.risk 영구 default MEDIUM → `meetsMinRisk(wp.risk,'HIGH')` 절대 미발화) 단층을 닫는다. **백엔드 키스톤만**(C5 UI·디스패치 게이팅·D5 모델 라우팅은 후속). `MANAGER_RISK_ROUTING`(기본 false) flag·off면 회귀 0. 전제: `TASK_MANAGER_ENABLED`(Supervisor·graph)+`DATABASE_URL`(repo)·실효성엔 `MANAGER_RISK_CLASSIFY`(승인 대상 생성). 설계 스펙 [2026-06-21-p2r-4-risk-routing-writeback-design.md](../../docs/superpowers/specs/2026-06-21-p2r-4-risk-routing-writeback-design.md). **새 migration 없음**(`012`/`007` 재사용).
+
+- **핵심 통찰**: mutation은 HIGH-gated이고 HIGH 분류는 항상 `humanGate.required=true`(코어 §4) → **사람 승인이 유일한 발화 경로**(자동승인은 LOW/MED만 처리·mutation skip).
+- **`db/task-graph.repo.ts` `updateWpRisks(wf, risk)`**: read-modify-write — `getGraph`로 WP[] 읽기→각 `{...wp, risk}`→`UPDATE task_graphs SET graph_dag`. **version 불변**(재분해 아님·upsertGraph 아님)·**WP id 불변**(content-hash가 risk 제외·N4)·userContext 보존·그래프 없음 no-op(`{updated:0}`). WP 상태(DRAFTED/DISPATCHED/DONE)는 별도 append-only `wp_state_log`라 write-back이 디스패치/완료와 graph_dag 경합 없음(lost-update window 부재).
+- **`streams/risk-consumer.ts`(신규)**: `RiskApprovedSchema`+`buildRiskApprovedHandler({graphStore})`(oracle-consumer 미러·BaseConsumer dedup·group `manager-risk-consumers`·prefix `manager:risk`) — `risk.approved` → `updateWpRisks(payload.workflowId, payload.risk)`. **재디스패치 없음**(risk는 readiness 무변·oracle.approved와 대비). `RISK_PREFIX`/`RISK_GROUP` 상수(risk-classification.types.ts).
+- **`api/risk.route.ts`(신규)**: `PATCH /workflows/:workflowId/risk-classification/approve`(body `approvedBy`) → `RiskClassificationRepo.approve`(기존·risk.approved 발행) → 200 `{ok,eventId}`/404/400/503. oracle.route 미러. ⚠️ **의도적 oracle-tier 인증 포스처**: decision/admin처럼 미인증 시 미등록하지 않고 oracleRoute처럼 항상 등록(authHook 쓰기 보호) — 승인은 pending 분류를 **이미 산출된 risk로 확정**할 뿐이라 write-back이 검증 강도를 '올리기만'(게이트 미저하)·사람 비부인은 상위 Orchestrator C5에서 확립.
+- **배선(`supervisor.ts`·`server.ts`·`config.ts`)**: `SupervisorConfig.riskRouting`·`shouldWireRiskConsumer(riskRouting, hasGraphStore)` 순수 게이트·riskConsumer 조건부 배선(write-back 대상=`deps.repo`=TaskGraphRepo). **양쪽 silent-no-op seam 필수 배선**: ①`createSupervisor` config에 `riskRouting: config.MANAGER_RISK_ROUTING`(없으면 소비자 미배선) ②`OutboxRelay` 기동 조건에 `MANAGER_RISK_ROUTING`(없으면 risk.approved 아웃박스→소비자 발행 불발·write-back 무음 미발생). `riskStore`는 `MANAGER_RISK_CLASSIFY||MANAGER_RISK_ROUTING`로 P2r-3 생산자와 공유.
+- **E2E DB 통합**(`test/risk-routing.integration.test.ts`, skip-if-no-DB·`wf-rr-` prefix·**CI pg 실행 PASS**): classify(HIGH)→upsert(pending)→upsertGraph(WP risk MEDIUM)→approve→`buildRiskApprovedHandler` 소비→`getGraph` WP risk=HIGH·**`meetsMinRisk` MEDIUM(false)→HIGH(true) 전이 실증**(mutation 게이트 활성).
+- **한계(후속)**: C5 리스크 승인 UI·디스패치 게이팅(INTAKE→DECOMPOSING)·**D5 모델 라우팅 소비**(risk.approved.modelRouting 미소비)·P7 per-WP 재채점·재분해 시 risk 보존(E10).
 
 ## AgentQuery 교차질의
 
