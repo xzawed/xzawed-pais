@@ -557,3 +557,45 @@ describe('MANAGER_RISK_DECISION flag', () => {
     expect(loadConfig().MANAGER_RISK_DECISION).toBe(true)
   })
 })
+
+describe('MANAGER_MODEL_ROUTING + model id 기본값', () => {
+  let savedMode: string | undefined
+  let savedKey: string | undefined
+
+  beforeEach(() => {
+    savedMode = process.env['MODE']
+    savedKey = process.env['ANTHROPIC_API_KEY']
+    process.env['MODE'] = 'local'
+    process.env['ANTHROPIC_API_KEY'] = 'k'
+  })
+
+  afterEach(() => {
+    if (savedMode !== undefined) process.env['MODE'] = savedMode
+    else delete process.env['MODE']
+    if (savedKey !== undefined) process.env['ANTHROPIC_API_KEY'] = savedKey
+    else delete process.env['ANTHROPIC_API_KEY']
+    delete process.env['MANAGER_MODEL_ROUTING']
+    delete process.env['MANAGER_MODEL_OPUS']
+    delete process.env['MANAGER_MODEL_SONNET']
+  })
+
+  it('MANAGER_MODEL_ROUTING 기본 false', () => {
+    delete process.env['MANAGER_MODEL_ROUTING']
+    expect(loadConfig().MANAGER_MODEL_ROUTING).toBe(false)
+  })
+
+  it("MANAGER_MODEL_ROUTING 'true'면 true", () => {
+    process.env['MANAGER_MODEL_ROUTING'] = 'true'
+    expect(loadConfig().MANAGER_MODEL_ROUTING).toBe(true)
+  })
+
+  it('MANAGER_MODEL_OPUS 기본값 claude-opus-4-8', () => {
+    delete process.env['MANAGER_MODEL_OPUS']
+    expect(loadConfig().MANAGER_MODEL_OPUS).toBe('claude-opus-4-8')
+  })
+
+  it('MANAGER_MODEL_SONNET 기본값 claude-sonnet-4-6', () => {
+    delete process.env['MANAGER_MODEL_SONNET']
+    expect(loadConfig().MANAGER_MODEL_SONNET).toBe('claude-sonnet-4-6')
+  })
+})
