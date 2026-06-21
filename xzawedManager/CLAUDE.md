@@ -456,6 +456,7 @@ MANAGER_PROVIDER_CIRCUIT_COOLDOWN_MS= # 선택: open 유지 시간 ms(기본 300
 MANAGER_BULKHEAD_GLOBAL=        # 선택: 기본 0(무제한). §13 벌크헤드 — 전역 동시 에이전트 RPC 캡. >0이면 7개 RedisAgentHandler에 공유 주입
 MANAGER_BULKHEAD_PER_AGENT=     # 선택: 기본 0(무제한). §13 벌크헤드 — 에이전트 종류(agentName)별 동시 RPC 캡. 캡 도달 시 큐잉(백프레셔·드롭 없음)
 MANAGER_RISK_CLASSIFY=          # 선택: 기본 false. true면 decompose_request 시 프로젝트 리스크 분류 생성·pending 영속(P2r-3·N6 미승인). 전제: MANAGER_DECOMPOSE_ENABLED+DATABASE_URL
+MANAGER_RISK_ROUTING=           # 선택: 기본 false. true면 risk.approved 소비자(→wp.risk write-back) + 승인 라우트 배선(P2r-4). 전제: TASK_MANAGER_ENABLED+DATABASE_URL
 ```
 
 ## 보안 구현 패턴
