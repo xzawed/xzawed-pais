@@ -3,6 +3,7 @@ import type { ClaudeLike } from '@xzawed/agent-streams'
 import { handleDecomposeRequest } from './trigger.js'
 import type { ProduceDeps } from './producer.js'
 import type { RiskClassifyDeps } from './risk-producer.js'
+import { produceRiskClassification } from './risk-producer.js'
 
 vi.mock('./risk-producer.js', () => ({
   produceRiskClassification: vi.fn().mockResolvedValue({ classified: false }),
@@ -104,12 +105,34 @@ describe('handleDecomposeRequest', () => {
     expect(cleanup).toHaveBeenCalledTimes(1)
   })
 
-  it('riskClassify 주입 시 produceDecomposition 후 best-effort 호출 + task_complete·cleanup 유지', async () => {
-    // vi.mock('./risk-producer.js') 호이스팅으로 모듈 교체 — 실 구현 호출 없이 spy로 호출 확인.
-    // produceRiskClassification은 never-throw 계약이므로 trigger는 추가 try/catch 없이 await.
-    const { produceRiskClassification } = await import('./risk-producer.js')
-    const produceRiskMock = vi.mocked(produceRiskClassification)
-    produceRiskMock.mockResolvedValueOnce({ classified: true, risk: 'LOW' })
+  it('리스크 분류가 거부(reject)해도 task_complete·cleanup은 반드시 실행된다(구조적 best-effort 격리)', async () => {
+    // Fix 2: produceRiskClassification이 reject하더라도 분해 경로가 살아남음을 검증.
+    // .catch(() => undefined) 가드가 없으면 reject가 M8 catch로 bubble → error 발행·task_complete 미발행.
+    vi.mocked(produceRiskClassification).mockRejectedValueOnce(new Error('risk boom'))
+
+    const emitPublish = vi.fn().mockResolvedValue('1-0')
+    const producerPublish = vi.fn().mockResolvedValue('1-0')
+    const cleanup = vi.fn().mockResolvedValue(undefined)
+    const riskClassify: RiskClassifyDeps = {
+      claude: { messages: { create: vi.fn() } } as unknown as RiskClassifyDeps['claude'],
+      model: 'm',
+      repo: { upsert: vi.fn().mockResolvedValue(undefined) },
+    }
+    const uc = { userId: 'u', projectId: 'p', workspaceRoot: '/ws' }
+
+    await handleDecomposeRequest(
+      'sess-risk-reject', 'intent', mockDecompose(emitPublish), { publish: producerPublish }, cleanup,
+      uc as never,
+      riskClassify,
+    )
+    // 리스크 분류가 reject했음에도 분해 경로는 그대로 완료
+    expect(producerPublish).toHaveBeenCalledWith(expect.objectContaining({ type: 'task_complete' }))
+    expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+
+  it('riskClassify 주입 시 produceDecomposition 후 best-effort 호출 + task_complete·cleanup 유지(happy path)', async () => {
+    // vi.mock('./risk-producer.js') 호이스팅으로 모듈 교체 — 정적 import로 spy 접근(Fix 3).
+    vi.mocked(produceRiskClassification).mockResolvedValueOnce({ classified: true, risk: 'LOW' })
 
     const emitPublish = vi.fn().mockResolvedValue('1-0')
     const producerPublish = vi.fn().mockResolvedValue('1-0')
@@ -127,7 +150,7 @@ describe('handleDecomposeRequest', () => {
       riskClassify,
     )
     // 1) riskClassify가 있으면 produceRiskClassification이 실제로 호출됨(인자 순서 단언)
-    expect(produceRiskMock).toHaveBeenCalledWith('intent', 'sess-risk', riskClassify, expect.objectContaining({ projectId: 'p' }))
+    expect(vi.mocked(produceRiskClassification)).toHaveBeenCalledWith('intent', 'sess-risk', riskClassify, expect.objectContaining({ projectId: 'p' }))
     // 2) decompose·publish·cleanup 경로는 risk 호출에 무관하게 유지
     expect(cleanup).toHaveBeenCalledTimes(1)
     expect(producerPublish).toHaveBeenCalledWith(expect.objectContaining({ type: 'task_complete' }))

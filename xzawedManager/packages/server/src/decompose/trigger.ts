@@ -27,7 +27,9 @@ export async function handleDecomposeRequest(
     const { emitted, escalated } = await produceDecomposition(intent, sessionId, decompose, userContext)
     // P2r-3: 프로젝트 리스크 분류(best-effort·never-throw·미승인 pending). decompose 결과와 무관.
     if (riskClassify !== undefined) {
-      await produceRiskClassification(intent, sessionId, riskClassify, userContext)
+      // P2r-3 best-effort: 리스크 분류 실패가 분해 경로(task_complete·M8)를 절대 깨지 않도록 구조적으로 격리.
+      // produceRiskClassification은 never-throw 계약이지만 여기서 한 번 더 차단(계약 위반·향후 변경 방어).
+      await produceRiskClassification(intent, sessionId, riskClassify, userContext).catch(() => undefined)
     }
     const content = escalated
       ? '분해 불일치: 커버리지 수렴 실패 — 사람 검토 필요(에스컬레이션)'
