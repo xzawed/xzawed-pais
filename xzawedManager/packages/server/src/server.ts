@@ -533,6 +533,9 @@ export async function buildServer(
     ...(authHook && { authHook }),
   })
   // P2r-4: 리스크 분류 승인 라우트. 쓰기는 authHook 설정 시 보호. repo 없으면 503(graceful).
+  // ⚠️ 의도적 oracle-tier 포스처(decision/admin처럼 미인증 시 미등록하지 않고 oracleRoute처럼 항상 등록):
+  //   승인은 pending 분류를 이미 산출된 risk로 확정할 뿐이라 write-back은 검증 강도를 '올리기만'(게이트 미저하)·
+  //   사람 신원 비부인은 상위(Orchestrator C5/decidedBy)에서 확립. 직접 형제 oracleRoute와 동일 tier 유지.
   await app.register(riskRoute, { ...(riskStore && { riskRepo: riskStore }), ...(authHook && { authHook }) })
   await app.register(sessionsRoute, {
     redisUrl: config.REDIS_URL,
