@@ -182,6 +182,9 @@ const configSchema = z
     MANAGER_DECISION_TTL_HOURS: z.coerce.number().int().positive().default(72),
     // B1: 결정 만료 sweep 주기 ms(이미 ms·무변환). 만료는 시간 단위라 분 단위 충분.
     MANAGER_DECISION_SWEEP_MS: z.coerce.number().int().positive().default(60_000),
+    // P2r-3: 기본 false. true면 decompose_request 시 프로젝트 리스크 분류를 생성·pending 영속(N6 미승인).
+    //   실질 전제: MANAGER_DECOMPOSE_ENABLED(핸들러 도달) + DATABASE_URL(RiskClassificationRepo). off면 회귀 0.
+    MANAGER_RISK_CLASSIFY: z.string().optional().transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {
