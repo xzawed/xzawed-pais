@@ -28,6 +28,7 @@ export class Developer {
           payload.projectPath ?? '.',
           payload.context,
           payload.clarificationContext,
+          payload.model,
         )
         const workspaceRoot = resolveWorkspaceRoot(payload.userContext, this.config.workspaceRoot)
         const artifacts: string[] = []

@@ -61,7 +61,7 @@ describe('Developer.handle', () => {
     mockGenerateChanges.mockResolvedValueOnce({ changes: [], summary: 's' })
     await developer.handle(makeRequest({ clarificationContext: '디자이너 답: 5초 폴링' }))
     expect(mockGenerateChanges).toHaveBeenCalledWith(
-      'add auth middleware', '/workspace/myapp', {}, '디자이너 답: 5초 폴링',
+      'add auth middleware', '/workspace/myapp', {}, '디자이너 답: 5초 폴링', undefined,
     )
   })
 

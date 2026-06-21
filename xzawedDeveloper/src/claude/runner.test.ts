@@ -153,6 +153,24 @@ describe('ClaudeRunner.generateChanges', () => {
   })
 })
 
+describe('ClaudeRunner.generateChanges — model routing', () => {
+  it('generateChanges가 model 전달 시 그 모델로 호출한다', async () => {
+    const create = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: '{"changes":[]}' }] })
+    const runner = new ClaudeRunner('k', 'default-model')
+    ;(runner as unknown as { client: { messages: { create: typeof create } } }).client = { messages: { create } }
+    await runner.generateChanges('plan', '.', {}, undefined, 'routed-opus')
+    expect(create.mock.calls[0]![0].model).toBe('routed-opus')
+  })
+
+  it('model 미전달 시 this.model(default) 사용', async () => {
+    const create = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: '{"changes":[]}' }] })
+    const runner = new ClaudeRunner('k', 'default-model')
+    ;(runner as unknown as { client: { messages: { create: typeof create } } }).client = { messages: { create } }
+    await runner.generateChanges('plan', '.', {})
+    expect(create.mock.calls[0]![0].model).toBe('default-model')
+  })
+})
+
 describe('ClaudeRunner.answerQuery', () => {
   it('Claude 응답 텍스트를 반환한다', async () => {
     mockResponse('개발 관점 답변: 가능합니다')
