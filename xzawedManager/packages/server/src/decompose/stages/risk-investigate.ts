@@ -1,40 +1,29 @@
 import { z } from 'zod'
 import { RISK_DIMENSIONS } from '@xzawed/agent-streams'
-import type { ClaimInput, RiskDimension } from '@xzawed/agent-streams'
+import type { ClaimInput } from '@xzawed/agent-streams'
 import type { StageSpec } from './run-stage.js'
 
 export const MAX_CLAIMS_PER_DIMENSION = 8
 export const MAX_FRAMEWORKS = 8
 const INVESTIGATE_MAX_TOKENS = 2048
 
-export const RiskInvestigationSchema = z
-  .object({
-    claims: z
-      .array(
-        z.object({
-          text: z.string(),
-          dimension: z.enum(RISK_DIMENSIONS),
-          support: z.number(),
-          citations: z.array(z.string()).optional(),
-        }),
-      )
-      .optional(),
-    complianceFrameworks: z.array(z.string()).optional(),
-  })
-  .transform((data) => ({
-    claims: (data.claims ?? []).map((c) => ({ ...c, citations: c.citations ?? [] })),
-    complianceFrameworks: data.complianceFrameworks ?? [],
-  }))
-
-export type RawRiskClaim = {
-  text: string
-  dimension: RiskDimension
-  support: number
-  citations: string[]
-}
+export const RiskInvestigationSchema = z.object({
+  claims: z
+    .array(
+      z.object({
+        text: z.string(),
+        dimension: z.enum(RISK_DIMENSIONS),
+        support: z.number(),
+        citations: z.array(z.string()).default([]),
+      }),
+    )
+    .default([]),
+  complianceFrameworks: z.array(z.string()).default([]),
+})
 
 /** LLM 조사 출력(원시). support는 검증에서 인용 수로 클램프된다. */
 export type RiskInvestigation = z.infer<typeof RiskInvestigationSchema>
+export type RawRiskClaim = RiskInvestigation['claims'][number]
 
 const SYSTEM = [
   '당신은 프로젝트 리스크 분류기다. 프로젝트 설명을 4개 차원으로 평가한다:',
@@ -52,7 +41,7 @@ export function buildRiskInvestigationSpec(intent: string): StageSpec<RiskInvest
     system: SYSTEM,
     user: `프로젝트 설명:\n${intent}\n\n위 지침대로 JSON으로 답하라.`,
     maxTokens: INVESTIGATE_MAX_TOKENS,
-    schema: RiskInvestigationSchema as z.ZodType<RiskInvestigation>,
+    schema: RiskInvestigationSchema,
     fallback: () => ({ claims: [], complianceFrameworks: [] }),
   }
 }
@@ -76,7 +65,7 @@ function dedupeTrim(values: ReadonlyArray<string>): string[] {
  */
 export function verifyCitations(raw: ReadonlyArray<RawRiskClaim>): ClaimInput[] {
   const out: ClaimInput[] = []
-  const perDim = new Map<RiskDimension, number>()
+  const perDim = new Map<RawRiskClaim['dimension'], number>()
   for (const c of raw) {
     const citations = dedupeTrim(c.citations)
     if (citations.length === 0) continue

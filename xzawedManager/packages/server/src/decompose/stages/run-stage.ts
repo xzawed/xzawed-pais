@@ -1,4 +1,4 @@
-import type { ZodType } from 'zod'
+import type { ZodType, ZodTypeDef } from 'zod'
 import { callClaudeText, stripJsonFences } from '@xzawed/agent-streams'
 import type { ClaudeLike } from '@xzawed/agent-streams'
 
@@ -14,7 +14,7 @@ export interface StageSpec<T> {
   system: string
   user: string
   maxTokens: number
-  schema: ZodType<T>
+  schema: ZodType<T, ZodTypeDef, unknown>
   /** 파싱 불가·검증 실패·throw 시 반환(빈 emit 금지의 토대). */
   fallback: () => T
 }

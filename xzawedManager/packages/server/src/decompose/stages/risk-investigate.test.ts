@@ -40,6 +40,10 @@ describe('normalizeFrameworks', () => {
   it('trim·dedupe·빈 문자열 제거·cap', () => {
     expect(normalizeFrameworks([' HIPAA ', 'HIPAA', '', 'GDPR'])).toEqual(['HIPAA', 'GDPR'])
   })
+  it('MAX_FRAMEWORKS(8)로 절단한다', () => {
+    const input = Array.from({ length: 10 }, (_, i) => `FW-${i}`)
+    expect(normalizeFrameworks(input)).toHaveLength(8)
+  })
 })
 
 describe('buildRiskInvestigationSpec', () => {
