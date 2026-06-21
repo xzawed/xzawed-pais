@@ -1,6 +1,6 @@
 import type { Pool } from 'pg'
 import { z } from 'zod'
-import { WorkPackageSchema, type WorkPackage } from '@xzawed/agent-streams'
+import { WorkPackageSchema, type WorkPackage, type WpRisk } from '@xzawed/agent-streams'
 import { AbsoluteUserContextSchema, type UserContext } from '../types/user-context.js'
 
 export interface PersistGraphInput {
@@ -163,5 +163,22 @@ export class TaskGraphRepo {
       [workflowId, wpId],
     )
     return rows.map(mapRow)
+  }
+
+  /** P2r-4: graph의 모든 WP risk를 갱신(read-modify-write). version 불변(재분해 아님)·WP id 불변
+   *  (content-hash가 risk 제외·N4)·userContext 보존. 그래프 없으면 no-op. risk.approved 소비자가 호출. */
+  async updateWpRisks(workflowId: string, risk: WpRisk): Promise<{ updated: number }> {
+    const stored = await this.getGraph(workflowId)
+    if (!stored) return { updated: 0 }
+    const updated = stored.workPackages.map((wp) => ({ ...wp, risk }))
+    const dag = JSON.stringify({
+      workPackages: updated,
+      ...(stored.userContext != null && { userContext: stored.userContext }),
+    })
+    await this.pool.query(
+      `UPDATE task_graphs SET graph_dag = $2, updated_at = NOW() WHERE workflow_id = $1`,
+      [workflowId, dag],
+    )
+    return { updated: updated.length }
   }
 }
