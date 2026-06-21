@@ -10,6 +10,7 @@ import { ensureWorkspace } from '../workspace.js'
 import type { WatcherEventConsumer } from '../streams/watcher-event-consumer.js'
 import { handleDecomposeRequest } from '../decompose/trigger.js'
 import type { ProduceDeps } from '../decompose/producer.js'
+import type { RiskClassifyDeps } from '../decompose/risk-producer.js'
 
 type RouteHook = (req: FastifyRequest, reply: FastifyReply) => Promise<void>
 
@@ -24,6 +25,8 @@ export interface SessionsRouteOptions {
   watcherEventConsumer?: WatcherEventConsumer
   /** P2-2: 주입되면(flag on) decompose_request를 단일 LLM 분해→발행으로 처리. 미주입이면 분기 무시. */
   decompose?: ProduceDeps
+  /** P2r-3: 주입되면(flag on) decompose 완료 후 리스크 분류를 생산한다. 미주입이면 분기 무시. */
+  riskClassify?: RiskClassifyDeps
 }
 
 export function makeSessionStarter(
@@ -32,6 +35,7 @@ export function makeSessionStarter(
     registry?: ToolRegistry
     watcherEventConsumer?: WatcherEventConsumer
     decompose?: ProduceDeps
+    riskClassify?: RiskClassifyDeps
     log: { error: (obj: unknown, msg: string) => void }
   },
 ) {
@@ -118,6 +122,7 @@ export function makeSessionStarter(
           opts.producer,
           cleanupSession,
           msg.payload.userContext, // P4a-2: 워크스페이스 컨텍스트 — 그래프 영속→실행 워커 주입
+          opts.riskClassify, // P2r-3
         ).catch((err: unknown) => {
           opts.log.error({ err, sessionId }, 'decompose_request handler error')
         })
@@ -158,6 +163,7 @@ export async function sessionsRoute(
     ...(registry !== undefined && { registry }),
     ...(opts.watcherEventConsumer !== undefined && { watcherEventConsumer: opts.watcherEventConsumer }),
     ...(opts.decompose !== undefined && { decompose: opts.decompose }),
+    ...(opts.riskClassify !== undefined && { riskClassify: opts.riskClassify }),
     log: { error: (obj, msg) => app.log.error(obj, msg) },
   })
 
