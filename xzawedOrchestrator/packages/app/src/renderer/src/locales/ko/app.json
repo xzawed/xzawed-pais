@@ -153,7 +153,8 @@
     "choice_spec_fix": "스펙 수정",
     "choice_accept_known": "알려진 문제 수용",
     "choice_reject": "거부",
-    "choice_noop_hint": "기록만 · 후속 동작 없음",
+    "choice_approve": "승인",
+    "choice_hint": "결정은 기록되며, 일부 항목은 즉시 적용됩니다.",
     "submit_failed": "결정 제출 실패",
     "submitted": "결정이 기록되었습니다"
   },

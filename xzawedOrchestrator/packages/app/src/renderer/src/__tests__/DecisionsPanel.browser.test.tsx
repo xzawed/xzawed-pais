@@ -79,4 +79,16 @@ describe('DecisionsPanel', () => {
     renderAt('p1')
     await waitFor(() => expect(screen.getByTestId('decisions-item')).toHaveTextContent('impl_exhausted'))
   })
+
+  test('context.options를 버튼으로 렌더한다(risk_classification approve/reject)', async () => {
+    getPendingDecisions.mockResolvedValue([{
+      requestId: 'wf:risk:1',
+      type: 'risk_classification',
+      context: { options: ['approve', 'reject'], expectedVsActual: 'risk=HIGH...' },
+    }])
+    renderAt('p1')
+    expect(await screen.findByTestId('decision-submit-approve')).toBeInTheDocument()
+    expect(screen.getByTestId('decision-submit-reject')).toBeInTheDocument()
+    expect(screen.queryByTestId('decision-submit-fix_reverify')).not.toBeInTheDocument()
+  })
 })

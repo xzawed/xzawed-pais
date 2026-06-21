@@ -153,7 +153,8 @@
     "choice_spec_fix": "仕様修正",
     "choice_accept_known": "既知の問題を受容",
     "choice_reject": "却下",
-    "choice_noop_hint": "記録のみ · 後続動作なし",
+    "choice_approve": "承認",
+    "choice_hint": "決定は記録され、一部は即時に適用されます。",
     "submit_failed": "決定の送信に失敗しました",
     "submitted": "決定を記録しました"
   },

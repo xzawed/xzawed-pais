@@ -153,7 +153,8 @@
     "choice_spec_fix": "Spec fix",
     "choice_accept_known": "Accept known issue",
     "choice_reject": "Reject",
-    "choice_noop_hint": "Recorded only · no action yet",
+    "choice_approve": "Approve",
+    "choice_hint": "Decisions are recorded; some take effect immediately.",
     "submit_failed": "Failed to submit decision",
     "submitted": "Decision recorded"
   },

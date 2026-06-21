@@ -6,13 +6,8 @@ import { useAuthStore } from '@xzawed/ui'
 import { getPendingDecisions, submitDecision, type PendingDecision } from '../lib/api.js'
 import { useAppStore } from '../store/app.store.js'
 
-/** §4 사람 결정 choice. fix_reverify만 즉시 폐루프(PR-A), 나머지는 기록만(후속 동작 없음). */
-const CHOICES = [
-  { value: 'fix_reverify', live: true },
-  { value: 'spec_fix', live: false },
-  { value: 'accept_known', live: false },
-  { value: 'reject', live: false },
-] as const
+/** §4 사람 결정 default choice(context.options 미제공 시 fallback). */
+const DEFAULT_CHOICES = ['fix_reverify', 'spec_fix', 'accept_known', 'reject'] as const
 
 /** 프로젝트의 pending 사람 결정(결함 브리프)을 표시하고 PO가 choice를 제출하는 패널. */
 export function DecisionsPanel(): React.JSX.Element {
@@ -115,23 +110,19 @@ export function DecisionsPanel(): React.JSX.Element {
                 </p>
               )}
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                {CHOICES.map((c) => (
+                {(d.context?.options?.length ? d.context.options : DEFAULT_CHOICES).map((choice) => (
                   <button
-                    key={c.value}
-                    data-testid={`decision-submit-${c.value}`}
+                    key={choice}
+                    data-testid={`decision-submit-${choice}`}
                     type="button"
-                    onClick={() => void submit(d.requestId, c.value)}
-                    title={c.live ? undefined : t('decisions.choice_noop_hint')}
-                    className={c.live
-                      ? 'rounded bg-accent px-2 py-0.5 text-[11px] text-bg hover:opacity-90 transition-opacity'
-                      : 'rounded border border-border px-2 py-0.5 text-[11px] text-fg-muted hover:bg-surface transition-colors'}
+                    onClick={() => void submit(d.requestId, choice)}
+                    className="rounded border border-border px-2 py-0.5 text-[11px] text-fg-muted hover:bg-surface transition-colors"
                   >
-                    {t(`decisions.choice_${c.value}`)}
+                    {t(`decisions.choice_${choice}`, choice)}
                   </button>
                 ))}
               </div>
-              {/* 정직 라벨: fix_reverify만 즉시 재구동, 나머지는 기록만(후속 동작 없음) */}
-              <p className="text-[9px] text-fg-ghost">{t('decisions.choice_noop_hint')}</p>
+              <p className="text-[9px] text-fg-ghost">{t('decisions.choice_hint')}</p>
             </div>
           ))
         )}
