@@ -19,13 +19,13 @@ function makeArtifact(over: Record<string, unknown> = {}) {
   }
 }
 
-function makeMockPool(opts: { forUpdateRows?: unknown[]; selectRows?: unknown[] } = {}) {
+function makeMockPool(opts: { forUpdateRows?: unknown[]; selectRows?: unknown[]; upsertVersion?: number } = {}) {
   const pendingRow = { project_id: 'p1', version: 1, status: 'pending', artifact: makeArtifact() }
   const query = vi.fn().mockImplementation((sql: string) => {
     if (/SELECT .* FROM risk_classifications .* FOR UPDATE/i.test(sql)) {
       return Promise.resolve({ rows: opts.forUpdateRows ?? [pendingRow] })
     }
-    if (/INSERT INTO risk_classifications/i.test(sql)) return Promise.resolve({ rows: [], rowCount: 1 })
+    if (/INSERT INTO risk_classifications/i.test(sql)) return Promise.resolve({ rows: [{ version: opts.upsertVersion ?? 1 }], rowCount: 1 })
     if (/SELECT .* FROM risk_classifications/i.test(sql)) return Promise.resolve({ rows: opts.selectRows ?? [] })
     return Promise.resolve({ rows: [] })
   })

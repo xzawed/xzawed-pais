@@ -8,7 +8,7 @@ const DEFAULT_TIMEOUT_MS = 120_000
 
 /** RiskClassificationRepo.upsert만 좁게 — 테스트 mock·결합 최소. */
 export interface RiskUpsertPort {
-  upsert(input: { workflowId: string; classification: RiskClassification }): Promise<void>
+  upsert(input: { workflowId: string; classification: RiskClassification }): Promise<{ version: number }>
 }
 
 export interface RiskClassifyDeps {
