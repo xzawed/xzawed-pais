@@ -185,6 +185,9 @@ const configSchema = z
     // P2r-3: 기본 false. true면 decompose_request 시 프로젝트 리스크 분류를 생성·pending 영속(N6 미승인).
     //   실질 전제: MANAGER_DECOMPOSE_ENABLED(핸들러 도달) + DATABASE_URL(RiskClassificationRepo). off면 회귀 0.
     MANAGER_RISK_CLASSIFY: z.string().optional().transform((v) => v === 'true'),
+    // P2r-4: 기본 false. true면 risk.approved 소비자(→wp.risk write-back) + 승인 라우트 배선(N6).
+    //   전제: TASK_MANAGER_ENABLED(Supervisor·graph)+DATABASE_URL. 실효성엔 MANAGER_RISK_CLASSIFY. off면 회귀 0.
+    MANAGER_RISK_ROUTING: z.string().optional().transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

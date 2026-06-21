@@ -4,6 +4,8 @@ import { BaseConsumer, EventEnvelopeSchema } from '@xzawed/agent-streams'
 import { DecompositionConsumer, type Publish, type DecompositionDeps } from './decomposition-consumer.js'
 import { handleDispatch, type DispatchDeps, type OracleStore } from './dispatch.js'
 import { buildOracleApprovedHandler, OracleApprovedSchema, type OracleApprovedMessage } from './oracle-consumer.js'
+import { buildRiskApprovedHandler, RiskApprovedSchema, type RiskApprovedMessage } from './risk-consumer.js'
+import { RISK_PREFIX, RISK_GROUP } from '../db/risk-classification.types.js'
 import { handleCompletion } from './completion.js'
 import { LeaseSweeper } from './lease-sweeper.js'
 import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
@@ -75,6 +77,8 @@ export interface SupervisorComponents {
   workerConsumer?: ConsumerLike
   /** P6: decision.recorded 소비자(decisionRouting+decisionStore 주입 시만 배선). */
   decisionConsumer?: ConsumerLike
+  /** P2r-4: risk.approved 소비자(riskRouting+graphStore 주입 시만 배선). */
+  riskConsumer?: ConsumerLike
   /** P5-2a: gate.blocked 소비자(releaseSignoff+decisionStore+releaseStore 주입 시만 배선). */
   signoffConsumer?: ConsumerLike
   /** B1: 결정 만료 sweep(decisionExpiry+decisionStore 주입 시만 배선). */
@@ -109,6 +113,9 @@ export class Supervisor {
     this.components.decisionConsumer?.start(this.channel).catch((err: unknown) => {
       console.error('[supervisor] decision consumer 시작 실패:', err)
     })
+    this.components.riskConsumer?.start(this.channel).catch((err: unknown) => {
+      console.error('[supervisor] risk consumer 시작 실패:', err)
+    })
     this.components.signoffConsumer?.start(this.channel).catch((err: unknown) => {
       console.error('[supervisor] signoff consumer 시작 실패:', err)
     })
@@ -122,6 +129,7 @@ export class Supervisor {
     this.components.oracleConsumer?.stop()
     this.components.workerConsumer?.stop()
     this.components.decisionConsumer?.stop()
+    this.components.riskConsumer?.stop()
     this.components.signoffConsumer?.stop()
     this.components.leaseSweeper.stop()
     this.components.decisionSweeper?.stop()
@@ -204,11 +212,18 @@ export interface SupervisorConfig {
   decisionSweepMs?: number
   /** ms — server.ts가 MANAGER_DECISION_TTL_HOURS * 3_600_000 변환 후 주입. */
   decisionTtlMs?: number
+  /** P2r-4: risk.approved 소비(→wp.risk write-back) 활성(=MANAGER_RISK_ROUTING). */
+  riskRouting?: boolean
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
 export function shouldWireOracleConsumer(oracleDor: boolean, hasOracleStore: boolean): boolean {
   return oracleDor && hasOracleStore
+}
+
+/** P2r-4 risk 소비자 배선 판정(순수): riskRouting flag + graphStore(=repo) 주입 둘 다. */
+export function shouldWireRiskConsumer(riskRouting: boolean, hasGraphStore: boolean): boolean {
+  return riskRouting && hasGraphStore
 }
 
 /** P6: 결정 제출 라우트 배선 판정(순수). 권한 쓰기(재진입 트리거)라 authHook 없으면 미등록(보안 HIGH-3). */
@@ -379,11 +394,24 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
       )
     : undefined
 
+  // P2r-4: risk.approved 소비자 = MANAGER_RISK_ROUTING && graphStore(=repo). 승인 risk를 graph WP에 write-back.
+  const riskConsumer = shouldWireRiskConsumer(config.riskRouting === true, deps.repo != null)
+    ? new BaseConsumer<RiskApprovedMessage>(
+        makeRedis(),
+        buildRiskApprovedHandler({ graphStore: deps.repo }),
+        RISK_GROUP,
+        `manager-risk-${process.pid}`,
+        RISK_PREFIX,
+        RiskApprovedSchema as ZodType<RiskApprovedMessage>,
+      )
+    : undefined
+
   return new Supervisor({
     decompositionConsumer, completionConsumer, leaseSweeper,
     ...(oracleConsumer && { oracleConsumer }),
     ...(workerConsumer && { workerConsumer }),
     ...(decisionConsumer && { decisionConsumer }),
+    ...(riskConsumer && { riskConsumer }),
     ...(signoffConsumer && { signoffConsumer }),
     ...(decisionSweeper && { decisionSweeper }),
   })
