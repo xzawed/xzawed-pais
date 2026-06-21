@@ -28,11 +28,14 @@ export interface DecisionRoutingDeps {
   now?: () => number
   /** P5-2a: accept_known on degraded_release → 사인오프(휴면 recordSignOff 활성). 미주입이면 no-op. */
   signoffStore?: { recordSignOff(input: { signoffId: string; decisionId: string; scope: string; approver: string; risk?: string; reason?: string | null }): Promise<{ eventId: string } | null> }
+  /** C5: approve on risk_classification → RiskClassificationRepo.approve(실 비부인 decidedBy). 미주입이면 no-op. */
+  riskStore?: { approve(workflowId: string, approvedBy: string): Promise<{ eventId: string } | null> }
 }
 
 /**
  * decision.recorded 소비 → §11 되먹임. fix_reverify는 escalated WP lease 재오픈→dispatch_signal 재발행.
  * accept_known + degraded_release는 signoffStore 주입 시 사인오프 영속(P5-2a).
+ * approve + risk_classification는 riskStore 주입 시 위험분류 승인 영속(C5).
  * 다른/미지 choice는 no-op(폐루프 미차단). never-throw(어떤 실패도 흡수).
  */
 export function buildDecisionRecordedHandler(deps: DecisionRoutingDeps): (msg: DecisionEventMessage) => Promise<void> {
@@ -60,6 +63,11 @@ export function buildDecisionRecordedHandler(deps: DecisionRoutingDeps): (msg: D
           risk: 'HIGH',
           reason: '릴리스 게이트 차단 사인오프',
         })
+      }
+      if (p.data.choice === 'approve' && deps.riskStore && p.data.decidedBy) {
+        const req = await deps.decisionStore.getRequest(p.data.requestId)
+        if (req?.type !== 'risk_classification') return
+        await deps.riskStore.approve(req.workflowId, p.data.decidedBy)
       }
     } catch (err) {
       console.warn('[decision-consumer] 라우팅 실패(best-effort·결정은 영속됨):', err)
