@@ -16,7 +16,7 @@ async function safeRollback(client: PoolClient): Promise<void> {
 interface RequestRow {
   request_id: string; type: string; workflow_id: string; wp_id: string | null
   correlation_id: string; context: unknown; severity: string; status: string
-  language: string; expires_at: string | null; project_id: string | null
+  language: string; expires_at: Date | string | null; project_id: string | null
 }
 interface DecisionRow {
   decision_id: string; request_id: string; decided_by: string; authority: string | null
@@ -27,7 +27,10 @@ function rowToRequest(r: RequestRow): DecisionRequest {
   return DecisionRequestSchema.parse({
     requestId: r.request_id, type: r.type, workflowId: r.workflow_id, wpId: r.wp_id,
     correlationId: r.correlation_id, context: r.context ?? {}, severity: r.severity,
-    status: r.status, language: r.language, expiresAt: r.expires_at, projectId: r.project_id,
+    // pg는 TIMESTAMPTZ를 Date로 반환 — 스키마(string|null)에 맞춰 ISO 정규화(B1: expires_at 첫 비-null 읽기 경로 노출).
+    status: r.status, language: r.language,
+    expiresAt: r.expires_at instanceof Date ? r.expires_at.toISOString() : r.expires_at,
+    projectId: r.project_id,
   })
 }
 function rowToDecision(r: DecisionRow): HumanDecision {
@@ -188,6 +191,21 @@ export class DecisionRepo {
       [projectId, DECISION_PENDING],
     )
     return rows.map(rowToRequest)
+  }
+
+  /**
+   * B1: 만료된 PENDING 결정의 requestId 조회(sweep 입력). now는 ms epoch → to_timestamp 변환.
+   * expires_at IS NOT NULL로 레거시(만료 미설정) 행 제외(소급 만료 0). strictly-before(<)·UTC.
+   */
+  async expiredPendingRequests(now: number, limit: number): Promise<string[]> {
+    const { rows } = await this.pool.query<{ request_id: string }>(
+      `SELECT request_id FROM decision_requests
+        WHERE status = 'PENDING' AND expires_at IS NOT NULL AND expires_at < to_timestamp($1 / 1000.0)
+        ORDER BY expires_at ASC
+        LIMIT $2`,
+      [now, limit],
+    )
+    return rows.map((r) => r.request_id)
   }
 
   /**

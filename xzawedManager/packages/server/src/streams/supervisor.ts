@@ -7,6 +7,7 @@ import { buildOracleApprovedHandler, OracleApprovedSchema, type OracleApprovedMe
 import { handleCompletion } from './completion.js'
 import { LeaseSweeper } from './lease-sweeper.js'
 import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
+import { DecisionSweeper } from './decision-sweeper.js'
 import { DecisionRecordedConsumer, type DecisionRoutingDeps } from './decision-consumer.js'
 import { ReleaseSignoffConsumer } from './release-consumer.js'
 import { makeSignoffBrief } from './signoff-brief.js'
@@ -76,6 +77,8 @@ export interface SupervisorComponents {
   decisionConsumer?: ConsumerLike
   /** P5-2a: gate.blocked 소비자(releaseSignoff+decisionStore+releaseStore 주입 시만 배선). */
   signoffConsumer?: ConsumerLike
+  /** B1: 결정 만료 sweep(decisionExpiry+decisionStore 주입 시만 배선). */
+  decisionSweeper?: SweeperLike
 }
 
 /**
@@ -110,6 +113,7 @@ export class Supervisor {
       console.error('[supervisor] signoff consumer 시작 실패:', err)
     })
     this.components.leaseSweeper.start()
+    this.components.decisionSweeper?.start()
   }
 
   stop(): void {
@@ -120,6 +124,7 @@ export class Supervisor {
     this.components.decisionConsumer?.stop()
     this.components.signoffConsumer?.stop()
     this.components.leaseSweeper.stop()
+    this.components.decisionSweeper?.stop()
   }
 }
 
@@ -147,6 +152,8 @@ export interface SupervisorDeps {
   decisionStore?: DecisionBriefStore & {
     getRequest(requestId: string): Promise<import('../db/decision.types.js').DecisionRequest | null>
     recordSignOff(input: { signoffId: string; decisionId: string; scope: string; approver: string; risk?: string; reason?: string | null }): Promise<{ eventId: string } | null>
+    expiredPendingRequests(now: number, limit: number): Promise<string[]>
+    expireRequest(requestId: string): Promise<{ eventId: string } | null>
   }
   /** P4 advisory 채널 영속소(AdvisoryRepo). advisoryStore + wpAdvisory면 워커가 produceAdvisory 호출. */
   advisoryStore?: AdvisoryStore
@@ -192,6 +199,11 @@ export interface SupervisorConfig {
   releaseGate?: boolean
   /** P5-2a: gate.blocked→사인오프 DecisionRequest 라우팅(=MANAGER_RELEASE_SIGNOFF). 전제 releaseGate+decisionRouting. */
   releaseSignoff?: boolean
+  /** B1: 결정 만료 sweep(=MANAGER_DECISION_EXPIRY). off면 sweep 미배선·expiresAt 미주입(회귀 0). decisionStore 동반 필요. */
+  decisionExpiry?: boolean
+  decisionSweepMs?: number
+  /** ms — server.ts가 MANAGER_DECISION_TTL_HOURS * 3_600_000 변환 후 주입. */
+  decisionTtlMs?: number
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
@@ -290,17 +302,23 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     CompletionSignalSchema as ZodType<CompletionSignalMessage>,
   )
 
+  // B1: TTL 옵션(decisionExpiry+decisionTtlMs일 때만). exactOptionalPropertyTypes — 미설정이면 undefined 키 생략.
+  const briefOpts = config.decisionExpiry && config.decisionTtlMs !== undefined ? { ttlMs: config.decisionTtlMs } : undefined
   // P6: decisionBrief flag + decisionStore 주입 둘 다 있어야 escalation→DecisionRequest 브리프 배선(회귀 0).
   const briefStore = config.decisionBrief ? deps.decisionStore : undefined
   const leaseSweeper = new LeaseSweeper(
     {
       store: deps.leaseStore, maxAttempts: config.maxAttempts, visibilityMs: config.visibilityMs,
       ...(workerActive && { publish: deps.publish }),
-      ...(briefStore && { onEscalated: makeEscalationBrief(briefStore) }),
+      ...(briefStore && { onEscalated: makeEscalationBrief(briefStore, briefOpts) }),
       ...(briefStore && { graphStore: deps.repo }),
     },
     config.sweepMs,
   )
+  // B1: 결정 만료 sweep = decisionExpiry && decisionStore. 만료 PENDING→EXPIRED·decision.expired 발행(M8).
+  const decisionSweeper = config.decisionExpiry && deps.decisionStore
+    ? new DecisionSweeper({ store: deps.decisionStore }, config.decisionSweepMs)
+    : undefined
 
   // oracle.approved 소비자는 DoR 게이트(oracleDor)일 때만 배선(D4 순수 게이트). DRAFT-only면 미배선
   // (drafted 영속만·DoR 비활성). dorActive와 동치이나 순수 함수로 분리해 테스트 가능(toBeDefined만으론 미생성 검증 불가).
@@ -343,7 +361,7 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
   //   동작하므로 decisionRouting=false 상태에서 signoffConsumer만 활성화하면 사인오프 요청이 생성되지만
   //   영원히 소비되지 않는 구조적 불완전 상태가 된다 — fail-closed.
   const signoffConsumer = config.releaseSignoff && config.decisionRouting && deps.decisionStore && deps.releaseStore
-    ? new ReleaseSignoffConsumer(makeRedis(), { onBlocked: makeSignoffBrief(deps.decisionStore, deps.repo) })
+    ? new ReleaseSignoffConsumer(makeRedis(), { onBlocked: makeSignoffBrief(deps.decisionStore, deps.repo, briefOpts) })
     : undefined
 
   // P6: 결정 라우팅 = MANAGER_DECISION_ROUTING && decisionStore 주입. fix_reverify→reopenLease→dispatch_signal.
@@ -367,5 +385,6 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     ...(workerConsumer && { workerConsumer }),
     ...(decisionConsumer && { decisionConsumer }),
     ...(signoffConsumer && { signoffConsumer }),
+    ...(decisionSweeper && { decisionSweeper }),
   })
 }

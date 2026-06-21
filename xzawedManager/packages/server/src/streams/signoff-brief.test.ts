@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildSignoffBrief, makeSignoffBrief } from './signoff-brief.js'
+import { buildSignoffBrief, makeSignoffBrief, type SignoffBriefInfo } from './signoff-brief.js'
 
 const INFO = {
   workflowId: 'wf-1', gateVersion: 'v-abc',
@@ -40,5 +40,22 @@ describe('makeSignoffBrief', () => {
     const graphStore = { getGraph: vi.fn().mockRejectedValue(new Error('boom')) }
     await makeSignoffBrief({ createRequest }, graphStore)(INFO)
     expect(createRequest).toHaveBeenCalledWith(expect.objectContaining({ projectId: null }))
+  })
+})
+
+const SINFO: SignoffBriefInfo = { workflowId: 'wf1', gateVersion: 'v1', blockingReasons: ['r'], perWp: [{ wpId: 'wp1', proven: false }] }
+
+describe('makeSignoffBrief expiresAt 주입', () => {
+  it('ttlMs 주입 시 expiresAt 존재', async () => {
+    let captured: Record<string, unknown> = {}
+    const store = { createRequest: async (r: Record<string, unknown>) => { captured = r; return { eventId: 'e' } } }
+    await makeSignoffBrief(store, undefined, { now: () => 1_000_000, ttlMs: 3_600_000 })(SINFO)
+    expect(captured['expiresAt']).toBe(new Date(4_600_000).toISOString())
+  })
+  it('opts 미주입 시 키 부재(회귀 0)', async () => {
+    let captured: Record<string, unknown> = {}
+    const store = { createRequest: async (r: Record<string, unknown>) => { captured = r; return { eventId: 'e' } } }
+    await makeSignoffBrief(store)(SINFO)
+    expect('expiresAt' in captured).toBe(false)
   })
 })

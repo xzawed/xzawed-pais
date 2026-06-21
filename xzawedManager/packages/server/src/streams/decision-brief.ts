@@ -20,11 +20,19 @@ export interface DecisionRequestInput {
   context?: DecisionRequest['context']
   severity?: DecisionRequest['severity']
   projectId?: string | null
+  /** B1: 결정 TTL 만료 시각(ISO). 핸들러가 now+TTL로 주입·순수 빌더는 미설정. */
+  expiresAt?: string | null
 }
 
 /** DecisionRepo의 createRequest만 의존(구조적). */
 export interface DecisionBriefStore {
   createRequest(req: DecisionRequestInput): Promise<{ eventId: string } | null>
+}
+
+/** B1: now(ms)+ttlMs → ISO 만료 시각. ttlMs 미설정/비양수면 undefined(만료 없음·회귀 0). 순수. */
+export function expiresAtFrom(now: number, ttlMs: number | undefined): string | undefined {
+  if (!ttlMs || ttlMs <= 0) return undefined
+  return new Date(now + ttlMs).toISOString()
 }
 
 /**
@@ -69,8 +77,13 @@ export function buildDefectBrief(info: EscalationInfo): DecisionRequestInput {
  * 결함 브리프를 영속한다(발행만 되고 사라지던 escalation을 사람 도달 핸드오프로 폐합·M8/M9).
  * throw 방어는 호출자(handleLeaseSweep)가 best-effort로 감싼다 — 브리프 부재가 sweep을 멈추지 않게.
  */
-export function makeEscalationBrief(store: DecisionBriefStore): (info: EscalationInfo) => Promise<void> {
+export function makeEscalationBrief(
+  store: DecisionBriefStore,
+  opts?: { now?: () => number; ttlMs?: number },
+): (info: EscalationInfo) => Promise<void> {
   return async (info) => {
-    await store.createRequest(buildDefectBrief(info))
+    const nowFn = opts?.now ?? Date.now
+    const expiresAt = expiresAtFrom(nowFn(), opts?.ttlMs)
+    await store.createRequest({ ...buildDefectBrief(info), ...(expiresAt && { expiresAt }) })
   }
 }

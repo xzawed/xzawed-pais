@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildDefectBrief, makeEscalationBrief, localizeFault, type DecisionBriefStore } from './decision-brief.js'
+import { buildDefectBrief, makeEscalationBrief, localizeFault, expiresAtFrom, type DecisionBriefStore, type EscalationInfo } from './decision-brief.js'
 
 const INFO = { workflowId: 'wf-1', wpId: 'wp_abc', attempt: 2, stepN: 3 }
 
@@ -69,5 +69,33 @@ describe('buildDefectBrief projectId 스레딩 (C0/C1)', () => {
   })
   it('projectId 미지정 시 null', () => {
     expect(buildDefectBrief(INFO).projectId).toBeNull()
+  })
+})
+
+describe('expiresAtFrom', () => {
+  it('ttlMs 양수 → now+ttl ISO', () => {
+    expect(expiresAtFrom(1_000_000, 3_600_000)).toBe(new Date(4_600_000).toISOString())
+  })
+  it('ttlMs undefined → undefined', () => { expect(expiresAtFrom(1_000_000, undefined)).toBeUndefined() })
+  it('ttlMs 0/음수 → undefined', () => {
+    expect(expiresAtFrom(1_000_000, 0)).toBeUndefined()
+    expect(expiresAtFrom(1_000_000, -5)).toBeUndefined()
+  })
+})
+
+const INFO2: EscalationInfo = { workflowId: 'wf1', wpId: 'wp1', attempt: 2, stepN: 1 }
+
+describe('makeEscalationBrief expiresAt 주입', () => {
+  it('ttlMs 주입 시 createRequest 입력에 expiresAt 존재', async () => {
+    let captured: unknown
+    const store = { createRequest: async (r: unknown) => { captured = r; return { eventId: 'e' } } }
+    await makeEscalationBrief(store, { now: () => 1_000_000, ttlMs: 3_600_000 })(INFO2)
+    expect((captured as { expiresAt?: string }).expiresAt).toBe(new Date(4_600_000).toISOString())
+  })
+  it('opts 미주입 시 expiresAt 키 부재(회귀 0)', async () => {
+    let captured: Record<string, unknown> = {}
+    const store = { createRequest: async (r: Record<string, unknown>) => { captured = r; return { eventId: 'e' } } }
+    await makeEscalationBrief(store)(INFO2)
+    expect('expiresAt' in captured).toBe(false)
   })
 })
