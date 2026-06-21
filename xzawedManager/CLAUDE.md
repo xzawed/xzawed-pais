@@ -482,6 +482,9 @@ MANAGER_BULKHEAD_PER_AGENT=     # 선택: 기본 0(무제한). §13 벌크헤드
 MANAGER_RISK_CLASSIFY=          # 선택: 기본 false. true면 decompose_request 시 프로젝트 리스크 분류 생성·pending 영속(P2r-3·N6 미승인). 전제: MANAGER_DECOMPOSE_ENABLED+DATABASE_URL
 MANAGER_RISK_ROUTING=           # 선택: 기본 false. true면 risk.approved 소비자(→wp.risk write-back) + 승인 라우트 배선(P2r-4). 전제: TASK_MANAGER_ENABLED+DATABASE_URL
 MANAGER_RISK_DECISION=          # 선택: 기본 false. true면 humanGate.required 리스크 분류를 risk_classification DecisionRequest로 발행 + decision-consumer approve→RiskClassificationRepo.approve(C5). 전제: MANAGER_RISK_CLASSIFY+MANAGER_DECISION_ROUTING+DATABASE_URL
+MANAGER_MODEL_ROUTING=          # 선택: 기본 false. true면 워커가 디스패치 시 승인 modelRouting을 조회해 에이전트 모델 라우팅(off→CLAUDE_MODEL 폴백·D5). 전제: MANAGER_TASK_WORKER+DATABASE_URL+승인 분류
+MANAGER_MODEL_OPUS=             # 선택: 기본 claude-opus-4-8. modelRouting의 opus tier→이 concrete id
+MANAGER_MODEL_SONNET=           # 선택: 기본 claude-sonnet-4-6. modelRouting의 sonnet tier→이 concrete id
 ```
 
 ## 보안 구현 패턴
