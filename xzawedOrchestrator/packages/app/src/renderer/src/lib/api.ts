@@ -207,6 +207,7 @@ export interface PendingDecision {
     impact?: string[]
     evidenceRefs?: string[]
     attribution?: { faultTier?: string; counters?: { impl?: number; task?: number; plan?: number } }
+    options?: string[]
   }
 }
 

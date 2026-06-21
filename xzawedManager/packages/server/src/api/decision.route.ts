@@ -12,7 +12,7 @@ interface DecisionRouteOptions {
 
 const BodySchema = z.object({
   decidedBy: z.string().min(1),
-  choice: z.enum(['fix_reverify', 'spec_fix', 'accept_known', 'reject']),
+  choice: z.enum(['fix_reverify', 'spec_fix', 'accept_known', 'reject', 'approve']),
   justification: z.string().optional(),
 })
 
@@ -21,6 +21,7 @@ const CHOICE_TO_ROUTED: Record<z.infer<typeof BodySchema>['choice'], NonNullable
   spec_fix: 'task',
   accept_known: 'gate_override',
   reject: 'saga_rollback',
+  approve: 'risk_approve',
 }
 
 /** 사람 결정 제출 라우트. GET pending은 open read; 쓰기는 authHook(서비스 JWT) 설정 시 보호. repo 없으면 503/빈 목록. */

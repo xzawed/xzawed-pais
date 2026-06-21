@@ -21,17 +21,21 @@ export class RiskClassificationRepo {
   constructor(private readonly pool: Pool, private readonly now: () => number = () => Date.now()) {}
 
   /** 분류 영속(pending). 재채점 시 version++·status=pending·이전 승인 무효(재승인 필요 N6). */
-  async upsert(input: { workflowId: string; classification: RiskClassification }): Promise<void> {
+  async upsert(input: { workflowId: string; classification: RiskClassification }): Promise<{ version: number }> {
     const c = input.classification
-    await this.pool.query(
+    const { rows } = await this.pool.query<{ version: number }>(
       `INSERT INTO risk_classifications (workflow_id, project_id, version, status, risk, artifact)
          VALUES ($1,$2,1,'pending',$3,$4)
        ON CONFLICT (workflow_id) DO UPDATE SET
          version = risk_classifications.version + 1, status = 'pending',
          risk = EXCLUDED.risk, artifact = EXCLUDED.artifact, project_id = EXCLUDED.project_id,
-         approved_at = NULL, approved_by = NULL`,
+         approved_at = NULL, approved_by = NULL
+       RETURNING version`,
       [input.workflowId, c.projectId, c.risk, JSON.stringify(c)],
     )
+    const row = rows[0]
+    if (!row) throw new Error('upsert: no row returned')
+    return { version: row.version }
   }
 
   /** 사람 승인(N6): SELECT FOR UPDATE → (status≠pending이면 null) → 아티팩트 audit 갱신 + status=approved +

@@ -171,6 +171,8 @@ export interface SupervisorDeps {
   timeoutMs?: number
   /** P5-1: 릴리스 게이트 증거/결과 영속소(ReleaseGateRepo). releaseGate flag + 주입 시 게이트 평가. */
   releaseStore?: ReleaseGateRepo
+  /** C5: approve→RiskClassificationRepo.approve 분기용. */
+  riskStore?: { approve(workflowId: string, approvedBy: string): Promise<{ eventId: string } | null> }
 }
 export interface SupervisorConfig {
   sweepMs: number
@@ -390,6 +392,8 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
           visibilityMs: config.visibilityMs,
           // P5-2a: accept_known 사인오프 활성 — decisionConsumer가 signoffStore로 사인오프 영속.
           ...(config.releaseSignoff && deps.decisionStore && { signoffStore: deps.decisionStore }),
+          // C5: approve→RiskClassificationRepo.approve 분기용.
+          ...(deps.riskStore && { riskStore: deps.riskStore }),
         } satisfies DecisionRoutingDeps,
       )
     : undefined

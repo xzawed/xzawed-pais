@@ -90,3 +90,55 @@ describe('buildDecisionRecordedHandler accept_known 사인오프 (P5-2a)', () =>
     await expect(buildDecisionRecordedHandler(d)(rec({ requestId: 'wf-1:gate:v1', choice: 'accept_known', decisionId: 'd', decidedBy: 'po' }))).resolves.toBeUndefined()
   })
 })
+
+describe('buildDecisionRecordedHandler approve 위험분류 (C5)', () => {
+  it('approve + risk_classification → riskStore.approve(workflowId, decidedBy)', async () => {
+    const riskStore = { approve: vi.fn().mockResolvedValue({ eventId: 'ev' }) }
+    const decisionStore = { getRequest: vi.fn().mockResolvedValue({ requestId: 'wf:risk:1', workflowId: 'wf', type: 'risk_classification', wpId: null }) }
+    const d = {
+      decisionStore,
+      leaseStore: {} as never,
+      publish: vi.fn(),
+      visibilityMs: 1000,
+      riskStore,
+    } as never
+    await buildDecisionRecordedHandler(d)(rec({ requestId: 'wf:risk:1', choice: 'approve', decisionId: 'wf:risk:1:approve', decidedBy: 'alice' }))
+    expect(riskStore.approve).toHaveBeenCalledWith('wf', 'alice')
+  })
+  it('approve이지만 type이 risk_classification 아니면 no-op', async () => {
+    const riskStore = { approve: vi.fn() }
+    const decisionStore = { getRequest: vi.fn().mockResolvedValue({ requestId: 'r', workflowId: 'wf', type: 'defect_brief', wpId: 'wp' }) }
+    const d = {
+      decisionStore,
+      leaseStore: {} as never,
+      publish: vi.fn(),
+      visibilityMs: 1000,
+      riskStore,
+    } as never
+    await buildDecisionRecordedHandler(d)(rec({ requestId: 'r', choice: 'approve', decisionId: 'd', decidedBy: 'a' }))
+    expect(riskStore.approve).not.toHaveBeenCalled()
+  })
+  it('riskStore 미주입 → approve no-op(never-throw)', async () => {
+    const decisionStore = { getRequest: vi.fn().mockResolvedValue({ requestId: 'wf:risk:1', workflowId: 'wf', type: 'risk_classification', wpId: null }) }
+    const d = {
+      decisionStore,
+      leaseStore: {} as never,
+      publish: vi.fn(),
+      visibilityMs: 1000,
+    } as never
+    await expect(buildDecisionRecordedHandler(d)(rec({ requestId: 'wf:risk:1', choice: 'approve', decisionId: 'd', decidedBy: 'alice' }))).resolves.toBeUndefined()
+  })
+  it('decidedBy 미주입 → approve no-op', async () => {
+    const riskStore = { approve: vi.fn() }
+    const decisionStore = { getRequest: vi.fn().mockResolvedValue({ requestId: 'wf:risk:1', workflowId: 'wf', type: 'risk_classification', wpId: null }) }
+    const d = {
+      decisionStore,
+      leaseStore: {} as never,
+      publish: vi.fn(),
+      visibilityMs: 1000,
+      riskStore,
+    } as never
+    await buildDecisionRecordedHandler(d)(rec({ requestId: 'wf:risk:1', choice: 'approve', decisionId: 'd' }))
+    expect(riskStore.approve).not.toHaveBeenCalled()
+  })
+})

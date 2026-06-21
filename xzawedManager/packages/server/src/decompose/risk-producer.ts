@@ -3,12 +3,14 @@ import type { ClaudeLike, RiskClassification, WpRisk, BudgetCircuitBreaker, Prov
 import { runStage, type StageCircuit } from './stages/run-stage.js'
 import { buildRiskInvestigationSpec, verifyCitations, normalizeFrameworks } from './stages/risk-investigate.js'
 import type { UserContext } from '../types/user-context.js'
+import { buildRiskBrief } from '../streams/risk-brief.js'
+import type { DecisionRequestInput } from '../streams/decision-brief.js'
 
 const DEFAULT_TIMEOUT_MS = 120_000
 
 /** RiskClassificationRepo.upsert만 좁게 — 테스트 mock·결합 최소. */
 export interface RiskUpsertPort {
-  upsert(input: { workflowId: string; classification: RiskClassification }): Promise<void>
+  upsert(input: { workflowId: string; classification: RiskClassification }): Promise<{ version: number }>
 }
 
 export interface RiskClassifyDeps {
@@ -21,6 +23,8 @@ export interface RiskClassifyDeps {
   isProviderFailure?: (err: unknown) => boolean
   now?: () => number
   log?: (msg: string, data?: Record<string, unknown>) => void
+  /** C5: humanGate.required 분류를 risk_classification DecisionRequest로 발행(MANAGER_RISK_DECISION). */
+  decisionStore?: { createRequest(input: DecisionRequestInput): Promise<unknown> }
 }
 
 /**
@@ -59,7 +63,10 @@ export async function produceRiskClassification(
       claims,
       complianceFrameworks: normalizeFrameworks(investigation.complianceFrameworks),
     })
-    await deps.repo.upsert({ workflowId, classification })
+    const { version } = await deps.repo.upsert({ workflowId, classification })
+    if (classification.humanGate.required && deps.decisionStore) {
+      await deps.decisionStore.createRequest(buildRiskBrief({ workflowId, version, classification }))
+    }
     deps.log?.('[risk] 분류 영속(pending)', { workflowId, risk: classification.risk, humanGate: classification.humanGate.required })
     return { classified: true, risk: classification.risk }
   } catch (err) {

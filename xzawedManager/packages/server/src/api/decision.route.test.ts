@@ -66,3 +66,13 @@ describe('decisionRoute GET pending (project-scoped)', () => {
     expect(res.json()).toEqual({ items: [] })
   })
 })
+
+describe('decisionRoute POST approve (risk_classification)', () => {
+  it('approve choice를 수용한다(risk_classification 승인)', async () => {
+    const repo = okRepo()
+    const f = await app(repo)
+    const res = await f.inject({ method: 'POST', url: '/projects/proj-1/decisions/r1/decision', payload: { decidedBy: 'alice', choice: 'approve' } })
+    expect(res.statusCode).toBe(200)
+    expect(repo.recordDecision).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'r1', choice: 'approve', routedTo: 'risk_approve', decidedBy: 'alice' }))
+  })
+})

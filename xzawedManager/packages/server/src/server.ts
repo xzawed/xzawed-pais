@@ -205,11 +205,13 @@ export async function buildServer(
   // P6: 결정 영속소(escalation→DecisionRequest 브리프 + 결정 라우팅 getRequest). BRIEF 또는 ROUTING 중
   // 하나라도 켜지면(+pool) 생성 — 라우팅 소비자도 같은 DecisionRepo의 getRequest를 사용한다(회귀 0: 둘 다 off면 undefined).
   const decisionStore =
-    pool && (config.MANAGER_DECISION_BRIEF || config.MANAGER_DECISION_ROUTING || config.MANAGER_DECISION_EXPIRY) ? new DecisionRepo(pool) : undefined
+    pool && (config.MANAGER_DECISION_BRIEF || config.MANAGER_DECISION_ROUTING || config.MANAGER_DECISION_EXPIRY || config.MANAGER_RISK_DECISION) ? new DecisionRepo(pool) : undefined
   // P4: advisory 채널 영속소(verdict.ok 후 optimization 제안). MANAGER_WP_ADVISORY + pool 시만 생성(회귀 0).
   const advisoryStore = pool && config.MANAGER_WP_ADVISORY ? new AdvisoryRepo(pool) : undefined
   // P5-1: 릴리스 게이트 증거/결과 영속소(recordEvidence·recordGate·evidenceForWorkflow). MANAGER_RELEASE_GATE + pool 시만 생성(회귀 0).
   const releaseStore = pool && config.MANAGER_RELEASE_GATE ? new ReleaseGateRepo(pool) : undefined
+  // P2r-3/P2r-4 공유 repo — Supervisor에 riskStore 주입(C5) 위해 createSupervisor 전 선언(상세 배선은 아래 riskClassify 블록).
+  const riskStore = pool && (config.MANAGER_RISK_CLASSIFY || config.MANAGER_RISK_ROUTING) ? new RiskClassificationRepo(pool) : undefined
 
   // P5-2b: 릴리스 게이트 통과/사인오프를 deploy_project 하드 전제로. pool 가드로 truthy 보장.
   const deployGate =
@@ -388,6 +390,9 @@ export async function buildServer(
         ...(config.MANAGER_WP_ADVISORY && { claude: client, model: config.CLAUDE_MODEL, timeoutMs: config.CLAUDE_TIMEOUT_MS }),
         // P5-1: 릴리스 게이트 증거/결과 영속소(ReleaseGateRepo). releaseGate flag + 주입 시 게이트 평가.
         ...(releaseStore && { releaseStore }),
+        // C5: DecisionRecordedConsumer에 riskStore 주입 → approve 분기 활성. MANAGER_RISK_DECISION 게이트로
+        //   생산자(emit) 측과 대칭 — flag off면 소비자가 riskStore를 받지 않아 'off→바이트 동일' 불변식이 문자 그대로 성립.
+        ...(config.MANAGER_RISK_DECISION && riskStore && { riskStore }),
       },
       {
         sweepMs: config.MANAGER_LEASE_SWEEP_MS,
@@ -462,8 +467,7 @@ export async function buildServer(
     }
   }
 
-  // P2r-3 생산자(MANAGER_RISK_CLASSIFY) + P2r-4 승인 라우트(MANAGER_RISK_ROUTING) 공유 repo.
-  const riskStore = pool && (config.MANAGER_RISK_CLASSIFY || config.MANAGER_RISK_ROUTING) ? new RiskClassificationRepo(pool) : undefined
+  // P2r-3 생산자(MANAGER_RISK_CLASSIFY) + P2r-4 승인 라우트(MANAGER_RISK_ROUTING) 공유 repo — 위에서 선언됨.
   const riskClassify: RiskClassifyDeps | undefined = riskStore
     ? {
         claude: client,
@@ -474,8 +478,13 @@ export async function buildServer(
         ...(providerCircuit && { provider: providerCircuit.breaker }),
         isProviderFailure,
         log: (msg, data) => app.log.info(data ?? {}, msg),
+        // C5: humanGate.required 시 DecisionRequest 발행용(flag+decisionStore 동반 시만 주입).
+        ...(config.MANAGER_RISK_DECISION && decisionStore && { decisionStore }),
       }
     : undefined
+  if (config.MANAGER_RISK_DECISION && (!pool || !config.MANAGER_RISK_CLASSIFY || !config.MANAGER_DECISION_ROUTING)) {
+    app.log.warn('[risk] MANAGER_RISK_DECISION=true이나 전제(MANAGER_RISK_CLASSIFY+MANAGER_DECISION_ROUTING+DATABASE_URL) 미충족 — C5 승인 흐름 부분 비활성')
+  }
   if (config.MANAGER_RISK_CLASSIFY) {
     if (!pool) app.log.warn('[risk] MANAGER_RISK_CLASSIFY=true이나 DATABASE_URL 없음 — 분류 영속 불가(미배선)')
     else if (!config.MANAGER_DECOMPOSE_ENABLED) app.log.warn('[risk] MANAGER_RISK_CLASSIFY=true이나 MANAGER_DECOMPOSE_ENABLED off — decompose_request 핸들러 미도달로 분류 미발생(no-op)')

@@ -90,4 +90,23 @@ describe.skipIf(!url)('P2r-2 리스크 분류 영속(영속→승인→라우팅
       await closePool()
     }
   })
+
+  it('upsert가 version을 반환한다(첫 1·재upsert 2)', async () => {
+    const pool = createPool(url!)
+    try {
+      await runMigrations(pool)
+      const repo = new RiskClassificationRepo(pool)
+      const c = scoreClassification({ projectId: 'p', claims: [{ text: 'x', dimension: 'domain', support: 1, citations: ['a'] }] })
+      const wf = `wf-rcv-${Date.now()}`
+
+      const r1 = await repo.upsert({ workflowId: wf, classification: c })
+      expect(r1.version).toBe(1)
+
+      const r2 = await repo.upsert({ workflowId: wf, classification: c })
+      expect(r2.version).toBe(2)
+    } finally {
+      await cleanup(pool)
+      await closePool()
+    }
+  })
 })
