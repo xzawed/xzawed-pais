@@ -124,6 +124,7 @@ describe('handleDecomposeRequest', () => {
       'sess-risk-reject', 'intent', mockDecompose(emitPublish), { publish: producerPublish }, cleanup,
       uc as never,
       riskClassify,
+      vi.fn().mockResolvedValue(undefined), // mock ensureWs — 실제 mkdir('/ws') 회피(CI EACCES)
     )
     // 리스크 분류가 reject했음에도 분해 경로는 그대로 완료
     expect(producerPublish).toHaveBeenCalledWith(expect.objectContaining({ type: 'task_complete' }))
@@ -148,6 +149,7 @@ describe('handleDecomposeRequest', () => {
       'sess-risk', 'intent', mockDecompose(emitPublish), { publish: producerPublish }, cleanup,
       uc as never,
       riskClassify,
+      vi.fn().mockResolvedValue(undefined), // mock ensureWs — 실제 mkdir('/ws') 회피(CI EACCES)
     )
     // 1) riskClassify가 있으면 produceRiskClassification이 실제로 호출됨(인자 순서 단언)
     expect(vi.mocked(produceRiskClassification)).toHaveBeenCalledWith('intent', 'sess-risk', riskClassify, expect.objectContaining({ projectId: 'p' }))
