@@ -615,3 +615,45 @@ describe('MANAGER_MODEL_ROUTING + model id 기본값', () => {
     expect(loadConfig().MANAGER_MODEL_SONNET).toBe('claude-sonnet-4-6')
   })
 })
+
+describe('MANAGER_DEGRADED_MODE flag', () => {
+  withBaseEnv(['MANAGER_DEGRADED_MODE'])
+
+  it('기본 false', () => {
+    delete process.env['MANAGER_DEGRADED_MODE']
+    expect(loadConfig().MANAGER_DEGRADED_MODE).toBe(false)
+  })
+
+  it("'true'면 true", () => {
+    process.env['MANAGER_DEGRADED_MODE'] = 'true'
+    expect(loadConfig().MANAGER_DEGRADED_MODE).toBe(true)
+  })
+})
+
+describe('MANAGER_MODE_SWEEP_MS', () => {
+  withBaseEnv(['MANAGER_MODE_SWEEP_MS'])
+
+  it('기본값 5000', () => {
+    delete process.env['MANAGER_MODE_SWEEP_MS']
+    expect(loadConfig().MANAGER_MODE_SWEEP_MS).toBe(5000)
+  })
+
+  it('env 값 적용', () => {
+    process.env['MANAGER_MODE_SWEEP_MS'] = '2000'
+    expect(loadConfig().MANAGER_MODE_SWEEP_MS).toBe(2000)
+  })
+})
+
+describe('MANAGER_MODE_STABILITY_WINDOW_MS', () => {
+  withBaseEnv(['MANAGER_MODE_STABILITY_WINDOW_MS'])
+
+  it('기본값 60000', () => {
+    delete process.env['MANAGER_MODE_STABILITY_WINDOW_MS']
+    expect(loadConfig().MANAGER_MODE_STABILITY_WINDOW_MS).toBe(60000)
+  })
+
+  it('env 값 적용', () => {
+    process.env['MANAGER_MODE_STABILITY_WINDOW_MS'] = '30000'
+    expect(loadConfig().MANAGER_MODE_STABILITY_WINDOW_MS).toBe(30000)
+  })
+})

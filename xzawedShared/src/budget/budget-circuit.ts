@@ -140,6 +140,12 @@ export class BudgetCircuitBreaker {
     }
   }
 
+  /** 일(UTC) 누적이 상한 이상인지(관측·OPERATIONS_DECISIONS §1 SAFE 신호용). 롤오버 반영. */
+  dailyTripped(): boolean {
+    this.rolloverIfNeeded()
+    return this.daySpend >= this.dailyUsd
+  }
+
   /** 현재 상태(관측·테스트용). */
   snapshot(workflowId: string): BudgetSnapshot {
     this.rolloverIfNeeded()
