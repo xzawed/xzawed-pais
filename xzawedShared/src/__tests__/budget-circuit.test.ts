@@ -110,4 +110,25 @@ describe('BudgetCircuitBreaker', () => {
     expect(r.dailyUsd).toBeCloseTo(0.003, 10)
     expect(r.tripped).toBe(false)
   })
+
+  it('dailyTripped: 일 상한 미만 false·이상 true', () => {
+    let t = 0
+    const b = new BudgetCircuitBreaker({ dailyUsd: 0.01, now: () => t })
+    expect(b.dailyTripped()).toBe(false)
+    b.record('wf-1', 'claude-opus-4-8', { input_tokens: 100000, output_tokens: 100000 }) // 상한 초과 비용
+    expect(b.dailyTripped()).toBe(true)
+  })
+  it('dailyTripped: 일 롤오버 시 리셋', () => {
+    let day = 0
+    const b = new BudgetCircuitBreaker({ dailyUsd: 0.0001, now: () => day })
+    b.record('wf-1', 'claude-opus-4-8', { input_tokens: 100000, output_tokens: 100000 })
+    expect(b.dailyTripped()).toBe(true)
+    day = 24 * 3600 * 1000 + 1 // 다음 날(UTC)
+    expect(b.dailyTripped()).toBe(false)
+  })
+  it('dailyTripped: dailyUsd 미설정(Infinity)이면 항상 false', () => {
+    const b = new BudgetCircuitBreaker({ now: () => 0 })
+    b.record('wf-1', 'claude-opus-4-8', { input_tokens: 100000, output_tokens: 100000 })
+    expect(b.dailyTripped()).toBe(false)
+  })
 })

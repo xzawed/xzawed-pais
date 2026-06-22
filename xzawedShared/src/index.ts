@@ -29,6 +29,8 @@ export { costOf, MODEL_PRICING, BudgetCircuitBreaker, BudgetExceededError } from
 export type { ModelPrice, TokenUsage, BudgetCircuitOptions, BudgetRecordResult, BudgetSnapshot, BudgetScope } from './budget/index.js'
 export { ProviderCircuitBreaker, ProviderCircuitOpenError, Bulkhead } from './resilience/index.js'
 export type { CircuitState, ProviderCircuitOptions, ProviderCircuitSnapshot, BulkheadOptions, BulkheadSnapshot } from './resilience/index.js'
+export { desiredMode, nextMode } from './resilience/index.js'
+export type { OperationalMode, ModeSignals, ModeTransitionInput, ModeTransitionResult } from './resilience/index.js'
 export {
   confidenceFromSupport, aggregateDimension, combineRisk, routeModels, evaluateHumanGate, scoreClassification,
   RISK_DIMENSIONS, ROUTED_AGENTS, RiskClassificationSchema, ClaimSchema, DimensionScoreSchema,
