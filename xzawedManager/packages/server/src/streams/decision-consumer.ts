@@ -42,6 +42,8 @@ export interface DecisionRoutingDeps {
   signoffStore?: { recordSignOff(input: { signoffId: string; decisionId: string; scope: string; approver: string; risk?: string; reason?: string | null }): Promise<{ eventId: string } | null> }
   /** C5: approve on risk_classification → RiskClassificationRepo.approve(실 비부인 decidedBy). 미주입이면 no-op. */
   riskStore?: { approve(workflowId: string, approvedBy: string): Promise<{ eventId: string } | null> }
+  /** N2: accept_known on degraded_dispatch → 사인오프 후 재디스패치(handleDispatch 재실행·승인 WP 통과). 미주입이면 no-op. */
+  redispatch?: (workflowId: string) => Promise<void>
 }
 
 /**
@@ -66,15 +68,18 @@ export function buildDecisionRecordedHandler(deps: DecisionRoutingDeps): (msg: D
       }
       if (p.data.choice === 'accept_known' && deps.signoffStore && p.data.decisionId && p.data.decidedBy) {
         const req = await deps.decisionStore.getRequest(p.data.requestId)
-        if (req?.type !== 'degraded_release') return
-        await deps.signoffStore.recordSignOff({
-          signoffId: `${p.data.decisionId}:signoff`,
-          decisionId: p.data.decisionId,
-          scope: 'release',
-          approver: p.data.decidedBy,
-          risk: 'HIGH',
-          reason: '릴리스 게이트 차단 사인오프',
-        })
+        if (req?.type === 'degraded_release') {
+          await deps.signoffStore.recordSignOff({
+            signoffId: `${p.data.decisionId}:signoff`, decisionId: p.data.decisionId,
+            scope: 'release', approver: p.data.decidedBy, risk: 'HIGH', reason: '릴리스 게이트 차단 사인오프',
+          })
+        } else if (req?.type === 'degraded_dispatch') {
+          await deps.signoffStore.recordSignOff({
+            signoffId: `${p.data.decisionId}:signoff`, decisionId: p.data.decisionId,
+            scope: 'degraded_dispatch', approver: p.data.decidedBy, risk: 'HIGH', reason: '강등 모드 HIGH-risk 디스패치 사인오프',
+          })
+          await deps.redispatch?.(req.workflowId)
+        }
       }
       if (p.data.choice === 'approve' && deps.riskStore && p.data.decidedBy) {
         const req = await deps.decisionStore.getRequest(p.data.requestId)
