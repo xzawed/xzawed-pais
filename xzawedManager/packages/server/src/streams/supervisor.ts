@@ -176,6 +176,8 @@ export interface SupervisorDeps {
     recordSignOff(input: { signoffId: string; decisionId: string; scope: string; approver: string; risk?: string; reason?: string | null }): Promise<{ eventId: string } | null>
     expiredPendingRequests(now: number, limit: number): Promise<string[]>
     expireRequest(requestId: string): Promise<{ eventId: string } | null>
+    /** N2: degraded_dispatch 승인 조회(dispatch 게이트가 소비). */
+    hasApprovedDegradedDispatch(workflowId: string, wpId: string): Promise<boolean>
   }
   /** P4 advisory 채널 영속소(AdvisoryRepo). advisoryStore + wpAdvisory면 워커가 produceAdvisory 호출. */
   advisoryStore?: AdvisoryStore

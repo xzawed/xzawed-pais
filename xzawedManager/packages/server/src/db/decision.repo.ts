@@ -225,6 +225,20 @@ export class DecisionRepo {
     return rows.length > 0
   }
 
+  /** N2: 이 WP가 degraded_dispatch 사인오프로 승인됐는지(scope 매칭·wp_id 격리). hasApprovedReleaseSignoff 패턴 + wp_id·type 필터. */
+  async hasApprovedDegradedDispatch(workflowId: string, wpId: string): Promise<boolean> {
+    const { rows } = await this.pool.query<{ ok: number }>(
+      `SELECT 1 AS ok
+         FROM sign_offs s
+         JOIN human_decisions h ON h.decision_id = s.decision_id
+         JOIN decision_requests r ON r.request_id = h.request_id
+        WHERE r.workflow_id = $1 AND r.wp_id = $2 AND r.type = 'degraded_dispatch' AND s.scope = 'degraded_dispatch'
+        LIMIT 1`,
+      [workflowId, wpId],
+    )
+    return rows.length > 0
+  }
+
   async decisionsForRequest(requestId: string): Promise<HumanDecision[]> {
     const { rows } = await this.pool.query<DecisionRow>(
       `SELECT * FROM human_decisions WHERE request_id = $1 ORDER BY decided_at`,
