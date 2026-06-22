@@ -139,12 +139,11 @@ PR #238에서 반영된 senario 사양(v5) 기반 자율 Task Manager 로드맵(
 
 ## 진행 예정
 
-post-#286 전면 감사 + post-#312 재감사(7도메인 라이브 대조·적대 검증)가 확정한 슬라이스 순서. **최심 공통 토대부터** 착수 — ~~P6 M9 영속(#288)~~·~~P2r-2 영속(#289)~~·~~P2 간선 추론+epicId(#290)~~·~~P6 결함 브리프(#291)~~·~~P6 fix_reverify 라우팅(#299)~~·~~P5-2 사인오프+배포 게이팅(#308·#310)~~·~~B1 EXPIRED sweep 생산측(#312)~~·~~P2r-3 LLM 생산자(#314)~~·~~P2r-4 라우팅+wp.risk write-back(#316)~~·~~C5 승인 UI(#318)~~·~~D5 §5 모델 라우팅 소비(#320)~~·~~B1 만료 결정 소비자(#322)~~ 완료. **P2r 가치사슬(생산자→라우팅→UI→모델소비)이 #320로 완성** — 사람 승인 시 wp.risk=HIGH 전이로 mutation θ게이트가 실제 발화. **B1(#322)로 결정 생명주기 폐루프 완성** — 만료 blocking 결정이 바운드 재에스컬레이션으로 C1에 재노출(M8 무음 소실 종결). 다음(전부 ready_now·prereq 0):
+post-#286 전면 감사 + post-#312 재감사(7도메인 라이브 대조·적대 검증)가 확정한 슬라이스 순서. **최심 공통 토대부터** 착수 — ~~P6 M9 영속(#288)~~·~~P2r-2 영속(#289)~~·~~P2 간선 추론+epicId(#290)~~·~~P6 결함 브리프(#291)~~·~~P6 fix_reverify 라우팅(#299)~~·~~P5-2 사인오프+배포 게이팅(#308·#310)~~·~~B1 EXPIRED sweep 생산측(#312)~~·~~P2r-3 LLM 생산자(#314)~~·~~P2r-4 라우팅+wp.risk write-back(#316)~~·~~C5 승인 UI(#318)~~·~~D5 §5 모델 라우팅 소비(#320)~~·~~B1 만료 결정 소비자(#322)~~·~~G1 §13 서킷 decompose/advisory 배선(#325)~~ 완료. **P2r 가치사슬(생산자→라우팅→UI→모델소비)이 #320로 완성** — 사람 승인 시 wp.risk=HIGH 전이로 mutation θ게이트가 실제 발화. **B1(#322)로 결정 생명주기 폐루프 완성** — 만료 blocking 결정이 바운드 재에스컬레이션으로 C1에 재노출(M8 무음 소실 종결). **G1(#325)로 budget/provider 서킷이 decompose·advisory까지 확장** — 워크플로 비용/장애 통합 보호(러너·risk·decompose·advisory 공유 breaker). 다음(전부 ready_now·prereq 0):
 
-1. **G1 서킷브레이커 decompose/advisory 배선** `[의존 없음·keystone]`: budget/provider 서킷이 러너 tool-loop만 보호하고 decompose(다단계 LLM)·advisory 경로는 무보호. `callClaudeText` 어댑터로 동일 breaker 인스턴스 주입 — 병렬-비용/장애 폭발 선제 차단.
-2. **P5-3 N2 강등 모드 FSM** `[의존 P5-2(#310)]`: 릴리스 게이트 blocked·서킷 트립 시 강등 운영 모드 전이(FSM)·saga 보상·canary/롤백.
-3. **D5 후속 + P2 정밀화** `[의존 없음]`: designer/tester/security 에이전트 모델 소비(각 ~2줄·동일 `payload.model ?? config`)·P7 per-WP risk 재채점 / WP `inputs`/`outputs` 채움(계약 체인 §11·impact-DAG 입력)·재진입 머지(`merge_keep_inflight`·N4)·`near_term` 필터.
-4. **결정 라우팅 잔여 실동작** `[의존 #299/#322]`: spec_fix(재분해)·reject(saga 보상)·accept_known(gate override) 실동작·verification.failed/decomposition.inconsistent 브리프 확장.
+1. **P5-3 N2 강등 모드 FSM** `[의존 P5-2(#310)·G1(#325)]`: 릴리스 게이트 blocked·서킷 트립(이제 decompose/advisory 포함)을 강등 운영 모드 전이(FSM)로·saga 보상·canary/롤백. G1이 트립 신호원을 넓혀 강등 FSM 입력이 풍부해짐.
+2. **D5 후속 + P2 정밀화** `[의존 없음]`: designer/tester/security 에이전트 모델 소비(각 ~2줄·동일 `payload.model ?? config`)·P7 per-WP risk 재채점 / WP `inputs`/`outputs` 채움(계약 체인 §11·impact-DAG 입력)·재진입 머지(`merge_keep_inflight`·N4)·`near_term` 필터.
+3. **결정 라우팅 잔여 실동작** `[의존 #299/#322]`: spec_fix(재분해)·reject(saga 보상)·accept_known(gate override) 실동작·verification.failed/decomposition.inconsistent 브리프 확장.
 
 > ⚠️ **시퀀싱 함정(부분 해소)**: P5 fail-closed 릴리스 게이트(hard-AND)는 P4 security/regression 채널이 **먼저** 착륙해야 한다. **4d security 채널이 develop_code WP에 착륙**(`MANAGER_WP_SECURITY`·결정론 SAST blocking)했으므로 P5는 이제 develop_code에 한해 실 security_pass를 AND할 수 있다. 다만 design_ui/security_audit WP는 여전히 빈 plan(자기검증 부재)이라 auto-pass — 이 WP들에 대한 게이트를 P5에서 먼저 닫으면 채널 skip이 fail-open을 fail-closed로 위장(M1/N1 위반)한다. 4d 잔여(Tester 적대 측면·design_ui/security_audit WP 자기검증)가 그 갭을 메운다.
 
