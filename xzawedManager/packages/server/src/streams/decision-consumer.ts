@@ -20,7 +20,11 @@ export type DecisionEventMessage = z.infer<typeof DecisionEventSchema>
 
 /** B1 동시성: 같은 manager:decision:main 스트림을 두 소비자 그룹이 구독한다. BaseConsumer 멱등 마커
  *  idem:{stream}:{key}에는 그룹 성분이 없어 한 그룹이 다른 그룹의 마커를 선점하면(no-op type이어도)
- *  상대 그룹이 handler를 건너뛴다. dedup 키를 그룹으로 네임스페이싱해 두 그룹의 마커를 분리한다. */
+ *  상대 그룹이 handler를 건너뛴다. dedup 키를 그룹으로 네임스페이싱해 두 그룹의 마커를 분리한다.
+ *  ⚠️ redrive 불변식: 이 스트림의 DLQ 재처리(redriveDlq)는 un-scoped `idem:{stream}:{k}`를 삭제하므로
+ *  group-scoped 마커를 못 지운다. 현재 안전한 이유는 두 핸들러가 never-throw라 handler_failed DLQ(마커가
+ *  설정되는 유일 경로)가 도달 불가하고 invalid_schema DLQ는 isDuplicate 전에 발생하기 때문이다. 향후
+ *  핸들러에 throw 경로를 추가하면 redrive가 group-scoped 마커에 막힐 수 있으니 그때 redrive를 그룹 인식으로 확장할 것. */
 export function groupScopedDedupKey(group: string, msg: DecisionEventMessage): string | null {
   const k = defaultDedupKey(msg)
   return k === null ? null : `${group}:${k}`
