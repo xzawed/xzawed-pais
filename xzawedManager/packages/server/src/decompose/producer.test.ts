@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { ClaudeLike } from '@xzawed/agent-streams'
+import type { ClaudeLike, BudgetCircuitBreaker } from '@xzawed/agent-streams'
 import { produceDecomposition, DECOMPOSE_STREAM, type ProduceDeps } from './producer.js'
 
 /** 단계 순서대로 응답하는 mock claude. */
@@ -110,5 +110,28 @@ describe('produceDecomposition (P2-3b)', () => {
     const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
     await produceDecomposition('do Z', 'wf-fb-uc', deps(claude, publish), uc)
     expect(publish.mock.calls[0]![1].payload.userContext).toEqual(uc)
+  })
+
+  it('G1: budget breaker 주입 시 budget.check(workflowId) 호출됨', async () => {
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const budget: BudgetCircuitBreaker = {
+      check: vi.fn(),
+      record: vi.fn(),
+    } as unknown as BudgetCircuitBreaker
+    const res = await produceDecomposition('build a thing', 'wf-1', {
+      ...deps(stagedClaude(EPICS, STORY_D1, DELIVS_D1, ROLES), publish),
+      budget,
+    })
+    expect(budget.check).toHaveBeenCalledWith('wf-1')
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(res.escalated).toBe(false)
+  })
+
+  it('G1: breaker 미주입 시 정상 완료(회귀 0)', async () => {
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const res = await produceDecomposition('build a thing', 'wf-no-circuit', deps(stagedClaude(EPICS, STORY_D1, DELIVS_D1, ROLES), publish))
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(res.escalated).toBe(false)
+    expect(res.emitted).toBeGreaterThan(0)
   })
 })

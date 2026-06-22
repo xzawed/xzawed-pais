@@ -470,6 +470,10 @@ export async function buildServer(
         log: (msg, data) => app.log.info(data ?? {}, msg),
         // P3-2: ok 경로에서 draft 스테이지 실행 → oracleDrafts emit(off면 []·회귀 0).
         draftOracles: config.MANAGER_ORACLE_DRAFT,
+        // G1: §13 서킷(러너·risk와 동일 인스턴스 공유). 미주입이면 무보호(회귀 0).
+        ...(budget && { budget: budget.breaker }),
+        ...(providerCircuit && { provider: providerCircuit.breaker }),
+        isProviderFailure,
       }
     : undefined
   if (config.MANAGER_DECOMPOSE_ENABLED) {
