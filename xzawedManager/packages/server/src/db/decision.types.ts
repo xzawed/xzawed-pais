@@ -51,7 +51,7 @@ export type DecisionContext = z.infer<typeof DecisionContextSchema>
 
 export const DecisionRequestSchema = z.object({
   requestId: z.string().min(1),
-  type: z.enum(['defect_brief', 'conformance_review', 'gate_override', 'degraded_release', 'oracle_approval', 'golden_diff', 'safe_resume', 'risk_classification']),
+  type: z.enum(['defect_brief', 'conformance_review', 'gate_override', 'degraded_release', 'oracle_approval', 'golden_diff', 'safe_resume', 'risk_classification', 'degraded_dispatch']),
   workflowId: z.string().min(1),
   wpId: z.string().nullable().default(null),
   /** 워크플로 이벤트 로그(spec §16) 상관키 — 보통 workflowId. */
