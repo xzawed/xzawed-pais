@@ -198,6 +198,17 @@ const configSchema = z
     // D5: tier→concrete model id(claude-api 최신). routeModels의 'opus'/'sonnet' tier를 이 id로 해석.
     MANAGER_MODEL_OPUS: z.string().default('claude-opus-4-8'),
     MANAGER_MODEL_SONNET: z.string().default('claude-sonnet-4-6'),
+    // P5-3a 운영 강등 모드 FSM(기본 false). true면 ModeController(IntervalSweeper)가 주기적으로
+    // provider 서킷/budget 신호를 읽어 NORMAL/DEGRADED/SAFE 모드를 추적·전이 시 로그(observe-only).
+    // enforcement(SAFE 디스패치 보류 등)는 P5-3b 후속. off면 ModeController 미생성(회귀 0).
+    MANAGER_DEGRADED_MODE: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
+    // P5-3a: 모드 sweep 주기(ms). 잘못된 값은 거부(양의 정수). 기본 5000ms.
+    MANAGER_MODE_SWEEP_MS: z.coerce.number().int().positive().default(5000),
+    // P5-3a: 호전 히스테리시스 안정 윈도(ms). 이 시간 동안 저severity 신호가 유지되어야 복귀(1단계씩). 기본 60000ms.
+    MANAGER_MODE_STABILITY_WINDOW_MS: z.coerce.number().int().positive().default(60000),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

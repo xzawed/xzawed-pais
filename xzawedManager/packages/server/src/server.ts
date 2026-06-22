@@ -46,6 +46,7 @@ import { oracleRoute } from './api/oracle.route.js'
 import { decisionRoute } from './api/decision.route.js'
 import { riskRoute } from './api/risk.route.js'
 import { createSupervisor, shouldWireSupervisor, shouldWireDecisionRoute, type Supervisor } from './streams/supervisor.js'
+import { ModeController } from './streams/mode-controller.js'
 import type { ProduceDeps } from './decompose/producer.js'
 import type { RiskClassifyDeps } from './decompose/risk-producer.js'
 import { RiskClassificationRepo } from './db/risk-classification.repo.js'
@@ -154,6 +155,27 @@ export async function buildServer(
     app.log.info(
       `[provider-circuit] §13 서킷브레이커 가동 — threshold=${config.MANAGER_PROVIDER_CIRCUIT_THRESHOLD} cooldown=${config.MANAGER_PROVIDER_CIRCUIT_COOLDOWN_MS}ms`,
     )
+  }
+  // P5-3a 운영 강등 모드 추적기(observe-only): MANAGER_DEGRADED_MODE=true면 provider 서킷/budget 신호를
+  // 주기 sweep으로 읽어 NORMAL/DEGRADED/SAFE 모드 전이 시 구조적 로그(M8). getMode() 노출 — enforcement는
+  // P5-3b 후속. off면 미생성(회귀 0·budget/providerCircuit 없어도 경고만).
+  const modeController = config.MANAGER_DEGRADED_MODE
+    ? new ModeController(
+        {
+          signals: () => ({
+            providerCircuitOpen: providerCircuit?.breaker.snapshot().state === 'open',
+            budgetDailyTripped: budget?.breaker.dailyTripped() ?? false,
+          }),
+          stabilityWindowMs: config.MANAGER_MODE_STABILITY_WINDOW_MS,
+          onTransition: (from, to, reason) =>
+            app.log.warn(`[mode] 운영 모드 전이 ${from}→${to} (${reason})`),
+        },
+        config.MANAGER_MODE_SWEEP_MS,
+      )
+    : undefined
+  modeController?.start()
+  if (config.MANAGER_DEGRADED_MODE && !budget && !providerCircuit) {
+    app.log.warn('MANAGER_DEGRADED_MODE=true 이지만 budget/provider 서킷이 둘 다 미구성 — 강등 신호원이 없습니다.')
   }
   const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry, knowledgeRepo, undefined, budget, providerCircuit)
   const producer = new StreamProducer(config.REDIS_URL)
@@ -611,6 +633,7 @@ export async function buildServer(
   })
 
   const closeAll = async () => {
+    modeController?.stop()
     supervisor?.stop()
     outboxRelay?.stop()
     sessionGateway.stop()
