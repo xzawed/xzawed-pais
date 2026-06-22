@@ -3,7 +3,7 @@ import { makeEnvelope } from '@xzawed/agent-streams'
 import {
   buildCompletionHandler, CompletionSignalSchema, Supervisor, createSupervisor, shouldWireSupervisor,
   shouldWireOracleConsumer, shouldWireDecisionRoute, shouldWireRiskConsumer, buildWorkerConsumerDeps,
-  drainHeld,
+  drainHeld, buildDispatchGate,
 } from './supervisor.js'
 import type { LeaseStore } from '../db/lease.repo.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -479,5 +479,42 @@ describe('Supervisor.resumeDispatch', () => {
     const sweeper = { start: () => {}, stop: () => {} }
     const sup = new Supervisor({ decompositionConsumer: noop, completionConsumer: noop, leaseSweeper: sweeper })
     await expect(sup.resumeDispatch()).resolves.toBeUndefined()
+  })
+})
+
+describe('buildDispatchGate (P5-3b)', () => {
+  it('getMode 미주입이면 base dispatch 그대로 반환·resumeDispatch undefined(회귀 0)', () => {
+    const base = { repo: {} as never, store: {} as never, visibilityMs: 5000 }
+    const result = buildDispatchGate(base, undefined)
+    expect(result.dispatch).toBe(base)
+    expect(result.resumeDispatch).toBeUndefined()
+    expect('getMode' in result.dispatch).toBe(false)
+    expect('onHeld' in result.dispatch).toBe(false)
+  })
+
+  it('getMode 주입 시 dispatch에 getMode·onHeld 합류·resumeDispatch는 함수', () => {
+    const base = { repo: {} as never, store: {} as never, visibilityMs: 5000 }
+    const getMode = () => 'SAFE' as const
+    const result = buildDispatchGate(base, getMode)
+    expect(result.dispatch.getMode).toBe(getMode)
+    expect(typeof result.dispatch.onHeld).toBe('function')
+    expect(typeof result.resumeDispatch).toBe('function')
+    // base 객체 자체는 변경되지 않아야 함(순수)
+    expect('getMode' in base).toBe(false)
+  })
+
+  it('onHeld로 held-set에 쌓인 wf를 resumeDispatch가 드레인(repo.getGraph 각 wf로 호출)', async () => {
+    const getGraph = vi.fn().mockResolvedValue(null)
+    const base = {
+      repo: { getGraph, latestStates: vi.fn().mockResolvedValue([]) } as never,
+      store: {} as never,
+      visibilityMs: 5000,
+    }
+    const { dispatch, resumeDispatch } = buildDispatchGate(base, () => 'SAFE' as const)
+    dispatch.onHeld!('wf-1')
+    dispatch.onHeld!('wf-2')
+    await resumeDispatch!()
+    expect(getGraph).toHaveBeenCalledWith('wf-1')
+    expect(getGraph).toHaveBeenCalledWith('wf-2')
   })
 })

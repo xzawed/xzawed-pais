@@ -265,6 +265,22 @@ export async function drainHeld(held: Set<string>, dispatchOne: (workflowId: str
   }
 }
 
+/** P5-3b: 디스패치 게이트 조립(순수·테스트 가능). getMode 미주입이면 base 그대로(회귀 0)·resumeDispatch 없음.
+ *  주입 시 dispatch에 getMode + onHeld(held-set add) 합류 + held-set을 드레인해 재디스패치하는 resumeDispatch 산출.
+ *  createSupervisor가 호출 — getMode↔held-set↔resumeDispatch 글루를 단일 단위로 단언 가능하게 분리. */
+export function buildDispatchGate(
+  base: DispatchDeps,
+  getMode: (() => OperationalMode) | undefined,
+): { dispatch: DispatchDeps; resumeDispatch?: () => Promise<void> } {
+  if (!getMode) return { dispatch: base }
+  const held = new Set<string>()
+  const dispatch: DispatchDeps = { ...base, getMode, onHeld: (wf: string) => held.add(wf) }
+  const resumeDispatch = async (): Promise<void> => {
+    await drainHeld(held, async (wf) => { await handleDispatch(wf, dispatch) })
+  }
+  return { dispatch, resumeDispatch }
+}
+
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
 export function shouldWireOracleConsumer(oracleDor: boolean, hasOracleStore: boolean): boolean {
   return oracleDor && hasOracleStore
@@ -349,14 +365,14 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
   // P4-1: taskWorker flag + 핸들러 주입 둘 다 있어야 워커 배선(순수 게이트). 배선 시 dispatch/reclaim이
   // wp.dispatch_signal을 발행하고 WorkerConsumer가 이를 소비. off면 publish 미주입 → 신호 미발행(회귀 0).
   const workerActive = shouldWireWorker(config.taskWorker, deps.handlers !== undefined)
-  const heldWorkflows = new Set<string>()
-  const dispatch: DispatchDeps = {
+  const baseDispatch: DispatchDeps = {
     repo: deps.repo, store: deps.dispatchStore, visibilityMs: config.visibilityMs,
     ...(dorActive && { oracleStore: deps.oracleStore }),
     ...(workerActive && { publish: deps.publish }),
-    // P5-3b: getMode 주입(enforce) 시 SAFE면 held 보류 + onHeld로 held-set 적재. 미주입이면 둘 다 생략(회귀 0).
-    ...(deps.getMode && { getMode: deps.getMode, onHeld: (wf: string) => heldWorkflows.add(wf) }),
   }
+  // P5-3b: buildDispatchGate가 getMode↔held-set↔resumeDispatch 글루를 단일 단위로 조립.
+  // getMode 미주입이면 dispatch=baseDispatch 그대로·resumeDispatch undefined(회귀 0).
+  const { dispatch, resumeDispatch } = buildDispatchGate(baseDispatch, deps.getMode)
 
   const decompositionConsumer = new DecompositionConsumer(
     makeRedis(), deps.repo, deps.publish, undefined,
@@ -486,12 +502,6 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
       )
     : undefined
 
-  // P5-3b: SAFE 이탈 시 held 워크플로를 재디스패치(이미 모드≠SAFE → 정상 디스패치). getMode 미주입이면
-  // heldWorkflows가 영원히 비어 no-op이지만, 컴포넌트는 getMode 주입 시에만 배선(회귀 0 명시).
-  const resumeDispatch = async (): Promise<void> => {
-    await drainHeld(heldWorkflows, async (wf) => { await handleDispatch(wf, dispatch) })
-  }
-
   return new Supervisor({
     decompositionConsumer, completionConsumer, leaseSweeper,
     ...(oracleConsumer && { oracleConsumer }),
@@ -501,6 +511,6 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     ...(signoffConsumer && { signoffConsumer }),
     ...(decisionSweeper && { decisionSweeper }),
     ...(decisionExpiryConsumer && { decisionExpiryConsumer }),
-    ...(deps.getMode && { resumeDispatch }),
+    ...(resumeDispatch && { resumeDispatch }),
   })
 }
