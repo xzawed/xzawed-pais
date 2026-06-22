@@ -1,5 +1,5 @@
-import type { WorkPackage } from '@xzawed/agent-streams'
-import { runStage, type StageDeps, type StageSpec } from '../decompose/stages/run-stage.js'
+import type { WorkPackage, BudgetCircuitBreaker, ProviderCircuitBreaker } from '@xzawed/agent-streams'
+import { runStage, buildStageCircuit, type StageDeps, type StageSpec } from '../decompose/stages/run-stage.js'
 import {
   AdvisoryFindingsResultSchema, MAX_ADVISORY_FINDINGS,
   type AdvisoryFinding, type AdvisoryFindingsResult,
@@ -13,6 +13,10 @@ export interface AdvisoryStore {
 /** produceAdvisory 의존: LLM seam(StageDeps=claude/model/timeoutMs) + 영속 포트. */
 export interface AdvisoryProducerDeps extends StageDeps {
   advisoryStore: AdvisoryStore
+  /** G1: §13 서킷(러너·decompose와 동일 인스턴스). 미주입이면 무보호(회귀 0). */
+  budget?: BudgetCircuitBreaker
+  provider?: ProviderCircuitBreaker
+  isProviderFailure?: (err: unknown) => boolean
 }
 
 const ADVISORY_SYSTEM =
@@ -42,7 +46,12 @@ export async function produceAdvisory(
   workflowId: string, wp: WorkPackage, attempt: number, result: unknown, deps: AdvisoryProducerDeps,
 ): Promise<void> {
   try {
-    const stageDeps: StageDeps = { claude: deps.claude, model: deps.model, timeoutMs: deps.timeoutMs }
+    const circuit = buildStageCircuit(workflowId, {
+      ...(deps.budget && { budget: deps.budget }),
+      ...(deps.provider && { provider: deps.provider }),
+      ...(deps.isProviderFailure && { isProviderFailure: deps.isProviderFailure }),
+    })
+    const stageDeps: StageDeps = { claude: deps.claude, model: deps.model, timeoutMs: deps.timeoutMs, ...(circuit && { circuit }) }
     const spec: StageSpec<AdvisoryFindingsResult> = {
       system: ADVISORY_SYSTEM,
       user: buildAdvisoryUser(wp, summarizeArtifacts(result)),

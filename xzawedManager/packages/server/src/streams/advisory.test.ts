@@ -1,5 +1,5 @@
 import { describe, test, expect, vi } from 'vitest'
-import type { WorkPackage } from '@xzawed/agent-streams'
+import type { WorkPackage, BudgetCircuitBreaker } from '@xzawed/agent-streams'
 import { produceAdvisory } from './advisory.js'
 import type { AdvisoryStore } from './advisory.js'
 
@@ -58,5 +58,32 @@ describe('produceAdvisory', () => {
     const args = (store.recordFindings as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(args[3]).toHaveLength(8)
     expect(args[3][7].rank).toBe(8)
+  })
+})
+
+describe('produceAdvisory — G1 서킷 배선', () => {
+  test('budget breaker 주입 시 check(workflowId)가 호출된다', async () => {
+    const store: AdvisoryStore = { recordFindings: vi.fn().mockResolvedValue(undefined) }
+    const claude = claudeReturning(JSON.stringify({ findings: [{ title: 'a', rationale: 'ra' }] }))
+    const budget = { check: vi.fn(), record: vi.fn() } as unknown as BudgetCircuitBreaker
+    await produceAdvisory('wf-1', wp, 0, result, { ...baseDeps(claude, store), budget })
+    expect(budget.check).toHaveBeenCalledWith('wf-1')
+  })
+
+  test('budget breaker 미주입이면 resolves(never-throw·회귀 0)', async () => {
+    const store: AdvisoryStore = { recordFindings: vi.fn().mockResolvedValue(undefined) }
+    const claude = claudeReturning(JSON.stringify({ findings: [{ title: 'a', rationale: 'ra' }] }))
+    // budget 미주입 → circuit undefined → 기존 경로(회귀 0)
+    await expect(produceAdvisory('wf-1', wp, 0, result, baseDeps(claude, store))).resolves.toBeUndefined()
+    expect(store.recordFindings).toHaveBeenCalledTimes(1)
+  })
+
+  test('budget breaker trip(check throw)해도 produceAdvisory never-throw(N3)', async () => {
+    const store: AdvisoryStore = { recordFindings: vi.fn().mockResolvedValue(undefined) }
+    const claude = claudeReturning(JSON.stringify({ findings: [{ title: 'a', rationale: 'ra' }] }))
+    const budget = { check: vi.fn().mockImplementation(() => { throw new Error('budget exceeded') }), record: vi.fn() } as unknown as BudgetCircuitBreaker
+    await expect(produceAdvisory('wf-1', wp, 0, result, { ...baseDeps(claude, store), budget })).resolves.toBeUndefined()
+    // circuit open → fallback → findings=[] → recordFindings 미호출
+    expect(store.recordFindings).not.toHaveBeenCalled()
   })
 })

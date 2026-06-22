@@ -7,6 +7,8 @@ export interface StageDeps {
   claude: ClaudeLike
   model: string
   timeoutMs: number
+  /** G1: §13 서킷(budget/provider). 설정 시 runStage가 pre-gate+record. 미설정이면 기존 경로(회귀 0). */
+  circuit?: StageCircuit
 }
 
 /** 한 단계의 프롬프트·스키마·degrade 명세. 응답은 래핑 오브젝트 가정. */
@@ -46,7 +48,7 @@ export interface StageCircuit {
  * circuit 전달 시: provider.before()+budget.check(wf) pre-gate → callClaudeTextWithUsage → onSuccess/record.
  * circuit 미전달이면 기존 callClaudeText 경로(바이트 동일·회귀 0).
  */
-export async function runStage<T>(deps: StageDeps, spec: StageSpec<T>, circuit?: StageCircuit): Promise<T> {
+export async function runStage<T>(deps: StageDeps, spec: StageSpec<T>, circuit: StageCircuit | undefined = deps.circuit): Promise<T> {
   if (circuit) {
     try {
       circuit.provider?.before()
@@ -72,5 +74,19 @@ export async function runStage<T>(deps: StageDeps, spec: StageSpec<T>, circuit?:
   } catch (err) {
     if (circuit?.isProviderFailure?.(err)) circuit.provider?.onFailure()
     return spec.fallback()
+  }
+}
+
+/** G1: workflowId + breaker들로 StageCircuit 구성(없으면 undefined). risk/decompose/advisory 공유(DRY). */
+export function buildStageCircuit(
+  workflowId: string,
+  breakers: { budget?: BudgetCircuitBreaker; provider?: ProviderCircuitBreaker; isProviderFailure?: (err: unknown) => boolean },
+): StageCircuit | undefined {
+  if (!breakers.budget && !breakers.provider) return undefined
+  return {
+    workflowId,
+    ...(breakers.budget && { budget: breakers.budget }),
+    ...(breakers.provider && { provider: breakers.provider }),
+    ...(breakers.isProviderFailure && { isProviderFailure: breakers.isProviderFailure }),
   }
 }

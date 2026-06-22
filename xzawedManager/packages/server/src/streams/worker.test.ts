@@ -463,3 +463,31 @@ describe('handleWpDispatchSignal — lease 하트비트(하드닝)', () => {
     expect((await handleWpDispatchSignal(sig(), d)).status).toBe('completed')
   })
 })
+
+describe('handleWpDispatchSignal — G1 advisory 서킷 스레딩', () => {
+  it('budget 주입 시 advisory 경로에서 budget.check가 호출된다', async () => {
+    const advisoryStore = { recordFindings: vi.fn().mockResolvedValue(undefined) }
+    const budgetCheck = vi.fn()
+    const budget = { check: budgetCheck, record: vi.fn() } as never
+    const claudeMock = { messages: { create: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: JSON.stringify({ findings: [{ title: 'a', rationale: 'r' }] }) }] }) } }
+    const d = deps({
+      advisoryEnabled: true, advisoryStore, budget,
+      claude: claudeMock as never, model: 'm', timeoutMs: 1000,
+    })
+    const out = await handleWpDispatchSignal(sig(), d)
+    expect(out.status).toBe('completed')
+    expect(budgetCheck).toHaveBeenCalledWith('wf1')
+  })
+
+  it('breaker 미주입이면 advisory completed(회귀 0·never-throw)', async () => {
+    const advisoryStore = { recordFindings: vi.fn().mockResolvedValue(undefined) }
+    const claudeMock = { messages: { create: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: JSON.stringify({ findings: [{ title: 'a', rationale: 'r' }] }) }] }) } }
+    const d = deps({
+      advisoryEnabled: true, advisoryStore,
+      claude: claudeMock as never, model: 'm', timeoutMs: 1000,
+    })
+    const out = await handleWpDispatchSignal(sig(), d)
+    expect(out.status).toBe('completed')
+    expect(advisoryStore.recordFindings).toHaveBeenCalledTimes(1)
+  })
+})

@@ -394,6 +394,10 @@ export async function buildServer(
         // P4: advisory 영속소 + LLM seam(=MANAGER_WP_ADVISORY). buildWorkerConsumerDeps가 advisoryStore 동반 시만 활성.
         ...(advisoryStore && { advisoryStore }),
         ...(config.MANAGER_WP_ADVISORY && { claude: client, model: config.CLAUDE_MODEL, timeoutMs: config.CLAUDE_TIMEOUT_MS }),
+        // G1: §13 서킷(advisory 경로 보호·러너·decompose와 동일 인스턴스 공유).
+        ...(budget && { budget: budget.breaker }),
+        ...(providerCircuit && { provider: providerCircuit.breaker }),
+        isProviderFailure,
         // P5-1: 릴리스 게이트 증거/결과 영속소(ReleaseGateRepo). releaseGate flag + 주입 시 게이트 평가.
         ...(releaseStore && { releaseStore }),
         // C5: DecisionRecordedConsumer에 riskStore 주입 → approve 분기 활성. MANAGER_RISK_DECISION 게이트로
@@ -470,6 +474,10 @@ export async function buildServer(
         log: (msg, data) => app.log.info(data ?? {}, msg),
         // P3-2: ok 경로에서 draft 스테이지 실행 → oracleDrafts emit(off면 []·회귀 0).
         draftOracles: config.MANAGER_ORACLE_DRAFT,
+        // G1: §13 서킷(러너·risk와 동일 인스턴스 공유). 미주입이면 무보호(회귀 0).
+        ...(budget && { budget: budget.breaker }),
+        ...(providerCircuit && { provider: providerCircuit.breaker }),
+        isProviderFailure,
       }
     : undefined
   if (config.MANAGER_DECOMPOSE_ENABLED) {

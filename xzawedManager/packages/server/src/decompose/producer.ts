@@ -1,7 +1,8 @@
 import { makeEnvelope } from '@xzawed/agent-streams'
-import type { ClaudeLike, WorkPackage } from '@xzawed/agent-streams'
+import type { ClaudeLike, WorkPackage, BudgetCircuitBreaker, ProviderCircuitBreaker } from '@xzawed/agent-streams'
 import { runDecomposition, fallbackWorkPackages, DEFAULT_REPAIR_MAX, type DecomposeResult } from './pipeline.js'
 import { defaultInconsistentStream, type InconsistentReason } from '../streams/decomposition-consumer.js'
+import { buildStageCircuit } from './stages/run-stage.js'
 import type { OracleDraft } from '../db/oracle.types.js'
 import type { UserContext } from '../types/user-context.js'
 
@@ -24,6 +25,10 @@ export interface ProduceDeps {
   log?: (msg: string, data?: Record<string, unknown>) => void
   /** P7 초안 생성(MANAGER_ORACLE_DRAFT). server.ts 주입. */
   draftOracles?: boolean
+  /** G1: §13 budget/provider 서킷(러너·risk와 동일 인스턴스). 미주입이면 무보호(회귀 0). */
+  budget?: BudgetCircuitBreaker
+  provider?: ProviderCircuitBreaker
+  isProviderFailure?: (err: unknown) => boolean
 }
 
 export interface ProduceResult {
@@ -63,11 +68,16 @@ export async function produceDecomposition(
   deps: ProduceDeps,
   userContext?: UserContext,
 ): Promise<ProduceResult> {
+  const circuit = buildStageCircuit(workflowId, {
+    ...(deps.budget && { budget: deps.budget }),
+    ...(deps.provider && { provider: deps.provider }),
+    ...(deps.isProviderFailure && { isProviderFailure: deps.isProviderFailure }),
+  })
   let result: DecomposeResult
   try {
     result = await runDecomposition(
       intent,
-      { claude: deps.claude, model: deps.model, timeoutMs: deps.timeoutMs ?? DEFAULT_TIMEOUT_MS },
+      { claude: deps.claude, model: deps.model, timeoutMs: deps.timeoutMs ?? DEFAULT_TIMEOUT_MS, ...(circuit && { circuit }) },
       deps.repairMax ?? DEFAULT_REPAIR_MAX,
       deps.draftOracles ?? false,
     )
