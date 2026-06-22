@@ -190,3 +190,35 @@ describe('groupScopedDedupKey (B1 그룹-스코프 dedup)', () => {
     expect(groupScopedDedupKey(EXPIRY_GROUP, m)).toBeNull()
   })
 })
+
+// ---------------------------------------------------------------------------
+// N2: accept_known degraded_dispatch + redispatch
+// ---------------------------------------------------------------------------
+
+describe('buildDecisionRecordedHandler N2 degraded_dispatch', () => {
+  it('N2: accept_known + degraded_dispatch → recordSignOff(scope degraded_dispatch) + redispatch', async () => {
+    const recordSignOff = vi.fn().mockResolvedValue({ eventId: 'e1' })
+    const redispatch = vi.fn().mockResolvedValue(undefined)
+    const getRequest = vi.fn().mockResolvedValue({ requestId: 'r1', type: 'degraded_dispatch', workflowId: 'wf-1', wpId: 'wp-a' })
+    const handler = buildDecisionRecordedHandler({
+      decisionStore: { getRequest }, leaseStore: { reopenLease: vi.fn() }, publish: vi.fn(), visibilityMs: 1000,
+      signoffStore: { recordSignOff }, redispatch,
+    } as never)
+    await handler({ envelope: { workflowId: 'wf-1' } as never, type: 'decision.recorded', payload: { requestId: 'r1', choice: 'accept_known', decisionId: 'd1', decidedBy: 'alice' } } as never)
+    expect(recordSignOff).toHaveBeenCalledWith(expect.objectContaining({ scope: 'degraded_dispatch', approver: 'alice', decisionId: 'd1' }))
+    expect(redispatch).toHaveBeenCalledWith('wf-1')
+  })
+
+  it('N2: accept_known + degraded_release는 기존 동작 보존(scope release·redispatch 미호출)', async () => {
+    const recordSignOff = vi.fn().mockResolvedValue({ eventId: 'e1' })
+    const redispatch = vi.fn().mockResolvedValue(undefined)
+    const getRequest = vi.fn().mockResolvedValue({ requestId: 'r1', type: 'degraded_release', workflowId: 'wf-1', wpId: null })
+    const handler = buildDecisionRecordedHandler({
+      decisionStore: { getRequest }, leaseStore: { reopenLease: vi.fn() }, publish: vi.fn(), visibilityMs: 1000,
+      signoffStore: { recordSignOff }, redispatch,
+    } as never)
+    await handler({ envelope: { workflowId: 'wf-1' } as never, type: 'decision.recorded', payload: { requestId: 'r1', choice: 'accept_known', decisionId: 'd1', decidedBy: 'alice' } } as never)
+    expect(recordSignOff).toHaveBeenCalledWith(expect.objectContaining({ scope: 'release' }))
+    expect(redispatch).not.toHaveBeenCalled()
+  })
+})

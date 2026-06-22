@@ -14,6 +14,7 @@ import { DecisionRecordedConsumer, type DecisionRoutingDeps } from './decision-c
 import { DecisionExpiredConsumer } from './decision-expiry-consumer.js'
 import { ReleaseSignoffConsumer } from './release-consumer.js'
 import { makeSignoffBrief } from './signoff-brief.js'
+import { makeDegradedDispatchBrief } from './degraded-signoff-brief.js'
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
 import type { AdvisoryStore } from './advisory.js'
 import type { SecuritySeverity } from './verify.js'
@@ -176,6 +177,8 @@ export interface SupervisorDeps {
     recordSignOff(input: { signoffId: string; decisionId: string; scope: string; approver: string; risk?: string; reason?: string | null }): Promise<{ eventId: string } | null>
     expiredPendingRequests(now: number, limit: number): Promise<string[]>
     expireRequest(requestId: string): Promise<{ eventId: string } | null>
+    /** N2: degraded_dispatch 승인 조회(dispatch 게이트가 소비). */
+    hasApprovedDegradedDispatch(workflowId: string, wpId: string): Promise<boolean>
   }
   /** P4 advisory 채널 영속소(AdvisoryRepo). advisoryStore + wpAdvisory면 워커가 produceAdvisory 호출. */
   advisoryStore?: AdvisoryStore
@@ -234,6 +237,8 @@ export interface SupervisorConfig {
   releaseGate?: boolean
   /** P5-2a: gate.blocked→사인오프 DecisionRequest 라우팅(=MANAGER_RELEASE_SIGNOFF). 전제 releaseGate+decisionRouting. */
   releaseSignoff?: boolean
+  /** N2: DEGRADED HIGH-risk 디스패치 사인오프(=MANAGER_DEGRADED_SIGNOFF). 전제 decisionStore+getMode(enforce). */
+  degradedSignoff?: boolean
   /** B1: 결정 만료 sweep(=MANAGER_DECISION_EXPIRY). off면 sweep 미배선·expiresAt 미주입(회귀 0). decisionStore 동반 필요. */
   decisionExpiry?: boolean
   decisionSweepMs?: number
@@ -289,6 +294,11 @@ export function shouldWireOracleConsumer(oracleDor: boolean, hasOracleStore: boo
 /** P2r-4 risk 소비자 배선 판정(순수): riskRouting flag + graphStore(=repo) 주입 둘 다. */
 export function shouldWireRiskConsumer(riskRouting: boolean, hasGraphStore: boolean): boolean {
   return riskRouting && hasGraphStore
+}
+
+/** N2: degraded_dispatch 사인오프 배선 판정(순수). flag + decisionStore 주입 둘 다. */
+export function shouldWireDegradedSignoff(degradedSignoff: boolean, hasDecisionStore: boolean): boolean {
+  return degradedSignoff && hasDecisionStore
 }
 
 /** P6: 결정 제출 라우트 배선 판정(순수). 권한 쓰기(재진입 트리거)라 authHook 없으면 미등록(보안 HIGH-3). */
@@ -365,10 +375,21 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
   // P4-1: taskWorker flag + 핸들러 주입 둘 다 있어야 워커 배선(순수 게이트). 배선 시 dispatch/reclaim이
   // wp.dispatch_signal을 발행하고 WorkerConsumer가 이를 소비. off면 publish 미주입 → 신호 미발행(회귀 0).
   const workerActive = shouldWireWorker(config.taskWorker, deps.handlers !== undefined)
+  // B1: TTL 옵션(decisionExpiry+decisionTtlMs일 때만). exactOptionalPropertyTypes — 미설정이면 undefined 키 생략.
+  // ⚠️ briefOpts를 baseDispatch 위로 이동: makeDegradedDispatchBrief(deps.decisionStore, briefOpts)가 baseDispatch 객체
+  // 내에서 참조하므로 선행 정의 필요. config만 의존 — 의미 무변경.
+  const briefOpts = config.decisionExpiry && config.decisionTtlMs !== undefined ? { ttlMs: config.decisionTtlMs } : undefined
+  // N2: degradedSignoff 배선 활성 판정(순수 게이트 위임). flag + decisionStore 주입 둘 다 있어야 활성(회귀 0).
+  const degradedSignoffActive = shouldWireDegradedSignoff(config.degradedSignoff === true, deps.decisionStore != null)
   const baseDispatch: DispatchDeps = {
     repo: deps.repo, store: deps.dispatchStore, visibilityMs: config.visibilityMs,
     ...(dorActive && { oracleStore: deps.oracleStore }),
     ...(workerActive && { publish: deps.publish }),
+    // N2: DEGRADED+HIGH-risk WP 보류 콜백 — 활성 시에만 주입(exactOptionalPropertyTypes 스프레드 idiom·회귀 0).
+    ...(degradedSignoffActive && deps.decisionStore && {
+      isHighRiskDispatchApproved: (wf: string, wpId: string) => deps.decisionStore!.hasApprovedDegradedDispatch(wf, wpId),
+      onDegradedHighRisk: makeDegradedDispatchBrief(deps.decisionStore, briefOpts),
+    }),
   }
   // P5-3b: buildDispatchGate가 getMode↔held-set↔resumeDispatch 글루를 단일 단위로 조립.
   // getMode 미주입이면 dispatch=baseDispatch 그대로·resumeDispatch undefined(회귀 0).
@@ -396,8 +417,6 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     CompletionSignalSchema as ZodType<CompletionSignalMessage>,
   )
 
-  // B1: TTL 옵션(decisionExpiry+decisionTtlMs일 때만). exactOptionalPropertyTypes — 미설정이면 undefined 키 생략.
-  const briefOpts = config.decisionExpiry && config.decisionTtlMs !== undefined ? { ttlMs: config.decisionTtlMs } : undefined
   // P6: decisionBrief flag + decisionStore 주입 둘 다 있어야 escalation→DecisionRequest 브리프 배선(회귀 0).
   const briefStore = config.decisionBrief ? deps.decisionStore : undefined
   const leaseSweeper = new LeaseSweeper(
@@ -482,10 +501,12 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
           leaseStore: deps.leaseStore,
           publish: deps.publish,
           visibilityMs: config.visibilityMs,
-          // P5-2a: accept_known 사인오프 활성 — decisionConsumer가 signoffStore로 사인오프 영속.
-          ...(config.releaseSignoff && deps.decisionStore && { signoffStore: deps.decisionStore }),
+          // P5-2a/N2: accept_known 사인오프 — release(P5-2a) 또는 degraded_dispatch(N2) 시 signoffStore 필요.
+          ...((config.releaseSignoff || config.degradedSignoff) && deps.decisionStore && { signoffStore: deps.decisionStore }),
           // C5: approve→RiskClassificationRepo.approve 분기용.
           ...(deps.riskStore && { riskStore: deps.riskStore }),
+          // N2: accept_known degraded_dispatch → 재디스패치(승인 WP 통과). 활성 시만 주입. void: DecisionRoutingDeps.redispatch는 Promise<void>.
+          ...(degradedSignoffActive && { redispatch: async (wf: string) => { await handleDispatch(wf, dispatch) } }),
         } satisfies DecisionRoutingDeps,
       )
     : undefined
