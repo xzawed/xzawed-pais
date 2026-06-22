@@ -17,7 +17,7 @@ import { makeSignoffBrief } from './signoff-brief.js'
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
 import type { AdvisoryStore } from './advisory.js'
 import type { SecuritySeverity } from './verify.js'
-import type { ClaudeLike, WpRisk, BudgetCircuitBreaker, ProviderCircuitBreaker } from '@xzawed/agent-streams'
+import type { ClaudeLike, WpRisk, BudgetCircuitBreaker, ProviderCircuitBreaker, OperationalMode } from '@xzawed/agent-streams'
 import type { ConformanceOracleStore, ImpactOracleStore, InvariantOracleStore } from './conformance.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
@@ -86,6 +86,8 @@ export interface SupervisorComponents {
   decisionSweeper?: SweeperLike
   /** B1: decision.expired 소비자(decisionExpiry+decisionStore 주입 시만 배선). */
   decisionExpiryConsumer?: ConsumerLike
+  /** P5-3b: SAFE 이탈 복구 — held 워크플로 재디스패치(getMode 주입 시만 배선·미주입이면 no-op). */
+  resumeDispatch?: () => Promise<void>
 }
 
 /**
@@ -141,6 +143,11 @@ export class Supervisor {
     this.components.decisionSweeper?.stop()
     this.components.decisionExpiryConsumer?.stop()
   }
+
+  /** P5-3b: 강등 SAFE 이탈 복구 — 보류된 워크플로 재디스패치(미배선이면 no-op). server.ts onRecover가 호출. */
+  async resumeDispatch(): Promise<void> {
+    await this.components.resumeDispatch?.()
+  }
 }
 
 /** server.ts Supervisor 배선 게이트 결정(순수·테스트 가능): flag+pool='wire', flag만='warn', 아니면 'skip'. */
@@ -189,6 +196,8 @@ export interface SupervisorDeps {
     approve(workflowId: string, approvedBy: string): Promise<{ eventId: string } | null>
     approvedForWorkflow(workflowId: string): Promise<{ modelRouting: Partial<Record<import('@xzawed/agent-streams').RoutedAgent, import('@xzawed/agent-streams').ModelTier>> } | null>
   }
+  /** P5-3b: 운영 강등 모드 조회(=ModeController.getMode). 주입 시 dispatch가 SAFE면 보류·resumeDispatch 활성. */
+  getMode?: () => OperationalMode
 }
 export interface SupervisorConfig {
   sweepMs: number
@@ -240,6 +249,20 @@ export interface SupervisorConfig {
   modelOpus?: string
   /** D5: Sonnet 모델 식별자(=MANAGER_MODEL_SONNET). modelRouting 활성 시만 사용. */
   modelSonnet?: string
+}
+
+/** P5-3b: held-set(SAFE 보류 워크플로)을 드레인해 각각 재디스패치(per-item never-throw). 드레인-후-처리라
+ *  처리 중 추가된 held는 다음 resume 대상(over-approximation 안전). 한 워크플로 실패가 나머지 비차단. */
+export async function drainHeld(held: Set<string>, dispatchOne: (workflowId: string) => Promise<void>): Promise<void> {
+  const ids = [...held]
+  held.clear()
+  for (const wf of ids) {
+    try {
+      await dispatchOne(wf)
+    } catch (err) {
+      console.error('[supervisor] resume 디스패치 실패:', wf, err)
+    }
+  }
 }
 
 /** P3-2 oracleConsumer 배선 판정(순수·D4): oracleDor(=MANAGER_ORACLE_DOR)와 oracleStore 주입이 둘 다 있어야 배선. */
@@ -326,10 +349,13 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
   // P4-1: taskWorker flag + 핸들러 주입 둘 다 있어야 워커 배선(순수 게이트). 배선 시 dispatch/reclaim이
   // wp.dispatch_signal을 발행하고 WorkerConsumer가 이를 소비. off면 publish 미주입 → 신호 미발행(회귀 0).
   const workerActive = shouldWireWorker(config.taskWorker, deps.handlers !== undefined)
+  const heldWorkflows = new Set<string>()
   const dispatch: DispatchDeps = {
     repo: deps.repo, store: deps.dispatchStore, visibilityMs: config.visibilityMs,
     ...(dorActive && { oracleStore: deps.oracleStore }),
     ...(workerActive && { publish: deps.publish }),
+    // P5-3b: getMode 주입(enforce) 시 SAFE면 held 보류 + onHeld로 held-set 적재. 미주입이면 둘 다 생략(회귀 0).
+    ...(deps.getMode && { getMode: deps.getMode, onHeld: (wf: string) => heldWorkflows.add(wf) }),
   }
 
   const decompositionConsumer = new DecompositionConsumer(
@@ -460,6 +486,12 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
       )
     : undefined
 
+  // P5-3b: SAFE 이탈 시 held 워크플로를 재디스패치(이미 모드≠SAFE → 정상 디스패치). getMode 미주입이면
+  // heldWorkflows가 영원히 비어 no-op이지만, 컴포넌트는 getMode 주입 시에만 배선(회귀 0 명시).
+  const resumeDispatch = async (): Promise<void> => {
+    await drainHeld(heldWorkflows, async (wf) => { await handleDispatch(wf, dispatch) })
+  }
+
   return new Supervisor({
     decompositionConsumer, completionConsumer, leaseSweeper,
     ...(oracleConsumer && { oracleConsumer }),
@@ -469,5 +501,6 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     ...(signoffConsumer && { signoffConsumer }),
     ...(decisionSweeper && { decisionSweeper }),
     ...(decisionExpiryConsumer && { decisionExpiryConsumer }),
+    ...(deps.getMode && { resumeDispatch }),
   })
 }

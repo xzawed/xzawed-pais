@@ -3,6 +3,7 @@ import { makeEnvelope } from '@xzawed/agent-streams'
 import {
   buildCompletionHandler, CompletionSignalSchema, Supervisor, createSupervisor, shouldWireSupervisor,
   shouldWireOracleConsumer, shouldWireDecisionRoute, shouldWireRiskConsumer, buildWorkerConsumerDeps,
+  drainHeld,
 } from './supervisor.js'
 import type { LeaseStore } from '../db/lease.repo.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -431,5 +432,52 @@ describe('buildWorkerConsumerDeps G1 서킷 스레딩', () => {
     expect(w.budget).toBeUndefined()
     expect(w.provider).toBeUndefined()
     expect(w.isProviderFailure).toBeUndefined()
+  })
+})
+
+describe('drainHeld', () => {
+  it('held를 드레인(비움)하고 각 id에 dispatchOne 호출', async () => {
+    const held = new Set(['wf-1', 'wf-2'])
+    const calls: string[] = []
+    await drainHeld(held, async (wf) => { calls.push(wf) })
+    expect(calls.sort()).toEqual(['wf-1', 'wf-2'])
+    expect(held.size).toBe(0)
+  })
+
+  it('per-item throw가 나머지를 비차단(never-throw)', async () => {
+    const held = new Set(['wf-1', 'wf-2'])
+    const ok: string[] = []
+    await expect(drainHeld(held, async (wf) => {
+      if (wf === 'wf-1') throw new Error('boom')
+      ok.push(wf)
+    })).resolves.toBeUndefined()
+    expect(ok).toEqual(['wf-2'])
+    expect(held.size).toBe(0)
+  })
+
+  it('빈 set은 no-op', async () => {
+    const dispatchOne = vi.fn()
+    await drainHeld(new Set(), dispatchOne)
+    expect(dispatchOne).not.toHaveBeenCalled()
+  })
+})
+
+describe('Supervisor.resumeDispatch', () => {
+  it('resumeDispatch 컴포넌트에 위임', async () => {
+    const resumeDispatch = vi.fn().mockResolvedValue(undefined)
+    const noop = { start: async () => {}, stop: () => {} }
+    const sweeper = { start: () => {}, stop: () => {} }
+    const sup = new Supervisor({
+      decompositionConsumer: noop, completionConsumer: noop, leaseSweeper: sweeper, resumeDispatch,
+    })
+    await sup.resumeDispatch()
+    expect(resumeDispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('resumeDispatch 미주입이면 no-op(throw 없음)', async () => {
+    const noop = { start: async () => {}, stop: () => {} }
+    const sweeper = { start: () => {}, stop: () => {} }
+    const sup = new Supervisor({ decompositionConsumer: noop, completionConsumer: noop, leaseSweeper: sweeper })
+    await expect(sup.resumeDispatch()).resolves.toBeUndefined()
   })
 })
