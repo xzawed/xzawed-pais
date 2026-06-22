@@ -1,6 +1,6 @@
 import { scoreClassification } from '@xzawed/agent-streams'
 import type { ClaudeLike, RiskClassification, WpRisk, BudgetCircuitBreaker, ProviderCircuitBreaker } from '@xzawed/agent-streams'
-import { runStage, type StageCircuit } from './stages/run-stage.js'
+import { runStage, buildStageCircuit } from './stages/run-stage.js'
 import { buildRiskInvestigationSpec, verifyCitations, normalizeFrameworks } from './stages/risk-investigate.js'
 import type { UserContext } from '../types/user-context.js'
 import { buildRiskBrief } from '../streams/risk-brief.js'
@@ -43,10 +43,11 @@ export async function produceRiskClassification(
     return { classified: false }
   }
   try {
-    const circuit: StageCircuit | undefined =
-      deps.budget || deps.provider
-        ? { workflowId, ...(deps.budget && { budget: deps.budget }), ...(deps.provider && { provider: deps.provider }), ...(deps.isProviderFailure && { isProviderFailure: deps.isProviderFailure }) }
-        : undefined
+    const circuit = buildStageCircuit(workflowId, {
+      ...(deps.budget && { budget: deps.budget }),
+      ...(deps.provider && { provider: deps.provider }),
+      ...(deps.isProviderFailure && { isProviderFailure: deps.isProviderFailure }),
+    })
     const spec = buildRiskInvestigationSpec(intent)
     const investigation = await runStage(
       { claude: deps.claude, model: deps.model, timeoutMs: deps.timeoutMs ?? DEFAULT_TIMEOUT_MS },

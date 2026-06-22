@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { z } from 'zod'
 import type { ClaudeLike } from '@xzawed/agent-streams'
 import { ProviderCircuitBreaker, ProviderCircuitOpenError, BudgetCircuitBreaker } from '@xzawed/agent-streams'
-import { runStage, type StageDeps } from './run-stage.js'
+import { runStage, buildStageCircuit, type StageDeps } from './run-stage.js'
 
 const Schema = z.object({ items: z.array(z.string()).default([]) })
 
@@ -102,5 +102,82 @@ describe('runStage circuit', () => {
     const mockDeps = { claude: { messages: { create } }, model: 'm', timeoutMs: 100 }
     const r = await runStage(mockDeps as never, circuitSpec as never)
     expect(r).toEqual({ ok: 7 })
+  })
+})
+
+// ── buildStageCircuit 헬퍼 테스트 ────────────────────────────────────────────
+
+describe('buildStageCircuit', () => {
+  it('breaker 전무 → undefined', () => {
+    expect(buildStageCircuit('wf-1', {})).toBeUndefined()
+  })
+
+  it('budget만 → workflowId+budget StageCircuit', () => {
+    const budget = {} as never
+    const c = buildStageCircuit('wf-1', { budget })
+    expect(c).toEqual({ workflowId: 'wf-1', budget })
+  })
+
+  it('provider+isProviderFailure → 합류', () => {
+    const provider = {} as never
+    const isProviderFailure = () => true
+    const c = buildStageCircuit('wf-1', { provider, isProviderFailure })
+    expect(c?.workflowId).toBe('wf-1')
+    expect(c?.provider).toBe(provider)
+    expect(c?.isProviderFailure).toBe(isProviderFailure)
+  })
+})
+
+// ── runStage circuit 기본값(deps.circuit) 테스트 ─────────────────────────────
+
+describe('runStage circuit 기본값(deps.circuit)', () => {
+  it('deps.circuit 설정 시 circuit 경로(budget.check 호출)', async () => {
+    const check = vi.fn()
+    const record = vi.fn()
+    const create = vi.fn().mockResolvedValue({
+      content: [{ type: 'text', text: '{"ok":1}' }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    })
+    const mockDeps = {
+      claude: { messages: { create } },
+      model: 'm',
+      timeoutMs: 100,
+      circuit: { workflowId: 'wf-1', budget: { check, record } as never },
+    } satisfies StageDeps
+    const out = await runStage(mockDeps, circuitSpec as never)
+    expect(check).toHaveBeenCalledWith('wf-1')
+    expect(out).toEqual({ ok: 1 })
+  })
+
+  it('명시 3rd-arg가 deps.circuit보다 우선', async () => {
+    const depsCheck = vi.fn()
+    const argCheck = vi.fn()
+    const create = vi.fn().mockResolvedValue({
+      content: [{ type: 'text', text: '{"ok":1}' }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    })
+    const mockDeps = {
+      claude: { messages: { create } },
+      model: 'm',
+      timeoutMs: 100,
+      circuit: { workflowId: 'wf-dep', budget: { check: depsCheck, record: vi.fn() } as never },
+    } satisfies StageDeps
+    await runStage(mockDeps, circuitSpec as never, {
+      workflowId: 'wf-arg',
+      budget: { check: argCheck, record: vi.fn() } as never,
+    })
+    expect(argCheck).toHaveBeenCalledWith('wf-arg')
+    expect(depsCheck).not.toHaveBeenCalled()
+  })
+
+  it('circuit 전무(deps.circuit·arg 미설정) → 기존 callClaudeText 경로', async () => {
+    const create = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: '{"ok":1}' }] })
+    const mockDeps = {
+      claude: { messages: { create } },
+      model: 'm',
+      timeoutMs: 100,
+    } satisfies StageDeps
+    const out = await runStage(mockDeps, circuitSpec as never)
+    expect(out).toEqual({ ok: 1 })
   })
 })
