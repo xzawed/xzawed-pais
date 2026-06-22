@@ -8,6 +8,8 @@ export interface ModeControllerDeps {
   stabilityWindowMs: number
   /** 전이 시 호출(구조적 로그·M8). 미주입이면 무음 추적만(권장: 항상 주입). */
   onTransition?: (from: OperationalMode, to: OperationalMode, reason: string) => void
+  /** P5-3b: SAFE 이탈 전이(from==='SAFE') 시 호출 — enforcement 재개(Supervisor.resumeDispatch). never-throw 보호 내. */
+  onRecover?: () => void
 }
 
 /**
@@ -41,6 +43,8 @@ export class ModeController extends IntervalSweeper {
       const from = this.mode
       this.mode = r.mode
       this.deps.onTransition?.(from, r.mode, r.reason)
+      // P5-3b: SAFE 이탈(→DEGRADED|NORMAL) 시 보류된 디스패치 재개 트리거. 모드 갱신 후 호출(throw해도 상태 일관).
+      if (from === 'SAFE') this.deps.onRecover?.()
     }
   }
 
@@ -52,4 +56,9 @@ export class ModeController extends IntervalSweeper {
   getMode(): OperationalMode {
     return this.mode
   }
+}
+
+/** P5-3b: 강등 enforcement 배선 판정(순수). enforce flag + 모드 추적(ModeController·getMode 원천) 둘 다여야 enforce. */
+export function shouldEnforceDegraded(enforce: boolean, modeEnabled: boolean): boolean {
+  return enforce && modeEnabled
 }
