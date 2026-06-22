@@ -439,6 +439,8 @@ export async function buildServer(
         decisionExpiry: config.MANAGER_DECISION_EXPIRY,
         decisionSweepMs: config.MANAGER_DECISION_SWEEP_MS,
         decisionTtlMs: config.MANAGER_DECISION_TTL_HOURS * 3_600_000, // 시간→ms
+        // B1: 재에스컬레이션 상한(=MANAGER_DECISION_REESCALATE_MAX). decisionExpiry 소비자가 소비.
+        decisionReescalateMax: config.MANAGER_DECISION_REESCALATE_MAX,
         // P2r-4: risk.approved 소비(→wp.risk write-back) 활성(=MANAGER_RISK_ROUTING). off면 riskConsumer 미배선(회귀 0).
         riskRouting: config.MANAGER_RISK_ROUTING,
         // D5: 모델 라우팅(=MANAGER_MODEL_ROUTING). off면 worker가 CLAUDE_MODEL 폴백(회귀 0). riskStore+ids 동반 필요.

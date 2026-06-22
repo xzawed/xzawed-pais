@@ -11,6 +11,7 @@ import { LeaseSweeper } from './lease-sweeper.js'
 import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
 import { DecisionSweeper } from './decision-sweeper.js'
 import { DecisionRecordedConsumer, type DecisionRoutingDeps } from './decision-consumer.js'
+import { DecisionExpiredConsumer } from './decision-expiry-consumer.js'
 import { ReleaseSignoffConsumer } from './release-consumer.js'
 import { makeSignoffBrief } from './signoff-brief.js'
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
@@ -83,6 +84,8 @@ export interface SupervisorComponents {
   signoffConsumer?: ConsumerLike
   /** B1: 결정 만료 sweep(decisionExpiry+decisionStore 주입 시만 배선). */
   decisionSweeper?: SweeperLike
+  /** B1: decision.expired 소비자(decisionExpiry+decisionStore 주입 시만 배선). */
+  decisionExpiryConsumer?: ConsumerLike
 }
 
 /**
@@ -121,6 +124,9 @@ export class Supervisor {
     })
     this.components.leaseSweeper.start()
     this.components.decisionSweeper?.start()
+    this.components.decisionExpiryConsumer?.start(this.channel).catch((err: unknown) => {
+      console.error('[supervisor] decision expiry consumer 시작 실패:', err)
+    })
   }
 
   stop(): void {
@@ -133,6 +139,7 @@ export class Supervisor {
     this.components.signoffConsumer?.stop()
     this.components.leaseSweeper.stop()
     this.components.decisionSweeper?.stop()
+    this.components.decisionExpiryConsumer?.stop()
   }
 }
 
@@ -219,6 +226,8 @@ export interface SupervisorConfig {
   decisionSweepMs?: number
   /** ms — server.ts가 MANAGER_DECISION_TTL_HOURS * 3_600_000 변환 후 주입. */
   decisionTtlMs?: number
+  /** B1: 재에스컬레이션 상한(=MANAGER_DECISION_REESCALATE_MAX·기본 1). */
+  decisionReescalateMax?: number
   /** P2r-4: risk.approved 소비(→wp.risk write-back) 활성(=MANAGER_RISK_ROUTING). */
   riskRouting?: boolean
   /** D5: 모델 라우팅 활성(=MANAGER_MODEL_ROUTING). riskStore+modelOpus+modelSonnet 동반 필요. */
@@ -355,6 +364,15 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     ? new DecisionSweeper({ store: deps.decisionStore }, config.decisionSweepMs)
     : undefined
 
+  // B1: decision.expired 소비자 = decisionExpiry && decisionStore. 만료 blocking 결정을 바운드 재에스컬레이션.
+  const decisionExpiryConsumer = config.decisionExpiry && deps.decisionStore
+    ? new DecisionExpiredConsumer(makeRedis(), {
+        decisionStore: deps.decisionStore,
+        maxReescalations: config.decisionReescalateMax ?? 1,
+        ttlMs: config.decisionTtlMs ?? 72 * 3_600_000,
+      })
+    : undefined
+
   // oracle.approved 소비자는 DoR 게이트(oracleDor)일 때만 배선(D4 순수 게이트). DRAFT-only면 미배선
   // (drafted 영속만·DoR 비활성). dorActive와 동치이나 순수 함수로 분리해 테스트 가능(toBeDefined만으론 미생성 검증 불가).
   const oracleConsumer = shouldWireOracleConsumer(config.oracleDor, deps.oracleStore !== undefined)
@@ -438,5 +456,6 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     ...(riskConsumer && { riskConsumer }),
     ...(signoffConsumer && { signoffConsumer }),
     ...(decisionSweeper && { decisionSweeper }),
+    ...(decisionExpiryConsumer && { decisionExpiryConsumer }),
   })
 }
