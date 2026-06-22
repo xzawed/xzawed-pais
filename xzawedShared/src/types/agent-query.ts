@@ -14,11 +14,13 @@ export type AgentQueryPayload = z.infer<typeof AgentQuerySchema>
  * 협업 에이전트가 수신 메시지 payload에 공통으로 갖는 입력 필드.
  * 각 에이전트의 ManagerTo{Agent}MessageSchema payload에 spread해 중복을 방지한다.
  * clarificationContext: 다른 에이전트의 답, query/queryKind: 질의 답변 모드.
+ * model: D5 Manager가 주입하는 라우팅된 concrete model id. 에이전트가 payload.model ?? config.CLAUDE_MODEL로 소비.
  */
 export const collaborationPayloadFields = {
   clarificationContext: z.string().optional(),
   query: z.string().optional(),
   queryKind: z.enum(['active_request', 'cross_check']).optional(),
+  model: z.string().optional(),
 } as const
 
 /**

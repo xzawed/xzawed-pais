@@ -2,6 +2,7 @@ import { type ZodType } from 'zod'
 import type { Redis } from 'ioredis'
 import { BaseConsumer, makeEnvelope } from '@xzawed/agent-streams'
 import type { WorkPackage, WpRisk } from '@xzawed/agent-streams'
+import type { RoutedAgent, ModelTier } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { UserContext } from '../types/user-context.js'
 import type { Publish } from './decomposition-consumer.js'
@@ -13,6 +14,7 @@ import type { ChannelOutcome } from '../db/release-gate.types.js'
 import { produceAdvisory, type AdvisoryStore } from './advisory.js'
 import type { ClaudeLike } from '@xzawed/agent-streams'
 import { DONE_STATE, ESCALATED_STATE } from './dispatch-constants.js'
+import { resolveWpModel, type ModelTierIds } from './model-routing.js'
 
 const WORKER_GROUP = 'manager-worker-consumers'
 const STREAM_PREFIX = 'manager:dispatched'
@@ -33,7 +35,7 @@ export interface WorkerDeps {
   publish: Publish
   /** 완료 신호 스트림(기본 manager:completions:main; createSupervisor가 COMPLETION_PREFIX:channel 주입). */
   completionStream?: string
-  buildInput?: (wp: WorkPackage, userContext?: UserContext) => Record<string, unknown>
+  buildInput?: (wp: WorkPackage, userContext?: UserContext, model?: string) => Record<string, unknown>
   now?: () => number
   /** P4b-1: 검증 게이트(=MANAGER_WP_VERIFY). on이면 완료 발행 전 verifyWp fail-closed 판정 —
    *  실패 시 완료 미발행(lease 백스톱이 reclaim→escalate) + wp.verification.failed 관측 이벤트. */
@@ -59,6 +61,10 @@ export interface WorkerDeps {
   leaseStore?: { renewLease(workflowId: string, wpId: string, expectedAttempt: number, visibilityMs: number): Promise<boolean> }
   /** lease 가시성 ms — 하트비트 연장량 + 갱신 주기(visibilityMs/3) 도출. */
   visibilityMs?: number
+  /** D5: 승인 modelRouting 조회 포트(approvedForWorkflow). MANAGER_MODEL_ROUTING + riskStore 주입 시만. */
+  riskStore?: { approvedForWorkflow(workflowId: string): Promise<{ modelRouting: Record<RoutedAgent, ModelTier> } | null> }
+  /** D5: tier→concrete model id. MANAGER_MODEL_ROUTING 시 주입. */
+  modelRouting?: ModelTierIds
   /** P4 advisory 채널(=MANAGER_WP_ADVISORY && advisoryStore 주입). develop_code WP의 verdict.ok 후 비차단 생산. */
   advisoryEnabled?: boolean
   advisoryStore?: AdvisoryStore
@@ -83,7 +89,7 @@ export type WorkerOutcome =
  *  ⚠️ projectPath(P4a-2): userContext 존재 시 workspaceRoot **절대경로** — builder/tester `validatePath`는
  *  `fs.realpath(projectPath)`를 에이전트 cwd 기준으로 해석하므로 '.'는 cwd≠workspaceRoot 배포에서 거부(NEW-2).
  *  절대경로는 cwd 무관 + `path.relative(realRoot, realProject)=''`로 containment 통과. 미존재 시 '.' 폴백(P4-1 동작 보존). */
-export function buildWorkerInput(wp: WorkPackage, userContext?: UserContext): Record<string, unknown> {
+export function buildWorkerInput(wp: WorkPackage, userContext?: UserContext, model?: string): Record<string, unknown> {
   const acList = wp.acceptanceCriteria.map((a) => `- ${a}`).join('\n')
   const fullIntent = wp.acceptanceCriteria.length
     ? `Implement story ${wp.storyId}.\nAcceptance criteria:\n${acList}`
@@ -92,7 +98,7 @@ export function buildWorkerInput(wp: WorkPackage, userContext?: UserContext): Re
   // runner.ts buildAgentQueryPayload와 동일하게 클램프(AC 전체는 plan에 무손실 보존 — developer가 읽음).
   const intent = fullIntent.slice(0, 4000)
   const projectPath = userContext?.workspaceRoot ?? '.'
-  return { intent, plan: fullIntent, context: {}, priority: 'normal', projectPath, target: 'development', severity: 'low', artifacts: [] }
+  return { intent, plan: fullIntent, context: {}, priority: 'normal', projectPath, target: 'development', severity: 'low', artifacts: [], ...(model !== undefined && { model }) }
 }
 
 /** 워커 배선 판정(순수·D4 패턴): taskWorker flag + 핸들러 주입 둘 다 있어야 배선. */
@@ -164,7 +170,13 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
     }
   }
   const userContext = stored?.userContext ?? undefined
-  const input = (deps.buildInput ?? buildWorkerInput)(wp, userContext)
+  // D5: 승인 modelRouting 조회→해석(never-throw·실패/null→폴백). flag off(riskStore/modelRouting 미주입)면 조회 0.
+  let routedModel: string | undefined
+  if (deps.riskStore && deps.modelRouting) {
+    const approved = await deps.riskStore.approvedForWorkflow(workflowId).catch(() => null)
+    routedModel = resolveWpModel(approved?.modelRouting, wp.owningRole, deps.modelRouting)
+  }
+  const input = (deps.buildInput ?? buildWorkerInput)(wp, userContext, routedModel)
   // 하드닝: 장기 실행(verify/conformance는 WP당 다단계 에이전트 호출·최대 5×120s) 중 lease 가시성 만료·
   // false reclaim을 막기 위해 실행 동안 주기적으로 renewLease(하트비트). leaseStore+visibilityMs 주입 시에만
   // 활성(미주입=P4-1/P4b 동작 보존·회귀 0). stop()은 finally에서 모든 종료 경로에 보장.

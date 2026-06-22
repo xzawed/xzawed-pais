@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { AgentQuery, AgentQuerySchema, parseAgentQuery } from '../types/agent-query.js'
+import { AgentQuery, AgentQuerySchema, parseAgentQuery, collaborationPayloadFields } from '../types/agent-query.js'
+import { z } from 'zod'
 
 describe('AgentQuery', () => {
   it('대상·질문·kind를 보관한다', () => {
@@ -41,5 +42,17 @@ describe('parseAgentQuery', () => {
   it('to/question 누락 시 null', () => {
     expect(parseAgentQuery({ agent_query: true, to: 'developer' })).toBeNull()
     expect(parseAgentQuery({ agent_query: true, question: 'q' })).toBeNull()
+  })
+})
+
+describe('collaborationPayloadFields', () => {
+  it('model? 을 수용하고 보존한다', () => {
+    const schema = z.object({ ...collaborationPayloadFields })
+    expect(schema.parse({ model: 'm' })).toEqual({ model: 'm' })
+  })
+
+  it('model 미지정 시 optional', () => {
+    const schema = z.object({ ...collaborationPayloadFields })
+    expect(schema.safeParse({}).success).toBe(true)
   })
 })

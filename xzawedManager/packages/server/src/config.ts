@@ -191,6 +191,11 @@ const configSchema = z
     // C5: 기본 false. true면 humanGate.required 리스크 분류를 risk_classification DecisionRequest로 발행 +
     //   decision-consumer가 approve→RiskClassificationRepo.approve. 전제: MANAGER_RISK_CLASSIFY+MANAGER_DECISION_ROUTING+DATABASE_URL.
     MANAGER_RISK_DECISION: z.string().optional().transform((v) => v === 'true'),
+    // D5: 기본 false. true면 워커가 디스패치 시 승인 modelRouting을 조회해 에이전트 모델을 라우팅(off→CLAUDE_MODEL 폴백).
+    MANAGER_MODEL_ROUTING: z.string().optional().transform((v) => v === 'true'),
+    // D5: tier→concrete model id(claude-api 최신). routeModels의 'opus'/'sonnet' tier를 이 id로 해석.
+    MANAGER_MODEL_OPUS: z.string().default('claude-opus-4-8'),
+    MANAGER_MODEL_SONNET: z.string().default('claude-sonnet-4-6'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

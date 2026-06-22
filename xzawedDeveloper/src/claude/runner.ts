@@ -39,6 +39,7 @@ export class ClaudeRunner {
     projectPath: string,
     context: Record<string, unknown>,
     clarificationContext?: string,
+    model?: string,
   ): Promise<{ changes: FileChange[]; summary: string; knowledge?: string[] }> {
     const userContent = [
       formatDomainKnowledge(context),
@@ -48,7 +49,7 @@ export class ClaudeRunner {
       `\nPlan:\n${plan}`,
     ].filter(Boolean).join('\n')
 
-    const text = await callClaudeText(this.client, this.model, 8192, SYSTEM_PROMPT, userContent, API_TIMEOUT_MS)
+    const text = await callClaudeText(this.client, model ?? this.model, 8192, SYSTEM_PROMPT, userContent, API_TIMEOUT_MS)
     const { changes, knowledge } = this.parseResponse(text)
     const summary = `Implemented ${changes.length} file change(s) for: ${plan.slice(0, 100)}`
     return { changes, summary, ...(knowledge && knowledge.length > 0 ? { knowledge } : {}) }

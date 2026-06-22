@@ -3,6 +3,33 @@ import type { WorkPackage } from '@xzawed/agent-streams'
 import { handleWpDispatchSignal, buildWorkerInput, shouldWireWorker, startLeaseHeartbeat, type WorkerDeps } from './worker.js'
 import { WP_DISPATCH_SIGNAL } from './dispatch-signal.js'
 
+describe('D5: buildWorkerInput model 주입 + 디스패치 조회', () => {
+  it('buildWorkerInput이 model을 input에 주입(전달 시)', () => {
+    const wp = { id: 'a', storyId: 's', owningRole: 'developer', acceptanceCriteria: ['x'] } as never
+    expect(buildWorkerInput(wp, undefined, 'opus-id')).toMatchObject({ model: 'opus-id' })
+    expect('model' in buildWorkerInput(wp, undefined)).toBe(false) // 미전달 시 키 부재(회귀 0)
+  })
+
+  it('handleWpDispatchSignal이 승인 라우팅을 조회해 model을 input에 주입한다', async () => {
+    const capturedInput: Record<string, unknown>[] = []
+    const handler = { execute: vi.fn().mockImplementation((input) => { capturedInput.push(input as Record<string, unknown>); return Promise.resolve({ success: true }) }) }
+    const repo = { getGraph: vi.fn().mockResolvedValue({ workPackages: [{ id: 'wp1', owningRole: 'developer', storyId: 's', acceptanceCriteria: ['x'] }], userContext: null }), latestStates: vi.fn().mockResolvedValue(new Map()) }
+    const riskStore = { approvedForWorkflow: vi.fn().mockResolvedValue({ modelRouting: { PM: 'opus', Developer: 'opus', Designer: 'sonnet', Tester: 'sonnet', Security: 'opus' } }) }
+    const deps = { repo, handlers: { develop_code: handler }, publish: vi.fn(), riskStore, modelRouting: { opus: 'opus-id', sonnet: 'sonnet-id' } } as never
+    await handleWpDispatchSignal({ envelope: { workflowId: 'wf' }, payload: { wpId: 'wp1', attempt: 0 } } as never, deps)
+    expect(capturedInput[0]).toMatchObject({ model: 'opus-id' })
+  })
+
+  it('riskStore 미주입(flag off)이면 model 미주입(회귀 0)', async () => {
+    const capturedInput: Record<string, unknown>[] = []
+    const handler = { execute: vi.fn().mockImplementation((input) => { capturedInput.push(input as Record<string, unknown>); return Promise.resolve({ success: true }) }) }
+    const repo = { getGraph: vi.fn().mockResolvedValue({ workPackages: [{ id: 'wp1', owningRole: 'developer', storyId: 's', acceptanceCriteria: ['x'] }], userContext: null }), latestStates: vi.fn().mockResolvedValue(new Map()) }
+    const deps = { repo, handlers: { develop_code: handler }, publish: vi.fn() } as never
+    await handleWpDispatchSignal({ envelope: { workflowId: 'wf' }, payload: { wpId: 'wp1', attempt: 0 } } as never, deps)
+    expect('model' in capturedInput[0]!).toBe(false)
+  })
+})
+
 const wp = (over: Partial<WorkPackage> = {}): WorkPackage => ({
   id: over.id ?? 'a', storyId: 's1', owningRole: over.owningRole ?? 'developer', oracleRef: null,
   acceptanceCriteria: over.acceptanceCriteria ?? ['ac1'], dependencies: [], attributionCounters: {}, status: 'draft',
