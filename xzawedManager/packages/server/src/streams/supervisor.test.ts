@@ -358,3 +358,48 @@ describe('createSupervisor B1 decisionSweeper', () => {
     expect(() => { sup.start(); sup.stop() }).not.toThrow()
   })
 })
+
+describe('createSupervisor B1 decisionExpiryConsumer', () => {
+  // B1: DecisionExpiredConsumer 배선 — decisionExpiry+decisionStore 주입 시만 makeRedis 추가 호출(배선 단언).
+  const baseDecisionStore = () => ({
+    createRequest: vi.fn(),
+    getRequest: vi.fn().mockResolvedValue(null),
+    recordSignOff: vi.fn(),
+    expiredPendingRequests: vi.fn(async () => []),
+    expireRequest: vi.fn(),
+  })
+  const baseDeps = () => ({
+    repo: {} as never,
+    dispatchStore: {} as never,
+    leaseStore: {} as never,
+    publish: vi.fn(),
+    decisionStore: baseDecisionStore() as never,
+  })
+  const cfg = (over: Record<string, unknown> = {}) =>
+    ({ sweepMs: 1, visibilityMs: 1, maxAttempts: 1, oracleDor: false, taskWorker: false, ...over })
+
+  it('decisionExpiry+decisionStore → start/stop이 throw 없이 동작(expiryConsumer 배선)', () => {
+    const makeRedis = vi.fn(() => ({}) as unknown as Redis)
+    const sup = createSupervisor(
+      makeRedis,
+      baseDeps(),
+      cfg({ decisionExpiry: true, decisionSweepMs: 1000, decisionTtlMs: 3_600_000, decisionReescalateMax: 2 }) as never,
+    )
+    expect(() => { sup.start(); sup.stop() }).not.toThrow()
+    // decisionExpiry+decisionStore: makeRedis 추가 호출(decisionExpiryConsumer 전용 연결)
+    // 기본 2(decomposition·completion) + 1(decisionExpiryConsumer) = 3
+    expect(makeRedis.mock.calls.length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('decisionExpiry false → expiryConsumer 미배선(회귀 0·throw 없음)', () => {
+    const makeRedis = vi.fn(() => ({}) as unknown as Redis)
+    const sup = createSupervisor(
+      makeRedis,
+      baseDeps(),
+      cfg({ decisionExpiry: false }) as never,
+    )
+    expect(() => { sup.start(); sup.stop() }).not.toThrow()
+    // decisionExpiry off: 기본 makeRedis 2회만(decisionSweeper/expiryConsumer 미배선)
+    expect(makeRedis).toHaveBeenCalledTimes(2)
+  })
+})
