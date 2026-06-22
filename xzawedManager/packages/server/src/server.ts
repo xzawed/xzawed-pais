@@ -46,7 +46,7 @@ import { oracleRoute } from './api/oracle.route.js'
 import { decisionRoute } from './api/decision.route.js'
 import { riskRoute } from './api/risk.route.js'
 import { createSupervisor, shouldWireSupervisor, shouldWireDecisionRoute, type Supervisor } from './streams/supervisor.js'
-import { ModeController } from './streams/mode-controller.js'
+import { ModeController, shouldEnforceDegraded } from './streams/mode-controller.js'
 import type { ProduceDeps } from './decompose/producer.js'
 import type { RiskClassifyDeps } from './decompose/risk-producer.js'
 import { RiskClassificationRepo } from './db/risk-classification.repo.js'
@@ -156,6 +156,11 @@ export async function buildServer(
       `[provider-circuit] §13 서킷브레이커 가동 — threshold=${config.MANAGER_PROVIDER_CIRCUIT_THRESHOLD} cooldown=${config.MANAGER_PROVIDER_CIRCUIT_COOLDOWN_MS}ms`,
     )
   }
+  // P5-3b: enforcement 배선 판정(순수·전제 MANAGER_DEGRADED_MODE). supervisor는 아래에서 할당 — onRecover
+  // 클로저가 forward 캡처(첫 tick은 start() 이후·≥sweepMs라 할당 보장). enforce off면 onRecover/getMode 미배선.
+  const enforceDegraded = shouldEnforceDegraded(config.MANAGER_DEGRADED_ENFORCE, config.MANAGER_DEGRADED_MODE)
+  let supervisor: Supervisor | undefined
+
   // P5-3a 운영 강등 모드 추적기(observe-only): MANAGER_DEGRADED_MODE=true면 provider 서킷/budget 신호를
   // 주기 sweep으로 읽어 NORMAL/DEGRADED/SAFE 모드 전이 시 구조적 로그(M8). getMode() 노출 — enforcement는
   // P5-3b 후속. off면 미생성(회귀 0·budget/providerCircuit 없어도 경고만).
@@ -169,13 +174,24 @@ export async function buildServer(
           stabilityWindowMs: config.MANAGER_MODE_STABILITY_WINDOW_MS,
           onTransition: (from, to, reason) =>
             app.log.warn(`[mode] 운영 모드 전이 ${from}→${to} (${reason})`),
+          // P5-3b: SAFE 이탈 시 보류된 디스패치 재개(enforce on일 때만 — supervisor는 forward 캡처).
+          ...(enforceDegraded && {
+            onRecover: () => {
+              void supervisor?.resumeDispatch().catch((err: unknown) => app.log.error({ err }, '[degraded] resume 디스패치 실패'))
+            },
+          }),
         },
         config.MANAGER_MODE_SWEEP_MS,
       )
     : undefined
-  modeController?.start()
   if (config.MANAGER_DEGRADED_MODE && !budget && !providerCircuit) {
     app.log.warn('MANAGER_DEGRADED_MODE=true 이지만 budget/provider 서킷이 둘 다 미구성 — 강등 신호원이 없습니다.')
+  }
+  if (config.MANAGER_DEGRADED_ENFORCE && !config.MANAGER_DEGRADED_MODE) {
+    app.log.warn('MANAGER_DEGRADED_ENFORCE=true 이지만 MANAGER_DEGRADED_MODE=false — 모드 추적 없이는 enforcement가 무력합니다.')
+  }
+  if (config.MANAGER_DEGRADED_ENFORCE && !config.TASK_MANAGER_ENABLED) {
+    app.log.warn('MANAGER_DEGRADED_ENFORCE=true 이지만 TASK_MANAGER_ENABLED=false — Supervisor가 없어 디스패치 보류/재개가 무력합니다.')
   }
   const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry, knowledgeRepo, undefined, budget, providerCircuit)
   const producer = new StreamProducer(config.REDIS_URL)
@@ -388,7 +404,6 @@ export async function buildServer(
 
   // Task Manager Supervisor 배선(P1d-7): flag on + pool이면 decomposition 소비→디스패치·lease sweep·
   // completion 소비→재디스패치를 가동. 생산자(P2) 미도착이라 빈 스트림 구독(동작 준비). flag off면 미배선.
-  let supervisor: Supervisor | undefined
   const supervisorDecision = shouldWireSupervisor(config.TASK_MANAGER_ENABLED, pool !== undefined)
   if (supervisorDecision === 'wire' && pool) {
     const bus = new RedisEventBus(createRedisClient(config.REDIS_URL))
@@ -406,6 +421,8 @@ export async function buildServer(
         dispatchStore: new DispatchStore(pool),
         leaseStore: new LeaseStore(pool),
         publish: (stream, message) => bus.publish(stream, message),
+        // P5-3b: enforce 시 운영 강등 모드 조회 주입 → handleDispatch가 SAFE면 보류·held-set 적재.
+        ...(enforceDegraded && modeController && { getMode: () => modeController.getMode() }),
         // DOR||DRAFT 공유 oracleStore. createSupervisor가 config.oracleDor로 DoR 게이트(satisfied-set·
         // oracleConsumer) 활성 여부를 분리 — DRAFT만 켜면 decompositionConsumer가 upsertDraft만 수행.
         ...(oracleStore && { oracleStore }),
@@ -480,6 +497,9 @@ export async function buildServer(
   } else if (supervisorDecision === 'warn') {
     app.log.warn('TASK_MANAGER_ENABLED=true 이지만 DATABASE_URL이 없어 Supervisor를 배선하지 않습니다.')
   }
+  // P5-3b: modeController는 supervisor 할당 이후 가동(onRecover가 supervisor를 안전 참조). observe-only(enforce off)도
+  // 동일 — start는 supervisor 유무와 무관(MANAGER_DEGRADED_MODE만 전제). closeAll에서 stop(기존).
+  modeController?.start()
 
   // P2-3a 다단계 분해 생산자(flag on): decompose_request → 4단계 LLM 분해 → decomposition.emitted 발행.
   const decompose: ProduceDeps | undefined = config.MANAGER_DECOMPOSE_ENABLED
