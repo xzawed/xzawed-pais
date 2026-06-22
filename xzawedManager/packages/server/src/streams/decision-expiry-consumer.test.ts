@@ -99,6 +99,32 @@ describe('buildDecisionExpiredHandler', () => {
     expect(store.createRequest).not.toHaveBeenCalled()
   })
 
+  it('depth >= max → 종단 시 구조적 warn 로그(requestId·종단 사유)', async () => {
+    const store = makeStore(makeReq({ requestId: 'wf-1:wp-2:0:reesc1' }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    try {
+      await buildDecisionExpiredHandler({ decisionStore: store, maxReescalations: 1, ttlMs: 1000, now: () => 0 })(msg('wf-1:wp-2:0:reesc1'))
+      expect(warn).toHaveBeenCalledTimes(1)
+      const logged = String(warn.mock.calls[0]?.[0] ?? '')
+      expect(logged).toContain('wf-1:wp-2:0:reesc1')
+      expect(logged).toContain('소진')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('재전달(중복 decision.expired) → 매 호출 동일 nextId로 createRequest(결정론·실 멱등은 createRequest ON CONFLICT가 담당)', async () => {
+    const store = makeStore(makeReq())
+    const handler = buildDecisionExpiredHandler({ decisionStore: store, maxReescalations: 1, ttlMs: 1000, now: () => 0 })
+    await handler(msg('wf-1:wp-2:0'))
+    await handler(msg('wf-1:wp-2:0'))
+    expect(store.createRequest).toHaveBeenCalledTimes(2)
+    const id0 = (store.createRequest.mock.calls[0][0] as Record<string, unknown>)['requestId']
+    const id1 = (store.createRequest.mock.calls[1][0] as Record<string, unknown>)['requestId']
+    expect(id0).toBe('wf-1:wp-2:0:reesc1')
+    expect(id1).toBe('wf-1:wp-2:0:reesc1') // 동일 nextId → ON CONFLICT DO NOTHING이 1회만 영속(M6)
+  })
+
   it('getRequest null → no-op', async () => {
     const store = makeStore(null)
     await buildDecisionExpiredHandler({ decisionStore: store, maxReescalations: 1, ttlMs: 1000, now: () => 0 })(msg('wf-1:wp-2:0'))
