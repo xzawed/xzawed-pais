@@ -254,3 +254,51 @@ describe('handleDispatch P5-3b SAFE 게이트', () => {
     expect(recordDispatch).not.toHaveBeenCalled()
   })
 })
+
+describe('handleDispatch N2 DEGRADED HIGH-risk 게이트', () => {
+  it('N2: DEGRADED + HIGH-risk + 미승인 → 보류(onDegradedHighRisk 호출·recordDispatch 미호출)', async () => {
+    const { deps, recordDispatch } = makeDeps(stored([wp('a', [], { risk: 'HIGH' })]))
+    const onDegradedHighRisk = vi.fn().mockResolvedValue(undefined)
+    const isHighRiskDispatchApproved = vi.fn().mockResolvedValue(false)
+    const out = await handleDispatch('wf-1', { ...deps, getMode: () => 'DEGRADED', onDegradedHighRisk, isHighRiskDispatchApproved })
+    expect(out.dispatched).toEqual([])
+    expect(recordDispatch).not.toHaveBeenCalled()
+    expect(onDegradedHighRisk).toHaveBeenCalledWith({ workflowId: 'wf-1', wpId: 'a', stepN: 0, projectId: null })
+  })
+
+  it('N2: DEGRADED + HIGH-risk + 승인됨 → 정상 디스패치', async () => {
+    const { deps, recordDispatch } = makeDeps(stored([wp('a', [], { risk: 'HIGH' })]))
+    const onDegradedHighRisk = vi.fn().mockResolvedValue(undefined)
+    const isHighRiskDispatchApproved = vi.fn().mockResolvedValue(true)
+    const out = await handleDispatch('wf-1', { ...deps, getMode: () => 'DEGRADED', onDegradedHighRisk, isHighRiskDispatchApproved })
+    expect(out.dispatched).toHaveLength(1)
+    expect(recordDispatch).toHaveBeenCalledTimes(1)
+    expect(onDegradedHighRisk).not.toHaveBeenCalled()
+  })
+
+  it('N2: DEGRADED + MEDIUM-risk → 게이트 무관·정상 디스패치', async () => {
+    const { deps, recordDispatch } = makeDeps(stored([wp('a', [], { risk: 'MEDIUM' })]))
+    const onDegradedHighRisk = vi.fn().mockResolvedValue(undefined)
+    const isHighRiskDispatchApproved = vi.fn().mockResolvedValue(false)
+    const out = await handleDispatch('wf-1', { ...deps, getMode: () => 'DEGRADED', onDegradedHighRisk, isHighRiskDispatchApproved })
+    expect(out.dispatched).toHaveLength(1)
+    expect(recordDispatch).toHaveBeenCalledTimes(1)
+    expect(onDegradedHighRisk).not.toHaveBeenCalled()
+  })
+
+  it('N2: NORMAL 모드면 HIGH-risk도 정상 디스패치', async () => {
+    const { deps, recordDispatch } = makeDeps(stored([wp('a', [], { risk: 'HIGH' })]))
+    const onDegradedHighRisk = vi.fn().mockResolvedValue(undefined)
+    const isHighRiskDispatchApproved = vi.fn().mockResolvedValue(false)
+    const out = await handleDispatch('wf-1', { ...deps, getMode: () => 'NORMAL', onDegradedHighRisk, isHighRiskDispatchApproved })
+    expect(out.dispatched).toHaveLength(1)
+    expect(onDegradedHighRisk).not.toHaveBeenCalled()
+  })
+
+  it('N2: 콜백 미주입이면 DEGRADED여도 정상 디스패치(회귀 0)', async () => {
+    const { deps, recordDispatch } = makeDeps(stored([wp('a', [], { risk: 'HIGH' })]))
+    const out = await handleDispatch('wf-1', { ...deps, getMode: () => 'DEGRADED' })
+    expect(out.dispatched).toHaveLength(1)
+    expect(recordDispatch).toHaveBeenCalledTimes(1)
+  })
+})

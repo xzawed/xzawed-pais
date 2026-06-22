@@ -52,6 +52,10 @@ export interface DispatchDeps {
   getMode?: () => OperationalMode
   /** P5-3b: SAFE 보류 시 콜백(held-set 적재용). Supervisor.resumeDispatch가 드레인해 재디스패치. */
   onHeld?: (workflowId: string) => void
+  /** N2: DEGRADED 모드에서 HIGH-risk WP가 사인오프 승인됐는지 조회(주입 시). 미승인이면 보류. */
+  isHighRiskDispatchApproved?: (workflowId: string, wpId: string) => Promise<boolean>
+  /** N2: DEGRADED HIGH-risk WP 보류 시 콜백(degraded_dispatch DecisionRequest 생성). */
+  onDegradedHighRisk?: (info: { workflowId: string; wpId: string; stepN: number; projectId: string | null }) => Promise<void>
 }
 
 export interface DispatchOutcome {
@@ -121,10 +125,21 @@ export async function handleDispatch(workflowId: string, deps: DispatchDeps): Pr
   const plan = planDispatch(graph, { alreadyDispatched, readiness })
   const skipped = ready.length - plan.length
 
+  // N2: DEGRADED 운영 모드 + HIGH-risk WP는 사람 사인오프 전까지 보류(per-WP). 콜백 둘 다 주입 시에만 활성(회귀 0).
+  const degradedSignoffActive = deps.onDegradedHighRisk !== undefined && deps.isHighRiskDispatchApproved !== undefined
+  const wpById = new Map(stored.workPackages.map((w) => [w.id, w]))
+
   const visibilityMs = deps.visibilityMs ?? DEFAULT_VISIBILITY_MS
   const dispatched: DispatchOutcome['dispatched'] = []
   let deduped = 0
   for (const item of plan) {
+    if (degradedSignoffActive && deps.getMode?.() === 'DEGRADED' && wpById.get(item.wpId)?.risk === 'HIGH') {
+      const approved = await deps.isHighRiskDispatchApproved!(workflowId, item.wpId)
+      if (!approved) {
+        await deps.onDegradedHighRisk!({ workflowId, wpId: item.wpId, stepN: item.stepN, projectId: stored.userContext?.projectId ?? null })
+        continue // 보류 — recordDispatch·publish 미실행. WP는 DRAFTED 유지(전이 0).
+      }
+    }
     const r = await deps.store.recordDispatch({
       workflowId,
       wpId: item.wpId,
