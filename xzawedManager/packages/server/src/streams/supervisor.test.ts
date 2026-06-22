@@ -3,7 +3,7 @@ import { makeEnvelope } from '@xzawed/agent-streams'
 import {
   buildCompletionHandler, CompletionSignalSchema, Supervisor, createSupervisor, shouldWireSupervisor,
   shouldWireOracleConsumer, shouldWireDecisionRoute, shouldWireRiskConsumer, buildWorkerConsumerDeps,
-  drainHeld, buildDispatchGate,
+  drainHeld, buildDispatchGate, shouldWireDegradedSignoff,
 } from './supervisor.js'
 import type { LeaseStore } from '../db/lease.repo.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -516,5 +516,13 @@ describe('buildDispatchGate (P5-3b)', () => {
     await resumeDispatch!()
     expect(getGraph).toHaveBeenCalledWith('wf-1')
     expect(getGraph).toHaveBeenCalledWith('wf-2')
+  })
+})
+
+describe('shouldWireDegradedSignoff', () => {
+  it('degradedSignoff + decisionStore 둘 다여야 true', () => {
+    expect(shouldWireDegradedSignoff(true, true)).toBe(true)
+    expect(shouldWireDegradedSignoff(true, false)).toBe(false)
+    expect(shouldWireDegradedSignoff(false, true)).toBe(false)
   })
 })
