@@ -2,7 +2,7 @@ import { z, type ZodType } from 'zod'
 import type { Redis } from 'ioredis'
 import { BaseConsumer } from '@xzawed/agent-streams'
 import { DECISION_EXPIRED_EVENT, type DecisionRequest } from '../db/decision.types.js'
-import { DecisionEventSchema, type DecisionEventMessage } from './decision-consumer.js'
+import { DecisionEventSchema, groupScopedDedupKey, type DecisionEventMessage } from './decision-consumer.js'
 
 // ---------------------------------------------------------------------------
 // Task 1: 재에스컬 깊이 헬퍼 (순수)
@@ -106,7 +106,7 @@ export function buildDecisionExpiredHandler(deps: DecisionExpiryDeps): (msg: Dec
 const EXPIRY_GROUP = 'manager-decision-expiry-consumers'
 const DECISION_PREFIX = 'manager:decision'
 
-/** decision.expired 소비자(BaseConsumer·dedup ON·별도 그룹). start('main') → manager:decision:main. */
+/** decision.expired 소비자(BaseConsumer·dedup ON·그룹-스코프 dedup 키). start('main') → manager:decision:main. */
 export class DecisionExpiredConsumer extends BaseConsumer<DecisionEventMessage> {
   constructor(redis: Redis, deps: DecisionExpiryDeps, sleep?: (ms: number) => Promise<void>) {
     super(
@@ -117,6 +117,9 @@ export class DecisionExpiredConsumer extends BaseConsumer<DecisionEventMessage> 
       DECISION_PREFIX,
       DecisionEventSchema as ZodType<DecisionEventMessage>,
       sleep,
+      true,
+      3,
+      { key: (m) => groupScopedDedupKey(EXPIRY_GROUP, m) },
     )
   }
 }

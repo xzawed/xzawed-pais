@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { buildDecisionRecordedHandler, type DecisionRoutingDeps } from './decision-consumer.js'
+import { buildDecisionRecordedHandler, groupScopedDedupKey, type DecisionRoutingDeps, type DecisionEventMessage } from './decision-consumer.js'
 
 function recordedMsg(choice: string, requestId = 'wf-1:wp_a:2') {
   return { envelope: { workflowId: 'wf-1' }, type: 'decision.recorded', payload: { decisionId: 'd1', requestId, choice, routedTo: 'impl', decidedBy: 'po' } } as never
@@ -140,5 +140,53 @@ describe('buildDecisionRecordedHandler approve 위험분류 (C5)', () => {
     } as never
     await buildDecisionRecordedHandler(d)(rec({ requestId: 'wf:risk:1', choice: 'approve', decisionId: 'd' }))
     expect(riskStore.approve).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// B1 동시성: groupScopedDedupKey — 두 그룹 멱등 마커 충돌 차단
+// ---------------------------------------------------------------------------
+
+const RECORDED_GROUP = 'manager-decision-consumers'
+const EXPIRY_GROUP = 'manager-decision-expiry-consumers'
+
+function makeDecisionMsg(idempotencyKey: string): DecisionEventMessage {
+  return {
+    envelope: { idempotencyKey } as never,
+    type: 'decision.expired',
+    payload: { requestId: 'wf-1:wp-a:0' },
+  }
+}
+
+describe('groupScopedDedupKey (B1 그룹-스코프 dedup)', () => {
+  it('같은 메시지에 대해 두 그룹의 키가 서로 다르다(DISJOINT — 핵심 불변식)', () => {
+    const m = makeDecisionMsg('idem-1')
+    const k1 = groupScopedDedupKey(RECORDED_GROUP, m)
+    const k2 = groupScopedDedupKey(EXPIRY_GROUP, m)
+    expect(k1).not.toBeNull()
+    expect(k2).not.toBeNull()
+    expect(k1).not.toBe(k2)
+  })
+
+  it('각 키는 해당 그룹 이름으로 시작한다', () => {
+    const m = makeDecisionMsg('idem-1')
+    expect(groupScopedDedupKey(RECORDED_GROUP, m)).toMatch(new RegExp(`^${RECORDED_GROUP}:`))
+    expect(groupScopedDedupKey(EXPIRY_GROUP, m)).toMatch(new RegExp(`^${EXPIRY_GROUP}:`))
+  })
+
+  it('같은 (그룹, 메시지) 쌍은 항상 동일한 키를 반환한다(within-group dedup 보존)', () => {
+    const m = makeDecisionMsg('idem-stable')
+    expect(groupScopedDedupKey(RECORDED_GROUP, m)).toBe(groupScopedDedupKey(RECORDED_GROUP, m))
+    expect(groupScopedDedupKey(EXPIRY_GROUP, m)).toBe(groupScopedDedupKey(EXPIRY_GROUP, m))
+  })
+
+  it('envelope.idempotencyKey와 messageId 모두 없으면 null 반환(dedup-skip 보존)', () => {
+    const m: DecisionEventMessage = {
+      envelope: {} as never,
+      type: 'decision.expired',
+      payload: { requestId: 'wf-1:wp-a:0' },
+    }
+    expect(groupScopedDedupKey(RECORDED_GROUP, m)).toBeNull()
+    expect(groupScopedDedupKey(EXPIRY_GROUP, m)).toBeNull()
   })
 })

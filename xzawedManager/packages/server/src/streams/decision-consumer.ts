@@ -1,6 +1,6 @@
 import { z, type ZodType } from 'zod'
 import type { Redis } from 'ioredis'
-import { BaseConsumer, EventEnvelopeSchema } from '@xzawed/agent-streams'
+import { BaseConsumer, EventEnvelopeSchema, defaultDedupKey } from '@xzawed/agent-streams'
 import { DECISION_RECORDED_EVENT, type DecisionRequest } from '../db/decision.types.js'
 import { publishDispatchSignal } from './dispatch-signal.js'
 import type { Publish } from './decomposition-consumer.js'
@@ -17,6 +17,14 @@ export const DecisionEventSchema = z.object({
   payload: z.record(z.unknown()),
 })
 export type DecisionEventMessage = z.infer<typeof DecisionEventSchema>
+
+/** B1 동시성: 같은 manager:decision:main 스트림을 두 소비자 그룹이 구독한다. BaseConsumer 멱등 마커
+ *  idem:{stream}:{key}에는 그룹 성분이 없어 한 그룹이 다른 그룹의 마커를 선점하면(no-op type이어도)
+ *  상대 그룹이 handler를 건너뛴다. dedup 키를 그룹으로 네임스페이싱해 두 그룹의 마커를 분리한다. */
+export function groupScopedDedupKey(group: string, msg: DecisionEventMessage): string | null {
+  const k = defaultDedupKey(msg)
+  return k === null ? null : `${group}:${k}`
+}
 
 const RecordedPayloadSchema = z.object({ requestId: z.string().min(1), choice: z.string(), decisionId: z.string().optional(), decidedBy: z.string().optional() })
 
@@ -75,7 +83,7 @@ export function buildDecisionRecordedHandler(deps: DecisionRoutingDeps): (msg: D
   }
 }
 
-/** decision.recorded 소비자(BaseConsumer·dedup ON). start('main') → manager:decision:main. */
+/** decision.recorded 소비자(BaseConsumer·dedup ON·그룹-스코프 dedup 키). start('main') → manager:decision:main. */
 export class DecisionRecordedConsumer extends BaseConsumer<DecisionEventMessage> {
   constructor(redis: Redis, deps: DecisionRoutingDeps, sleep?: (ms: number) => Promise<void>) {
     super(
@@ -86,6 +94,9 @@ export class DecisionRecordedConsumer extends BaseConsumer<DecisionEventMessage>
       DECISION_PREFIX,
       DecisionEventSchema as ZodType<DecisionEventMessage>,
       sleep,
+      true,
+      3,
+      { key: (m) => groupScopedDedupKey(DECISION_GROUP, m) },
     )
   }
 }
