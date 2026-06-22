@@ -91,3 +91,4 @@ P5-3(로드맵)은 FSM + saga 보상 + canary/롤백을 묶으나 너무 크다.
 - **모드 이벤트 스트림·UI surface**(현재 로그만).
 - **P5-4 saga 보상**·**P5-5 canary/롤백**.
 - per-workflow budget trip을 DEGRADED 신호로(현재 daily만 SAFE).
+- **stuck-DEGRADED 한계**(적대 리뷰 발견·비차단): provider 서킷이 open된 뒤 호출이 없으면(idle) `before()` probe가 안 일어나 `snapshot().state`가 open에 고착 → ModeController가 DEGRADED를 무한 보고할 수 있다. observe-only라 게이팅 영향 0·**fail-safe 방향**(실제보다 과대 강등 보고)이라 비차단. enforcement(P5-3b) 도입 시 idle-probe 또는 모드 TTL로 처리 권장. (즉시 tick 부재 — 첫 전이가 최대 sweepMs 지연 — 도 P5-3b에서 함께 고려.)
