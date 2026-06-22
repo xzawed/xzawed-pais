@@ -403,3 +403,33 @@ describe('createSupervisor B1 decisionExpiryConsumer', () => {
     expect(makeRedis).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('buildWorkerConsumerDeps G1 서킷 스레딩', () => {
+  const base = { repo: {} as never, publish: vi.fn(), handlers: { develop_code: { execute: vi.fn() } } }
+  const cfg = { sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: false, taskWorker: true } as never
+
+  it('budget 주입 시 WorkerDeps.budget에 스레딩', () => {
+    const budget = { check: vi.fn(), record: vi.fn() } as never
+    const w = buildWorkerConsumerDeps({ ...base, budget } as never, cfg)
+    expect(w.budget).toBe(budget)
+  })
+
+  it('provider 주입 시 WorkerDeps.provider에 스레딩', () => {
+    const provider = { before: vi.fn(), onSuccess: vi.fn(), onFailure: vi.fn() } as never
+    const w = buildWorkerConsumerDeps({ ...base, provider } as never, cfg)
+    expect(w.provider).toBe(provider)
+  })
+
+  it('isProviderFailure 주입 시 WorkerDeps.isProviderFailure에 스레딩', () => {
+    const isProviderFailure = (err: unknown) => err instanceof Error
+    const w = buildWorkerConsumerDeps({ ...base, isProviderFailure } as never, cfg)
+    expect(w.isProviderFailure).toBe(isProviderFailure)
+  })
+
+  it('breaker 미주입이면 WorkerDeps에 키 미생성(회귀 0)', () => {
+    const w = buildWorkerConsumerDeps(base as never, cfg)
+    expect(w.budget).toBeUndefined()
+    expect(w.provider).toBeUndefined()
+    expect(w.isProviderFailure).toBeUndefined()
+  })
+})

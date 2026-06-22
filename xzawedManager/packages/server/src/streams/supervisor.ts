@@ -17,7 +17,7 @@ import { makeSignoffBrief } from './signoff-brief.js'
 import { WorkerConsumer, shouldWireWorker, type AgentExecutor, type WorkerDeps } from './worker.js'
 import type { AdvisoryStore } from './advisory.js'
 import type { SecuritySeverity } from './verify.js'
-import type { ClaudeLike, WpRisk } from '@xzawed/agent-streams'
+import type { ClaudeLike, WpRisk, BudgetCircuitBreaker, ProviderCircuitBreaker } from '@xzawed/agent-streams'
 import type { ConformanceOracleStore, ImpactOracleStore, InvariantOracleStore } from './conformance.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
@@ -176,6 +176,10 @@ export interface SupervisorDeps {
   claude?: ClaudeLike
   model?: string
   timeoutMs?: number
+  /** G1: §13 서킷(advisory 경로 produceAdvisory 보호·러너와 동일 인스턴스). */
+  budget?: BudgetCircuitBreaker
+  provider?: ProviderCircuitBreaker
+  isProviderFailure?: (err: unknown) => boolean
   /** P5-1: 릴리스 게이트 증거/결과 영속소(ReleaseGateRepo). releaseGate flag + 주입 시 게이트 평가. */
   releaseStore?: ReleaseGateRepo
   /** C5: approve→RiskClassificationRepo.approve 분기용.
@@ -257,7 +261,7 @@ export function shouldWireDecisionRoute(routing: boolean, hasPool: boolean, hasA
 /** P4b-1: WorkerConsumer deps 조립(순수·D4) — wpVerify→verifyEnabled 스레딩을 행동 단언 가능하게 분리.
  *  instanceOf 단언만으로는 이 한 줄의 누락(undefined→off)이 무음 fail-open 퇴행이 되는 것을 잡지 못한다. */
 export function buildWorkerConsumerDeps(
-  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs' | 'releaseStore' | 'riskStore'>
+  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs' | 'releaseStore' | 'riskStore' | 'budget' | 'provider' | 'isProviderFailure'>
     & { handlers: Record<string, AgentExecutor> },
   config: SupervisorConfig,
 ): WorkerDeps {
@@ -294,6 +298,10 @@ export function buildWorkerConsumerDeps(
     ...(deps.claude && { claude: deps.claude }),
     ...(deps.model !== undefined && { model: deps.model }),
     ...(deps.timeoutMs !== undefined && { timeoutMs: deps.timeoutMs }),
+    // G1: §13 서킷(advisory 경로 보호·러너·decompose와 동일 인스턴스). 미주입이면 무보호(회귀 0).
+    ...(deps.budget && { budget: deps.budget }),
+    ...(deps.provider && { provider: deps.provider }),
+    ...(deps.isProviderFailure && { isProviderFailure: deps.isProviderFailure }),
     // P5-1 릴리스 게이트: flag + releaseStore 둘 다 있어야 활성(검증 우회 무음 방지·행동 단언). oracle 미소비.
     releaseGateEnabled: config.releaseGate === true && deps.releaseStore != null,
     ...(deps.releaseStore && { releaseStore: deps.releaseStore }),
@@ -404,6 +412,10 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
             ...(deps.releaseStore && { releaseStore: deps.releaseStore }),
             // D5: riskStore 전달(buildWorkerConsumerDeps가 modelRouting flag 게이트로 worker deps에 조건부 주입).
             ...(deps.riskStore && { riskStore: deps.riskStore }),
+            // G1: §13 서킷(advisory 경로 보호·러너·decompose와 동일 인스턴스). 미주입이면 무보호(회귀 0).
+            ...(deps.budget && { budget: deps.budget }),
+            ...(deps.provider && { provider: deps.provider }),
+            ...(deps.isProviderFailure && { isProviderFailure: deps.isProviderFailure }),
           },
           config,
         ),

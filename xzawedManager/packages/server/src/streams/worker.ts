@@ -12,7 +12,7 @@ import { resolveAgentTool } from '../tools/agent-tool-map.js'
 import { verifyWp, publishVerificationFailed, type SecuritySeverity } from './verify.js'
 import type { ChannelOutcome } from '../db/release-gate.types.js'
 import { produceAdvisory, type AdvisoryStore } from './advisory.js'
-import type { ClaudeLike } from '@xzawed/agent-streams'
+import type { ClaudeLike, BudgetCircuitBreaker, ProviderCircuitBreaker } from '@xzawed/agent-streams'
 import { DONE_STATE, ESCALATED_STATE } from './dispatch-constants.js'
 import { resolveWpModel, type ModelTierIds } from './model-routing.js'
 
@@ -72,6 +72,10 @@ export interface WorkerDeps {
   claude?: ClaudeLike
   model?: string
   timeoutMs?: number
+  /** G1: §13 서킷(advisory produceAdvisory에 스레딩). */
+  budget?: BudgetCircuitBreaker
+  provider?: ProviderCircuitBreaker
+  isProviderFailure?: (err: unknown) => boolean
   /** P5-1 릴리스 게이트: verdict.ok 시 채널 증거를 영속(best-effort). off면 미주입(회귀 0). */
   releaseGateEnabled?: boolean
   releaseStore?: { recordEvidence(workflowId: string, wpId: string, attempt: number, outcomes: ChannelOutcome[]): Promise<void> }
@@ -273,6 +277,9 @@ async function maybeProduceAdvisory(
   }
   await produceAdvisory(workflowId, wp, attempt, result, {
     claude: deps.claude, model: deps.model, timeoutMs: deps.timeoutMs, advisoryStore: deps.advisoryStore,
+    ...(deps.budget && { budget: deps.budget }),
+    ...(deps.provider && { provider: deps.provider }),
+    ...(deps.isProviderFailure && { isProviderFailure: deps.isProviderFailure }),
   })
 }
 
