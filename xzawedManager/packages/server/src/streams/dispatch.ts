@@ -1,5 +1,5 @@
 import { buildTaskGraph, readyNodes, topoSort, oracleSatisfiedSet } from '@xzawed/agent-streams'
-import type { TaskGraph, ReadinessOptions, ApprovedOracleView, WorkPackage } from '@xzawed/agent-streams'
+import type { TaskGraph, ReadinessOptions, ApprovedOracleView, WorkPackage, OperationalMode } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
 import { DRAFTED_STATE, DISPATCHED_STATE, ESCALATED_STATE, DONE_STATE, DEFAULT_VISIBILITY_MS } from './dispatch-constants.js'
@@ -48,11 +48,15 @@ export interface DispatchDeps {
   /** P4-1: 주입 시 recordDispatch 후 wp.dispatch_signal 발행(워커 트리거). 미주입이면 무발행(회귀 0). */
   publish?: Publish
   now?: () => number
+  /** P5-3b: 운영 강등 모드 조회(주입 시). SAFE면 handleDispatch가 신규 디스패치를 보류(held)·recordDispatch 미실행. */
+  getMode?: () => OperationalMode
+  /** P5-3b: SAFE 보류 시 콜백(held-set 적재용). Supervisor.resumeDispatch가 드레인해 재디스패치. */
+  onHeld?: (workflowId: string) => void
 }
 
 export interface DispatchOutcome {
-  /** 'noop'=그래프 없음(평가 안 함), 'dispatched'=평가함(dispatched는 비어 있을 수 있음). */
-  status: 'dispatched' | 'noop'
+  /** 'noop'=그래프 없음(평가 안 함), 'dispatched'=평가함(비어 있을 수 있음), 'held'=SAFE 모드 보류(P5-3b). */
+  status: 'dispatched' | 'noop' | 'held'
   dispatched: Array<{ wpId: string; stepN: number; eventId: string }>
   /** ready였으나 이미 디스패치돼 제외된 노드 수. */
   skipped: number
@@ -91,6 +95,13 @@ async function buildReadiness(
 export async function handleDispatch(workflowId: string, deps: DispatchDeps): Promise<DispatchOutcome> {
   const stored = await deps.repo.getGraph(workflowId)
   if (!stored) return { status: 'noop', dispatched: [], skipped: 0 }
+
+  // P5-3b: SAFE 모드면 신규 디스패치 보류(held). held WP는 상태 전이 0(DRAFTED 유지) → SAFE 이탈 시
+  // Supervisor.resumeDispatch가 onHeld로 기록된 워크플로를 재디스패치. getMode 미주입(enforce off)→스킵(회귀 0).
+  if (deps.getMode?.() === 'SAFE') {
+    deps.onHeld?.(workflowId)
+    return { status: 'held', dispatched: [], skipped: 0 }
+  }
 
   // 사이클/구조오류는 P1d-2가 영속 전 차단하므로 getGraph는 정상 그래프만 보유(불변식).
   const graph = buildTaskGraph(stored.workPackages)

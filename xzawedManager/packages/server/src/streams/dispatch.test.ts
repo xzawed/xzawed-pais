@@ -220,3 +220,37 @@ describe('handleDispatch + oracleStore 주입 (P3-1)', () => {
     expect(out.dispatched).toEqual([])
   })
 })
+
+describe('handleDispatch P5-3b SAFE 게이트', () => {
+  it('P5-3b: getMode가 SAFE면 held 반환·recordDispatch 미호출·onHeld 호출(held WP 전이 0)', async () => {
+    const { deps, recordDispatch } = makeDeps(stored([wp('a'), wp('b')]))
+    const onHeld = vi.fn()
+    const out = await handleDispatch('wf-1', { ...deps, getMode: () => 'SAFE', onHeld })
+    expect(out).toEqual({ status: 'held', dispatched: [], skipped: 0 })
+    expect(recordDispatch).not.toHaveBeenCalled()
+    expect(onHeld).toHaveBeenCalledWith('wf-1')
+  })
+
+  it('P5-3b: getMode가 DEGRADED/NORMAL이면 정상 디스패치(SAFE만 보류)', async () => {
+    const { deps, recordDispatch } = makeDeps(stored([wp('a')]))
+    const out = await handleDispatch('wf-1', { ...deps, getMode: () => 'DEGRADED' })
+    expect(out.status).toBe('dispatched')
+    expect(recordDispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('P5-3b: getMode 미주입이면 기존 동작(회귀 0)', async () => {
+    const { deps, recordDispatch } = makeDeps(stored([wp('a')]))
+    const out = await handleDispatch('wf-1', deps)
+    expect(out.status).toBe('dispatched')
+    expect(recordDispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('P5-3b: SAFE여도 graph 없으면 noop 유지(held는 graph 있을 때만)', async () => {
+    const { deps, recordDispatch } = makeDeps(null)
+    const onHeld = vi.fn()
+    const out = await handleDispatch('wf-1', { ...deps, getMode: () => 'SAFE', onHeld })
+    expect(out).toEqual({ status: 'noop', dispatched: [], skipped: 0 })
+    expect(onHeld).not.toHaveBeenCalled()
+    expect(recordDispatch).not.toHaveBeenCalled()
+  })
+})
