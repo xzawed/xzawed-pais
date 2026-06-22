@@ -671,3 +671,17 @@ describe('config MANAGER_DEGRADED_ENFORCE', () => {
     expect(loadConfig().MANAGER_DEGRADED_ENFORCE).toBe(true)
   })
 })
+
+describe('config MANAGER_DEGRADED_SIGNOFF', () => {
+  withBaseEnv(['MANAGER_DEGRADED_SIGNOFF'])
+
+  it('기본값 false', () => {
+    delete process.env['MANAGER_DEGRADED_SIGNOFF']
+    expect(loadConfig().MANAGER_DEGRADED_SIGNOFF).toBe(false)
+  })
+
+  it("'true'면 true", () => {
+    process.env['MANAGER_DEGRADED_SIGNOFF'] = 'true'
+    expect(loadConfig().MANAGER_DEGRADED_SIGNOFF).toBe(true)
+  })
+})

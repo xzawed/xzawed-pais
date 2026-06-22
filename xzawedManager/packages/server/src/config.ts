@@ -215,6 +215,12 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // N2: 강등 모드 HIGH-risk 디스패치 사인오프(기본 false). true(+MANAGER_DEGRADED_ENFORCE+MANAGER_DECISION_ROUTING+DATABASE_URL)면
+    // DEGRADED 모드에서 HIGH-risk WP를 보류하고 degraded_dispatch DecisionRequest로 사람 사인오프를 요구. off→P5-3b 바이트 동일.
+    MANAGER_DEGRADED_SIGNOFF: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {
