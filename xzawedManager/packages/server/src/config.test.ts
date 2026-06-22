@@ -558,6 +558,22 @@ describe('MANAGER_RISK_DECISION flag', () => {
   })
 })
 
+describe('config MANAGER_DECISION_REESCALATE_MAX', () => {
+  withBaseEnv(['MANAGER_DECISION_REESCALATE_MAX'])
+  it('기본값 1', () => {
+    delete process.env['MANAGER_DECISION_REESCALATE_MAX']
+    expect(loadConfig().MANAGER_DECISION_REESCALATE_MAX).toBe(1)
+  })
+  it("'3' → 3", () => {
+    process.env['MANAGER_DECISION_REESCALATE_MAX'] = '3'
+    expect(loadConfig().MANAGER_DECISION_REESCALATE_MAX).toBe(3)
+  })
+  it("'0' → 에러(positive)", () => {
+    process.env['MANAGER_DECISION_REESCALATE_MAX'] = '0'
+    expect(() => loadConfig()).toThrow()
+  })
+})
+
 describe('MANAGER_MODEL_ROUTING + model id 기본값', () => {
   let savedMode: string | undefined
   let savedKey: string | undefined
