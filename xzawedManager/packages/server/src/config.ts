@@ -209,6 +209,12 @@ const configSchema = z
     MANAGER_MODE_SWEEP_MS: z.coerce.number().int().positive().default(5000),
     // P5-3a: 호전 히스테리시스 안정 윈도(ms). 이 시간 동안 저severity 신호가 유지되어야 복귀(1단계씩). 기본 60000ms.
     MANAGER_MODE_STABILITY_WINDOW_MS: z.coerce.number().int().positive().default(60000),
+    // P5-3b: 강등 enforcement(기본 false). true(+MANAGER_DEGRADED_MODE+TASK_MANAGER_ENABLED)면 SAFE 모드에서
+    // handleDispatch가 신규 디스패치 보류(held)·SAFE 이탈 시 Supervisor.resumeDispatch 재개. off→P5-3a observe-only 바이트 동일.
+    MANAGER_DEGRADED_ENFORCE: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
   })
   .superRefine((val, ctx) => {
     if (val.SERVICE_JWT_SECRET !== undefined && val.SERVICE_JWT_SECRET.length < 32) {

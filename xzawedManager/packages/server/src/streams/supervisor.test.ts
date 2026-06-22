@@ -3,6 +3,7 @@ import { makeEnvelope } from '@xzawed/agent-streams'
 import {
   buildCompletionHandler, CompletionSignalSchema, Supervisor, createSupervisor, shouldWireSupervisor,
   shouldWireOracleConsumer, shouldWireDecisionRoute, shouldWireRiskConsumer, buildWorkerConsumerDeps,
+  drainHeld, buildDispatchGate,
 } from './supervisor.js'
 import type { LeaseStore } from '../db/lease.repo.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -431,5 +432,89 @@ describe('buildWorkerConsumerDeps G1 서킷 스레딩', () => {
     expect(w.budget).toBeUndefined()
     expect(w.provider).toBeUndefined()
     expect(w.isProviderFailure).toBeUndefined()
+  })
+})
+
+describe('drainHeld', () => {
+  it('held를 드레인(비움)하고 각 id에 dispatchOne 호출', async () => {
+    const held = new Set(['wf-1', 'wf-2'])
+    const calls: string[] = []
+    await drainHeld(held, async (wf) => { calls.push(wf) })
+    expect(calls.sort()).toEqual(['wf-1', 'wf-2'])
+    expect(held.size).toBe(0)
+  })
+
+  it('per-item throw가 나머지를 비차단(never-throw)', async () => {
+    const held = new Set(['wf-1', 'wf-2'])
+    const ok: string[] = []
+    await expect(drainHeld(held, async (wf) => {
+      if (wf === 'wf-1') throw new Error('boom')
+      ok.push(wf)
+    })).resolves.toBeUndefined()
+    expect(ok).toEqual(['wf-2'])
+    expect(held.size).toBe(0)
+  })
+
+  it('빈 set은 no-op', async () => {
+    const dispatchOne = vi.fn()
+    await drainHeld(new Set(), dispatchOne)
+    expect(dispatchOne).not.toHaveBeenCalled()
+  })
+})
+
+describe('Supervisor.resumeDispatch', () => {
+  it('resumeDispatch 컴포넌트에 위임', async () => {
+    const resumeDispatch = vi.fn().mockResolvedValue(undefined)
+    const noop = { start: async () => {}, stop: () => {} }
+    const sweeper = { start: () => {}, stop: () => {} }
+    const sup = new Supervisor({
+      decompositionConsumer: noop, completionConsumer: noop, leaseSweeper: sweeper, resumeDispatch,
+    })
+    await sup.resumeDispatch()
+    expect(resumeDispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('resumeDispatch 미주입이면 no-op(throw 없음)', async () => {
+    const noop = { start: async () => {}, stop: () => {} }
+    const sweeper = { start: () => {}, stop: () => {} }
+    const sup = new Supervisor({ decompositionConsumer: noop, completionConsumer: noop, leaseSweeper: sweeper })
+    await expect(sup.resumeDispatch()).resolves.toBeUndefined()
+  })
+})
+
+describe('buildDispatchGate (P5-3b)', () => {
+  it('getMode 미주입이면 base dispatch 그대로 반환·resumeDispatch undefined(회귀 0)', () => {
+    const base = { repo: {} as never, store: {} as never, visibilityMs: 5000 }
+    const result = buildDispatchGate(base, undefined)
+    expect(result.dispatch).toBe(base)
+    expect(result.resumeDispatch).toBeUndefined()
+    expect('getMode' in result.dispatch).toBe(false)
+    expect('onHeld' in result.dispatch).toBe(false)
+  })
+
+  it('getMode 주입 시 dispatch에 getMode·onHeld 합류·resumeDispatch는 함수', () => {
+    const base = { repo: {} as never, store: {} as never, visibilityMs: 5000 }
+    const getMode = () => 'SAFE' as const
+    const result = buildDispatchGate(base, getMode)
+    expect(result.dispatch.getMode).toBe(getMode)
+    expect(typeof result.dispatch.onHeld).toBe('function')
+    expect(typeof result.resumeDispatch).toBe('function')
+    // base 객체 자체는 변경되지 않아야 함(순수)
+    expect('getMode' in base).toBe(false)
+  })
+
+  it('onHeld로 held-set에 쌓인 wf를 resumeDispatch가 드레인(repo.getGraph 각 wf로 호출)', async () => {
+    const getGraph = vi.fn().mockResolvedValue(null)
+    const base = {
+      repo: { getGraph, latestStates: vi.fn().mockResolvedValue([]) } as never,
+      store: {} as never,
+      visibilityMs: 5000,
+    }
+    const { dispatch, resumeDispatch } = buildDispatchGate(base, () => 'SAFE' as const)
+    dispatch.onHeld!('wf-1')
+    dispatch.onHeld!('wf-2')
+    await resumeDispatch!()
+    expect(getGraph).toHaveBeenCalledWith('wf-1')
+    expect(getGraph).toHaveBeenCalledWith('wf-2')
   })
 })
