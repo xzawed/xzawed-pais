@@ -657,3 +657,17 @@ describe('MANAGER_MODE_STABILITY_WINDOW_MS', () => {
     expect(loadConfig().MANAGER_MODE_STABILITY_WINDOW_MS).toBe(30000)
   })
 })
+
+describe('config MANAGER_DEGRADED_ENFORCE', () => {
+  withBaseEnv(['MANAGER_DEGRADED_ENFORCE'])
+
+  it('기본값 false', () => {
+    delete process.env['MANAGER_DEGRADED_ENFORCE']
+    expect(loadConfig().MANAGER_DEGRADED_ENFORCE).toBe(false)
+  })
+
+  it("'true'면 true", () => {
+    process.env['MANAGER_DEGRADED_ENFORCE'] = 'true'
+    expect(loadConfig().MANAGER_DEGRADED_ENFORCE).toBe(true)
+  })
+})
