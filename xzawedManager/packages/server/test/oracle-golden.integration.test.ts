@@ -36,4 +36,25 @@ d('OracleRepo.approvedGoldensForStory (pg)', () => {
     await repo.approve(oracleId, 'po')
     expect(await repo.approvedGoldensForStory('wf-gold-2', 'story-1')).toBeNull()
   })
+
+  // Slice 1: draft golden(frozenBy=null) → freezeGoldensByWorkflow(사람 사인오프) → impact 소비(N7) 루프 실증.
+  test('draft golden(frozenBy=null·approved) → freezeGoldensByWorkflow → approvedGoldensForStory 반환(frozen·N7)', async () => {
+    const repo = new OracleRepo(pool)
+    const oracleId = oracleIdFor('wf-gold-3', 'story-1')
+    await repo.upsert({
+      oracleId, workflowId: 'wf-gold-3', storyId: 'story-1', version: 1, status: 'approved',
+      scenarios: [], invariants: [],
+      goldenRefs: [{ id: 'g1', inputFixture: 'in', normalizedOutput: 'out', normalizers: [], frozenAt: '', frozenBy: null, fromDecision: null, version: 1 }],
+      coverage: {},
+    })
+    // frozenBy=null이라 impact는 아직 미소비(N7) — 사인오프 전엔 ground-truth 아님.
+    expect(await repo.approvedGoldensForStory('wf-gold-3', 'story-1')).toBeNull()
+    expect(await repo.unfrozenGoldenCount('wf-gold-3')).toBe(1)
+    const res = await repo.freezeGoldensByWorkflow('wf-gold-3', 'alice')
+    expect(res.frozen).toBe(1)
+    const goldens = await repo.approvedGoldensForStory('wf-gold-3', 'story-1')
+    expect(goldens?.length).toBe(1)
+    expect(goldens?.[0].frozenBy).toBe('alice')
+    expect(await repo.unfrozenGoldenCount('wf-gold-3')).toBe(0) // 멱등: 재freeze 대상 없음
+  })
 })
