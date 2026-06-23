@@ -227,7 +227,8 @@ export async function buildServer(
       config.MANAGER_RELEASE_SIGNOFF ||
       config.MANAGER_DECISION_EXPIRY ||
       config.MANAGER_RISK_ROUTING || // P2r-4: risk.approved 아웃박스→소비자 발행 필수
-      config.MANAGER_DEGRADED_SIGNOFF) // N2: degraded_dispatch 결정 아웃박스→소비자 발행 필수
+      config.MANAGER_DEGRADED_SIGNOFF || // N2: degraded_dispatch 결정 아웃박스→소비자 발행 필수
+      config.MANAGER_ORACLE_DECISION) // C3: oracle_approval 결정 아웃박스→소비자 발행 필수
   ) {
     outboxRelay = new OutboxRelay(pool, producer, config.MANAGER_OUTBOX_POLL_MS)
     outboxRelay.start()
@@ -244,7 +245,7 @@ export async function buildServer(
   // P6: 결정 영속소(escalation→DecisionRequest 브리프 + 결정 라우팅 getRequest). BRIEF 또는 ROUTING 중
   // 하나라도 켜지면(+pool) 생성 — 라우팅 소비자도 같은 DecisionRepo의 getRequest를 사용한다(회귀 0: 둘 다 off면 undefined).
   const decisionStore =
-    pool && (config.MANAGER_DECISION_BRIEF || config.MANAGER_DECISION_ROUTING || config.MANAGER_DECISION_EXPIRY || config.MANAGER_RISK_DECISION || config.MANAGER_DEGRADED_SIGNOFF) ? new DecisionRepo(pool) : undefined
+    pool && (config.MANAGER_DECISION_BRIEF || config.MANAGER_DECISION_ROUTING || config.MANAGER_DECISION_EXPIRY || config.MANAGER_RISK_DECISION || config.MANAGER_DEGRADED_SIGNOFF || config.MANAGER_ORACLE_DECISION) ? new DecisionRepo(pool) : undefined
   // P4: advisory 채널 영속소(verdict.ok 후 optimization 제안). MANAGER_WP_ADVISORY + pool 시만 생성(회귀 0).
   const advisoryStore = pool && config.MANAGER_WP_ADVISORY ? new AdvisoryRepo(pool) : undefined
   // P5-1: 릴리스 게이트 증거/결과 영속소(recordEvidence·recordGate·evidenceForWorkflow). MANAGER_RELEASE_GATE + pool 시만 생성(회귀 0).
@@ -454,6 +455,8 @@ export async function buildServer(
         visibilityMs: config.MANAGER_LEASE_VISIBILITY_MS,
         maxAttempts: config.MANAGER_LEASE_MAX_ATTEMPTS,
         oracleDor: config.MANAGER_ORACLE_DOR,
+        // C3: 오라클 승인 결정(=MANAGER_ORACLE_DECISION). off면 oracle_approval 미발행·미소비(회귀 0). oracleStore+decisionStore 동반 시만 활성.
+        oracleDecision: config.MANAGER_ORACLE_DECISION,
         // P4-1: 워커 활성(=MANAGER_TASK_WORKER). off면 handlers 미주입·shouldWireWorker=false → 워커 미배선(회귀 0).
         taskWorker: config.MANAGER_TASK_WORKER,
         // P4b-1: 워커 검증 게이트(=MANAGER_WP_VERIFY). off면 워커 동작 P4a-2와 동일(회귀 0).
@@ -554,6 +557,9 @@ export async function buildServer(
     : undefined
   if (config.MANAGER_RISK_DECISION && (!pool || !config.MANAGER_RISK_CLASSIFY || !config.MANAGER_DECISION_ROUTING)) {
     app.log.warn('[risk] MANAGER_RISK_DECISION=true이나 전제(MANAGER_RISK_CLASSIFY+MANAGER_DECISION_ROUTING+DATABASE_URL) 미충족 — C5 승인 흐름 부분 비활성')
+  }
+  if (config.MANAGER_ORACLE_DECISION && (!pool || !config.MANAGER_ORACLE_DRAFT || !config.MANAGER_DECISION_ROUTING)) {
+    app.log.warn('[oracle] MANAGER_ORACLE_DECISION=true이나 전제(MANAGER_ORACLE_DRAFT+MANAGER_DECISION_ROUTING+DATABASE_URL) 미충족 — C3 오라클 승인 흐름 부분 비활성')
   }
   if (config.MANAGER_RISK_CLASSIFY) {
     if (!pool) app.log.warn('[risk] MANAGER_RISK_CLASSIFY=true이나 DATABASE_URL 없음 — 분류 영속 불가(미배선)')

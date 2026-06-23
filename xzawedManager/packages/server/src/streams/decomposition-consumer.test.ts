@@ -219,6 +219,50 @@ describe('DecompositionConsumer', () => {
   })
 })
 
+describe('handleDecompositionEmitted — oracle_approval DecisionRequest 발행 (C3)', () => {
+  const draft = {
+    storyId: 's1',
+    scenarios: [] as { id: string; title: string; given: string[]; when: string; thenSteps: string[]; status: 'drafted' }[],
+    coverage: {} as Record<string, string[]>,
+  }
+  const msgWithDraftsAndProject = (drafts: typeof draft[]): DecompositionEmittedMessage => ({
+    envelope: env({ workflowId: 'wf-c3' }),
+    type: 'decomposition.emitted',
+    payload: {
+      workPackages: [wp('a')],
+      oracleDrafts: drafts,
+      userContext: { userId: 'u', projectId: 'proj-9', workspaceRoot: '/ws' },
+    },
+  })
+
+  it('C3: oracleStore+decisionStore+drafts면 oracle_approval DecisionRequest 발행', async () => {
+    const createRequest = vi.fn().mockResolvedValue({ eventId: 'e1' })
+    const upsertDraft = vi.fn().mockResolvedValue(undefined)
+    const repo = { upsertGraph: vi.fn().mockResolvedValue({ version: 1 }) } as unknown as Parameters<typeof handleDecompositionEmitted>[1]['repo']
+    const m = msgWithDraftsAndProject([draft])
+    await handleDecompositionEmitted(m, { repo, publish: vi.fn().mockResolvedValue(undefined), oracleStore: { upsertDraft }, decisionStore: { createRequest } })
+    expect(upsertDraft).toHaveBeenCalledTimes(1)
+    expect(createRequest).toHaveBeenCalledOnce()
+    const brief = createRequest.mock.calls[0]![0] as { type: string; requestId: string; projectId: string | null }
+    expect(brief.type).toBe('oracle_approval')
+    expect(brief.requestId).toContain(':oracle')
+    expect(brief.projectId).toBe('proj-9')
+  })
+
+  it('C3: decisionStore 미주입이면 createRequest 발행 안 함(회귀 0)', async () => {
+    const upsertDraft = vi.fn().mockResolvedValue(undefined)
+    const repo = { upsertGraph: vi.fn().mockResolvedValue({ version: 1 }) } as unknown as Parameters<typeof handleDecompositionEmitted>[1]['repo']
+    const m: DecompositionEmittedMessage = {
+      envelope: env({ workflowId: 'wf-c3' }),
+      type: 'decomposition.emitted',
+      payload: { workPackages: [wp('a')], oracleDrafts: [draft] },
+    }
+    const outcome = await handleDecompositionEmitted(m, { repo, publish: vi.fn().mockResolvedValue(undefined), oracleStore: { upsertDraft } })
+    expect(upsertDraft).toHaveBeenCalledTimes(1)
+    expect(outcome.status).toBe('persisted')
+  })
+})
+
 describe('buildDecompositionConsumerHandler (P1d-7 afterPersisted 훅)', () => {
   it('영속 성공 시 afterPersisted를 workflowId로 호출한다', async () => {
     const repo = mockRepo(1)

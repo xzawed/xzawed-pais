@@ -209,6 +209,8 @@ export interface SupervisorConfig {
   /** P3-2: DoR 게이트(satisfied-set 주입·oracleConsumer) 활성(=MANAGER_ORACLE_DOR).
    *  consumer upsertDraft는 oracleStore 유무로만 동작(DRAFT만 켜도 영속·blocker#1 분리). */
   oracleDor: boolean
+  /** C3: 오라클 승인 결정 배선(=MANAGER_ORACLE_DECISION). oracleStore+decisionStore 동반 시 생산자(decomposition-consumer)+소비자(DecisionRecordedConsumer) 활성. */
+  oracleDecision?: boolean
   /** P4-1: 실행 워커(WorkerConsumer 배선 + dispatch/reclaim 신호 발행) 활성(=MANAGER_TASK_WORKER). */
   taskWorker: boolean
   /** P4b-1: 워커 검증 게이트(완료 발행 전 fail-closed 실 검증) 활성(=MANAGER_WP_VERIFY, 기본 off). */
@@ -296,6 +298,11 @@ export function shouldWireRiskConsumer(riskRouting: boolean, hasGraphStore: bool
   return riskRouting && hasGraphStore
 }
 
+/** C3 oracle 승인 배선 판정(순수): oracleDecision flag + oracleStore + decisionStore 주입 셋 다. */
+export function shouldWireOracleDecision(oracleDecision: boolean, hasOracleStore: boolean, hasDecisionStore: boolean): boolean {
+  return oracleDecision && hasOracleStore && hasDecisionStore
+}
+
 /** N2: degraded_dispatch 사인오프 배선 판정(순수). flag + decisionStore 주입 둘 다. */
 export function shouldWireDegradedSignoff(degradedSignoff: boolean, hasDecisionStore: boolean): boolean {
   return degradedSignoff && hasDecisionStore
@@ -372,6 +379,8 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
   // DoR 게이트 활성(satisfied-set 주입) = MANAGER_ORACLE_DOR && oracleStore 주입. DRAFT만 켜면 dorActive=false라
   // dispatch는 기본 술어로 동작하지만, decompositionConsumer는 oracleStore를 받아 upsertDraft만 수행(blocker#1 분리).
   const dorActive = config.oracleDor && deps.oracleStore !== undefined
+  // C3: oracle 승인 결정 배선 활성 판정(순수 게이트 위임). flag + oracleStore + decisionStore 셋 다 있어야 활성(회귀 0).
+  const oracleDecisionActive = shouldWireOracleDecision(config.oracleDecision === true, deps.oracleStore != null, deps.decisionStore != null)
   // P4-1: taskWorker flag + 핸들러 주입 둘 다 있어야 워커 배선(순수 게이트). 배선 시 dispatch/reclaim이
   // wp.dispatch_signal을 발행하고 WorkerConsumer가 이를 소비. off면 publish 미주입 → 신호 미발행(회귀 0).
   const workerActive = shouldWireWorker(config.taskWorker, deps.handlers !== undefined)
@@ -401,6 +410,8 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
       await handleDispatch(workflowId, dispatch)
     },
     deps.oracleStore, // upsertDraft용 — DRAFT만 켜도 영속(blocker#1)
+    // C3: oracleDecisionActive 시만 decisionStore 주입(off→undefined→oracle_approval 미발행·회귀 0).
+    oracleDecisionActive ? deps.decisionStore : undefined,
   )
 
   const completionConsumer = new BaseConsumer<CompletionSignalMessage>(
@@ -505,6 +516,10 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
           ...((config.releaseSignoff || config.degradedSignoff) && deps.decisionStore && { signoffStore: deps.decisionStore }),
           // C5: approve→RiskClassificationRepo.approve 분기용.
           ...(deps.riskStore && { riskStore: deps.riskStore }),
+          // C3: approve on oracle_approval → 그 workflow pending 오라클 전부 승인. 활성 시만 주입(oracleDecisionActive).
+          // SupervisorDeps.oracleStore에 approvePendingByWorkflow가 런타임 존재(OracleRepo 구현)하나 교차 인터페이스 정적
+          // 타입에 선언 없으므로 unknown 경유 캐스트(riskStore as NonNullable<WorkerDeps['riskStore']> 패턴과 동형).
+          ...(oracleDecisionActive && deps.oracleStore && { oracleStore: deps.oracleStore as unknown as NonNullable<DecisionRoutingDeps['oracleStore']> }),
           // N2: accept_known degraded_dispatch → 재디스패치(승인 WP 통과). 활성 시만 주입. void: DecisionRoutingDeps.redispatch는 Promise<void>.
           ...(degradedSignoffActive && { redispatch: async (wf: string) => { await handleDispatch(wf, dispatch) } }),
         } satisfies DecisionRoutingDeps,
