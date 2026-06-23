@@ -9,6 +9,7 @@ import { assignRoles } from './stages/roles.js'
 import { inferStoryDependencies } from './stages/infer-edges.js'
 import { singleRoleStoryIds } from './lint.js'
 import { draftOracles } from './stages/draft-oracles.js'
+import { draftInvariants } from './stages/draft-invariants.js'
 import type { StageDeps } from './stages/run-stage.js'
 import type { OracleDraft } from '../db/oracle.types.js'
 
@@ -47,6 +48,7 @@ export async function runDecomposition(
   deps: StageDeps,
   repairMax: number = DEFAULT_REPAIR_MAX,
   draftEnabled = false,
+  invariantsEnabled = false,
 ): Promise<DecomposeResult> {
   const epics = await identifyEpics(intent, deps)
   let stories = await sliceVertical(epics, intent, deps)
@@ -89,6 +91,11 @@ export async function runDecomposition(
   let workPackages = toWorkPackages(llmWps)
   if (workPackages.length === 0) workPackages = fallbackWorkPackages(intent)
   // P3-2: ok 경로 한정 P7 초안(off면 []·회귀 0). draft 실패는 runStage가 흡수(빈→stub)이라 본류 비차단.
-  const oracleDrafts = draftEnabled ? await draftOracles(stories, deps) : []
+  let oracleDrafts = draftEnabled ? await draftOracles(stories, deps) : []
+  // F5: invariant 초안을 story별로 머지(draftEnabled 전제 — 부착 대상 OracleDraft 필요). off면 invariants=[].
+  if (invariantsEnabled && oracleDrafts.length > 0) {
+    const invByStory = await draftInvariants(stories, deps)
+    oracleDrafts = oracleDrafts.map((d) => ({ ...d, invariants: invByStory.get(d.storyId) ?? [] }))
+  }
   return { status: 'ok', workPackages, coverage, singleRoleStoryIds: lint, oracleDrafts }
 }

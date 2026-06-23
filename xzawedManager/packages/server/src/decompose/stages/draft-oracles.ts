@@ -61,7 +61,8 @@ export async function draftOracles(stories: Story[], deps: StageDeps): Promise<O
         coverage[ac] = [id]
       }
     }
-    drafts.push({ storyId: story.storyId, scenarios, coverage })
+    // F5: invariants는 별도 draftInvariants 스테이지가 채운다(여기선 빈 — OracleDraft 타입 정합).
+    drafts.push({ storyId: story.storyId, scenarios, coverage, invariants: [] })
   }
   return drafts
 }
