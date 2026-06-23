@@ -12,6 +12,8 @@ import { resolveAgentTool } from '../tools/agent-tool-map.js'
 import { verifyWp, publishVerificationFailed, type SecuritySeverity } from './verify.js'
 import type { ChannelOutcome } from '../db/release-gate.types.js'
 import { produceAdvisory, type AdvisoryStore } from './advisory.js'
+import { buildGoldenBrief } from './golden-brief.js'
+import type { DecisionRequestInput } from './decision-brief.js'
 import type { ClaudeLike, BudgetCircuitBreaker, ProviderCircuitBreaker } from '@xzawed/agent-streams'
 import { DONE_STATE, ESCALATED_STATE } from './dispatch-constants.js'
 import { resolveWpModel, type ModelTierIds } from './model-routing.js'
@@ -40,8 +42,15 @@ export interface WorkerDeps {
   /** P4b-1: 검증 게이트(=MANAGER_WP_VERIFY). on이면 완료 발행 전 verifyWp fail-closed 판정 —
    *  실패 시 완료 미발행(lease 백스톱이 reclaim→escalate) + wp.verification.failed 관측 이벤트. */
   verifyEnabled?: boolean
-  /** P4b-2/P4: 승인 오라클 조회 포트(conformance scenarios + impact golden_refs). verifyWp로 전달. */
-  oracleStore?: ConformanceOracleStore & ImpactOracleStore & InvariantOracleStore
+  /** P4b-2/P4: 승인 오라클 조회 포트(conformance scenarios + impact golden_refs). verifyWp로 전달.
+   *  Slice 1: unfrozenGoldenCount(golden_signoff 트리거 가드+표시)·additive. */
+  oracleStore?: ConformanceOracleStore & ImpactOracleStore & InvariantOracleStore & {
+    unfrozenGoldenCount?(workflowId: string): Promise<number>
+  }
+  /** Slice 1: golden freeze 사인오프 활성(=MANAGER_GOLDEN_SIGNOFF && oracleStore && decisionStore 주입). */
+  goldenSignoffEnabled?: boolean
+  /** Slice 1: golden_diff DecisionRequest 발행 포트(C3 oracle_approval 패턴). 미주입이면 미발행(회귀 0). */
+  decisionStore?: { createRequest(input: DecisionRequestInput): Promise<unknown> }
   /** P4b-2: conformance 채널 활성(=MANAGER_WP_CONFORMANCE && oracleStore 주입). */
   conformanceEnabled?: boolean
   /** P4: impact golden-differential 채널 활성(=MANAGER_WP_IMPACT && oracleStore 주입). verifyWp로 전달. */
@@ -208,6 +217,8 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
     if (gate) return gate // 실패 = 완료 미발행(lease 백스톱 reclaim→escalate·N5) + 관측 이벤트.
     // P4 advisory(N3): verdict가 이미 확정된 뒤에만 비차단 생산 — 게이트는 advisory를 모른다.
     await maybeProduceAdvisory(tool, workflowId, wp, msg.payload.attempt, result, deps)
+    // Slice 1: verdict.ok 후 미freeze golden 있으면 golden_diff 사인오프 요청(best-effort·완료 영향 0).
+    await maybeRequestGoldenSignoff(tool, workflowId, userContext, deps)
     await publishCompletion(deps, workflowId, wpId, msg.payload.attempt)
     return { status: 'completed', wpId }
   } finally {
@@ -281,6 +292,25 @@ async function maybeProduceAdvisory(
     ...(deps.provider && { provider: deps.provider }),
     ...(deps.isProviderFailure && { isProviderFailure: deps.isProviderFailure }),
   })
+}
+
+/** Slice 1: develop_code WP의 verdict.ok 후 그 workflow에 미freeze golden이 있으면 golden_diff DecisionRequest를
+ *  발행해 사람 사인오프를 C1에 surface한다(maybeProduceAdvisory 미러·best-effort never-throw — 완료/게이트 영향 0·
+ *  에이전트 호출 0·오라클 조회만). flag+oracleStore.unfrozenGoldenCount+decisionStore 전부 주입 시에만 동작. */
+export async function maybeRequestGoldenSignoff(
+  tool: string, workflowId: string, userContext: UserContext | undefined, deps: WorkerDeps,
+): Promise<void> {
+  if (!deps.goldenSignoffEnabled || tool !== 'develop_code' || !deps.oracleStore?.unfrozenGoldenCount || !deps.decisionStore) {
+    return
+  }
+  try {
+    const count = await deps.oracleStore.unfrozenGoldenCount(workflowId)
+    if (count > 0) {
+      await deps.decisionStore.createRequest(buildGoldenBrief({ workflowId, projectId: userContext?.projectId ?? null, goldenCount: count }))
+    }
+  } catch (err) {
+    console.warn('[worker] golden_signoff 발행 실패(best-effort·완료는 영향 0):', err)
+  }
 }
 
 export function buildWorkerHandler(deps: WorkerDeps): (msg: WpDispatchSignalMessage) => Promise<void> {

@@ -180,9 +180,9 @@ describe('OracleRepo golden freeze (Slice 1)', () => {
     expect(query.mock.calls.some((c) => /UPDATE oracles/i.test(String(c[0])))).toBe(false)
   })
 
-  it('hasUnfrozenGoldensByWorkflow true/false', async () => {
-    expect(await new OracleRepo(mockPool([{ golden_refs: [gold({ frozenBy: null })] }])).hasUnfrozenGoldensByWorkflow('wf')).toBe(true)
-    expect(await new OracleRepo(mockPool([{ golden_refs: [gold({ frozenBy: 'po', frozenAt: 't' })] }])).hasUnfrozenGoldensByWorkflow('wf')).toBe(false)
+  it('unfrozenGoldenCount는 미freeze golden 총 개수', async () => {
+    expect(await new OracleRepo(mockPool([{ golden_refs: [gold({ id: 'a', frozenBy: null }), gold({ id: 'b', frozenBy: null }), gold({ id: 'c', frozenBy: 'po', frozenAt: 't' })] }])).unfrozenGoldenCount('wf')).toBe(2)
+    expect(await new OracleRepo(mockPool([{ golden_refs: [gold({ frozenBy: 'po', frozenAt: 't' })] }])).unfrozenGoldenCount('wf')).toBe(0)
   })
 })
 

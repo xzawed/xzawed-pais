@@ -131,10 +131,13 @@ export class OracleRepo {
     return { frozen }
   }
 
-  /** Slice 1: approved 오라클에 미freeze golden이 하나라도 있으면 true(golden_signoff DecisionRequest 트리거 가드). */
-  async hasUnfrozenGoldensByWorkflow(workflowId: string): Promise<boolean> {
+  /** Slice 1: approved 오라클의 미freeze golden 총 개수(golden_signoff 트리거 가드 + 브리프 표시 겸용·>0이면 발행). */
+  async unfrozenGoldenCount(workflowId: string): Promise<number> {
     const approved = await this.listByWorkflow(workflowId, ORACLE_APPROVED)
-    return approved.some((row) => OracleGoldenSchema.array().parse(row.golden_refs ?? []).some((g) => g.frozenBy == null))
+    return approved.reduce(
+      (sum, row) => sum + OracleGoldenSchema.array().parse(row.golden_refs ?? []).filter((g) => g.frozenBy == null).length,
+      0,
+    )
   }
 
   /** P4 property: 특정 story의 approved 오라클(최신 version)에서 human_approved invariants 반환.
