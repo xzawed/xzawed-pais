@@ -132,10 +132,10 @@ packages/
             ├── App.tsx                # 4패널 레이아웃 (TooltipProvider, ActivityBar, Sidebar, ChatView, RightPanel, StatusBar, CommandPalette, SettingsModal, Toaster)
             ├── Sidebar.tsx            # Slack 스타일 재설계
             ├── ChatLayout.tsx         # ActivityBar 탭(activePanel) 분기 — wiki 탭에서 WikiPanel·decisions 탭에서 DecisionsPanel 렌더(#306)
-            ├── ChatView.tsx           # AgentTimelineCard + PipelineStrip + UserBubble 통합; pendingInfoRequest.approval 시 승인 카드(승인/수정/중단 + rememberAuto + 지식성 단계 한정 위키저장 체크박스 + 저장 전 wikiSummary 편집 #212) 렌더 → postUiAction으로 결정 JSON 전송; handleSend는 전역 settings.gateMode를 postMessage로 전달 #215
+            ├── ChatView.tsx           # AgentTimelineCard + PipelineStrip + UserBubble 통합; pendingInfoRequest.approval 시 승인 카드(승인/수정/중단 + rememberAuto + 지식성 단계 한정 위키저장 체크박스 + 저장 전 wikiSummary 편집 #212) 렌더 → postUiAction으로 결정 JSON 전송; handleSend는 전역 settings.gateMode + **MessageInput per-message 모드(chat\|build)**를 postMessage로 전달(build 시 C6 자율 빌드 트리거 #339, gateMode #215)
             ├── WikiPanel.tsx          # 도메인 위키 뷰어 — 검색·출처(source_agent)·분류(category) 필터, category 배지, 인라인 편집·삭제(getKnowledge/updateKnowledge/deleteKnowledge)
             ├── DecisionsPanel.tsx     # C1 결정 대기함(#306) — 프로젝트 pending 결정(결함 브리프·risk_classification 포함) 카드(location·expectedVsActual·impact·evidence·attribution faultTier/counters) + choice 버튼(decision별 `context.options` 구동·DEFAULT_CHOICES 폴백·fix_reverify만 즉시 #299 폐루프·전부 M9 영속·stale "기록만" 블랭킷 라벨 부채 해소 #318)·WikiPanel signal-abort fetch+refreshKey idiom·getPendingDecisions/submitDecision
-            ├── MessageInput.tsx       # Framer Motion focus glow + aria-label
+            ├── MessageInput.tsx       # Framer Motion focus glow + aria-label + per-message Chat|Build 모드 토글(sticky·기본 chat·onSend(content,mode)·data-testid mode-toggle-* #339)
             ├── CommandPalette.tsx     # ⌘K Spotlight 스타일 완전 구현
             ├── SettingsModal.tsx      # shadcn Dialog 기반 — serverUrl·mode·userId·language + 전역 승인 게이트 모드(gateMode: manual/auto) 설정 #215
             ├── DynamicPanel.tsx       # Tailwind 리스타일
@@ -172,7 +172,7 @@ packages/
 - **Vitest 3** + `vitest.config.ts` `projects` API — `unit` (node) + `browser` (playwright/chromium) 두 프로젝트 분리
   - `unit`: `test/**/*.test.ts` + `src/renderer/src/lib/parseAgentSteps.test.ts` (store, main 프로세스, 파서 유닛 테스트)
   - `browser`: `src/renderer/src/__tests__/**/*.browser.test.tsx` (App·Sidebar·ChatView(승인 카드)·WikiPanel·**DecisionsPanel**·**ChatLayout.decisions**·**decisions-api**·SettingsModal·CommandPalette·GitHubPanel·McpPanel·PluginPanel·detect-locale·app.store 등 컴포넌트·스토어 렌더링)
-  - 총 `pnpm test`: **241건** (app) + **440건** (server, Redis/DB 없으면 15건 skip → 425 pass) + **76건** (ui, jsdom) = **~757건**
+  - 총 `pnpm test`: **247건** (app) + **440건** (server, Redis/DB 없으면 15건 skip → 425 pass) + **76건** (ui, jsdom) = **~763건**
 - **@vitest/browser + playwright** — 실제 Chromium에서 React 컴포넌트 렌더링 검증
 - **@testing-library/react** — 브라우저 모드 렌더링; `afterEach(cleanup)` 명시 필요
 - **@playwright/test** + `playwright._electron` — Electron E2E (`e2e/`, 110건/17 spec 파일, `pnpm test:e2e`)
@@ -230,7 +230,7 @@ ActivityBar의 **결정 탭**(`activePanel === 'decisions'`)에서 `DecisionsPan
 
 `locales/{ko,en,ja}/app.json`에 `wiki.*`(title·empty·source·search_placeholder·all_sources·all_categories·edit·delete·save·cancel·delete_confirm·category_none·save_failed·delete_failed), `approval.*`(title·approve·revise·abort·feedback_placeholder·remember_auto·save_to_wiki·**wiki_summary** #212), `settings.*`(server_url·mode·user_id·language·lang_*·**gate_mode**·gate_mode_manual·gate_mode_auto #215) 네임스페이스가 추가되어 있다.
 
-**내비/패널 i18n 일괄(#227):** `activity_bar.*`(chat·github·mcp·plugins·**wiki**·**decisions** #306·settings)·`status_bar.*`(server·running·stopped·checking·mcp_count)·`right_panel.*`(output_title·waiting·tokens·elapsed·modified_files) 네임스페이스 신규 + `github.*`·`plugins.*`·`command_palette.*`·`sidebar.*` 확장. **`decisions.*`(title·empty·loading·refresh·location·expected_vs_actual·impact·evidence·attribution·choice_*×4·choice_approve·choice_hint·submit_failed·submitted, #306·`choice_noop_hint` 제거→`choice_approve`/`choice_hint` 대체 #318·`type_defect_brief`/`type_risk_classification`/`type_degraded_release`/`type_degraded_dispatch` 결정 type 배지 #333)**. `ActivityBar`·`StatusBar`·`RightPanel`·`Sidebar`·`GitHubPanel`·`PluginPanel`·`CommandPalette`가 `useTranslation('app')`로 렌더(CommandPalette의 cmdk `value=`는 로케일 무관 필터 식별자로 유지). app.json **158키** 3로케일 동기화(`node scripts/check-i18n.js`). ⚠️ 잔여 하드코딩 한국어(후속 i18n 배치 예정): `ChatView`(empty-state 안내)·`McpPanel`(env 파싱 toast)·`MessageInput`(전송 aria-label)·`AgentTimelineCard`·`CodeBlock`·`PipelineStrip`·`ProjectContextBar`.
+**내비/패널 i18n 일괄(#227):** `activity_bar.*`(chat·github·mcp·plugins·**wiki**·**decisions** #306·settings)·`status_bar.*`(server·running·stopped·checking·mcp_count)·`right_panel.*`(output_title·waiting·tokens·elapsed·modified_files) 네임스페이스 신규 + `github.*`·`plugins.*`·`command_palette.*`·`sidebar.*` 확장. **`decisions.*`(title·empty·loading·refresh·location·expected_vs_actual·impact·evidence·attribution·choice_*×4·choice_approve·choice_hint·submit_failed·submitted, #306·`choice_noop_hint` 제거→`choice_approve`/`choice_hint` 대체 #318·`type_defect_brief`/`type_risk_classification`/`type_degraded_release`/`type_degraded_dispatch` 결정 type 배지 #333)**. `ActivityBar`·`StatusBar`·`RightPanel`·`Sidebar`·`GitHubPanel`·`PluginPanel`·`CommandPalette`가 `useTranslation('app')`로 렌더(CommandPalette의 cmdk `value=`는 로케일 무관 필터 식별자로 유지). app.json **160키** 3로케일 동기화(`node scripts/check-i18n.js`·+`chat.mode_chat`/`chat.mode_build` MessageInput Chat|Build 토글 #339). ⚠️ 잔여 하드코딩 한국어(후속 i18n 배치 예정): `ChatView`(empty-state 안내)·`McpPanel`(env 파싱 toast)·`MessageInput`(전송 aria-label)·`AgentTimelineCard`·`CodeBlock`·`PipelineStrip`·`ProjectContextBar`.
 
 문자열 추가 시 3개 로케일 동기화 필수.
 
