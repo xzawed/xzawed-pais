@@ -108,6 +108,35 @@ export async function buildUserContext(
   return { userId: session.userId, projectId: 'default', workspaceRoot: envFallback }
 }
 
+/** C6: build 모드 + 플래그면 분해 라우팅. 순수 결정. */
+export function shouldDecompose(mode: string | undefined, decomposeEnabled: boolean): boolean {
+  return mode === 'build' && decomposeEnabled
+}
+
+/** C6: 원 요청을 decompose_request로 Manager에 발행(자율 태스크그래프). 발행 실패는 비차단(log.warn). */
+export async function publishDecomposeToManager(
+  producer: StreamProducer,
+  sessionId: string,
+  intent: string,
+  userContext: UserContext,
+  getSocket: () => WebSocket | undefined,
+  log: FastifyInstance['log'],
+  locale: ServerLocale = 'ko',
+): Promise<void> {
+  try {
+    await producer.publish({
+      sessionId,
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now(),
+      type: 'decompose_request',
+      payload: { intent, userContext },
+    })
+    getSocket()?.send(JSON.stringify({ type: 'status', content: t('status.forwarding', locale) }))
+  } catch (publishErr: unknown) {
+    log.warn({ err: publishErr }, 'Redis publish failed — Manager unavailable, skipping decompose forwarding')
+  }
+}
+
 export async function publishTaskToManager(
   producer: StreamProducer,
   sessionId: string,
