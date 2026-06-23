@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 1093/1169 테스트 — 로컬 76 skip, CI는 pg 통합 포함 실행)**
+현재 상태: **구현 완료 (server 1104/1180 테스트 — 로컬 76 skip, CI는 pg 통합 포함 실행)**
 
 > **통합 테스트 게이트**: `test/*.integration.test.ts`는 `TEST_DATABASE_URL ?? DATABASE_URL`로 게이트(CI turborepo 잡이 `TEST_DATABASE_URL` 주입 — 이전엔 `DATABASE_URL`만 읽어 **CI에서 한 번도 실행되지 않았음**). cleanup은 전부 파일별 prefix 스코프(`wf-comp-`·`wf-disp-`·`wf-lease-`·`wf-dc-`·`wf-tgp-`·`wf-ew-`·`wf-orc-`·`es-it`) — 비스코프 DELETE는 병렬 형제 테스트의 행을 지워 간헐 실패를 만든다. `runMigrations`는 pg advisory lock으로 동시 실행 직렬화(병렬 테스트·다중 인스턴스 기동 공통 방어). — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
@@ -553,6 +553,7 @@ MANAGER_DECISION_REESCALATE_MAX= # 선택: 기본 1. decision.expired 소비 시
 - **Redis 메시지 검증**: `consumer.ts`는 `OrchestratorToManagerMessageSchema.safeParse()` 로 모든 수신 메시지 검증. 실패 시 xack 후 skip
 - **sessionId 검증**: `sessions.route.ts`에서 `z.string().uuid()` 검증 — UUID 형식 외 요청은 400 반환
 - **무음 drop 금지(M8)**: `sessions.route.ts` `startManagedSession`의 메시지 핸들러는 미처리 `msg.type`(방어적 else)·`decompose_request` 비활성(`MANAGER_DECOMPOSE_ENABLED` off)을 무음 auto-ack drop하지 않고 요청자에게 `error`를 발행한 뒤 `cleanupSession`으로 세션을 정리한다(이전엔 if/else-if ladder 미일치로 무음 drop → 요청자 무한 대기·consumer 누수). 정상 종료·decompose 완료·에러 분기가 `cleanupSession`/`publishError` 헬퍼를 공유
+- **인바운드 소비자 DLQ 격리(G2·#335)**: 내부 소비자(decision/decomposition/release/oracle/risk/worker)는 `BaseConsumer`로 DLQ를 갖지만 손으로 짠 **인바운드(정문) 3개 소비자**(`streams/consumer.ts` `StreamConsumer`·`watcher-event-consumer.ts`·`session-gateway.ts`)는 `parse→ack` 루프라 poison/handler-throw를 무음 ack-drop했다. 각 실패 지점에서 shared `routeToDlq(this.bus, …)`로 `{stream}:dlq` 격리: **JSON/스키마 무효→`invalid_schema`(attempts=0)·핸들러 throw→`handler_failed`(attempts=1·재시도 없음**(인바운드 비멱등·장기))·구조적 결함(data 없음)·non-file_changed·non-uuid sessionId는 **ack-skip 보존**·ack는 `finally`. **무조건**(신규 flag 0·BaseConsumer 무조건 DLQ와 일관)·`never-throw`(routeToDlq 자체 삼킴)·기존 `POST /api/admin/dlq/redrive`로 재처리(인바운드는 SETNX 멱등 마커 미설정→redrive 마커 선삭제는 무해 no-op). DLQ 쓰기 경로는 `dlq.ts routeToDlq` **단일출처**(BaseConsumer+3 소비자 공유·CPD0).
 - **JWT 인증**: `SERVICE_JWT_SECRET` 설정 시 JWT 인증 활성화 — 32자 미만이면 `superRefine`으로 시작 거부 (`config.ts`). `verifyServiceToken`은 `@fastify/jwt` 에러 코드별로 응답 메시지 분기: `FST_JWT_NO_AUTHORIZATION_IN_HEADER` → 401 `Missing token`, `FST_JWT_AUTHORIZATION_TOKEN_EXPIRED` → 401 `Token expired`, 그 외 → 401 `Invalid token`
 - **github-ops 경로 검증**: `commitAndPush`의 `files[].path`는 `validateCommitPath()`로 검증 — `..`, 제어문자, `.github/workflows/` 경로 차단
 - **Claude tool-use 검증**: `runner.ts`의 `block.input`은 각 핸들러의 `inputSchema`로 디스패치 전 선검증 (완료 — `validate-tool-input.ts`, #219). 검증 실패 시 디스패치 없이 `is_error` tool_result 반환
