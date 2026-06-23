@@ -69,3 +69,18 @@ describe('P4b-3 Oracle 아티팩트 확장 (invariants·golden_refs)', () => {
     expect(o.goldenRefs[0]).toMatchObject({ id: 'g1', version: 2 })
   })
 })
+
+describe('OracleDraftSchema invariants (F5)', () => {
+  it('invariants 미지정 시 빈 배열로 기본', () => {
+    const d = OracleDraftSchema.parse({ storyId: 's1', scenarios: [], coverage: {} })
+    expect(d.invariants).toEqual([])
+  })
+  it('invariants를 파싱·기본값 적용', () => {
+    const d = OracleDraftSchema.parse({
+      storyId: 's1', scenarios: [], coverage: {},
+      invariants: [{ id: 's1-inv1', statement: 'balance >= 0' }],
+    })
+    expect(d.invariants).toHaveLength(1)
+    expect(d.invariants[0]).toMatchObject({ id: 's1-inv1', statement: 'balance >= 0', status: 'drafted', domain: '', property: '' })
+  })
+})

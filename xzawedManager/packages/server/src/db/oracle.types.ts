@@ -67,6 +67,8 @@ export const OracleDraftSchema = z.object({
   storyId: z.string().min(1),
   scenarios: z.array(OracleScenarioSchema).default([]),
   coverage: z.record(z.array(z.string())).default({}),
+  /** §4 F5: 도메인 불변식 초안(additive·기본 [] — off/미생성이면 빈). property 채널이 승인 후 소비. */
+  invariants: z.array(OracleInvariantSchema).default([]),
 })
 export type OracleDraft = z.infer<typeof OracleDraftSchema>
 
