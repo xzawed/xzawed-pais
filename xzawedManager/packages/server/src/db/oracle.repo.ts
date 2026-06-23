@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from 'pg'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import type { ApprovedOracleView } from '@xzawed/agent-streams'
 import {
-  OracleScenarioSchema, OracleGoldenSchema, OracleInvariantSchema, coveredCriteria, oracleIdFor,
+  OracleScenarioSchema, OracleGoldenSchema, OracleInvariantSchema, coveredCriteria, oracleIdFor, freezeUnfrozen,
   ORACLE_PENDING, ORACLE_APPROVED, ORACLE_APPROVED_EVENT, ORACLE_ACTOR, ORACLE_STREAM, SCENARIO_APPROVED,
 } from './oracle.types.js'
 import type { Oracle, OracleScenario, OracleInvariant, OracleGolden } from './oracle.types.js'
@@ -108,8 +108,33 @@ export class OracleRepo {
     )
     const row = rows[0]
     if (!row) return null
-    const goldens = OracleGoldenSchema.array().parse(row.golden_refs ?? [])
+    // N7: 사람 사인오프(frozenBy 설정) golden만 impact 베이스라인으로 — 미freeze golden은 ground-truth 아님.
+    const goldens = OracleGoldenSchema.array().parse(row.golden_refs ?? []).filter((g) => g.frozenBy != null)
     return goldens.length > 0 ? goldens : null
+  }
+
+  /** Slice 1: per-workflow golden freeze(사람 사인오프 소비) — approved 오라클 전부에서 unfrozen golden을
+   *  frozenBy/frozenAt로 전이(read-modify-write·변경 있는 오라클만 UPDATE·P2r-4 패턴). 멱등(이미 frozen 무변경).
+   *  freeze 자체는 projection UPDATE(이벤트 0) — 비부인은 human_decisions(decidedBy)가 담당. frozen 카운트 반환. */
+  async freezeGoldensByWorkflow(workflowId: string, frozenBy: string): Promise<{ frozen: number }> {
+    const approved = await this.listByWorkflow(workflowId, ORACLE_APPROVED)
+    const frozenAt = new Date(this.now()).toISOString()
+    let frozen = 0
+    for (const row of approved) {
+      const current = OracleGoldenSchema.array().parse(row.golden_refs ?? [])
+      const unfrozenCount = current.filter((g) => g.frozenBy == null).length
+      const { goldens, changed } = freezeUnfrozen(current, frozenBy, frozenAt)
+      if (!changed) continue
+      frozen += unfrozenCount
+      await this.pool.query(`UPDATE oracles SET golden_refs = $2 WHERE oracle_id = $1`, [row.oracle_id, JSON.stringify(goldens)])
+    }
+    return { frozen }
+  }
+
+  /** Slice 1: approved 오라클에 미freeze golden이 하나라도 있으면 true(golden_signoff DecisionRequest 트리거 가드). */
+  async hasUnfrozenGoldensByWorkflow(workflowId: string): Promise<boolean> {
+    const approved = await this.listByWorkflow(workflowId, ORACLE_APPROVED)
+    return approved.some((row) => OracleGoldenSchema.array().parse(row.golden_refs ?? []).some((g) => g.frozenBy == null))
   }
 
   /** P4 property: 특정 story의 approved 오라클(최신 version)에서 human_approved invariants 반환.

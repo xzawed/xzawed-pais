@@ -83,6 +83,21 @@ export function coveredCriteria(scenarios: OracleScenario[], coverage: Record<st
 }
 
 /**
+ * Slice 1 golden freeze 순수 코어: frozenBy 미설정(null) golden을 frozenBy/frozenAt로 전이(사람 사인오프).
+ * 이미 frozen(frozenBy 설정)은 불변(재freeze 무해·멱등). changed=전이된 golden이 하나라도 있으면 true(repo가 UPDATE 여부 판정).
+ */
+export function freezeUnfrozen(
+  goldens: OracleGolden[], frozenBy: string, frozenAt: string,
+): { goldens: OracleGolden[]; changed: boolean } {
+  let changed = false
+  const next = goldens.map((g) => {
+    if (g.frozenBy == null) { changed = true; return { ...g, frozenBy, frozenAt } }
+    return g
+  })
+  return { goldens: next, changed }
+}
+
+/**
  * 충돌-회피 oracleId 파생: workflowId·storyId를 길이-prefix(`${len}:`)로 구분해 해싱(가변 길이 경계 모호성 제거,
  * Codex#1·D1). 제어문자 리터럴 없이 명시적 escape — `(a-b,c)`↔`(a,b-c)` 충돌 차단.
  */

@@ -146,6 +146,46 @@ describe('OracleRepo.upsertDraft (P3-2 멱등)', () => {
   })
 })
 
+describe('OracleRepo golden freeze (Slice 1)', () => {
+  const gold = (over: Record<string, unknown>) => ({ id: 'g', inputFixture: 'i', normalizedOutput: 'o', normalizers: [], frozenAt: '', frozenBy: null, fromDecision: null, version: 1, ...over })
+
+  it('approvedGoldensForStory는 frozenBy!=null golden만 반환(N7)', async () => {
+    const repo = new OracleRepo(mockPool([{ golden_refs: [gold({ id: 'g1', frozenBy: 'po', frozenAt: 't' }), gold({ id: 'g2', frozenBy: null })] }]))
+    const goldens = await repo.approvedGoldensForStory('wf', 's1')
+    expect(goldens?.length).toBe(1)
+    expect(goldens?.[0].id).toBe('g1')
+  })
+
+  it('approvedGoldensForStory는 frozen golden 0이면 null(전부 unfrozen)', async () => {
+    const repo = new OracleRepo(mockPool([{ golden_refs: [gold({ id: 'g2', frozenBy: null })] }]))
+    expect(await repo.approvedGoldensForStory('wf', 's1')).toBeNull()
+  })
+
+  it('freezeGoldensByWorkflow는 unfrozen golden을 UPDATE로 freeze(frozen 카운트)', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ oracle_id: 'o1', golden_refs: [gold({ id: 'g1', frozenBy: null }), gold({ id: 'g2', frozenBy: 'alice', frozenAt: 't0' })] }] })
+    const repo = new OracleRepo({ query } as never, () => 1000)
+    const res = await repo.freezeGoldensByWorkflow('wf', 'po')
+    expect(res.frozen).toBe(1) // g1만 전이(g2는 이미 frozen)
+    const update = query.mock.calls.find((c) => /UPDATE oracles SET golden_refs/i.test(String(c[0])))!
+    const written = JSON.parse((update[1] as unknown[])[1] as string) as Array<{ id: string; frozenBy: string | null }>
+    expect(written.find((g) => g.id === 'g1')?.frozenBy).toBe('po')
+    expect(written.find((g) => g.id === 'g2')?.frozenBy).toBe('alice')
+  })
+
+  it('freezeGoldensByWorkflow는 변경 없으면 UPDATE 미실행(멱등)', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [{ oracle_id: 'o1', golden_refs: [gold({ id: 'g1', frozenBy: 'po', frozenAt: 't' })] }] })
+    const repo = new OracleRepo({ query } as never, () => 1000)
+    const res = await repo.freezeGoldensByWorkflow('wf', 'po')
+    expect(res.frozen).toBe(0)
+    expect(query.mock.calls.some((c) => /UPDATE oracles/i.test(String(c[0])))).toBe(false)
+  })
+
+  it('hasUnfrozenGoldensByWorkflow true/false', async () => {
+    expect(await new OracleRepo(mockPool([{ golden_refs: [gold({ frozenBy: null })] }])).hasUnfrozenGoldensByWorkflow('wf')).toBe(true)
+    expect(await new OracleRepo(mockPool([{ golden_refs: [gold({ frozenBy: 'po', frozenAt: 't' })] }])).hasUnfrozenGoldensByWorkflow('wf')).toBe(false)
+  })
+})
+
 describe('OracleRepo.approvedOracleForStory', () => {
   it('returns human_approved scenarios + coverage for the approved oracle', async () => {
     const pool = mockPool([
