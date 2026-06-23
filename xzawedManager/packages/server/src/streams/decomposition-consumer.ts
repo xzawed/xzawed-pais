@@ -13,6 +13,8 @@ import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import { OracleDraftSchema } from '../db/oracle.types.js'
 import type { OracleScenario } from '../db/oracle.types.js'
 import { AbsoluteUserContextSchema } from '../types/user-context.js'
+import { buildOracleBrief } from './oracle-brief.js'
+import type { DecisionRequestInput } from './decision-brief.js'
 
 // 단일 type 스트림(manager:decomposition:{wf})용 스키마 — 다른 type 메시지가 들어오면
 // BaseConsumer가 invalid_schema로 DLQ 격리한다(의도된 동작; P1d-4가 이 스트림을 다중화하면 재검토).
@@ -48,6 +50,8 @@ export interface DecompositionDeps {
       coverage: Record<string, string[]>
     }) => Promise<void>
   }
+  /** C3: 주입 시 draft 영속 후 oracle_approval DecisionRequest 발행(MANAGER_ORACLE_DECISION). best-effort. */
+  decisionStore?: { createRequest(input: DecisionRequestInput): Promise<unknown> }
 }
 
 export type DecompositionOutcome =
@@ -120,6 +124,18 @@ export async function handleDecompositionEmitted(
       })
     }
   }
+  // C3: draft 영속 후 oracle_approval DecisionRequest 발행(per-workflow). best-effort never-throw.
+  if (deps.oracleStore && deps.decisionStore && msg.payload.oracleDrafts.length > 0) {
+    try {
+      await deps.decisionStore.createRequest(buildOracleBrief({
+        workflowId,
+        projectId: msg.payload.userContext?.projectId ?? null,
+        storyCount: msg.payload.oracleDrafts.length,
+      }))
+    } catch (err) {
+      console.warn('[decomposition] oracle_approval 발행 실패(best-effort·영속은 완료):', err)
+    }
+  }
   return { status: 'persisted', version }
 }
 
@@ -132,9 +148,14 @@ export function buildDecompositionConsumerHandler(
   publish: Publish,
   afterPersisted?: (workflowId: string) => Promise<void>,
   oracleStore?: DecompositionDeps['oracleStore'],
+  decisionStore?: DecompositionDeps['decisionStore'],
 ): (msg: DecompositionEmittedMessage) => Promise<void> {
   return async (msg) => {
-    const outcome = await handleDecompositionEmitted(msg, { repo, publish, ...(oracleStore && { oracleStore }) })
+    const outcome = await handleDecompositionEmitted(msg, {
+      repo, publish,
+      ...(oracleStore && { oracleStore }),
+      ...(decisionStore && { decisionStore }),
+    })
     if (outcome.status === 'persisted' && afterPersisted) {
       await afterPersisted(msg.envelope.workflowId)
     }
@@ -148,10 +169,11 @@ export class DecompositionConsumer extends BaseConsumer<DecompositionEmittedMess
     sleep?: (ms: number) => Promise<void>,
     afterPersisted?: (workflowId: string) => Promise<void>,
     oracleStore?: DecompositionDeps['oracleStore'],
+    decisionStore?: DecompositionDeps['decisionStore'],
   ) {
     super(
       redis,
-      buildDecompositionConsumerHandler(repo, publish, afterPersisted, oracleStore),
+      buildDecompositionConsumerHandler(repo, publish, afterPersisted, oracleStore, decisionStore),
       CONSUMER_GROUP,
       `manager-taskgraph-${process.pid}`,
       STREAM_PREFIX,
