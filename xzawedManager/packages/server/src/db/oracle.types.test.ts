@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   OracleSchema, coveredCriteria, OracleScenarioSchema, OracleDraftSchema, oracleIdFor,
-  OracleInvariantSchema, OracleGoldenSchema,
+  OracleInvariantSchema, OracleGoldenSchema, freezeUnfrozen,
 } from './oracle.types.js'
 
 describe('OracleSchema', () => {
@@ -67,6 +67,26 @@ describe('P4b-3 Oracle 아티팩트 확장 (invariants·golden_refs)', () => {
     })
     expect(o.invariants[0]).toMatchObject({ id: 'inv1', status: 'human_approved' })
     expect(o.goldenRefs[0]).toMatchObject({ id: 'g1', version: 2 })
+  })
+})
+
+describe('freezeUnfrozen (golden freeze 순수 코어)', () => {
+  const g = (over: Partial<import('./oracle.types.js').OracleGolden>) => OracleGoldenSchema.parse({ id: 'g', ...over })
+  it('frozenBy=null golden을 frozenBy/frozenAt로 전이(changed=true)', () => {
+    const { goldens, changed } = freezeUnfrozen([g({ id: 'g1', frozenBy: null })], 'po', '2026-06-24T00:00:00.000Z')
+    expect(changed).toBe(true)
+    expect(goldens[0]).toMatchObject({ id: 'g1', frozenBy: 'po', frozenAt: '2026-06-24T00:00:00.000Z' })
+  })
+  it('이미 frozen golden은 불변(changed=false·재freeze 무해)', () => {
+    const { goldens, changed } = freezeUnfrozen([g({ id: 'g1', frozenBy: 'alice', frozenAt: 't0' })], 'po', 't1')
+    expect(changed).toBe(false)
+    expect(goldens[0]).toMatchObject({ frozenBy: 'alice', frozenAt: 't0' })
+  })
+  it('혼합 — unfrozen만 전이', () => {
+    const { goldens, changed } = freezeUnfrozen([g({ id: 'a', frozenBy: null }), g({ id: 'b', frozenBy: 'x', frozenAt: 't0' })], 'po', 't1')
+    expect(changed).toBe(true)
+    expect(goldens.find((x) => x.id === 'a')?.frozenBy).toBe('po')
+    expect(goldens.find((x) => x.id === 'b')?.frozenBy).toBe('x')
   })
 })
 

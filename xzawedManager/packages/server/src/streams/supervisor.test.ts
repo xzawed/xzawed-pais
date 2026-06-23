@@ -2,7 +2,7 @@ import { describe, it, test, expect, vi } from 'vitest'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import {
   buildCompletionHandler, CompletionSignalSchema, Supervisor, createSupervisor, shouldWireSupervisor,
-  shouldWireOracleConsumer, shouldWireDecisionRoute, shouldWireRiskConsumer, buildWorkerConsumerDeps,
+  shouldWireOracleConsumer, shouldWireDecisionRoute, shouldWireRiskConsumer, buildWorkerConsumerDeps, shouldWireGoldenSignoff,
   drainHeld, buildDispatchGate, shouldWireDegradedSignoff,
 } from './supervisor.js'
 import type { LeaseStore } from '../db/lease.repo.js'
@@ -247,6 +247,33 @@ describe('buildWorkerConsumerDeps conformance (P4b-2)', () => {
   it('passes oracleStore through when present', () => {
     const store = { approvedOracleForStory: vi.fn() }
     expect(buildWorkerConsumerDeps({ ...base, oracleStore: store as never }, { ...cfg, wpConformance: true }).oracleStore).toBe(store)
+  })
+})
+
+describe('buildWorkerConsumerDeps golden 사인오프 (Slice 1)', () => {
+  const base = { repo: {} as never, publish: vi.fn(), handlers: { develop_code: { execute: vi.fn() } } }
+  const cfg = { sweepMs: 1, visibilityMs: 1, maxAttempts: 3, oracleDor: false, taskWorker: true } as never
+  const oracleStore = { unfrozenGoldenCount: vi.fn() }
+  const decisionStore = { createRequest: vi.fn() }
+
+  it('goldenSignoffEnabled true only when goldenSignoff && oracleStore && decisionStore 셋 다', () => {
+    expect(buildWorkerConsumerDeps({ ...base, oracleStore: oracleStore as never, decisionStore: decisionStore as never }, { ...cfg, goldenSignoff: true }).goldenSignoffEnabled).toBe(true)
+    expect(buildWorkerConsumerDeps({ ...base, oracleStore: oracleStore as never, decisionStore: decisionStore as never }, { ...cfg, goldenSignoff: false }).goldenSignoffEnabled).toBe(false)
+    expect(buildWorkerConsumerDeps({ ...base, oracleStore: oracleStore as never }, { ...cfg, goldenSignoff: true }).goldenSignoffEnabled).toBe(false) // decisionStore 부재
+    expect(buildWorkerConsumerDeps({ ...base, decisionStore: decisionStore as never }, { ...cfg, goldenSignoff: true }).goldenSignoffEnabled).toBe(false) // oracleStore 부재
+  })
+
+  it('decisionStore를 worker deps로 통과', () => {
+    expect(buildWorkerConsumerDeps({ ...base, oracleStore: oracleStore as never, decisionStore: decisionStore as never }, { ...cfg, goldenSignoff: true }).decisionStore).toBe(decisionStore)
+  })
+})
+
+describe('shouldWireGoldenSignoff (Slice 1 순수 게이트)', () => {
+  it('flag + oracleStore + decisionStore 셋 다여야 true', () => {
+    expect(shouldWireGoldenSignoff(true, true, true)).toBe(true)
+    expect(shouldWireGoldenSignoff(false, true, true)).toBe(false)
+    expect(shouldWireGoldenSignoff(true, false, true)).toBe(false)
+    expect(shouldWireGoldenSignoff(true, true, false)).toBe(false)
   })
 })
 

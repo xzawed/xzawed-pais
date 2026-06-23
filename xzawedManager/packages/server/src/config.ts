@@ -203,6 +203,10 @@ const configSchema = z
     // C3: 기본 false. true면 decomposition-consumer가 draft 영속 후 oracle_approval DecisionRequest 발행(생산자) +
     //   decision-consumer가 approve→OracleRepo.approvePendingByWorkflow(소비자). 전제: MANAGER_ORACLE_DRAFT+MANAGER_DECISION_ROUTING+DATABASE_URL.
     MANAGER_ORACLE_DECISION: z.string().optional().transform((v) => v === 'true'),
+    // Slice 1: 기본 false. true면 develop_code verdict.ok 후 미freeze golden 있으면 golden_diff DecisionRequest 발행(워커 hook) +
+    //   decision-consumer가 approve→OracleRepo.freezeGoldensByWorkflow(소비자). impact는 frozen golden만 소비(N7).
+    //   전제: MANAGER_WP_IMPACT(채널)+MANAGER_DECISION_ROUTING(사인오프 소비)+DATABASE_URL+워커 스택. off면 회귀 0.
+    MANAGER_GOLDEN_SIGNOFF: z.string().optional().transform((v) => v === 'true'),
     // D5: 기본 false. true면 워커가 디스패치 시 승인 modelRouting을 조회해 에이전트 모델을 라우팅(off→CLAUDE_MODEL 폴백).
     MANAGER_MODEL_ROUTING: z.string().optional().transform((v) => v === 'true'),
     // D5: tier→concrete model id(claude-api 최신). routeModels의 'opus'/'sonnet' tier를 이 id로 해석.

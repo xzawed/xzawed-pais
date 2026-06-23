@@ -25,6 +25,18 @@ describe('oracleRoute', () => {
     const arg = repo.upsert.mock.calls[0][0] as Record<string, unknown>
     expect(arg.status).toBe('pending')
   })
+  it('POST 생성 — golden frozenBy/frozenAt는 draft로 강제(N7: frozen은 오직 golden_diff 사인오프 경로)', async () => {
+    const repo = { upsert: vi.fn().mockResolvedValue(undefined) }
+    const app = await appWith(repo)
+    const res = await app.inject({
+      method: 'POST', url: '/workflows/wf1/oracles',
+      payload: { oracleId: 'o1', storyId: 's1', goldenRefs: [{ id: 'g1', inputFixture: 'i', normalizedOutput: 'o', frozenBy: 'po', frozenAt: '2026-01-01' }] },
+    })
+    expect(res.statusCode).toBe(201)
+    const arg = repo.upsert.mock.calls[0][0] as { goldenRefs: Array<{ frozenBy: string | null; frozenAt: string }> }
+    expect(arg.goldenRefs[0].frozenBy).toBeNull() // 사전-frozen 시드 차단
+    expect(arg.goldenRefs[0].frozenAt).toBe('')
+  })
   it('POST 생성 — 잘못된 본문이면 400 invalid oracle', async () => {
     const repo = { upsert: vi.fn() }
     const app = await appWith(repo)

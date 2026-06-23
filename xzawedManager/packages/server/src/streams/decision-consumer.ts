@@ -42,8 +42,12 @@ export interface DecisionRoutingDeps {
   signoffStore?: { recordSignOff(input: { signoffId: string; decisionId: string; scope: string; approver: string; risk?: string; reason?: string | null }): Promise<{ eventId: string } | null> }
   /** C5: approve on risk_classification → RiskClassificationRepo.approve(실 비부인 decidedBy). 미주입이면 no-op. */
   riskStore?: { approve(workflowId: string, approvedBy: string): Promise<{ eventId: string } | null> }
-  /** C3: approve on oracle_approval → 그 workflow pending 오라클 전부 승인. 미주입이면 no-op. */
-  oracleStore?: { approvePendingByWorkflow(workflowId: string, approvedBy: string): Promise<{ approved: number }> }
+  /** C3: approve on oracle_approval → 그 workflow pending 오라클 전부 승인. Slice 1: approve on golden_diff →
+   *  그 workflow golden 전부 freeze(사인오프). 미주입이면 no-op. */
+  oracleStore?: {
+    approvePendingByWorkflow(workflowId: string, approvedBy: string): Promise<{ approved: number }>
+    freezeGoldensByWorkflow?(workflowId: string, frozenBy: string): Promise<{ frozen: number }>
+  }
   /** N2: accept_known on degraded_dispatch → 사인오프 후 재디스패치(handleDispatch 재실행·승인 WP 통과). 미주입이면 no-op. */
   redispatch?: (workflowId: string) => Promise<void>
 }
@@ -89,6 +93,8 @@ export function buildDecisionRecordedHandler(deps: DecisionRoutingDeps): (msg: D
           await deps.riskStore.approve(req.workflowId, p.data.decidedBy)
         } else if (req?.type === 'oracle_approval' && deps.oracleStore) {
           await deps.oracleStore.approvePendingByWorkflow(req.workflowId, p.data.decidedBy)
+        } else if (req?.type === 'golden_diff' && deps.oracleStore?.freezeGoldensByWorkflow) {
+          await deps.oracleStore.freezeGoldensByWorkflow(req.workflowId, p.data.decidedBy)
         }
       }
     } catch (err) {
