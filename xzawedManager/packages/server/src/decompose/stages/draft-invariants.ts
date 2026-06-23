@@ -43,10 +43,12 @@ export async function draftInvariants(stories: Story[], deps: StageDeps): Promis
     })
     const invariants: OracleInvariant[] = []
     let n = 0
-    for (const inv of (data.invariants ?? []).slice(0, MAX_INVARIANTS_PER_STORY)) {
-      const statement = (inv.statement ?? '').trim()
-      if (!statement) continue // 빈 statement 드롭(저품질 가드)
-      invariants.push({ id: `${story.storyId}-inv${++n}`, statement, domain: inv.domain ?? '', property: inv.property ?? '', status: 'drafted' })
+    // 빈 statement(저품질) 드롭을 cap보다 먼저 — 유효 불변식이 cap 너머에 있어도 손실 없이 최대 N개를 채운다.
+    const valid = (data.invariants ?? [])
+      .map((inv) => ({ ...inv, statement: (inv.statement ?? '').trim() }))
+      .filter((inv) => inv.statement)
+    for (const inv of valid.slice(0, MAX_INVARIANTS_PER_STORY)) {
+      invariants.push({ id: `${story.storyId}-inv${++n}`, statement: inv.statement, domain: inv.domain ?? '', property: inv.property ?? '', status: 'drafted' })
     }
     byStory.set(story.storyId, invariants)
   }
