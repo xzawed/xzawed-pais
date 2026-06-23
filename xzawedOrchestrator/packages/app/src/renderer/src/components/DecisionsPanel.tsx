@@ -83,6 +83,12 @@ export function DecisionsPanel(): React.JSX.Element {
         ) : (
           items.map((d) => (
             <div key={d.requestId} data-testid="decisions-item" className="rounded border border-border bg-bg px-2.5 py-2 flex flex-col gap-1.5">
+              <span
+                data-testid="decision-type"
+                className="self-start rounded bg-surface-raised px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-fg-muted"
+              >
+                {t(`decisions.type_${d.type}`, d.type)}
+              </span>
               {d.context?.location && (
                 <p className="text-[12px] font-medium text-fg">
                   <span className="text-fg-ghost">{t('decisions.location')}: </span>{d.context.location}

@@ -12,7 +12,10 @@ describe('buildDefectBrief (§15 결함 의사결정 브리프)', () => {
     expect(b.wpId).toBe('wp_abc')
     expect(b.severity).toBe('blocking')
     expect(b.context?.location).toContain('wp_abc')
-    expect(b.context?.options).toEqual(['fix_reverify', 'spec_fix', 'accept_known', 'reject']) // §4 choice
+    // D10: defect_brief는 핸들러가 있는 choice만 노출한다(거짓 affordance 제거). decision-consumer는
+    // defect_brief에서 fix_reverify만 능동 처리하고 spec_fix/accept_known/reject는 무음 no-op(RESOLVED만)이므로
+    // 미구현 동작 버튼을 보이지 않는다(degraded-signoff-brief가 핸들 가능한 choice만 나열하는 선례와 정합).
+    expect(b.context?.options).toEqual(['fix_reverify'])
   })
 
   it('requestId는 (wf,wpId,attempt) 결정론 — 재호출 멱등(createRequest ON CONFLICT)', () => {
