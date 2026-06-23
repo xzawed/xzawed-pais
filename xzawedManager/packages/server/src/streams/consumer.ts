@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { RedisEventBus } from '@xzawed/agent-streams'
+import { RedisEventBus, routeToDlq } from '@xzawed/agent-streams'
 import type { StreamConsumerPort } from '@xzawed/agent-streams'
 import type { OrchestratorToManagerMessage } from '../types/streams.js'
 import { UserContextSchema, AbsoluteUserContextSchema } from '../types/user-context.js'
@@ -77,29 +77,28 @@ export class StreamConsumer {
     await this.bus.ensureGroup(streamKey(sessionId), GROUP)
   }
 
+  /** 구조적 결함=null(ack-skip), JSON/스키마 무효={poison}(DLQ), 유효={data,raw}. */
   private parseMessage(
     id: string,
     fields: string[],
-  ): OrchestratorToManagerMessage | null {
+  ): { data: OrchestratorToManagerMessage; raw: string } | { poison: string } | null {
     const dataIdx = fields.indexOf('data')
     if (dataIdx === -1) return null
     const rawStr = fields[dataIdx + 1]
     if (rawStr === undefined) return null
+    let raw: unknown
     try {
-      const raw: unknown = JSON.parse(rawStr)
-      const parsed = OrchestratorToManagerMessageSchema.safeParse(raw)
-      if (!parsed.success) {
-        console.error(
-          `[StreamConsumer] Invalid message schema ${id} — ACKing to skip:`,
-          parsed.error.issues,
-        )
-        return null
-      }
-      return parsed.data
+      raw = JSON.parse(rawStr)
     } catch {
-      console.error(`[StreamConsumer] Failed to parse message ${id} — ACKing to skip`)
-      return null
+      console.error(`[StreamConsumer] JSON parse 실패 ${id} → DLQ(invalid_schema)`)
+      return { poison: rawStr }
     }
+    const parsed = OrchestratorToManagerMessageSchema.safeParse(raw)
+    if (!parsed.success) {
+      console.error(`[StreamConsumer] 스키마 무효 ${id} → DLQ(invalid_schema):`, parsed.error.issues)
+      return { poison: rawStr }
+    }
+    return { data: parsed.data, raw: rawStr }
   }
 
   private async processEntry(
@@ -108,17 +107,20 @@ export class StreamConsumer {
     sessionId: string,
     handler: MessageHandler,
   ): Promise<void> {
-    const msg = this.parseMessage(id, fields)
-    if (!msg) {
-      await this.bus.ack(streamKey(sessionId), GROUP, [id])
-      return
+    const stream = streamKey(sessionId)
+    const r = this.parseMessage(id, fields)
+    if (r === null) { await this.bus.ack(stream, GROUP, [id]); return }
+    if ('poison' in r) {
+      await routeToDlq(this.bus, stream, r.poison, 'invalid_schema', 0)
+      await this.bus.ack(stream, GROUP, [id]); return
     }
     try {
-      await handler(msg)
+      await handler(r.data)
     } catch (err) {
-      console.error(`[StreamConsumer] Handler error for message ${id}:`, err)
+      console.error(`[StreamConsumer] Handler error for message ${id} → DLQ(handler_failed):`, err)
+      await routeToDlq(this.bus, stream, r.raw, 'handler_failed', 1, err)
     } finally {
-      await this.bus.ack(streamKey(sessionId), GROUP, [id])
+      await this.bus.ack(stream, GROUP, [id])
     }
   }
 
