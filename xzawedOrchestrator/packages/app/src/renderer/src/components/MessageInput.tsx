@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { motion } from 'framer-motion'
 
 interface Props {
-  onSend: (content: string) => void
+  onSend: (content: string, mode: 'chat' | 'build') => void
   disabled: boolean
 }
 
@@ -11,6 +11,7 @@ export function MessageInput({ onSend, disabled }: Readonly<Props>): React.JSX.E
   const { t } = useTranslation('app')
   const [value, setValue] = useState('')
   const [focused, setFocused] = useState(false)
+  const [mode, setMode] = useState<'chat' | 'build'>('chat')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -23,7 +24,7 @@ export function MessageInput({ onSend, disabled }: Readonly<Props>): React.JSX.E
   function handleSend(): void {
     const trimmed = value.trim()
     if (!trimmed || disabled) return
-    onSend(trimmed)
+    onSend(trimmed, mode)
     setValue('')
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
   }
@@ -37,6 +38,10 @@ export function MessageInput({ onSend, disabled }: Readonly<Props>): React.JSX.E
   }
 
   const canSend = value.trim().length > 0 && !disabled
+
+  function modeBtnClass(active: boolean): string {
+    return `px-1.5 py-0.5 rounded text-[9px] transition-colors ${active ? 'bg-accent text-white' : 'text-fg-ghost hover:text-fg-muted'}`
+  }
 
   return (
     <div className="border-t border-border bg-bg px-3 py-2.5">
@@ -64,6 +69,24 @@ export function MessageInput({ onSend, disabled }: Readonly<Props>): React.JSX.E
           style={{ minHeight: '20px' }}
         />
         <div className="flex items-center gap-2 flex-shrink-0 self-end pb-0.5">
+          <div className="flex items-center gap-0.5 rounded border border-border p-0.5">
+            <button
+              type="button"
+              data-testid="mode-toggle-chat"
+              onClick={() => setMode('chat')}
+              className={modeBtnClass(mode === 'chat')}
+            >
+              {t('chat.mode_chat')}
+            </button>
+            <button
+              type="button"
+              data-testid="mode-toggle-build"
+              onClick={() => setMode('build')}
+              className={modeBtnClass(mode === 'build')}
+            >
+              {t('chat.mode_build')}
+            </button>
+          </div>
           <span className="hidden sm:block text-[9px] text-fg-ghost">
             {disabled ? '' : t('chat.send_hint')}
           </span>

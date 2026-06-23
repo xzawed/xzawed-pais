@@ -1,21 +1,29 @@
 import React from 'react'
-import { describe, test, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, test, expect, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { MessageInput } from '../components/MessageInput.js'
 
-describe('MessageInput', () => {
-  test('renders textarea with data-testid', () => {
-    render(<MessageInput onSend={() => {}} disabled={false} />)
-    expect(screen.getByTestId('message-input')).toBeInTheDocument()
+function type(text: string) {
+  fireEvent.change(screen.getByTestId('message-input'), { target: { value: text } })
+}
+
+describe('MessageInput — 모드 토글', () => {
+  test('기본은 chat — 전송 시 onSend(content, "chat")', () => {
+    const onSend = vi.fn()
+    render(<MessageInput onSend={onSend} disabled={false} />)
+    expect(screen.getByTestId('mode-toggle-chat')).toBeInTheDocument()
+    expect(screen.getByTestId('mode-toggle-build')).toBeInTheDocument()
+    type('hello')
+    fireEvent.click(screen.getByTestId('message-send-button'))
+    expect(onSend).toHaveBeenCalledWith('hello', 'chat')
   })
 
-  test('send button is disabled when textarea is empty', () => {
-    render(<MessageInput onSend={() => {}} disabled={false} />)
-    expect(screen.getByTestId('message-send-button')).toBeDisabled()
-  })
-
-  test('send button is disabled when component is disabled', () => {
-    render(<MessageInput onSend={() => {}} disabled={true} />)
-    expect(screen.getByTestId('message-send-button')).toBeDisabled()
+  test('Build 토글 후 전송 → onSend(content, "build")', () => {
+    const onSend = vi.fn()
+    render(<MessageInput onSend={onSend} disabled={false} />)
+    fireEvent.click(screen.getByTestId('mode-toggle-build'))
+    type('build a todo app')
+    fireEvent.click(screen.getByTestId('message-send-button'))
+    expect(onSend).toHaveBeenCalledWith('build a todo app', 'build')
   })
 })
