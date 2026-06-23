@@ -1,6 +1,6 @@
 import type { UISpec } from './ui-spec.js'
 
-export type OrchestratorMessageType = 'task_request' | 'info_response' | 'abort'
+export type OrchestratorMessageType = 'task_request' | 'info_response' | 'abort' | 'decompose_request'
 export type ManagerMessageType = 'status_update' | 'info_request' | 'task_complete' | 'error' | 'knowledge_changed'
 
 export interface UserContext {
@@ -36,6 +36,13 @@ export type OrchestratorToManagerMessage =
       timestamp: number
       type: 'abort'
       payload: Record<string, never>
+    }
+  | {
+      sessionId: string
+      messageId: string
+      timestamp: number
+      type: 'decompose_request'
+      payload: { intent: string; userContext?: UserContext }
     }
 
 /** 승인 게이트 요청 메타 — info_request에 실려 단계 결과 검토·승인/수정/중단을 UI에 표시한다. */
