@@ -56,6 +56,7 @@ export async function postMessage(
   content: string,
   gateMode?: 'manual' | 'auto',
   accessToken?: string | null,
+  mode?: 'chat' | 'build',
 ): Promise<PostMessageResponse> {
   validateBaseUrl(baseUrl)
   const res = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
@@ -64,7 +65,7 @@ export async function postMessage(
       'Content-Type': 'application/json',
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
-    body: JSON.stringify({ content, ...(gateMode ? { gateMode } : {}) }),
+    body: JSON.stringify({ content, ...(gateMode ? { gateMode } : {}), ...(mode === 'build' ? { mode: 'build' } : {}) }),
   })
   if (!res.ok) throw new Error(`postMessage failed: ${res.status}`)
   return res.json() as Promise<PostMessageResponse>
