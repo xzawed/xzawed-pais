@@ -58,6 +58,13 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // F5 invariant 초안 생성(기본 false). true면 decompose draft 경로가 draftInvariants 스테이지 실행 →
+    // story별 invariant 초안 → OracleDraft.invariants 부착 → upsertDraft 영속 → approve 전이 → property 채널 활성.
+    // 전제: MANAGER_ORACLE_DRAFT(초안 파이프라인)·실효성엔 MANAGER_WP_PROPERTY. off면 invariants []·회귀 0.
+    MANAGER_ORACLE_INVARIANTS: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
     // P4-1 실행 워커(기본 false). true면 dispatch/reclaim이 wp.dispatch_signal 발행 + WorkerConsumer 배선
     // → dispatch된 WP를 owningRole 에이전트로 자율 실행. 전제: TASK_MANAGER_ENABLED + DATABASE_URL(Supervisor·getGraph).
     MANAGER_TASK_WORKER: z
