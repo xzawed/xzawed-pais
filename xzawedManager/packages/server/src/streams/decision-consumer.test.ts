@@ -192,6 +192,51 @@ describe('groupScopedDedupKey (B1 그룹-스코프 dedup)', () => {
 })
 
 // ---------------------------------------------------------------------------
+// C3: approve oracle_approval → oracleStore.approvePendingByWorkflow
+// ---------------------------------------------------------------------------
+
+describe('buildDecisionRecordedHandler C3 oracle_approval', () => {
+  it('C3: approve + oracle_approval → oracleStore.approvePendingByWorkflow 호출', async () => {
+    const approvePendingByWorkflow = vi.fn().mockResolvedValue({ approved: 2 })
+    const getRequest = vi.fn().mockResolvedValue({ type: 'oracle_approval', workflowId: 'wf-1', wpId: null })
+    const handler = buildDecisionRecordedHandler({
+      decisionStore: { getRequest },
+      leaseStore: { reopenLease: vi.fn() },
+      publish: vi.fn(),
+      visibilityMs: 1000,
+      oracleStore: { approvePendingByWorkflow },
+    } as unknown as Parameters<typeof buildDecisionRecordedHandler>[0])
+    await handler(rec({ requestId: 'wf-1:oracle', choice: 'approve', decisionId: 'd1', decidedBy: 'user-7' }))
+    expect(approvePendingByWorkflow).toHaveBeenCalledWith('wf-1', 'user-7')
+  })
+
+  it('C3: approve + risk_classification 기존 경로 보존(회귀 0)', async () => {
+    const riskApprove = vi.fn().mockResolvedValue({ eventId: 'e' })
+    const getRequest = vi.fn().mockResolvedValue({ type: 'risk_classification', workflowId: 'wf-2', wpId: null })
+    const handler = buildDecisionRecordedHandler({
+      decisionStore: { getRequest },
+      leaseStore: { reopenLease: vi.fn() },
+      publish: vi.fn(),
+      visibilityMs: 1000,
+      riskStore: { approve: riskApprove },
+    } as unknown as Parameters<typeof buildDecisionRecordedHandler>[0])
+    await handler(rec({ requestId: 'wf-2:risk:1', choice: 'approve', decisionId: 'd2', decidedBy: 'user-8' }))
+    expect(riskApprove).toHaveBeenCalledWith('wf-2', 'user-8')
+  })
+
+  it('C3: oracleStore 미주입 → approve oracle_approval no-op(never-throw)', async () => {
+    const getRequest = vi.fn().mockResolvedValue({ type: 'oracle_approval', workflowId: 'wf-1', wpId: null })
+    const handler = buildDecisionRecordedHandler({
+      decisionStore: { getRequest },
+      leaseStore: { reopenLease: vi.fn() },
+      publish: vi.fn(),
+      visibilityMs: 1000,
+    } as unknown as Parameters<typeof buildDecisionRecordedHandler>[0])
+    await expect(handler(rec({ requestId: 'wf-1:oracle', choice: 'approve', decisionId: 'd1', decidedBy: 'user-7' }))).resolves.toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
 // N2: accept_known degraded_dispatch + redispatch
 // ---------------------------------------------------------------------------
 

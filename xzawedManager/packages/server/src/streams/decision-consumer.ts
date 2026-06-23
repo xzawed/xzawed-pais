@@ -42,6 +42,8 @@ export interface DecisionRoutingDeps {
   signoffStore?: { recordSignOff(input: { signoffId: string; decisionId: string; scope: string; approver: string; risk?: string; reason?: string | null }): Promise<{ eventId: string } | null> }
   /** C5: approve on risk_classification → RiskClassificationRepo.approve(실 비부인 decidedBy). 미주입이면 no-op. */
   riskStore?: { approve(workflowId: string, approvedBy: string): Promise<{ eventId: string } | null> }
+  /** C3: approve on oracle_approval → 그 workflow pending 오라클 전부 승인. 미주입이면 no-op. */
+  oracleStore?: { approvePendingByWorkflow(workflowId: string, approvedBy: string): Promise<{ approved: number }> }
   /** N2: accept_known on degraded_dispatch → 사인오프 후 재디스패치(handleDispatch 재실행·승인 WP 통과). 미주입이면 no-op. */
   redispatch?: (workflowId: string) => Promise<void>
 }
@@ -81,10 +83,13 @@ export function buildDecisionRecordedHandler(deps: DecisionRoutingDeps): (msg: D
           await deps.redispatch?.(req.workflowId)
         }
       }
-      if (p.data.choice === 'approve' && deps.riskStore && p.data.decidedBy) {
+      if (p.data.choice === 'approve' && p.data.decidedBy) {
         const req = await deps.decisionStore.getRequest(p.data.requestId)
-        if (req?.type !== 'risk_classification') return
-        await deps.riskStore.approve(req.workflowId, p.data.decidedBy)
+        if (req?.type === 'risk_classification' && deps.riskStore) {
+          await deps.riskStore.approve(req.workflowId, p.data.decidedBy)
+        } else if (req?.type === 'oracle_approval' && deps.oracleStore) {
+          await deps.oracleStore.approvePendingByWorkflow(req.workflowId, p.data.decidedBy)
+        }
       }
     } catch (err) {
       console.warn('[decision-consumer] 라우팅 실패(best-effort·결정은 영속됨):', err)
