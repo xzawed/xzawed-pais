@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { useChatStore } from '../store/chat.store.js'
 import { ChatView } from '../components/ChatView.js'
+import { postMessage } from '../lib/api.js'
 
 const postUiAction = vi.fn(() => Promise.resolve())
 
@@ -255,5 +256,27 @@ describe('ChatView', () => {
     expect(postUiAction).toHaveBeenCalledWith(
       expect.any(String), 'sess-abort', JSON.stringify({ decision: 'abort' }), null,
     )
+  })
+
+  test('기본 전송 → postMessage 6번째 인자 chat', () => {
+    useChatStore.setState({ sessionId: 'test-session' })
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
+    fireEvent.change(screen.getByTestId('message-input'), { target: { value: 'hi' } })
+    fireEvent.click(screen.getByTestId('message-send-button'))
+    const call = vi.mocked(postMessage).mock.calls.at(-1)!
+    expect(call[1]).toBe('test-session')
+    expect(call[2]).toBe('hi')
+    expect(call[5]).toBe('chat')
+  })
+
+  test('Build 토글 후 전송 → postMessage 6번째 인자 build', () => {
+    useChatStore.setState({ sessionId: 'test-session' })
+    render(<MemoryRouter><ChatView /></MemoryRouter>)
+    fireEvent.click(screen.getByTestId('mode-toggle-build'))
+    fireEvent.change(screen.getByTestId('message-input'), { target: { value: 'build app' } })
+    fireEvent.click(screen.getByTestId('message-send-button'))
+    const call = vi.mocked(postMessage).mock.calls.at(-1)!
+    expect(call[2]).toBe('build app')
+    expect(call[5]).toBe('build')
   })
 })

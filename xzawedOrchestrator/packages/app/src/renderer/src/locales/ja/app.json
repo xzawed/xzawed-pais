@@ -53,7 +53,9 @@
     "code_copy": "コピー",
     "project_none": "(プロジェクトなし)",
     "info_response_placeholder": "応答を入力してください...",
-    "demo_preview_empty": "プレビューする内容がありません"
+    "demo_preview_empty": "プレビューする内容がありません",
+    "mode_chat": "チャット",
+    "mode_build": "ビルド"
   },
   "mcp": {
     "title": "🔌 MCPサーバー",

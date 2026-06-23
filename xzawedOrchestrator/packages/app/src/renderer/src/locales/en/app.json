@@ -53,7 +53,9 @@
     "code_copy": "Copy",
     "project_none": "(No project)",
     "info_response_placeholder": "Type your response...",
-    "demo_preview_empty": "Nothing to preview"
+    "demo_preview_empty": "Nothing to preview",
+    "mode_chat": "Chat",
+    "mode_build": "Build"
   },
   "mcp": {
     "title": "🔌 MCP Servers",
