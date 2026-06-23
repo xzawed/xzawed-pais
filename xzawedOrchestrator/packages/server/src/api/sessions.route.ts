@@ -4,7 +4,7 @@ import type { WebSocket } from 'ws'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { ClaudeRunner, RunOptions } from '../claude/runner.interface.js'
 import type { StreamProducer } from '../streams/producer.js'
-import type { Message, Session, ManagerToOrchestratorMessage, Chunk } from '@xzawed/shared'
+import type { Message, Session, ManagerToOrchestratorMessage, Chunk, UserContext } from '@xzawed/shared'
 import { StreamConsumer } from '../streams/consumer.js'
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
@@ -88,6 +88,55 @@ async function saveAssistantMessage(
   messageStore.set(sessionId, history)
 }
 
+export async function buildUserContext(
+  session: { userId: string; projectId?: string | null },
+  pool?: Pool,
+): Promise<UserContext> {
+  const envFallback = process.env.WORKSPACE_ROOT ?? '/workspace'
+  if (session.projectId) {
+    let workspaceRoot = envFallback
+    if (pool) {
+      const repo = new ProjectRepo(pool)
+      const project = await repo.findByIdAndUser(session.projectId, session.userId)
+      workspaceRoot = resolveSessionWorkspaceRoot(project, envFallback)
+    }
+    assertNotFilesystemRoot(workspaceRoot)
+    return { userId: session.userId, projectId: session.projectId, workspaceRoot }
+  }
+  // AUTH=none 또는 프로젝트 미선택 시: 기본 workspace를 전달하여 Manager가 register_project를 호출하지 않도록 방지
+  assertNotFilesystemRoot(envFallback)
+  return { userId: session.userId, projectId: 'default', workspaceRoot: envFallback }
+}
+
+/** C6: build 모드 + 플래그면 분해 라우팅. 순수 결정. */
+export function shouldDecompose(mode: string | undefined, decomposeEnabled: boolean): boolean {
+  return mode === 'build' && decomposeEnabled
+}
+
+/** C6: 원 요청을 decompose_request로 Manager에 발행(자율 태스크그래프). 발행 실패는 비차단(log.warn). */
+export async function publishDecomposeToManager(
+  producer: StreamProducer,
+  sessionId: string,
+  intent: string,
+  userContext: UserContext,
+  getSocket: () => WebSocket | undefined,
+  log: FastifyInstance['log'],
+  locale: ServerLocale = 'ko',
+): Promise<void> {
+  try {
+    await producer.publish({
+      sessionId,
+      messageId: crypto.randomUUID(),
+      timestamp: Date.now(),
+      type: 'decompose_request',
+      payload: { intent, userContext },
+    })
+    getSocket()?.send(JSON.stringify({ type: 'status', content: t('status.forwarding', locale) }))
+  } catch (publishErr: unknown) {
+    log.warn({ err: publishErr }, 'Redis publish failed — Manager unavailable, skipping decompose forwarding')
+  }
+}
+
 export async function publishTaskToManager(
   producer: StreamProducer,
   sessionId: string,
@@ -100,23 +149,7 @@ export async function publishTaskToManager(
   locale: ServerLocale = 'ko',
   gateMode?: 'manual' | 'auto',
 ): Promise<void> {
-  const envFallback = process.env.WORKSPACE_ROOT ?? '/workspace'
-  let userContext: { userId: string; projectId: string; workspaceRoot: string }
-
-  if (session.projectId) {
-    let workspaceRoot = envFallback
-    if (pool) {
-      const repo = new ProjectRepo(pool)
-      const project = await repo.findByIdAndUser(session.projectId, session.userId)
-      workspaceRoot = resolveSessionWorkspaceRoot(project, envFallback)
-    }
-    assertNotFilesystemRoot(workspaceRoot)
-    userContext = { userId: session.userId, projectId: session.projectId, workspaceRoot }
-  } else {
-    // AUTH=none 또는 프로젝트 미선택 시: 기본 workspace를 전달하여 Manager가 register_project를 호출하지 않도록 방지
-    assertNotFilesystemRoot(envFallback)
-    userContext = { userId: session.userId, projectId: 'default', workspaceRoot: envFallback }
-  }
+  const userContext = await buildUserContext(session, pool)
   try {
     await producer.publish({
       sessionId,
@@ -127,7 +160,7 @@ export async function publishTaskToManager(
         intent,
         context: { history: snapshot.map((m) => ({ role: m.role, content: m.content })) },
         priority: 'normal',
-        ...(userContext ? { userContext } : {}),
+        userContext,
         ...(gateMode ? { gateMode } : {}),
       },
     })
@@ -150,6 +183,7 @@ interface SessionsRoutesConfig {
   authHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
   pool?: Pool
   userAuthHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
+  decomposeEnabled?: boolean
 }
 
 export function handleConsumerMessage(
@@ -228,7 +262,7 @@ export async function sessionsRoutes(
   const {
     store, runner, wsSessions, redisUrl, producer,
     sessionConsumers, sessionCleanup, anthropicClient, claudeModel,
-    authHook, pool, userAuthHook,
+    authHook, pool, userAuthHook, decomposeEnabled = false,
   } = config
 
   const messageStore = new Map<string, Message[]>()
@@ -348,7 +382,7 @@ export async function sessionsRoutes(
     return messageStore.get(req.params.id) ?? []
   })
 
-  app.post<{ Params: { id: string }; Body: { content: string; gateMode?: 'manual' | 'auto' } }>(
+  app.post<{ Params: { id: string }; Body: { content: string; gateMode?: 'manual' | 'auto'; mode?: 'chat' | 'build' } }>(
     '/sessions/:id/messages',
     routeOpts,
     async (req, reply) => {
@@ -385,6 +419,8 @@ export async function sessionsRoutes(
       const capturedUserId = session.userId
       const capturedLocale = resolved.loc
       const capturedGateMode = req.body.gateMode
+      const capturedMode = req.body.mode
+      const capturedContent = req.body.content
 
       processingSessionIds.add(sessionId)
       // Live socket lookup, not a captured reference: a WS reconnect during the grace window
@@ -394,6 +430,14 @@ export async function sessionsRoutes(
         const assistantMsgId = crypto.randomUUID()
 
         try {
+          if (shouldDecompose(capturedMode, decomposeEnabled)) {
+            const userContext = await buildUserContext({ userId: capturedUserId, projectId: capturedProjectId }, pool)
+            taskStore.create(sessionId, capturedContent)
+            await publishDecomposeToManager(producer, sessionId, capturedContent, userContext, getSocket, app.log, capturedLocale)
+            getSocket()?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
+            return
+          }
+
           const { fullContent, aborted } = await processRunnerChunks(
             runner, snapshot, {}, assistantMsgId, getSocket,
           )

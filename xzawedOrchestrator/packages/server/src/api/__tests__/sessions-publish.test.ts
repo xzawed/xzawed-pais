@@ -16,7 +16,7 @@ vi.mock('../../projects/project.repo.js', () => ({
   }) }),
 }))
 
-import { publishTaskToManager } from '../sessions.route.js'
+import { publishTaskToManager, buildUserContext, shouldDecompose, publishDecomposeToManager } from '../sessions.route.js'
 
 const SID = 'sess-pub-test'
 const SNAPSHOT: Message[] = []
@@ -122,5 +122,52 @@ describe('publishTaskToManager — projectId 있음, pool 있음', () => {
     await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: 'proj-1' }, () => undefined, makeLog(), pool)
     const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: { userContext: { workspaceRoot: string } } }
     expect(msg.payload.userContext?.workspaceRoot).toBe('/fallback-root')
+  })
+})
+
+describe('buildUserContext', () => {
+  it('projectId null → default·env workspaceRoot', async () => {
+    process.env.WORKSPACE_ROOT = '/ws-a'
+    const uc = await buildUserContext({ userId: 'u1', projectId: null })
+    expect(uc).toEqual({ userId: 'u1', projectId: 'default', workspaceRoot: '/ws-a' })
+  })
+  it('projectId 있음·pool 있음 → project.workspace_path', async () => {
+    mockFindByIdAndUser.mockResolvedValueOnce(makeProject('/custom/ws'))
+    const uc = await buildUserContext({ userId: 'u1', projectId: 'proj-1' }, {} as Pool)
+    expect(mockFindByIdAndUser).toHaveBeenCalledWith('proj-1', 'u1')
+    expect(uc.workspaceRoot).toBe('/custom/ws')
+  })
+  it('workspaceRoot가 fs 루트면 throw', async () => {
+    const { parse } = await import('node:path')
+    process.env.WORKSPACE_ROOT = parse(process.cwd()).root
+    await expect(buildUserContext({ userId: 'u1', projectId: 'proj-1' })).rejects.toThrow('WORKSPACE_ROOT must not be filesystem root')
+  })
+})
+
+describe('shouldDecompose', () => {
+  it('build + enabled → true', () => { expect(shouldDecompose('build', true)).toBe(true) })
+  it('build + disabled → false', () => { expect(shouldDecompose('build', false)).toBe(false) })
+  it('chat/undefined → false', () => {
+    expect(shouldDecompose('chat', true)).toBe(false)
+    expect(shouldDecompose(undefined, true)).toBe(false)
+  })
+})
+
+describe('publishDecomposeToManager', () => {
+  const UC = { userId: 'u1', projectId: 'default', workspaceRoot: '/ws' }
+  it('decompose_request를 intent·userContext로 발행', async () => {
+    const producer = makeProducer()
+    await publishDecomposeToManager(producer, SID, 'build a todo app', UC, () => undefined, makeLog())
+    expect(producer.publish).toHaveBeenCalledOnce()
+    const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { type: string; payload: { intent: string; userContext: unknown } }
+    expect(msg.type).toBe('decompose_request')
+    expect(msg.payload.intent).toBe('build a todo app')
+    expect(msg.payload.userContext).toEqual(UC)
+  })
+  it('publish 실패 시 throw하지 않고 log.warn', async () => {
+    const producer = { publish: vi.fn().mockRejectedValue(new Error('redis down')) } as unknown as StreamProducer
+    const log = makeLog()
+    await expect(publishDecomposeToManager(producer, SID, 'x', UC, () => undefined, log)).resolves.toBeUndefined()
+    expect((log.warn as ReturnType<typeof vi.fn>)).toHaveBeenCalled()
   })
 })
