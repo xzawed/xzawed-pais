@@ -66,7 +66,11 @@ export function buildDefectBrief(info: EscalationInfo): DecisionRequestInput {
       expectedVsActual: `구현 계층에서 ${tries}회 정직 재시도 모두 검증 실패 — 구현으로 해소 불가. 계약 사슬상 Task(스펙 모호/불가능) 또는 plan(기획 모순) 검토 필요.`,
       impact: ['이 WP에 의존하는 후행 작업이 차단됨(lease escalated).'],
       evidenceRefs: [`wp.escalated@${workflowId}/${wpId}`, `attempt=${tries}`],
-      options: ['fix_reverify', 'spec_fix', 'accept_known', 'reject'],
+      // D10: decision-consumer는 defect_brief에서 fix_reverify만 능동 처리한다(escalated lease reopen→재디스패치).
+      // spec_fix(재분해)·accept_known(수용)·reject(saga)는 핸들러가 없어 RESOLVED만 남기는 무음 no-op이므로
+      // 거짓 affordance를 제거하기 위해 핸들 가능한 choice만 노출한다(미구현 동작 버튼 비표시).
+      // 후속 슬라이스가 핸들러를 추가하면 그 choice를 다시 노출한다(degraded-signoff-brief가 핸들 가능 choice만 나열하는 선례).
+      options: ['fix_reverify'],
       attribution,
     },
   }
