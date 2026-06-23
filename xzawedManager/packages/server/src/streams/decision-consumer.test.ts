@@ -143,6 +143,36 @@ describe('buildDecisionRecordedHandler approve 위험분류 (C5)', () => {
   })
 })
 
+describe('buildDecisionRecordedHandler approve golden 사인오프 (Slice 1)', () => {
+  function deps3(over: Record<string, unknown> = {}, reqType = 'golden_diff') {
+    return {
+      decisionStore: { getRequest: vi.fn().mockResolvedValue({ requestId: 'wf:golden', workflowId: 'wf', type: reqType, wpId: null }) },
+      leaseStore: {} as never, publish: vi.fn(), visibilityMs: 1000,
+      ...over,
+    } as never
+  }
+  it('approve + golden_diff → oracleStore.freezeGoldensByWorkflow(workflowId, decidedBy)', async () => {
+    const freezeGoldensByWorkflow = vi.fn().mockResolvedValue({ frozen: 2 })
+    const d = deps3({ oracleStore: { approvePendingByWorkflow: vi.fn(), freezeGoldensByWorkflow } })
+    await buildDecisionRecordedHandler(d)(rec({ requestId: 'wf:golden', choice: 'approve', decisionId: 'wf:golden:approve', decidedBy: 'po' }))
+    expect(freezeGoldensByWorkflow).toHaveBeenCalledWith('wf', 'po')
+  })
+  it('approve + golden_diff이지만 freezeGoldensByWorkflow 미주입 → no-op(never-throw)', async () => {
+    const approvePendingByWorkflow = vi.fn()
+    const d = deps3({ oracleStore: { approvePendingByWorkflow } })
+    await expect(buildDecisionRecordedHandler(d)(rec({ requestId: 'wf:golden', choice: 'approve', decisionId: 'd', decidedBy: 'po' }))).resolves.toBeUndefined()
+    expect(approvePendingByWorkflow).not.toHaveBeenCalled() // oracle_approval 경로 미발화(type 불일치)
+  })
+  it('approve + oracle_approval은 freeze 아닌 approvePendingByWorkflow(기존 분기 보존)', async () => {
+    const approvePendingByWorkflow = vi.fn().mockResolvedValue({ approved: 1 })
+    const freezeGoldensByWorkflow = vi.fn()
+    const d = deps3({ oracleStore: { approvePendingByWorkflow, freezeGoldensByWorkflow } }, 'oracle_approval')
+    await buildDecisionRecordedHandler(d)(rec({ requestId: 'wf:oracle', choice: 'approve', decisionId: 'd', decidedBy: 'po' }))
+    expect(approvePendingByWorkflow).toHaveBeenCalledWith('wf', 'po')
+    expect(freezeGoldensByWorkflow).not.toHaveBeenCalled()
+  })
+})
+
 // ---------------------------------------------------------------------------
 // B1 동시성: groupScopedDedupKey — 두 그룹 멱등 마커 충돌 차단
 // ---------------------------------------------------------------------------
