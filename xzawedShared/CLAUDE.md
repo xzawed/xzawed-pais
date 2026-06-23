@@ -5,7 +5,7 @@
 xzawedShared(`@xzawed/agent-streams`)는 xzawed 멀티 에이전트 시스템의 **공통 기반 라이브러리**다.
 7개 독립 에이전트 서비스가 공통으로 사용하는 `BaseConsumer<T>` 제네릭 Redis Streams 소비자, 경로 보안 유틸리티, SessionDispatcher, 에이전트 간 협업 헬퍼, 도메인 위키 주입 포매터를 제공한다.
 
-**현재 상태: 구현 완료 (279 테스트 통과)**
+**현재 상태: 구현 완료 (282 테스트 통과)**
 
 ## 핵심 명령어
 
@@ -23,8 +23,8 @@ src/
 ├── index.ts                     # 패키지 진입점 — 아래 모든 public export 재노출
 ├── workspace-guard.ts           # validateWorkspaceRoot() / resolveWorkspaceRoot() — 파일시스템 루트 거부
 ├── streams/
-│   ├── base-consumer.ts         # BaseConsumer<T> 제네릭 클래스 (DLQ 키·멱등 마커는 dlq.ts 재사용)
-│   ├── dlq.ts                   # DLQ 계약 단일출처(dlqStreamKey·idemKey·defaultDedupKey·DlqMessageSchema) + redriveDlq 운영 도구
+│   ├── base-consumer.ts         # BaseConsumer<T> 제네릭 클래스 (DLQ 키·멱등 마커·DLQ 쓰기 routeToDlq는 dlq.ts 재사용)
+│   ├── dlq.ts                   # DLQ 계약·쓰기 경로 단일출처(dlqStreamKey·idemKey·defaultDedupKey·DlqMessageSchema·routeToDlq·DLQ_MAXLEN·DlqPublisher) + redriveDlq 운영 도구
 │   ├── event-bus.ts             # EventBus 발행 추상화 + RedisEventBus 어댑터
 │   ├── session-dispatcher.ts    # SessionDispatcher — per-session 동적 consumer 팩토리, ConsumerLike
 │   └── collaboration.ts         # 협업 handle 골격 공통화 (runCollaborativeHandle 등)
@@ -277,7 +277,7 @@ class BaseConsumer<TMessage> {
 
 ## DLQ 계약·재처리 패턴 (`streams/dlq.ts`)
 
-BaseConsumer가 poison 메시지를 격리하는 `{stream}:dlq` 키와 멱등 마커 `idem:{stream}:{key}`의 **단일출처**. base-consumer.ts가 `dlqStreamKey`·`idemKey`·`defaultDedupKey`를 재사용해 쓰기 경로와 재처리 도구의 키 포맷이 드리프트하지 않게 한다(dlq.ts는 base-consumer를 import하지 않음 — 순환 회피).
+BaseConsumer가 poison 메시지를 격리하는 `{stream}:dlq` 키와 멱등 마커 `idem:{stream}:{key}`의 **단일출처**. base-consumer.ts가 `dlqStreamKey`·`idemKey`·`defaultDedupKey`를 재사용해 쓰기 경로와 재처리 도구의 키 포맷이 드리프트하지 않게 한다(dlq.ts는 base-consumer를 import하지 않음 — 순환 회피). **DLQ 쓰기 경로 `routeToDlq(publisher, stream, raw, reason, attempts, error?)`도 dlq.ts export 단일출처**(never-throw·DlqMessage 봉투를 `{stream}:dlq`로 `DLQ_MAXLEN` 동반 발행) — `BaseConsumer`와 **Manager 인바운드 3개 소비자**(StreamConsumer·WatcherEventConsumer·SessionGatewayConsumer·G2 #335)가 `publisher`(=`this.bus`)만 넘겨 재사용(쓰기 경로 CPD0·정문 무음 drop 봉합).
 
 ```typescript
 import { redriveDlq, dlqStreamKey, DlqMessageSchema } from '@xzawed/agent-streams'
