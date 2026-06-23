@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { RedisEventBus } from '@xzawed/agent-streams'
+import { RedisEventBus, routeToDlq } from '@xzawed/agent-streams'
 import type { StreamConsumerPort } from '@xzawed/agent-streams'
 import { getRedisClient } from './redis.client.js'
 
@@ -39,23 +39,7 @@ export class SessionGatewayConsumer {
 
         for (const [, entries] of results) {
           for (const [msgId, fields] of entries) {
-            try {
-              const dataIdx = fields.indexOf('data')
-              if (dataIdx !== -1) {
-                const raw = fields[dataIdx + 1]
-                if (raw !== undefined) {
-                  const parsed = JSON.parse(raw) as { sessionId?: unknown }
-                  const sessionIdResult = z.string().uuid().safeParse(parsed.sessionId)
-                  if (sessionIdResult.success) {
-                    await this.onSessionInit(sessionIdResult.data)
-                  }
-                }
-              }
-            } catch {
-              // skip malformed messages
-            } finally {
-              await this.bus.ack(GATEWAY_STREAM, GROUP, [msgId])
-            }
+            await this._processEntry(msgId, fields)
           }
         }
       } catch (err: unknown) {
@@ -63,6 +47,30 @@ export class SessionGatewayConsumer {
         console.error('[SessionGateway] xreadgroup error, retrying in 1s:', err)
         await new Promise(r => setTimeout(r, 1_000))
       }
+    }
+  }
+
+  private async _processEntry(msgId: string, fields: string[]): Promise<void> {
+    try {
+      const dataIdx = fields.indexOf('data')
+      const rawStr = dataIdx === -1 ? undefined : fields[dataIdx + 1]
+      if (rawStr === undefined) return  // 구조적 skip
+      let parsed: { sessionId?: unknown }
+      try {
+        parsed = JSON.parse(rawStr) as { sessionId?: unknown }
+      } catch {
+        await routeToDlq(this.bus, GATEWAY_STREAM, rawStr, 'invalid_schema', 0)
+        return
+      }
+      const sid = z.string().uuid().safeParse(parsed.sessionId)
+      if (!sid.success) return  // 소프트 검증 skip(현재 동작 보존)
+      try {
+        await this.onSessionInit(sid.data)
+      } catch (err) {
+        await routeToDlq(this.bus, GATEWAY_STREAM, rawStr, 'handler_failed', 1, err)
+      }
+    } finally {
+      await this.bus.ack(GATEWAY_STREAM, GROUP, [msgId])
     }
   }
 

@@ -19,6 +19,7 @@ function makeRedis(xreadgroupResults: unknown[][] = []) {
       return Promise.resolve(xreadgroupResults[callCount++])
     }),
     xack: vi.fn().mockResolvedValue(1),
+    xadd: vi.fn().mockResolvedValue('1-0'),
   }
 }
 
@@ -79,5 +80,39 @@ describe('SessionGatewayConsumer', () => {
     await new Promise(r => setTimeout(r, 50))
     gateway.stop()
     await expect(p).resolves.toBeUndefined()
+  })
+
+  it('JSON 무효를 {stream}:dlq로 격리(invalid_schema)', async () => {
+    const mockRedis = makeRedis([[['orchestrator:to-manager:sessions', [['8-0', ['data', 'bad json']]]]]])
+    vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    const onSessionInit = vi.fn()
+    const g = new SessionGatewayConsumer('redis://localhost:6379', onSessionInit)
+    const p = g.start(); await new Promise(r => setTimeout(r, 50)); g.stop(); await p
+    expect(onSessionInit).not.toHaveBeenCalled()
+    expect(mockRedis.xadd.mock.calls[0]![0]).toBe('orchestrator:to-manager:sessions:dlq')
+    expect(mockRedis.xack).toHaveBeenCalled()
+  })
+
+  it('onSessionInit throw를 {stream}:dlq로 격리(handler_failed·재시도 없음)', async () => {
+    const sid = '550e8400-e29b-41d4-a716-446655440000'
+    const mockRedis = makeRedis([[['orchestrator:to-manager:sessions', [['8-1', ['data', JSON.stringify({ sessionId: sid })]]]]]])
+    vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    const onSessionInit = vi.fn().mockRejectedValue(new Error('boom'))
+    const g = new SessionGatewayConsumer('redis://localhost:6379', onSessionInit)
+    const p = g.start(); await new Promise(r => setTimeout(r, 50)); g.stop(); await p
+    expect(onSessionInit).toHaveBeenCalledTimes(1)
+    expect(mockRedis.xadd.mock.calls[0]![0]).toBe('orchestrator:to-manager:sessions:dlq')
+    expect(mockRedis.xack).toHaveBeenCalled()
+  })
+
+  it('non-uuid sessionId는 DLQ 없이 ack-skip(현재 동작 보존)', async () => {
+    const mockRedis = makeRedis([[['orchestrator:to-manager:sessions', [['8-2', ['data', JSON.stringify({ sessionId: 'not-a-uuid' })]]]]]])
+    vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    const onSessionInit = vi.fn()
+    const g = new SessionGatewayConsumer('redis://localhost:6379', onSessionInit)
+    const p = g.start(); await new Promise(r => setTimeout(r, 50)); g.stop(); await p
+    expect(onSessionInit).not.toHaveBeenCalled()
+    expect(mockRedis.xadd).not.toHaveBeenCalled()
+    expect(mockRedis.xack).toHaveBeenCalled()
   })
 })

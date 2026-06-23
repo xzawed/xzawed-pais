@@ -4,6 +4,8 @@ import {
   idemKey,
   DlqMessageSchema,
   redriveDlq,
+  routeToDlq,
+  DLQ_MAXLEN,
   type DlqRedis,
 } from '../streams/dlq.js'
 
@@ -155,5 +157,36 @@ describe('redriveDlq', () => {
     const redis = makeRedis([])
     await redriveDlq(redis, SOURCE)
     expect(redis.xrange).toHaveBeenCalledWith(DLQ, '-', '+', 'COUNT', 100)
+  })
+})
+
+describe('routeToDlq (DLQ 쓰기 단일출처)', () => {
+  it('DlqMessage 봉투를 {stream}:dlq로 maxlen 동반 발행한다', async () => {
+    const calls: Array<{ stream: string; msg: unknown; opts: unknown }> = []
+    const publisher = {
+      publish: async (stream: string, msg: unknown, opts?: unknown) => { calls.push({ stream, msg, opts }); return '1-0' },
+    }
+    await routeToDlq(publisher, 'orchestrator:to-manager:s1', '{"bad":true}', 'invalid_schema', 0)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.stream).toBe('orchestrator:to-manager:s1:dlq')
+    expect(calls[0]!.opts).toEqual({ maxlen: DLQ_MAXLEN })
+    const m = calls[0]!.msg as Record<string, unknown>
+    expect(m).toMatchObject({ original: '{"bad":true}', reason: 'invalid_schema', attempts: 0, sourceStream: 'orchestrator:to-manager:s1' })
+    expect(typeof m['failedAt']).toBe('number')
+    expect('error' in m).toBe(false)
+  })
+
+  it('error 제공 시 메시지 문자열을 포함한다', async () => {
+    let captured: Record<string, unknown> = {}
+    const publisher = { publish: async (_s: string, msg: unknown) => { captured = msg as Record<string, unknown>; return '1-0' } }
+    await routeToDlq(publisher, 'st', 'raw', 'handler_failed', 1, new Error('boom'))
+    expect(captured['reason']).toBe('handler_failed')
+    expect(captured['attempts']).toBe(1)
+    expect(captured['error']).toBe('boom')
+  })
+
+  it('publisher.publish가 reject해도 throw하지 않는다(never-throw·삼킴)', async () => {
+    const publisher = { publish: async () => { throw new Error('redis down') } }
+    await expect(routeToDlq(publisher, 'st', 'raw', 'invalid_schema', 0)).resolves.toBeUndefined()
   })
 })

@@ -51,6 +51,39 @@ export const DlqMessageSchema = z.object({
 })
 export type DlqMessage = z.infer<typeof DlqMessageSchema>
 
+/** DLQ 발행에 필요한 최소 publisher 인터페이스(EventBus/StreamConsumerPort 구조 충족·테스트 주입 용이). */
+export interface DlqPublisher {
+  publish(stream: string, message: unknown, opts?: { maxlen?: number }): Promise<unknown>
+}
+
+/** DLQ approximate MAXLEN(무한 증가 방지). BaseConsumer·인바운드 소비자 공유. */
+export const DLQ_MAXLEN = 1000
+
+/**
+ * poison 메시지를 `{stream}:dlq`로 격리한다(DlqMessage 봉투 발행) — DLQ 쓰기 경로 단일출처.
+ * 페이로드 구성·발행 실패는 모두 경고 후 무시(배치 비차단·never-throw) — 격리 best-effort.
+ * error 코어션도 try 안에서(병리적 throwing getter가 계약을 깨지 않도록).
+ */
+export async function routeToDlq(
+  publisher: DlqPublisher,
+  stream: string,
+  raw: string,
+  reason: DlqReason,
+  attempts: number,
+  error?: unknown,
+): Promise<void> {
+  try {
+    const dlqMessage = {
+      original: raw, reason, attempts,
+      ...(error === undefined ? {} : { error: error instanceof Error ? error.message : String(error) }),
+      failedAt: Date.now(), sourceStream: stream,
+    }
+    await publisher.publish(dlqStreamKey(stream), dlqMessage, { maxlen: DLQ_MAXLEN })
+  } catch (e) {
+    console.error(`[dlq] DLQ 발행 실패(${dlqStreamKey(stream)}) — 메시지 격리 실패:`, e)
+  }
+}
+
 /** redrive가 사용하는 Redis 명령의 최소 구조적 인터페이스(ioredis Redis 호환·테스트 주입 용이). */
 export interface DlqRedis {
   xrange(
