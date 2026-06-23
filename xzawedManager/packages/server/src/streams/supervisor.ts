@@ -211,6 +211,8 @@ export interface SupervisorConfig {
   oracleDor: boolean
   /** C3: 오라클 승인 결정 배선(=MANAGER_ORACLE_DECISION). oracleStore+decisionStore 동반 시 생산자(decomposition-consumer)+소비자(DecisionRecordedConsumer) 활성. */
   oracleDecision?: boolean
+  /** Slice 1: golden freeze 사인오프 배선(=MANAGER_GOLDEN_SIGNOFF). oracleStore+decisionStore 동반 시 생산자(worker hook)+소비자(DecisionRecordedConsumer freeze) 활성. */
+  goldenSignoff?: boolean
   /** P4-1: 실행 워커(WorkerConsumer 배선 + dispatch/reclaim 신호 발행) 활성(=MANAGER_TASK_WORKER). */
   taskWorker: boolean
   /** P4b-1: 워커 검증 게이트(완료 발행 전 fail-closed 실 검증) 활성(=MANAGER_WP_VERIFY, 기본 off). */
@@ -303,6 +305,11 @@ export function shouldWireOracleDecision(oracleDecision: boolean, hasOracleStore
   return oracleDecision && hasOracleStore && hasDecisionStore
 }
 
+/** Slice 1 golden freeze 사인오프 배선 판정(순수): goldenSignoff flag + oracleStore(freeze·unfrozenGoldenCount) + decisionStore(createRequest) 셋 다. */
+export function shouldWireGoldenSignoff(goldenSignoff: boolean, hasOracleStore: boolean, hasDecisionStore: boolean): boolean {
+  return goldenSignoff && hasOracleStore && hasDecisionStore
+}
+
 /** N2: degraded_dispatch 사인오프 배선 판정(순수). flag + decisionStore 주입 둘 다. */
 export function shouldWireDegradedSignoff(degradedSignoff: boolean, hasDecisionStore: boolean): boolean {
   return degradedSignoff && hasDecisionStore
@@ -317,7 +324,7 @@ export function shouldWireDecisionRoute(routing: boolean, hasPool: boolean, hasA
 /** P4b-1: WorkerConsumer deps 조립(순수·D4) — wpVerify→verifyEnabled 스레딩을 행동 단언 가능하게 분리.
  *  instanceOf 단언만으로는 이 한 줄의 누락(undefined→off)이 무음 fail-open 퇴행이 되는 것을 잡지 못한다. */
 export function buildWorkerConsumerDeps(
-  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs' | 'releaseStore' | 'riskStore' | 'budget' | 'provider' | 'isProviderFailure'>
+  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs' | 'releaseStore' | 'riskStore' | 'budget' | 'provider' | 'isProviderFailure' | 'decisionStore'>
     & { handlers: Record<string, AgentExecutor> },
   config: SupervisorConfig,
 ): WorkerDeps {
@@ -348,6 +355,9 @@ export function buildWorkerConsumerDeps(
     // P4 4d security: flag만으로 활성(oracle 미소비·mutation 동형). handler 부재는 runSecurityCheck가 fail-closed.
     securityEnabled: config.wpSecurity === true,
     ...(config.securityMinSeverity !== undefined && { securityMinSeverity: config.securityMinSeverity }),
+    // Slice 1: golden freeze 사인오프 — flag + oracleStore + decisionStore 셋 다 있어야 활성(생산자 발행 우회 무음 방지).
+    goldenSignoffEnabled: config.goldenSignoff === true && deps.oracleStore != null && deps.decisionStore != null,
+    ...(deps.decisionStore && { decisionStore: deps.decisionStore }),
     // P4 advisory: flag + advisoryStore 둘 다 있어야 활성(검증 우회 무음 방지·행동 단언). LLM seam 동반 스레딩.
     advisoryEnabled: config.wpAdvisory === true && deps.advisoryStore != null,
     ...(deps.advisoryStore && { advisoryStore: deps.advisoryStore }),
@@ -381,6 +391,8 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
   const dorActive = config.oracleDor && deps.oracleStore !== undefined
   // C3: oracle 승인 결정 배선 활성 판정(순수 게이트 위임). flag + oracleStore + decisionStore 셋 다 있어야 활성(회귀 0).
   const oracleDecisionActive = shouldWireOracleDecision(config.oracleDecision === true, deps.oracleStore != null, deps.decisionStore != null)
+  // Slice 1: golden freeze 사인오프 배선 활성 판정(순수 게이트). flag + oracleStore + decisionStore 셋 다(회귀 0).
+  const goldenSignoffActive = shouldWireGoldenSignoff(config.goldenSignoff === true, deps.oracleStore != null, deps.decisionStore != null)
   // P4-1: taskWorker flag + 핸들러 주입 둘 다 있어야 워커 배선(순수 게이트). 배선 시 dispatch/reclaim이
   // wp.dispatch_signal을 발행하고 WorkerConsumer가 이를 소비. off면 publish 미주입 → 신호 미발행(회귀 0).
   const workerActive = shouldWireWorker(config.taskWorker, deps.handlers !== undefined)
@@ -484,6 +496,8 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
             ...(deps.releaseStore && { releaseStore: deps.releaseStore }),
             // D5: riskStore 전달(buildWorkerConsumerDeps가 modelRouting flag 게이트로 worker deps에 조건부 주입).
             ...(deps.riskStore && { riskStore: deps.riskStore }),
+            // Slice 1: decisionStore 전달(buildWorkerConsumerDeps가 goldenSignoff flag 게이트로 worker hook에 조건부 주입).
+            ...(deps.decisionStore && { decisionStore: deps.decisionStore }),
             // G1: §13 서킷(advisory 경로 보호·러너·decompose와 동일 인스턴스). 미주입이면 무보호(회귀 0).
             ...(deps.budget && { budget: deps.budget }),
             ...(deps.provider && { provider: deps.provider }),
@@ -519,7 +533,8 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
           // C3: approve on oracle_approval → 그 workflow pending 오라클 전부 승인. 활성 시만 주입(oracleDecisionActive).
           // SupervisorDeps.oracleStore에 approvePendingByWorkflow가 런타임 존재(OracleRepo 구현)하나 교차 인터페이스 정적
           // 타입에 선언 없으므로 unknown 경유 캐스트(riskStore as NonNullable<WorkerDeps['riskStore']> 패턴과 동형).
-          ...(oracleDecisionActive && deps.oracleStore && { oracleStore: deps.oracleStore as unknown as NonNullable<DecisionRoutingDeps['oracleStore']> }),
+          // C3(oracle_approval approve) 또는 Slice 1(golden_diff approve→freezeGoldensByWorkflow) 활성 시 주입(같은 OracleRepo).
+          ...((oracleDecisionActive || goldenSignoffActive) && deps.oracleStore && { oracleStore: deps.oracleStore as unknown as NonNullable<DecisionRoutingDeps['oracleStore']> }),
           // N2: accept_known degraded_dispatch → 재디스패치(승인 WP 통과). 활성 시만 주입. void: DecisionRoutingDeps.redispatch는 Promise<void>.
           ...(degradedSignoffActive && { redispatch: async (wf: string) => { await handleDispatch(wf, dispatch) } }),
         } satisfies DecisionRoutingDeps,
