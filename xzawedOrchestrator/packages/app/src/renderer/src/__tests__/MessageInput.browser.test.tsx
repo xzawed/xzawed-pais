@@ -7,6 +7,23 @@ function type(text: string) {
   fireEvent.change(screen.getByTestId('message-input'), { target: { value: text } })
 }
 
+describe('MessageInput', () => {
+  test('renders textarea with data-testid', () => {
+    render(<MessageInput onSend={() => {}} disabled={false} />)
+    expect(screen.getByTestId('message-input')).toBeInTheDocument()
+  })
+
+  test('send button is disabled when textarea is empty', () => {
+    render(<MessageInput onSend={() => {}} disabled={false} />)
+    expect(screen.getByTestId('message-send-button')).toBeDisabled()
+  })
+
+  test('send button is disabled when component is disabled', () => {
+    render(<MessageInput onSend={() => {}} disabled={true} />)
+    expect(screen.getByTestId('message-send-button')).toBeDisabled()
+  })
+})
+
 describe('MessageInput — 모드 토글', () => {
   test('기본은 chat — 전송 시 onSend(content, "chat")', () => {
     const onSend = vi.fn()
