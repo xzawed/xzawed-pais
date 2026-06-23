@@ -11,7 +11,7 @@ import {
 import type { TaskGraph } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import { OracleDraftSchema } from '../db/oracle.types.js'
-import type { OracleScenario } from '../db/oracle.types.js'
+import type { OracleScenario, OracleInvariant } from '../db/oracle.types.js'
 import { AbsoluteUserContextSchema } from '../types/user-context.js'
 import { buildOracleBrief } from './oracle-brief.js'
 import type { DecisionRequestInput } from './decision-brief.js'
@@ -48,6 +48,7 @@ export interface DecompositionDeps {
       storyId: string
       scenarios: OracleScenario[]
       coverage: Record<string, string[]>
+      invariants: OracleInvariant[]
     }) => Promise<void>
   }
   /** C3: 주입 시 draft 영속 후 oracle_approval DecisionRequest 발행(MANAGER_ORACLE_DECISION). best-effort. */
@@ -121,6 +122,7 @@ export async function handleDecompositionEmitted(
         storyId: d.storyId,
         scenarios: d.scenarios,
         coverage: d.coverage,
+        invariants: d.invariants,
       })
     }
   }

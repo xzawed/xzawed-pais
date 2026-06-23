@@ -281,6 +281,14 @@ export async function buildServer(
       'MANAGER_ORACLE_DRAFT=true 이지만 TASK_MANAGER_ENABLED+DATABASE_URL 전제가 없어 초안 오라클이 영속되지 않습니다(소비자 부재).',
     )
   }
+  // F5: invariant 초안 생성 오진 방지 — DRAFT off면 부착 대상 OracleDraft 자체가 없어 no-op,
+  // WP_PROPERTY off면 invariant가 생성·승인되나 검증 채널이 소비하지 않아 휴면.
+  if (config.MANAGER_ORACLE_INVARIANTS && !config.MANAGER_ORACLE_DRAFT) {
+    app.log.warn('[oracle] MANAGER_ORACLE_INVARIANTS=true이나 MANAGER_ORACLE_DRAFT off — 초안 파이프라인 부재로 invariant 초안이 생성되지 않습니다(no-op).')
+  }
+  if (config.MANAGER_ORACLE_INVARIANTS && !config.MANAGER_WP_PROPERTY) {
+    app.log.warn('[oracle] MANAGER_ORACLE_INVARIANTS=true이나 MANAGER_WP_PROPERTY off — invariant가 생성·승인되나 property 채널이 소비하지 않습니다(휴면).')
+  }
 
   // P4-1 D5: 실행 워커는 Supervisor(decomposition·dispatch) + getGraph가 전제이므로 TASK_MANAGER_ENABLED+DATABASE_URL 필요.
   // 전제 없이 MANAGER_TASK_WORKER만 켜면 워커가 배선되지 않아 dispatch된 WP가 실행되지 않는다 — 오진 방지 경고.
@@ -526,6 +534,8 @@ export async function buildServer(
         log: (msg, data) => app.log.info(data ?? {}, msg),
         // P3-2: ok 경로에서 draft 스테이지 실행 → oracleDrafts emit(off면 []·회귀 0).
         draftOracles: config.MANAGER_ORACLE_DRAFT,
+        // F5: invariant 초안 생성(off면 oracleDrafts[].invariants []·회귀 0). 전제 MANAGER_ORACLE_DRAFT.
+        draftInvariants: config.MANAGER_ORACLE_INVARIANTS,
         // G1: §13 서킷(러너·risk와 동일 인스턴스 공유). 미주입이면 무보호(회귀 0).
         ...(budget && { budget: budget.breaker }),
         ...(providerCircuit && { provider: providerCircuit.breaker }),

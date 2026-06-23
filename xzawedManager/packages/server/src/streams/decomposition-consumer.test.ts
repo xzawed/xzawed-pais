@@ -132,6 +132,7 @@ describe('handleDecompositionEmitted — oracleDrafts upsert (P3-2)', () => {
     storyId: 's1',
     scenarios: [{ id: 's1-sc1', title: '', given: [], when: '', thenSteps: [], status: 'drafted' as const }],
     coverage: { ac1: ['s1-sc1'] },
+    invariants: [{ id: 's1-inv1', statement: 'bal>=0', domain: 'acct', property: 'p', status: 'drafted' as const }],
   }
   const msgWithDrafts = (drafts: typeof draft[]): DecompositionEmittedMessage => ({
     envelope: env(), type: 'decomposition.emitted', payload: { workPackages: [wp('a')], oracleDrafts: drafts },
@@ -145,7 +146,7 @@ describe('handleDecompositionEmitted — oracleDrafts upsert (P3-2)', () => {
     })
     expect(out).toEqual({ status: 'persisted', version: 1 })
     expect(oracleStore.upsertDraft).toHaveBeenCalledWith({
-      workflowId: 'wf-1', storyId: 's1', scenarios: draft.scenarios, coverage: draft.coverage,
+      workflowId: 'wf-1', storyId: 's1', scenarios: draft.scenarios, coverage: draft.coverage, invariants: draft.invariants,
     })
   })
 

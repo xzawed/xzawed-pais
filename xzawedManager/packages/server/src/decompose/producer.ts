@@ -25,6 +25,8 @@ export interface ProduceDeps {
   log?: (msg: string, data?: Record<string, unknown>) => void
   /** P7 초안 생성(MANAGER_ORACLE_DRAFT). server.ts 주입. */
   draftOracles?: boolean
+  /** F5: invariant 초안 생성(MANAGER_ORACLE_INVARIANTS). server.ts 주입. 전제 draftOracles. */
+  draftInvariants?: boolean
   /** G1: §13 budget/provider 서킷(러너·risk와 동일 인스턴스). 미주입이면 무보호(회귀 0). */
   budget?: BudgetCircuitBreaker
   provider?: ProviderCircuitBreaker
@@ -80,6 +82,7 @@ export async function produceDecomposition(
       { claude: deps.claude, model: deps.model, timeoutMs: deps.timeoutMs ?? DEFAULT_TIMEOUT_MS, ...(circuit && { circuit }) },
       deps.repairMax ?? DEFAULT_REPAIR_MAX,
       deps.draftOracles ?? false,
+      deps.draftInvariants ?? false,
     )
   } catch (err) {
     deps.log?.('[decompose] runDecomposition threw unexpectedly — falling back', {

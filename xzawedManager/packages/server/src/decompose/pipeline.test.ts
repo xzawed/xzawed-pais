@@ -122,3 +122,25 @@ describe('runDecomposition draftEnabled (P3-2)', () => {
     expect(r.oracleDrafts[0]?.storyId).toBe('s1')
   })
 })
+
+const INV_S1 = '{"invariants":[{"statement":"bal>=0","domain":"acct","property":"forall, bal>=0"}]}'
+
+describe('runDecomposition invariantsEnabled (F5)', () => {
+  it('invariantsEnabled+draftEnabled면 oracleDrafts[].invariants 채움', async () => {
+    const r = await runDecomposition('i', stagedDeps(EPICS, STORY_D1, DELIVS_D1, ROLES, DRAFT_S1, INV_S1), 2, true, true)
+    expect(r.status).toBe('ok')
+    if (r.status !== 'ok') return
+    expect(r.oracleDrafts.length).toBeGreaterThan(0)
+    expect(r.oracleDrafts[0]?.invariants[0]).toMatchObject({ id: 's1-inv1', statement: 'bal>=0', status: 'drafted' })
+  })
+  it('invariantsEnabled off면 invariants=[]', async () => {
+    const r = await runDecomposition('i', stagedDeps(EPICS, STORY_D1, DELIVS_D1, ROLES, DRAFT_S1), 2, true, false)
+    if (r.status !== 'ok') return
+    expect(r.oracleDrafts[0]?.invariants).toEqual([])
+  })
+  it('draftEnabled off면 invariantsEnabled 무관 oracleDrafts=[](머지 skip)', async () => {
+    const r = await runDecomposition('i', stagedDeps(EPICS, STORY_D1, DELIVS_D1, ROLES), 2, false, true)
+    if (r.status !== 'ok') return
+    expect(r.oracleDrafts).toEqual([])
+  })
+})

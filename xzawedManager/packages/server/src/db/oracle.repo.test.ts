@@ -69,6 +69,24 @@ describe('OracleRepo.approve (P3-2: SELECT FOR UPDATE→전이→UPDATE·pending
     expect(JSON.parse((callFor(m.query, /UPDATE oracles/i)![1] as unknown[])[2] as string)).toEqual(scenarios)
   })
 
+  it('invariant도 drafted→human_approved 전이(F5·rejected/human_approved 불변)', async () => {
+    const m = makeMockPool({ selectRows: [{
+      workflow_id: 'wf1', story_id: 's1', version: 1, status: 'pending', scenarios: [],
+      invariants: [
+        { id: 'i1', statement: 's', domain: 'd', property: 'p', status: 'drafted' },
+        { id: 'i2', statement: 's2', domain: 'd2', property: 'p2', status: 'rejected' },
+        { id: 'i3', statement: 's3', domain: 'd3', property: 'p3', status: 'human_approved' },
+      ],
+    }] })
+    await new OracleRepo(m.pool, () => 1000).approve('o1', 'h1')
+    const updateCall = callFor(m.query, /UPDATE oracles/i)!
+    expect(String(updateCall[0])).toMatch(/invariants\s*=\s*\$\d/i) // UPDATE가 invariants 컬럼 갱신
+    const writtenInv = JSON.parse((updateCall[1] as unknown[])[4] as string) as Array<{ id: string; status: string }>
+    expect(writtenInv.find((i) => i.id === 'i1')?.status).toBe('human_approved') // drafted→전이
+    expect(writtenInv.find((i) => i.id === 'i2')?.status).toBe('rejected') // 불변
+    expect(writtenInv.find((i) => i.id === 'i3')?.status).toBe('human_approved') // 불변
+  })
+
   it('불량 scenarios JSON이면 parse throw→ROLLBACK·UPDATE/events/outbox 미적재·client release(N2)', async () => {
     // status=pending 가드는 통과하나 scenarios가 OracleScenarioSchema 위반(id 없음) → parse가 tx 내에서 throw.
     const m = makeMockPool({ selectRows: [{ workflow_id: 'wf1', story_id: 's1', version: 1, status: 'pending', scenarios: [{ title: 'no-id' }] }] })
@@ -103,7 +121,7 @@ describe('OracleRepo.upsertDraft (P3-2 멱등)', () => {
     expect(sql).toMatch(/INSERT INTO oracles/i)
   })
 
-  it('scenarios·coverage를 JSON 직렬화해 바인딩', async () => {
+  it('scenarios·invariants·coverage를 JSON 직렬화해 바인딩(invariants 미전달 → [])', async () => {
     const query = vi.fn().mockResolvedValue({ rows: [] })
     const pool = { query } as never
     const scenarios = [{ id: 's2-sc1', title: 't', given: ['g'], when: 'w', thenSteps: ['x'], status: 'drafted' as const }]
@@ -111,7 +129,20 @@ describe('OracleRepo.upsertDraft (P3-2 멱등)', () => {
     await new OracleRepo(pool).upsertDraft({ workflowId: 'wf2', storyId: 's2', scenarios, coverage })
     const args = query.mock.calls[0]![1] as unknown[]
     expect(JSON.parse(args[3] as string)).toEqual(scenarios)
-    expect(JSON.parse(args[4] as string)).toEqual(coverage)
+    expect(JSON.parse(args[4] as string)).toEqual([]) // F5: invariants 미전달 → []
+    expect(JSON.parse(args[5] as string)).toEqual(coverage) // coverage는 invariants 뒤로 이동
+  })
+
+  it('invariants를 INSERT 컬럼·직렬화 파라미터로 영속(F5)', async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] })
+    const pool = { query } as never
+    const invariants = [{ id: 's1-inv1', statement: 'bal>=0', domain: 'a', property: 'p', status: 'drafted' as const }]
+    await new OracleRepo(pool).upsertDraft({ workflowId: 'wf1', storyId: 's1', scenarios: [], coverage: {}, invariants })
+    const sql = String(query.mock.calls[0]![0])
+    const args = query.mock.calls[0]![1] as unknown[]
+    expect(sql).toMatch(/invariants/i)
+    expect(sql).toMatch(/invariants\s*=\s*EXCLUDED\.invariants/i)
+    expect(JSON.parse(args[4] as string)).toEqual(invariants)
   })
 })
 
