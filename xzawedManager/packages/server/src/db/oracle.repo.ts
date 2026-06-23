@@ -122,6 +122,17 @@ export class OracleRepo {
     return invariants.length > 0 ? invariants : null
   }
 
+  /** C3: per-workflow 배치 승인 — pending 오라클 전부 approve(drafted→human_approved+oracle.approved). 성공 카운트. */
+  async approvePendingByWorkflow(workflowId: string, approvedBy: string): Promise<{ approved: number }> {
+    const pending = await this.listByWorkflow(workflowId, ORACLE_PENDING)
+    let approved = 0
+    for (const row of pending) {
+      const r = await this.approve(row.oracle_id, approvedBy)
+      if (r !== null) approved++
+    }
+    return { approved }
+  }
+
   /** 승인: SELECT FOR UPDATE → (status≠pending이면 null·blocker#8) → drafted 시나리오 human_approved 전이 →
    *  UPDATE(status=approved) + oracle.approved 이벤트(아웃박스). drafted 없으면 전이 no-op(회귀 0). */
   async approve(oracleId: string, approvedBy: string): Promise<{ eventId: string } | null> {
