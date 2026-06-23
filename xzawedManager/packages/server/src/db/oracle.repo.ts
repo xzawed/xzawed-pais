@@ -136,23 +136,26 @@ export class OracleRepo {
     return { approved }
   }
 
-  /** 승인: SELECT FOR UPDATE → (status≠pending이면 null·blocker#8) → drafted 시나리오 human_approved 전이 →
-   *  UPDATE(status=approved) + oracle.approved 이벤트(아웃박스). drafted 없으면 전이 no-op(회귀 0). */
+  /** 승인: SELECT FOR UPDATE → (status≠pending이면 null·blocker#8) → drafted 시나리오·invariant human_approved
+   *  전이(F5) → UPDATE(status=approved) + oracle.approved 이벤트(아웃박스). drafted 없으면 전이 no-op(회귀 0). */
   async approve(oracleId: string, approvedBy: string): Promise<{ eventId: string } | null> {
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
-      const sel = await client.query<{ workflow_id: string; story_id: string; version: number; status: string; scenarios: unknown }>(
-        `SELECT workflow_id, story_id, version, status, scenarios FROM oracles WHERE oracle_id = $1 FOR UPDATE`,
+      const sel = await client.query<{ workflow_id: string; story_id: string; version: number; status: string; scenarios: unknown; invariants: unknown }>(
+        `SELECT workflow_id, story_id, version, status, scenarios, invariants FROM oracles WHERE oracle_id = $1 FOR UPDATE`,
         [oracleId],
       )
       const row = sel.rows[0]
       if (!row || row.status !== ORACLE_PENDING) { await safeRollback(client); return null }
       const transitioned = OracleScenarioSchema.array().parse(row.scenarios)
         .map((s) => (s.status === 'drafted' ? { ...s, status: SCENARIO_APPROVED } : s))
+      // F5: invariant도 scenarios와 동형 전이(drafted→human_approved·rejected/human_approved 불변·빈 no-op).
+      const transitionedInv = OracleInvariantSchema.array().parse(row.invariants ?? [])
+        .map((i) => (i.status === 'drafted' ? { ...i, status: SCENARIO_APPROVED } : i))
       await client.query(
-        `UPDATE oracles SET status = $2, scenarios = $3, approved_at = NOW(), approved_by = $4 WHERE oracle_id = $1`,
-        [oracleId, ORACLE_APPROVED, JSON.stringify(transitioned), approvedBy],
+        `UPDATE oracles SET status = $2, scenarios = $3, invariants = $5, approved_at = NOW(), approved_by = $4 WHERE oracle_id = $1`,
+        [oracleId, ORACLE_APPROVED, JSON.stringify(transitioned), approvedBy, JSON.stringify(transitionedInv)],
       )
       const env = makeEnvelope(
         { correlationId: row.workflow_id, causationId: null, workflowId: row.workflow_id,

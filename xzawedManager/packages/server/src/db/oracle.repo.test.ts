@@ -69,6 +69,24 @@ describe('OracleRepo.approve (P3-2: SELECT FOR UPDATE→전이→UPDATE·pending
     expect(JSON.parse((callFor(m.query, /UPDATE oracles/i)![1] as unknown[])[2] as string)).toEqual(scenarios)
   })
 
+  it('invariant도 drafted→human_approved 전이(F5·rejected/human_approved 불변)', async () => {
+    const m = makeMockPool({ selectRows: [{
+      workflow_id: 'wf1', story_id: 's1', version: 1, status: 'pending', scenarios: [],
+      invariants: [
+        { id: 'i1', statement: 's', domain: 'd', property: 'p', status: 'drafted' },
+        { id: 'i2', statement: 's2', domain: 'd2', property: 'p2', status: 'rejected' },
+        { id: 'i3', statement: 's3', domain: 'd3', property: 'p3', status: 'human_approved' },
+      ],
+    }] })
+    await new OracleRepo(m.pool, () => 1000).approve('o1', 'h1')
+    const updateCall = callFor(m.query, /UPDATE oracles/i)!
+    expect(String(updateCall[0])).toMatch(/invariants\s*=\s*\$\d/i) // UPDATE가 invariants 컬럼 갱신
+    const writtenInv = JSON.parse((updateCall[1] as unknown[])[4] as string) as Array<{ id: string; status: string }>
+    expect(writtenInv.find((i) => i.id === 'i1')?.status).toBe('human_approved') // drafted→전이
+    expect(writtenInv.find((i) => i.id === 'i2')?.status).toBe('rejected') // 불변
+    expect(writtenInv.find((i) => i.id === 'i3')?.status).toBe('human_approved') // 불변
+  })
+
   it('불량 scenarios JSON이면 parse throw→ROLLBACK·UPDATE/events/outbox 미적재·client release(N2)', async () => {
     // status=pending 가드는 통과하나 scenarios가 OracleScenarioSchema 위반(id 없음) → parse가 tx 내에서 throw.
     const m = makeMockPool({ selectRows: [{ workflow_id: 'wf1', story_id: 's1', version: 1, status: 'pending', scenarios: [{ title: 'no-id' }] }] })
