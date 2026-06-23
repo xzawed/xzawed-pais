@@ -2,7 +2,7 @@ import type { Redis } from 'ioredis'
 import type { ZodType } from 'zod'
 import { RedisEventBus } from './event-bus.js'
 import type { StreamConsumerPort } from './event-bus.js'
-import { defaultDedupKey, dlqStreamKey, idemKey } from './dlq.js'
+import { defaultDedupKey, idemKey, routeToDlq } from './dlq.js'
 
 // DLQ 키·멱등 마커·기본 dedup 키는 dlq.ts가 단일출처(redrive 도구와 포맷 공유). 기존 import 경로 호환을 위해 재노출.
 export { defaultDedupKey }
@@ -15,7 +15,6 @@ const PENDING_CLAIM_COUNT = 10
 const MAX_DELIVERIES_DEFAULT = 3
 const RETRY_BASE_MS = 500
 const RETRY_CAP_MS = 5_000
-const DLQ_MAXLEN = 1_000 // DLQ 스트림 approximate 보존 상한(무한 증가 방지)
 const IDEM_TTL_DEFAULT_SEC = 86_400 // 24h — 최대 재전달 창(XAUTOCLAIM 5분+outbox 폴링)보다 충분히 김
 
 /** dedup 키 추출 옵션. enabled/ttlSec/key 모두 선택 — 미지정 시 env·기본 추출기로 폴백. */
@@ -216,24 +215,12 @@ export class BaseConsumer<TMessage> {
     }
   }
 
-  /** poison 메시지를 {stream}:dlq로 격리한다. 페이로드 구성·발행 실패 모두 경고 후 무시(배치 비차단). */
+  /** poison 메시지를 {stream}:dlq로 격리한다 — DLQ 쓰기는 dlq.ts routeToDlq 단일출처에 위임. */
   private async routeToDlq(
     stream: string, raw: string, reason: 'handler_failed' | 'invalid_schema',
     attempts: number, error?: unknown,
   ): Promise<void> {
-    try {
-      // error 코어션도 try 안에서 — 병리적 thrown 값(throwing getter 등)이 계약을 깨지 않도록
-      // 객체를 그대로 publish에 넘긴다(publish가 JSON.stringify) — 수동 stringify 시 이중 직렬화됨.
-      const dlqMessage = {
-        original: raw, reason, attempts,
-        ...(error === undefined ? {} : { error: error instanceof Error ? error.message : String(error) }),
-        failedAt: Date.now(), sourceStream: stream,
-      }
-      // DLQ 무한 증가 방지 — approximate MAXLEN. 재처리는 redriveDlq(dlq.ts) 운영 도구가 담당.
-      await this.bus.publish(dlqStreamKey(stream), dlqMessage, { maxlen: DLQ_MAXLEN })
-    } catch (e) {
-      console.error(`[Consumer] DLQ 발행 실패(${stream}:dlq) — 메시지 격리 실패:`, e)
-    }
+    await routeToDlq(this.bus, stream, raw, reason, attempts, error)
   }
 
   /** 수집된 메시지 ID를 ack한다(pipeline 배치 + 폴백은 포트가 담당). */
