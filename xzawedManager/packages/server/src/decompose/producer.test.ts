@@ -49,6 +49,22 @@ describe('produceDecomposition (P2-3b)', () => {
     expect(msg.payload.oracleDrafts).toHaveLength(1)
     expect(msg.payload.oracleDrafts[0].storyId).toBe('s1')
     expect(msg.payload.oracleDrafts[0]).not.toHaveProperty('oracleId')
+    expect(msg.payload.oracleDrafts[0].invariants).toEqual([]) // F5: draftInvariants 미주입 → 빈
+  })
+
+  it('draftInvariants=true면 oracleDrafts[].invariants 포함(F5)', async () => {
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const DRAFT_S1 = '{"scenarios":[{"title":"ok","given":["g"],"when":"w","then":["t"],"coversCriteria":["x"]}]}'
+    const INV_S1 = '{"invariants":[{"statement":"bal>=0","domain":"acct","property":"forall, bal>=0"}]}'
+    const res = await produceDecomposition('build a thing', 'wf-i', {
+      ...deps(stagedClaude(EPICS, STORY_D1, DELIVS_D1, ROLES, DRAFT_S1, INV_S1), publish),
+      draftOracles: true,
+      draftInvariants: true,
+    })
+    expect(res.escalated).toBe(false)
+    const msg = publish.mock.calls[0]![1]
+    expect(msg.payload.oracleDrafts[0].invariants).toHaveLength(1)
+    expect(msg.payload.oracleDrafts[0].invariants[0]).toMatchObject({ id: 's1-inv1', statement: 'bal>=0', status: 'drafted' })
   })
 
   it('userContext 전달 시 ok 경로 payload에 포함(P4a-2)', async () => {
