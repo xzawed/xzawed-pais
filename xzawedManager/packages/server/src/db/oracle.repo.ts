@@ -41,15 +41,18 @@ export class OracleRepo {
 
   /** P3-2 초안 영속(멱등): oracleId=oracleIdFor(wf,storyId)로 pending INSERT. ON CONFLICT는 pending일 때만 덮어씀
    *  (version 불변→재시도/재분해 인플레 방지·blocker#6; approved/superseded는 WHERE로 보존·D1 oracleId 단일출처). */
-  async upsertDraft(input: { workflowId: string; storyId: string; scenarios: OracleScenario[]; coverage: Record<string, string[]> }): Promise<void> {
+  async upsertDraft(input: { workflowId: string; storyId: string; scenarios: OracleScenario[]; coverage: Record<string, string[]>; invariants?: OracleInvariant[] }): Promise<void> {
     const oracleId = oracleIdFor(input.workflowId, input.storyId)
+    // F5: invariants를 scenarios와 함께 영속(additive·미전달 시 []). ON CONFLICT는 pending일 때만 덮어씀(승인 보존).
     await this.pool.query(
-      `INSERT INTO oracles (oracle_id, workflow_id, story_id, version, status, scenarios, coverage)
-         VALUES ($1,$2,$3,1,'pending',$4,$5)
+      `INSERT INTO oracles (oracle_id, workflow_id, story_id, version, status, scenarios, invariants, coverage)
+         VALUES ($1,$2,$3,1,'pending',$4,$5,$6)
        ON CONFLICT (oracle_id) DO UPDATE SET
-         scenarios = EXCLUDED.scenarios, coverage = EXCLUDED.coverage, status = 'pending'
+         scenarios = EXCLUDED.scenarios, invariants = EXCLUDED.invariants,
+         coverage = EXCLUDED.coverage, status = 'pending'
          WHERE oracles.status = 'pending'`,
-      [oracleId, input.workflowId, input.storyId, JSON.stringify(input.scenarios), JSON.stringify(input.coverage)],
+      [oracleId, input.workflowId, input.storyId, JSON.stringify(input.scenarios),
+        JSON.stringify(input.invariants ?? []), JSON.stringify(input.coverage)],
     )
   }
 
