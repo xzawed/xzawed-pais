@@ -183,6 +183,7 @@ interface SessionsRoutesConfig {
   authHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
   pool?: Pool
   userAuthHook?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>
+  decomposeEnabled?: boolean
 }
 
 export function handleConsumerMessage(
@@ -261,7 +262,7 @@ export async function sessionsRoutes(
   const {
     store, runner, wsSessions, redisUrl, producer,
     sessionConsumers, sessionCleanup, anthropicClient, claudeModel,
-    authHook, pool, userAuthHook,
+    authHook, pool, userAuthHook, decomposeEnabled = false,
   } = config
 
   const messageStore = new Map<string, Message[]>()
@@ -381,7 +382,7 @@ export async function sessionsRoutes(
     return messageStore.get(req.params.id) ?? []
   })
 
-  app.post<{ Params: { id: string }; Body: { content: string; gateMode?: 'manual' | 'auto' } }>(
+  app.post<{ Params: { id: string }; Body: { content: string; gateMode?: 'manual' | 'auto'; mode?: 'chat' | 'build' } }>(
     '/sessions/:id/messages',
     routeOpts,
     async (req, reply) => {
@@ -418,6 +419,8 @@ export async function sessionsRoutes(
       const capturedUserId = session.userId
       const capturedLocale = resolved.loc
       const capturedGateMode = req.body.gateMode
+      const capturedMode = req.body.mode
+      const capturedContent = req.body.content
 
       processingSessionIds.add(sessionId)
       // Live socket lookup, not a captured reference: a WS reconnect during the grace window
@@ -427,6 +430,14 @@ export async function sessionsRoutes(
         const assistantMsgId = crypto.randomUUID()
 
         try {
+          if (shouldDecompose(capturedMode, decomposeEnabled)) {
+            const userContext = await buildUserContext({ userId: capturedUserId, projectId: capturedProjectId }, pool)
+            taskStore.create(sessionId, capturedContent)
+            await publishDecomposeToManager(producer, sessionId, capturedContent, userContext, getSocket, app.log, capturedLocale)
+            getSocket()?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
+            return
+          }
+
           const { fullContent, aborted } = await processRunnerChunks(
             runner, snapshot, {}, assistantMsgId, getSocket,
           )

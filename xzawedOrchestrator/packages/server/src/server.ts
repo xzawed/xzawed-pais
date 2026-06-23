@@ -158,6 +158,7 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     authHook,
     pool: dbPool ?? undefined,
     userAuthHook,
+    decomposeEnabled: process.env.ORCHESTRATOR_DECOMPOSE_ENABLED === 'true',
   })
   // Clamp the grace to setTimeout's valid range: NaN/negative falls back to the default,
   // and oversized values are capped at the 32-bit ceiling so a misconfigured grace can't
