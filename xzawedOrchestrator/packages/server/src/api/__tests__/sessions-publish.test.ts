@@ -16,7 +16,7 @@ vi.mock('../../projects/project.repo.js', () => ({
   }) }),
 }))
 
-import { publishTaskToManager } from '../sessions.route.js'
+import { publishTaskToManager, buildUserContext } from '../sessions.route.js'
 
 const SID = 'sess-pub-test'
 const SNAPSHOT: Message[] = []
@@ -122,5 +122,24 @@ describe('publishTaskToManager — projectId 있음, pool 있음', () => {
     await publishTaskToManager(producer, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: 'proj-1' }, () => undefined, makeLog(), pool)
     const msg = (producer.publish as ReturnType<typeof vi.fn>).mock.calls[0][0] as { payload: { userContext: { workspaceRoot: string } } }
     expect(msg.payload.userContext?.workspaceRoot).toBe('/fallback-root')
+  })
+})
+
+describe('buildUserContext', () => {
+  it('projectId null → default·env workspaceRoot', async () => {
+    process.env.WORKSPACE_ROOT = '/ws-a'
+    const uc = await buildUserContext({ userId: 'u1', projectId: null })
+    expect(uc).toEqual({ userId: 'u1', projectId: 'default', workspaceRoot: '/ws-a' })
+  })
+  it('projectId 있음·pool 있음 → project.workspace_path', async () => {
+    mockFindByIdAndUser.mockResolvedValueOnce(makeProject('/custom/ws'))
+    const uc = await buildUserContext({ userId: 'u1', projectId: 'proj-1' }, {} as Pool)
+    expect(mockFindByIdAndUser).toHaveBeenCalledWith('proj-1', 'u1')
+    expect(uc.workspaceRoot).toBe('/custom/ws')
+  })
+  it('workspaceRoot가 fs 루트면 throw', async () => {
+    const { parse } = await import('node:path')
+    process.env.WORKSPACE_ROOT = parse(process.cwd()).root
+    await expect(buildUserContext({ userId: 'u1', projectId: 'proj-1' })).rejects.toThrow('WORKSPACE_ROOT must not be filesystem root')
   })
 })

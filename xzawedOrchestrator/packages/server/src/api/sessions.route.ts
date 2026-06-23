@@ -4,7 +4,7 @@ import type { WebSocket } from 'ws'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { ClaudeRunner, RunOptions } from '../claude/runner.interface.js'
 import type { StreamProducer } from '../streams/producer.js'
-import type { Message, Session, ManagerToOrchestratorMessage, Chunk } from '@xzawed/shared'
+import type { Message, Session, ManagerToOrchestratorMessage, Chunk, UserContext } from '@xzawed/shared'
 import { StreamConsumer } from '../streams/consumer.js'
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
@@ -88,6 +88,26 @@ async function saveAssistantMessage(
   messageStore.set(sessionId, history)
 }
 
+export async function buildUserContext(
+  session: { userId: string; projectId?: string | null },
+  pool?: Pool,
+): Promise<UserContext> {
+  const envFallback = process.env.WORKSPACE_ROOT ?? '/workspace'
+  if (session.projectId) {
+    let workspaceRoot = envFallback
+    if (pool) {
+      const repo = new ProjectRepo(pool)
+      const project = await repo.findByIdAndUser(session.projectId, session.userId)
+      workspaceRoot = resolveSessionWorkspaceRoot(project, envFallback)
+    }
+    assertNotFilesystemRoot(workspaceRoot)
+    return { userId: session.userId, projectId: session.projectId, workspaceRoot }
+  }
+  // AUTH=none 또는 프로젝트 미선택 시: 기본 workspace를 전달하여 Manager가 register_project를 호출하지 않도록 방지
+  assertNotFilesystemRoot(envFallback)
+  return { userId: session.userId, projectId: 'default', workspaceRoot: envFallback }
+}
+
 export async function publishTaskToManager(
   producer: StreamProducer,
   sessionId: string,
@@ -100,23 +120,7 @@ export async function publishTaskToManager(
   locale: ServerLocale = 'ko',
   gateMode?: 'manual' | 'auto',
 ): Promise<void> {
-  const envFallback = process.env.WORKSPACE_ROOT ?? '/workspace'
-  let userContext: { userId: string; projectId: string; workspaceRoot: string }
-
-  if (session.projectId) {
-    let workspaceRoot = envFallback
-    if (pool) {
-      const repo = new ProjectRepo(pool)
-      const project = await repo.findByIdAndUser(session.projectId, session.userId)
-      workspaceRoot = resolveSessionWorkspaceRoot(project, envFallback)
-    }
-    assertNotFilesystemRoot(workspaceRoot)
-    userContext = { userId: session.userId, projectId: session.projectId, workspaceRoot }
-  } else {
-    // AUTH=none 또는 프로젝트 미선택 시: 기본 workspace를 전달하여 Manager가 register_project를 호출하지 않도록 방지
-    assertNotFilesystemRoot(envFallback)
-    userContext = { userId: session.userId, projectId: 'default', workspaceRoot: envFallback }
-  }
+  const userContext = await buildUserContext(session, pool)
   try {
     await producer.publish({
       sessionId,
@@ -127,7 +131,7 @@ export async function publishTaskToManager(
         intent,
         context: { history: snapshot.map((m) => ({ role: m.role, content: m.content })) },
         priority: 'normal',
-        ...(userContext ? { userContext } : {}),
+        userContext,
         ...(gateMode ? { gateMode } : {}),
       },
     })
