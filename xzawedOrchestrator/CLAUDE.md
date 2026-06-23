@@ -172,7 +172,7 @@ packages/
 - **Vitest 3** + `vitest.config.ts` `projects` API — `unit` (node) + `browser` (playwright/chromium) 두 프로젝트 분리
   - `unit`: `test/**/*.test.ts` + `src/renderer/src/lib/parseAgentSteps.test.ts` (store, main 프로세스, 파서 유닛 테스트)
   - `browser`: `src/renderer/src/__tests__/**/*.browser.test.tsx` (App·Sidebar·ChatView(승인 카드)·WikiPanel·**DecisionsPanel**·**ChatLayout.decisions**·**decisions-api**·SettingsModal·CommandPalette·GitHubPanel·McpPanel·PluginPanel·detect-locale·app.store 등 컴포넌트·스토어 렌더링)
-  - 총 `pnpm test`: **239건** (app) + **430건** (server, Redis/DB 없으면 15건 skip → 415 pass) + **76건** (ui, jsdom) = **~745건**
+  - 총 `pnpm test`: **241건** (app) + **430건** (server, Redis/DB 없으면 15건 skip → 415 pass) + **76건** (ui, jsdom) = **~747건**
 - **@vitest/browser + playwright** — 실제 Chromium에서 React 컴포넌트 렌더링 검증
 - **@testing-library/react** — 브라우저 모드 렌더링; `afterEach(cleanup)` 명시 필요
 - **@playwright/test** + `playwright._electron` — Electron E2E (`e2e/`, 110건/17 spec 파일, `pnpm test:e2e`)
@@ -221,7 +221,8 @@ ActivityBar의 **결정 탭**(`activePanel === 'decisions'`)에서 `DecisionsPan
 
 - **조회**: `getPendingDecisions`(`lib/api.ts`) → Orchestrator GET `/projects/:id/decisions/pending`(open) → Manager `pendingByProject`. 실패 시 빈 목록 폴백. `WikiPanel`의 signal-abort fetch + `refreshKey` idiom(stale clobber 방지)·새로고침 버튼·제출 후 refetch.
 - **카드(결함 브리프)**: `context.location`·`expectedVsActual`·`impact[]`·`evidenceRefs[]`·**`attribution`(faultTier·counters impl/task/plan, PR-A 4c #298)** 렌더.
-- **4 choice 정직 라벨(M8)**: `fix_reverify`만 주 액션(즉시 #299 폐루프)·`spec_fix`/`accept_known`/`reject`는 보조 스타일 + "기록만·후속 동작 없음" hint(전부 제출되어 M9 영속·다운스트림 효과 차이만 정직 표기).
+- **핸들 가능 choice만 노출(D10·#333)**: defect_brief는 Manager `buildDefectBrief`가 `options:['fix_reverify']`만 실어 fix_reverify 한 개 버튼만 렌더(즉시 #299 폐루프). spec_fix/accept_known/reject는 decision-consumer에 핸들러가 없어 RESOLVED만 남기는 무음 no-op이라 **거짓 affordance 제거**. `context.options` 미제공 레거시/malformed 행만 `DEFAULT_CHOICES`(4종) 폴백. risk_classification은 approve/reject(#318)·degraded_*는 accept_known/reject.
+- **결정 type 배지(#333)**: 카드 상단 `data-testid=decision-type` 배지가 `t('decisions.type_'+d.type, d.type)`로 4종 type(defect/risk/release/dispatch)을 시각 구별 — 본문 자유텍스트로만 구별되어 고위험 사인오프(accept_known on degraded vs approve on risk) 오조작하던 것 방지. d.type=백엔드 enum·React 텍스트 이스케이프(XSS 0).
 - **제출·비부인(M9)**: `submitDecision`은 `{choice, justification?}`만 보낸다(`decidedBy` 미전송). 프록시 POST가 `userAuthHook` 뒤에서 `decidedBy = req.authUser?.sub ?? 'local-user'`로 **권위 주입**(client body 절대 미도달) + 전용 서비스 토큰으로 Manager 호출. 제출→toast→refetch.
 - ⚠️ Task Manager flag-off라 실 결정 생성 0(데모/테스트는 seed). AUTH=none 로컬은 `decidedBy='local-user'` 폴백.
 
@@ -229,7 +230,7 @@ ActivityBar의 **결정 탭**(`activePanel === 'decisions'`)에서 `DecisionsPan
 
 `locales/{ko,en,ja}/app.json`에 `wiki.*`(title·empty·source·search_placeholder·all_sources·all_categories·edit·delete·save·cancel·delete_confirm·category_none·save_failed·delete_failed), `approval.*`(title·approve·revise·abort·feedback_placeholder·remember_auto·save_to_wiki·**wiki_summary** #212), `settings.*`(server_url·mode·user_id·language·lang_*·**gate_mode**·gate_mode_manual·gate_mode_auto #215) 네임스페이스가 추가되어 있다.
 
-**내비/패널 i18n 일괄(#227):** `activity_bar.*`(chat·github·mcp·plugins·**wiki**·**decisions** #306·settings)·`status_bar.*`(server·running·stopped·checking·mcp_count)·`right_panel.*`(output_title·waiting·tokens·elapsed·modified_files) 네임스페이스 신규 + `github.*`·`plugins.*`·`command_palette.*`·`sidebar.*` 확장. **`decisions.*`(title·empty·loading·refresh·location·expected_vs_actual·impact·evidence·attribution·choice_*×4·choice_approve·choice_hint·submit_failed·submitted, #306·`choice_noop_hint` 제거→`choice_approve`/`choice_hint` 대체 #318)**. `ActivityBar`·`StatusBar`·`RightPanel`·`Sidebar`·`GitHubPanel`·`PluginPanel`·`CommandPalette`가 `useTranslation('app')`로 렌더(CommandPalette의 cmdk `value=`는 로케일 무관 필터 식별자로 유지). app.json **153키** 3로케일 동기화(`node scripts/check-i18n.js`). ⚠️ 잔여 하드코딩 한국어(후속 i18n 배치 예정): `ChatView`(empty-state 안내)·`McpPanel`(env 파싱 toast)·`MessageInput`(전송 aria-label)·`AgentTimelineCard`·`CodeBlock`·`PipelineStrip`·`ProjectContextBar`.
+**내비/패널 i18n 일괄(#227):** `activity_bar.*`(chat·github·mcp·plugins·**wiki**·**decisions** #306·settings)·`status_bar.*`(server·running·stopped·checking·mcp_count)·`right_panel.*`(output_title·waiting·tokens·elapsed·modified_files) 네임스페이스 신규 + `github.*`·`plugins.*`·`command_palette.*`·`sidebar.*` 확장. **`decisions.*`(title·empty·loading·refresh·location·expected_vs_actual·impact·evidence·attribution·choice_*×4·choice_approve·choice_hint·submit_failed·submitted, #306·`choice_noop_hint` 제거→`choice_approve`/`choice_hint` 대체 #318·`type_defect_brief`/`type_risk_classification`/`type_degraded_release`/`type_degraded_dispatch` 결정 type 배지 #333)**. `ActivityBar`·`StatusBar`·`RightPanel`·`Sidebar`·`GitHubPanel`·`PluginPanel`·`CommandPalette`가 `useTranslation('app')`로 렌더(CommandPalette의 cmdk `value=`는 로케일 무관 필터 식별자로 유지). app.json **158키** 3로케일 동기화(`node scripts/check-i18n.js`). ⚠️ 잔여 하드코딩 한국어(후속 i18n 배치 예정): `ChatView`(empty-state 안내)·`McpPanel`(env 파싱 toast)·`MessageInput`(전송 aria-label)·`AgentTimelineCard`·`CodeBlock`·`PipelineStrip`·`ProjectContextBar`.
 
 문자열 추가 시 3개 로케일 동기화 필수.
 
