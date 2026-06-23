@@ -1,4 +1,4 @@
-import { RedisEventBus } from '@xzawed/agent-streams'
+import { RedisEventBus, routeToDlq } from '@xzawed/agent-streams'
 import type { StreamConsumerPort } from '@xzawed/agent-streams'
 import { getRedisClient } from './redis.client.js'
 import type { Redis } from 'ioredis'
@@ -79,22 +79,33 @@ export class WatcherEventConsumer {
     fields: string[],
     sessionId: string,
   ): Promise<void> {
-    const dataIdx = fields.indexOf('data')
     try {
-      if (dataIdx !== -1) {
-        const parsed = JSON.parse(fields[dataIdx + 1] ?? '{}') as Record<string, unknown>
-        if (parsed['type'] === 'file_changed' && parsed['payload']) {
-          const payload = parsed['payload'] as Record<string, unknown>
+      const dataIdx = fields.indexOf('data')
+      const rawStr = dataIdx === -1 ? undefined : fields[dataIdx + 1]
+      if (rawStr === undefined) return  // 구조적 결함 — ack-skip(DLQ 아님)
+
+      let parsed: Record<string, unknown>
+      try {
+        parsed = JSON.parse(rawStr) as Record<string, unknown>
+      } catch {
+        await routeToDlq(this.bus, streamKey, rawStr, 'invalid_schema', 0)
+        return
+      }
+
+      if (parsed['type'] === 'file_changed' && parsed['payload']) {
+        const payload = parsed['payload'] as Record<string, unknown>
+        try {
           await this.onFileChanged({
             sessionId,
             path:      String(payload['path'] ?? ''),
             event:     (payload['event'] as 'add' | 'change' | 'unlink') ?? 'change',
             timestamp: Number(payload['timestamp'] ?? Date.now()),
           })
+        } catch (err) {
+          await routeToDlq(this.bus, streamKey, rawStr, 'handler_failed', 1, err)
         }
       }
-    } catch {
-      // 파싱/처리 실패 무시
+      // non-file_changed → ack-skip(DLQ 아님)
     } finally {
       await this.bus.ack(streamKey, CONSUMER_GROUP, [msgId])
     }
