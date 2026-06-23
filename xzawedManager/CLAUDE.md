@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
 xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
 
-현재 상태: **구현 완료 (server 1104/1180 테스트 — 로컬 76 skip, CI는 pg 통합 포함 실행)**
+현재 상태: **구현 완료 (server 1112/1193 테스트 — 로컬 81 skip, CI는 pg 통합 포함 실행)**
 
 > **통합 테스트 게이트**: `test/*.integration.test.ts`는 `TEST_DATABASE_URL ?? DATABASE_URL`로 게이트(CI turborepo 잡이 `TEST_DATABASE_URL` 주입 — 이전엔 `DATABASE_URL`만 읽어 **CI에서 한 번도 실행되지 않았음**). cleanup은 전부 파일별 prefix 스코프(`wf-comp-`·`wf-disp-`·`wf-lease-`·`wf-dc-`·`wf-tgp-`·`wf-ew-`·`wf-orc-`·`es-it`) — 비스코프 DELETE는 병렬 형제 테스트의 행을 지워 간헐 실패를 만든다. `runMigrations`는 pg advisory lock으로 동시 실행 직렬화(병렬 테스트·다중 인스턴스 기동 공통 방어). — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가.
 
@@ -353,6 +353,18 @@ P5-3 enforcement의 **둘째 동작**. 운영 모드가 **DEGRADED**일 때 **HI
 - **배선(`config.ts`·`supervisor.ts`·`server.ts`)**: `shouldWireDegradedSignoff(degradedSignoff, hasDecisionStore)` 순수 게이트. `createSupervisor`가 `degradedSignoffActive`면 `baseDispatch`에 `isHighRiskDispatchApproved`/`onDegradedHighRisk` 합류(`buildDispatchGate`가 `...base`로 보존)·`decisionConsumer`에 `redispatch=(wf)=>handleDispatch(wf,dispatch)`(Promise<void> 래퍼)·signoffStore 조건을 `(releaseSignoff||degradedSignoff)`로 확장. server.ts: decisionStore/OutboxRelay 조건에 `MANAGER_DEGRADED_SIGNOFF` 추가·config 전달·전제 경고. **로컬 pg 통합 2/2 PASS**(held→accept_known→signoff→redispatch→DISPATCHED 폐루프 실증).
 - **한계(후속)**: reject 능동 처리(escalate/saga)·DEGRADED 추가 신호원·사인오프 만료/철회·HIGH 외 등급 게이팅·**mode-recovery auto-resume 없음**(held WP는 사람 사인오프로만 재디스패치·자동 복구 미지원·만료는 B1 TTL/재에스컬에 의존).
 
+## C3 오라클 승인 UI — oracle_approval DecisionRequest 생산자 (`MANAGER_ORACLE_DECISION`)
+
+P3-2가 story별 GWT 오라클 초안을 자동 생성(pending)하나 **사람이 승인할 UI가 없었다** — 오라클 승인은 `PATCH /oracles/:id/approve`(서비스 토큰·client-supplied `approvedBy`·비부인 없음)뿐이고 `oracle_approval` DecisionRequest 타입은 enum에만 있고 **생산자가 0개**라, DoR/conformance/impact/property 검증 체인 전체가 **사람이 UI로 못 하는 승인**에 묶여 있었다. C3는 오라클 승인을 **C1 결정 대기함에 surface**한다(C5 리스크 승인 #318과 동일 백엔드 패턴·**Orchestrator/UI 변경 0**). `MANAGER_ORACLE_DECISION`(기본 false·전제 `MANAGER_ORACLE_DRAFT`+`MANAGER_DECISION_ROUTING`+`DATABASE_URL`) off→생산자·소비자 비배선(회귀 0). 설계 스펙 [2026-06-23-c3-oracle-approval-ui-design.md](../../docs/superpowers/specs/2026-06-23-c3-oracle-approval-ui-design.md). **shared 변경 0·migration 0**(`oracle_approval`은 기존 enum 멤버)**·이벤트 스트림 0**(manager:decision:main·manager:oracle:main 재사용).
+
+- **브리프(`streams/oracle-brief.ts`)**: `buildOracleBrief({workflowId, projectId, storyCount})` → 표준 `DecisionRequestInput`(requestId `{wf}:oracle` 결정론 멱등·type `oracle_approval`·`severity:'blocking'`·options `['approve','reject']`·`impact`/`evidenceRefs` `[]` 필수). risk-brief 미러라 C1 카드가 그대로 렌더.
+- **생산자(`streams/decomposition-consumer.ts`)**: `DecompositionDeps.decisionStore?` additive. `handleDecompositionEmitted`가 oracle draft upsert 루프 **직후** `oracleStore && decisionStore && oracleDrafts.length>0`이면 `decisionStore.createRequest(buildOracleBrief({…, projectId: userContext?.projectId ?? null, storyCount: oracleDrafts.length}))`. **best-effort never-throw**(브리프 발행 실패가 영속/분해 비차단). `decisionStore` 미주입(flag off)→미발행(회귀 0). `createRequest` ON CONFLICT DO NOTHING이라 재분해 멱등(원 요청 보존).
+- **배치 승인(`db/oracle.repo.ts`)**: `approvePendingByWorkflow(workflowId, approvedBy)` → `listByWorkflow(wf, ORACLE_PENDING)` 순회하며 기존 `approve(oracleId, approvedBy)`(각 단일 tx·`drafted→human_approved`+`oracle.approved`) 호출·성공 카운트. per-workflow(승인 한 번이 그 workflow 오라클 전부 전이).
+- **소비자(`streams/decision-consumer.ts`)**: `DecisionRoutingDeps.oracleStore?` additive. approve 분기를 type 분기로 확장 — `if (choice==='approve' && decidedBy) { req=getRequest; if(risk_classification && riskStore) riskStore.approve; else if(oracle_approval && oracleStore) oracleStore.approvePendingByWorkflow(req.workflowId, decidedBy) }`. **기존 risk 경로 byte-identical**(early-return 제거가 approve 블록이 try 말미라 무해)·never-throw 불변.
+- **배선(`config.ts`·`supervisor.ts`·`server.ts`)**: `shouldWireOracleDecision(oracleDecision, hasOracleStore, hasDecisionStore)` 순수 게이트. `createSupervisor`가 `oracleDecisionActive`면 DecompositionConsumer 7th arg에 `decisionStore` 주입(생산자)·DecisionRecordedConsumer deps에 `oracleStore` 주입(approve·`as unknown as` 캐스트로 broad SupervisorDeps.oracleStore→`{approvePendingByWorkflow}` 협소화). server.ts: decisionStore/OutboxRelay 조건에 `MANAGER_ORACLE_DECISION` 추가·config 전달·전제 경고.
+- **흐름**: decompose→draft upsert × N→`createRequest(oracle_approval)`→C1 surface→사람 approve→`approvePendingByWorkflow`→`drafted→human_approved`+`oracle.approved` × N→재디스패치(P3-1)→`oracleSatisfiedSet`→DoR 충족.
+- **한계(후속)**: per-story 개별 승인·GWT 시나리오 상세 리뷰 UI·reject 능동 재생성(reject=no-op·보류 유지·만료는 B1 TTL). **dispatch-unlock 전체 폐합은 `MANAGER_ORACLE_DOR`도 필요**(재디스패치는 DOR 계층 책임·C3는 승인까지·P3-1 분리).
+
 ## 릴리스 게이트 코어 (P5-1)
 
 P4 검증 채널의 per-WP 결과를 promote 직전 워크플로 단위로 **hard-AND 집계**(M1 — 단 한 WP이라도 증거 없거나 차단되면 전체 워크플로 CLOSED)한다. **fail-closed-on-absence**: 증거가 없거나 채널이 skip된 WP는 un-proven으로 간주 → CLOSED(design_ui 빈-plan 트랩 구조적 차단). `MANAGER_RELEASE_GATE`(기본 false) flag 뒤로 가역 — off면 완료 흐름 P1d-6와 바이트 동일·회귀 0. 전제: `TASK_MANAGER_ENABLED`+`MANAGER_WP_VERIFY`+`DATABASE_URL`. **migration 014**(wp_verification_results·release_gates·additive·빈 표 회귀 0).
@@ -540,6 +552,7 @@ MANAGER_DEGRADED_SIGNOFF=      # 선택: 기본 false(N2). true면 운영 모드
 MANAGER_RISK_CLASSIFY=          # 선택: 기본 false. true면 decompose_request 시 프로젝트 리스크 분류 생성·pending 영속(P2r-3·N6 미승인). 전제: MANAGER_DECOMPOSE_ENABLED+DATABASE_URL
 MANAGER_RISK_ROUTING=           # 선택: 기본 false. true면 risk.approved 소비자(→wp.risk write-back) + 승인 라우트 배선(P2r-4). 전제: TASK_MANAGER_ENABLED+DATABASE_URL
 MANAGER_RISK_DECISION=          # 선택: 기본 false. true면 humanGate.required 리스크 분류를 risk_classification DecisionRequest로 발행 + decision-consumer approve→RiskClassificationRepo.approve(C5). 전제: MANAGER_RISK_CLASSIFY+MANAGER_DECISION_ROUTING+DATABASE_URL
+MANAGER_ORACLE_DECISION=        # 선택: 기본 false(C3). true면 분해가 draft 오라클 영속 시 per-workflow oracle_approval DecisionRequest 발행(C1 surface) + decision-consumer approve→OracleRepo.approvePendingByWorkflow(그 workflow pending 오라클 전부 human_approved). dispatch-unlock 전체 폐합은 MANAGER_ORACLE_DOR도 필요. 전제: MANAGER_ORACLE_DRAFT+MANAGER_DECISION_ROUTING+DATABASE_URL. off→회귀 0
 MANAGER_MODEL_ROUTING=          # 선택: 기본 false. true면 워커가 디스패치 시 승인 modelRouting을 조회해 에이전트 모델 라우팅(off→CLAUDE_MODEL 폴백·D5). 전제: MANAGER_TASK_WORKER+DATABASE_URL+승인 분류
 MANAGER_MODEL_OPUS=             # 선택: 기본 claude-opus-4-8. modelRouting의 opus tier→이 concrete id
 MANAGER_MODEL_SONNET=           # 선택: 기본 claude-sonnet-4-6. modelRouting의 sonnet tier→이 concrete id
