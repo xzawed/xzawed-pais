@@ -42,13 +42,13 @@ export function ChatView(): React.JSX.Element {
   // 세션 WS 구독은 ChatLayout(항상 마운트)의 useSessionWs로 이관 — 패널 전환 시 끊김 방지.
   // ChatView는 chat.store만 읽어 렌더한다.
 
-  async function handleSend(content: string): Promise<void> {
+  async function handleSend(content: string, mode: 'chat' | 'build'): Promise<void> {
     if (!sessionId) return
     const store = useChatStore.getState()
     store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'user', content, timestamp: Date.now() })
     store.setPending(true)
     try {
-      await postMessage(settings.serverUrl, sessionId, content, settings.gateMode, accessToken)
+      await postMessage(settings.serverUrl, sessionId, content, settings.gateMode, accessToken, mode)
     } catch (err) {
       store.setPending(false)
       store.addMessage({ id: crypto.randomUUID(), sessionId, role: 'assistant', content: `[Error] ${err instanceof Error ? err.message : String(err)}`, timestamp: Date.now() })
