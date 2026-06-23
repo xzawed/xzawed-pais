@@ -304,8 +304,9 @@ impact 채널이 소비할 golden을 **사람이 C1 결정 대기함에서 freez
 - **생산자(`streams/worker.ts`)**: `maybeRequestGoldenSignoff(tool, workflowId, userContext, deps)`(maybeProduceAdvisory 미러·best-effort never-throw·**에이전트 호출 0**) — develop_code verdict.ok 후 `unfrozenGoldenCount>0`이면 `golden_diff` DecisionRequest 발행. `WorkerDeps.goldenSignoffEnabled?`·`decisionStore?` additive.
 - **소비자(`streams/decision-consumer.ts`)**: approve 분기에 `golden_diff && oracleStore?.freezeGoldensByWorkflow → freezeGoldensByWorkflow(req.workflowId, decidedBy)`(JWT 비부인). 기존 risk/oracle approve 분기 byte-identical.
 - **배선(`supervisor.ts`·`config.ts`·`server.ts`)**: `shouldWireGoldenSignoff(goldenSignoff, hasOracleStore, hasDecisionStore)` 순수 게이트·worker deps에 `goldenSignoffEnabled`+`decisionStore` 주입·decision-consumer oracleStore 조건을 `(oracleDecisionActive || goldenSignoffActive)`로 확장·OutboxRelay/oracleStore/decisionStore 조건+전제 경고.
-- **흐름**: 사람 `POST /oracles`(golden draft 시드·frozenBy=null·approved)→develop_code verdict.ok→`maybeRequestGoldenSignoff`→`golden_diff` 발행→C1 surface→사람 approve→`freezeGoldensByWorkflow`→`approvedGoldensForStory`(frozen)→impact 활성.
-- **한계(후속·Slice 2)**: 자동 캡처(실 실행 출력→golden 초안)·per-story/per-golden 개별 freeze·golden 버전 supersede·E10 재분해 시 golden 보존.
+- **N7 정직성(POST 시드 하드닝)**: `POST /oracles`는 `status=pending` 강제와 동형으로 incoming golden `frozenBy→null`·`frozenAt→''`도 강제(`api/oracle.route.ts`) — frozen은 오직 `golden_diff` 사인오프 경로로만. 서비스토큰 시드로 pre-frozen golden 주입 차단·`frozenBy!=null`이 사인오프를 진정으로 함의.
+- **흐름**: 사람 `POST /oracles`(→pending·골든 frozenBy=null 강제)+`PATCH approve`(→approved)→develop_code verdict.ok→`maybeRequestGoldenSignoff`→`golden_diff` 발행→C1 surface→사람 approve→`freezeGoldensByWorkflow`→`approvedGoldensForStory`(frozen)→impact 활성.
+- **한계(후속·Slice 2)**: ⚠️**단발-사인오프 per-workflow**(requestId flat `{wf}:golden`·첫 사인오프 RESOLVED 후 새 unfrozen golden은 영구 freeze 불가 — Slice 2 반복 시드 전 `{wf}:golden:{집합 해시}` 버전화 필요)·golden_diff expiresAt 없음(C3 parity·B1 미참여)·`freezeGoldensByWorkflow` RMW 비원자(P2r-4 parity·단일-writer 저위험)·**자동 캡처**(실 실행 출력→golden 초안·Developer result 스키마 확장 교차서비스)·per-story/per-golden 개별 freeze·golden 버전 supersede.
 
 ## property 채널 (P4) — invariants (conformance 렌즈)
 

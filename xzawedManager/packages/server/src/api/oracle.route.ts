@@ -27,7 +27,14 @@ export async function oracleRoute(app: FastifyInstance, opts: OracleRouteOptions
         status: ORACLE_PENDING,
       })
       if (!parsed.success) return reply.code(400).send({ error: 'invalid oracle', detail: parsed.error.issues })
-      await opts.oracleRepo.upsert(parsed.data)
+      // N7(golden freeze): POST 시드 golden은 항상 draft(frozenBy=null·frozenAt='') — frozen은 오직 golden_diff
+      // 사인오프 경로(freezeGoldensByWorkflow + human_decisions 비부인)로만. status=pending 강제와 동형 의도이며,
+      // 이로써 approvedGoldensForStory의 frozenBy!=null 필터가 "사람 사인오프"를 진정으로 함의한다.
+      const seed = {
+        ...parsed.data,
+        goldenRefs: parsed.data.goldenRefs.map((g) => ({ ...g, frozenBy: null, frozenAt: '' })),
+      }
+      await opts.oracleRepo.upsert(seed)
       return reply.code(201).send({ oracleId: parsed.data.oracleId })
     },
   )

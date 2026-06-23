@@ -43,7 +43,7 @@ P4 impact 채널(`MANAGER_WP_IMPACT`)은 develop_code WP 산출물이 사람 사
 ## 4. 데이터 흐름
 
 ```
-사람 POST /oracles (golden draft 시드·frozenBy=null·status='approved')
+사람 POST /oracles(→pending·골든 frozenBy=null 강제) + PATCH /oracles/:id/approve(→approved)   (golden draft 시드)
   ↓ develop_code WP verdict.ok (worker)
 maybeRequestGoldenSignoff: hasUnfrozenGoldensByWorkflow(wf) → true면
   decisionStore.createRequest(buildGoldenBrief({wf, projectId, goldenCount}))   (golden_diff·{wf}:golden 멱등)
@@ -89,6 +89,7 @@ approve 분기에 `else if (req.type==='golden_diff' && oracleStore?.freezeGolde
 - freeze는 projection UPDATE(이벤트 0) — 비부인은 human_decisions(decidedBy)가 담당.
 - `freezeGoldensByWorkflow` 멱등(이미 frozen golden은 무변경·재승인 무해).
 - `createRequest` ON CONFLICT 멱등(재실행 시 원 요청 보존).
+- **N7 정직성(POST 시드 하드닝)**: `POST /oracles`는 `status=pending` 강제와 동형으로 incoming golden의 `frozenBy→null`·`frozenAt→''`도 강제한다 — frozen은 오직 `golden_diff` 사인오프 경로(`freezeGoldensByWorkflow`+human_decisions 비부인)로만 도달. 이로써 `approvedGoldensForStory`의 `frozenBy!=null` 필터가 "사람 사인오프"를 진정으로 함의한다(서비스토큰 시드로 pre-frozen golden 주입 차단).
 
 ## 8. 테스트 (TDD)
 
@@ -100,7 +101,10 @@ approve 분기에 `else if (req.type==='golden_diff' && oracleStore?.freezeGolde
 | `streams/decision-consumer.test.ts` (확장) | golden_diff approve → freezeGoldensByWorkflow·기존 risk/oracle 분기 보존 |
 | `test/oracle-golden.integration.test.ts` (갱신·신규) | upsert(draft golden frozenBy=null) → freezeGoldensByWorkflow → approvedGoldensForStory 반환(frozen) 루프 (skip-if-no-DB) |
 
-## 9. 후속 (Slice 2 — 범위 외)
+## 9. 한계·후속 (Slice 2 — 범위 외)
 
+- ⚠️ **단발-사인오프 per-workflow(requestId flat `{wf}:golden`)**: 생산자가 매 develop_code verdict.ok마다 `createRequest({wf}:golden)`를 시도하나 `createRequest` ON CONFLICT DO NOTHING이라, **첫 사인오프로 그 요청이 RESOLVED된 뒤 같은 workflow에 새로 시드된 unfrozen golden은 새 PENDING이 생성되지 않아 영구 freeze 불가**(C1 미노출 → impact 영구 제외·M8 무음 저하). golden 시드가 수동·단발인 Slice 1에선 발현 안 하나, **Slice 2(자동 캡처·반복 시드) 착수 전 requestId를 `{wf}:golden:{unfrozen 집합 해시}`(risk-brief `{wf}:risk:{version}` 선례)로 버전화해 새 unfrozen 집합이 새 요청을 내도록 해야 한다.**
+- **golden_diff에 expiresAt 없음(C3 oracle_approval parity)**: B1 만료 sweep 미참여(미승인 blocking 요청의 liveness 경로 없음) — Slice 2에서 `makeGoldenBrief(ttlMs)` 래퍼로 봉합 가능.
+- **`freezeGoldensByWorkflow` read-modify-write 비원자(P2r-4 updateWpRisks parity)**: tx/FOR UPDATE 없이 golden_refs 통째 UPDATE — 동시 freeze는 멱등(무해)이나 freeze-vs-`upsert` 경합 시 lost-update 가능(현 단일-writer·human-triggered라 저위험·golden_refs는 재구성 가능 projection). Slice 2 per-golden writer 도입 시 SELECT FOR UPDATE 필요.
 - **자동 캡처**: develop_code 실행 출력 캡처 → golden 초안 자동 생성(Developer result 스키마 확장·교차서비스).
 - per-story/per-golden 개별 freeze·golden 버전 supersede·E10 재분해 시 golden 보존.
