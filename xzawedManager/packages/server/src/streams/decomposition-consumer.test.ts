@@ -294,3 +294,95 @@ describe('buildDecompositionConsumerHandler (P1d-7 afterPersisted 훅)', () => {
     expect(repo.upsertGraph).toHaveBeenCalled()
   })
 })
+
+describe('handleDecompositionEmitted — inconsistent surface (C7)', () => {
+  const cyclicWps = [wp('a', ['b']), wp('b', ['a'])]   // detectCycle 양성
+  const danglingWps = [wp('a', ['ghost'])]              // buildTaskGraph throw(structural)
+
+  it('cycle: notifyUser(error content) 호출 + 진실원천 emit 유지', async () => {
+    const repo = mockRepo()
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const notifyUser = vi.fn().mockResolvedValue(undefined)
+    await handleDecompositionEmitted(msg(cyclicWps), { repo, publish, notifyUser })
+    expect(publish).toHaveBeenCalledTimes(1)            // 진실원천 보존
+    expect(notifyUser).toHaveBeenCalledTimes(1)
+    const [wf, content] = notifyUser.mock.calls[0]
+    expect(wf).toBe('wf-1')
+    expect(content).toContain('순환 의존')
+  })
+
+  it('structural: notifyUser 호출(detail 포함)', async () => {
+    const repo = mockRepo()
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const notifyUser = vi.fn().mockResolvedValue(undefined)
+    await handleDecompositionEmitted(msg(danglingWps), { repo, publish, notifyUser })
+    expect(notifyUser).toHaveBeenCalledTimes(1)
+    expect(notifyUser.mock.calls[0][1]).toContain('구조 오류')
+  })
+
+  it('failureDecisionStore + projectId 존재 → createRequest(decompose_inconsistent)', async () => {
+    const repo = mockRepo()
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const failureDecisionStore = { createRequest: vi.fn().mockResolvedValue({ eventId: 'e1' }) }
+    const uc = { userId: 'u', projectId: 'p1', workspaceRoot: '/ws' }
+    const m: DecompositionEmittedMessage = {
+      envelope: env(), type: 'decomposition.emitted',
+      payload: { workPackages: cyclicWps, oracleDrafts: [], userContext: uc },
+    }
+    await handleDecompositionEmitted(m, { repo, publish, failureDecisionStore })
+    expect(failureDecisionStore.createRequest).toHaveBeenCalledTimes(1)
+    const brief = failureDecisionStore.createRequest.mock.calls[0][0]
+    expect(brief.type).toBe('decompose_inconsistent')
+    expect(brief.projectId).toBe('p1')
+    expect(brief.requestId).toBe('wf-1:decompose-fail')
+  })
+
+  it('failureDecisionStore 미주입 → createRequest 미호출(arm 1만)', async () => {
+    const repo = mockRepo()
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const notifyUser = vi.fn().mockResolvedValue(undefined)
+    await handleDecompositionEmitted(msg(cyclicWps), { repo, publish, notifyUser })
+    expect(notifyUser).toHaveBeenCalledTimes(1)   // arm1만(failureDecisionStore 없음)
+  })
+
+  it('projectId null → createRequest 미호출(notifyUser는 호출)', async () => {
+    const repo = mockRepo()
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const notifyUser = vi.fn().mockResolvedValue(undefined)
+    const failureDecisionStore = { createRequest: vi.fn().mockResolvedValue(null) }
+    await handleDecompositionEmitted(msg(cyclicWps), { repo, publish, notifyUser, failureDecisionStore })
+    expect(failureDecisionStore.createRequest).not.toHaveBeenCalled()
+    expect(notifyUser).toHaveBeenCalledTimes(1)
+  })
+
+  it('notifyUser throw → 소비 비차단(outcome 정상 반환)', async () => {
+    const repo = mockRepo()
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const notifyUser = vi.fn().mockRejectedValue(new Error('redis down'))
+    const out = await handleDecompositionEmitted(msg(cyclicWps), { repo, publish, notifyUser })
+    expect(out).toEqual({ status: 'inconsistent', reason: 'cycle' })
+  })
+
+  it('createRequest throw → 소비 비차단', async () => {
+    const repo = mockRepo()
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const failureDecisionStore = { createRequest: vi.fn().mockRejectedValue(new Error('db down')) }
+    const uc = { userId: 'u', projectId: 'p1', workspaceRoot: '/ws' }
+    const m: DecompositionEmittedMessage = {
+      envelope: env(), type: 'decomposition.emitted',
+      payload: { workPackages: cyclicWps, oracleDrafts: [], userContext: uc },
+    }
+    const out = await handleDecompositionEmitted(m, { repo, publish, failureDecisionStore })
+    expect(out).toEqual({ status: 'inconsistent', reason: 'cycle' })
+  })
+
+  it('persisted(정상) 경로 → notifyUser/createRequest 미호출(회귀 0)', async () => {
+    const repo = mockRepo(1)
+    const publish = vi.fn().mockResolvedValue('1-0')
+    const notifyUser = vi.fn().mockResolvedValue(undefined)
+    const failureDecisionStore = { createRequest: vi.fn().mockResolvedValue(null) }
+    await handleDecompositionEmitted(msg([wp('a')]), { repo, publish, notifyUser, failureDecisionStore })
+    expect(notifyUser).not.toHaveBeenCalled()
+    expect(failureDecisionStore.createRequest).not.toHaveBeenCalled()
+  })
+})
