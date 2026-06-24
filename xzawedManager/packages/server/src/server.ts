@@ -458,6 +458,11 @@ export async function buildServer(
         //   생산자(emit) 측과 대칭 — flag off면 소비자가 riskStore를 받지 않아 'off→바이트 동일' 불변식이 문자 그대로 성립.
         // D5: MANAGER_MODEL_ROUTING도 riskStore(approvedForWorkflow) 소비 — 둘 중 하나면 주입.
         ...((config.MANAGER_RISK_DECISION || config.MANAGER_MODEL_ROUTING) && riskStore && { riskStore }),
+        // C7 arm1: inconsistent 시 에러를 orchestrator에 노출(manager:to-orchestrator:{wf}). producer로 구성.
+        notifyUser: (wf: string, content: string) =>
+          producer
+            .publish({ sessionId: wf, messageId: crypto.randomUUID(), timestamp: Date.now(), type: 'error', payload: { agentId: 'manager', content } })
+            .then(() => undefined),
       },
       {
         sweepMs: config.MANAGER_LEASE_SWEEP_MS,
@@ -550,6 +555,10 @@ export async function buildServer(
     // 하드닝: pool 없으면 분해 emission이 raw 발행(내구성 없음·크래시/전송실패 시 유실). 트랜잭셔널 아웃박스 미적용 경고.
     if (!pool) {
       app.log.warn('MANAGER_DECOMPOSE_ENABLED=true 이지만 DATABASE_URL이 없어 분해 emission이 트랜잭셔널 아웃박스를 경유하지 않습니다(raw 발행·내구성 없음).')
+    }
+    // C7: MANAGER_DECISION_ROUTING off면 decompose inconsistent가 C1 UI에 노출되지 않음(error 스트림만).
+    if (!config.MANAGER_DECISION_ROUTING) {
+      app.log.warn('[decompose] MANAGER_DECISION_ROUTING off — 분해 불일치가 C1 UI에 surface되지 않음(error 스트림만 노출).')
     }
   }
 
@@ -649,6 +658,7 @@ export async function buildServer(
     ...(authHook && { authHook }),
     ...(decompose && { decompose }),
     ...(riskClassify && { riskClassify }),
+    ...(config.MANAGER_DECISION_ROUTING && decisionStore && { decisionStore }),
   })
   // 운영 라우트: DLQ 재처리(redriveDlq). 격리된 poison 메시지를 원 스트림으로 되돌린다.
   // 부수효과(원 스트림 재발행→자율 에이전트 실행 트리거)가 있는 권한 엔드포인트라 인증이 **필수**다 —
@@ -673,6 +683,7 @@ export async function buildServer(
     watcherEventConsumer,
     ...(decompose && { decompose }),
     ...(riskClassify && { riskClassify }),
+    ...(config.MANAGER_DECISION_ROUTING && decisionStore && { decisionStore }),
     log: { error: (obj, msg) => app.log.error(obj, msg) },
   })
 

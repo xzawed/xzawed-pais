@@ -201,6 +201,8 @@ export interface SupervisorDeps {
   }
   /** P5-3b: 운영 강등 모드 조회(=ModeController.getMode). 주입 시 dispatch가 SAFE면 보류·resumeDispatch 활성. */
   getMode?: () => OperationalMode
+  /** C7 arm1: inconsistent 시 사람에게 error 노출(manager:to-orchestrator:{wf}). server.ts가 producer로 구성. */
+  notifyUser?: (workflowId: string, content: string) => Promise<void>
 }
 export interface SupervisorConfig {
   sweepMs: number
@@ -315,6 +317,11 @@ export function shouldWireDegradedSignoff(degradedSignoff: boolean, hasDecisionS
   return degradedSignoff && hasDecisionStore
 }
 
+/** C7: 분해 실패 decision 배선 판정(순수): decisionRouting flag + decisionStore 주입 둘 다. */
+export function shouldWireFailureDecision(decisionRouting: boolean, hasDecisionStore: boolean): boolean {
+  return decisionRouting && hasDecisionStore
+}
+
 /** P6: 결정 제출 라우트 배선 판정(순수). 권한 쓰기(재진입 트리거)라 authHook 없으면 미등록(보안 HIGH-3). */
 export function shouldWireDecisionRoute(routing: boolean, hasPool: boolean, hasAuth: boolean): 'wire' | 'warn' | 'skip' {
   if (!routing || !hasPool) return 'skip'
@@ -402,6 +409,8 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
   const briefOpts = config.decisionExpiry && config.decisionTtlMs !== undefined ? { ttlMs: config.decisionTtlMs } : undefined
   // N2: degradedSignoff 배선 활성 판정(순수 게이트 위임). flag + decisionStore 주입 둘 다 있어야 활성(회귀 0).
   const degradedSignoffActive = shouldWireDegradedSignoff(config.degradedSignoff === true, deps.decisionStore != null)
+  // C7: 분해 실패 decision 배선(=MANAGER_DECISION_ROUTING). decisionStore 동반 필요.
+  const failureDecisionActive = shouldWireFailureDecision(config.decisionRouting === true, deps.decisionStore != null)
   const baseDispatch: DispatchDeps = {
     repo: deps.repo, store: deps.dispatchStore, visibilityMs: config.visibilityMs,
     ...(dorActive && { oracleStore: deps.oracleStore }),
@@ -424,6 +433,10 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     deps.oracleStore, // upsertDraft용 — DRAFT만 켜도 영속(blocker#1)
     // C3: oracleDecisionActive 시만 decisionStore 주입(off→undefined→oracle_approval 미발행·회귀 0).
     oracleDecisionActive ? deps.decisionStore : undefined,
+    // C7 arm1: notifyUser 항상 주입(무조건 error 노출·미주입이면 surface skip).
+    deps.notifyUser,
+    // C7 arm2: failureDecisionActive 시만 failureDecisionStore 주입(decompose_inconsistent 발행).
+    failureDecisionActive ? deps.decisionStore : undefined,
   )
 
   const completionConsumer = new BaseConsumer<CompletionSignalMessage>(
