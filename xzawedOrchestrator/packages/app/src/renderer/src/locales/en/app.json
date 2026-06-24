@@ -151,6 +151,7 @@
     "type_risk_classification": "Risk",
     "type_degraded_release": "Release sign-off",
     "type_degraded_dispatch": "Dispatch sign-off",
+    "type_decompose_inconsistent": "Decomposition Inconsistent",
     "expected_vs_actual": "Expected vs Actual",
     "impact": "Impact",
     "evidence": "Evidence",

@@ -151,6 +151,7 @@
     "type_risk_classification": "リスク",
     "type_degraded_release": "リリースサインオフ",
     "type_degraded_dispatch": "ディスパッチサインオフ",
+    "type_decompose_inconsistent": "分解不整合",
     "expected_vs_actual": "期待 vs 実際",
     "impact": "影響",
     "evidence": "証拠",

@@ -151,6 +151,7 @@
     "type_risk_classification": "리스크",
     "type_degraded_release": "릴리스 사인오프",
     "type_degraded_dispatch": "디스패치 사인오프",
+    "type_decompose_inconsistent": "분해 불일치",
     "expected_vs_actual": "기대 vs 실제",
     "impact": "영향",
     "evidence": "증거",
