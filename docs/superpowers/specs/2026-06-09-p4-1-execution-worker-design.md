@@ -114,8 +114,8 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
 - **중복 실행(비멱등)**: reclaim 재시도·중복 신호는 같은 WP를 다시 실행(에이전트 부수효과 비멱등). BaseConsumer dedup(attempt별 멱등키)이 **같은 attempt 중복 신호**는 차단하나, attempt가 다른 reclaim 재실행은 의도적 재시도. 핸들러 트랜잭션 멱등은 범위 밖.
 - **게이트 우회**: 자율 경로는 승인 게이트를 거치지 않음(결정 1). 위험 작업의 게이트 필요 시 대화형 경로 — 자율 경로 게이트 통합은 후속.
 - **검증 공백(trivial)**: 에이전트 무에러 반환=성공이라 **잘못된 산출물도 완료로 통과**할 수 있음. 4b 실 검증 오라클이 이 게이트를 채운다(현재는 의도된 한계·문서화).
-- **실 워크스페이스 경로 부재(Codex 재리뷰 NEW-2·핵심 한계)**: execute 모드에서 에이전트는 `projectPath`를 `fs.realpath`로 검증한다(워크스페이스 루트 기준 상대·`''`는 ENOENT 거부). 워커는 WP/그래프만으로 **유효한 워크스페이스 경로를 만들 수 없다**(WP에 projectPath 없음). `'.'`(워크스페이스 루트)는 에이전트 cwd=workspaceRoot 배포에서만 통과 — 그 외엔 거부→에러→lease 백스톱→escalate. ⇒ **루프 메커니즘(신호→워커→완료→DONE→재디스패치)은 통합테스트(mock 에이전트)로 실증되나, 실 에이전트 성공 완료는 워크플로→프로젝트 워크스페이스 컨텍스트 주입(후속)을 전제로 한다.** developer는 `plan`, tester/builder/security는 워크스페이스를 읽으므로 경로 유효성이 실행 성공의 관건.
-- **stale-attempt 완료(Codex 재리뷰 NEW-1)**: 느린 attempt0 완료가 reclaim 후 attempt1 lease에 도착하면 `handleCompletion`이 현재 lease를 완료시킨다. **terminal 상태는 항상 정확**(완료 신호=실제 에이전트 성공이므로 DONE 타당)하나, in-flight attempt1 재실행이 낭비된다(위 "중복 실행" 범주). 정밀 attempt-매칭 가드(`envelope.attemptId===lease.attempt`일 때만 완료)는 P1d-6 `handleCompletion`/`completion-consumer` 변경을 수반하므로 **후속**(현 동작은 손실·stuck 없음).
+- **실 워크스페이스 경로 부재(적대 재리뷰 NEW-2·핵심 한계)**: execute 모드에서 에이전트는 `projectPath`를 `fs.realpath`로 검증한다(워크스페이스 루트 기준 상대·`''`는 ENOENT 거부). 워커는 WP/그래프만으로 **유효한 워크스페이스 경로를 만들 수 없다**(WP에 projectPath 없음). `'.'`(워크스페이스 루트)는 에이전트 cwd=workspaceRoot 배포에서만 통과 — 그 외엔 거부→에러→lease 백스톱→escalate. ⇒ **루프 메커니즘(신호→워커→완료→DONE→재디스패치)은 통합테스트(mock 에이전트)로 실증되나, 실 에이전트 성공 완료는 워크플로→프로젝트 워크스페이스 컨텍스트 주입(후속)을 전제로 한다.** developer는 `plan`, tester/builder/security는 워크스페이스를 읽으므로 경로 유효성이 실행 성공의 관건.
+- **stale-attempt 완료(적대 재리뷰 NEW-1)**: 느린 attempt0 완료가 reclaim 후 attempt1 lease에 도착하면 `handleCompletion`이 현재 lease를 완료시킨다. **terminal 상태는 항상 정확**(완료 신호=실제 에이전트 성공이므로 DONE 타당)하나, in-flight attempt1 재실행이 낭비된다(위 "중복 실행" 범주). 정밀 attempt-매칭 가드(`envelope.attemptId===lease.attempt`일 때만 완료)는 P1d-6 `handleCompletion`/`completion-consumer` 변경을 수반하므로 **후속**(현 동작은 손실·stuck 없음).
 
 ## 7. 완료 정의 (수용 기준)
 

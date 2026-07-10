@@ -1,7 +1,7 @@
 # P4a-2 — 실행 워커 워크스페이스 컨텍스트 주입 설계
 
 날짜: 2026-06-10
-선행: P4-1 실행 워커 골격(#269, [2026-06-09-p4-1-execution-worker-design.md](2026-06-09-p4-1-execution-worker-design.md) §6 "실 워크스페이스 경로 부재" Codex NEW-2)
+선행: P4-1 실행 워커 골격(#269, [2026-06-09-p4-1-execution-worker-design.md](2026-06-09-p4-1-execution-worker-design.md) §6 "실 워크스페이스 경로 부재" 재리뷰 NEW-2)
 범위: xzawedManager 단독 (xzawedShared·에이전트 서비스 무수정)
 
 ## 1. 목표 / 비범위
