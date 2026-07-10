@@ -3,7 +3,7 @@
 > Phase 3 둘째 슬라이스. [[P3-1]](`2026-06-09-p3-1-oracle-dor-gate-design.md`)이 연 디스패치 게이트의 **사람 병목**(오라클 백지 작성)을 흡수한다. senario `ORACLE_SCHEMA.md` §10(작성 흐름: PM이 초안→사람 승인) 구체화.
 > 목표: 분해가 산출한 각 Story에 대해 PM(LLM)이 Given-When-Then 시나리오 **초안**을 생성해 `pending` 오라클로 영속한다. 사람은 백지 작성이 아니라 **초안을 검토·승인**(PATCH approve 한 번)만 하면 DoR이 충족돼 dispatch가 열린다.
 >
-> **이 문서는 Codex 적대 검증(2026-06-09) 11 블로커 + 2 권고를 반영한 개정본이다.** 반영 내역은 §8.
+> **이 문서는 적대 검증(2026-06-09) 11 블로커 + 2 권고를 반영한 개정본이다.** 반영 내역은 §8.
 
 ## 1. 배경 — P3-1이 남긴 사람 병목
 
@@ -81,8 +81,8 @@ export async function draftOracles(stories: Story[], deps: StageDeps): Promise<O
 
 - **`MANAGER_ORACLE_DRAFT`**(기본 `false`·가역): on이면 decompose 파이프라인이 draft 스테이지 실행 + producer가 oracleDrafts emit. off면 `oracleDrafts=[]`·스테이지 미호출·**회귀 0**.
 - **oracleStore 주입(blocker#1 분리)**: `server.ts`는 `pool && (MANAGER_ORACLE_DOR || MANAGER_ORACLE_DRAFT)`이면 `OracleRepo`를 만들어 `createSupervisor`에 주입 → **DRAFT만 켜도 consumer upsert 동작**. `createSupervisor`는 `SupervisorConfig.oracleDor`(=`MANAGER_ORACLE_DOR`)로 satisfied-set 주입·oracleConsumer 배선을 게이트(DoR 게이트는 DOR일 때만).
-- `MANAGER_DECOMPOSE_ENABLED`(분해 생산자)·`TASK_MANAGER_ENABLED`(Supervisor) 전제 위에 얹힘. **초안 영속은 consumer(=Supervisor)가 돌아야 하므로 `MANAGER_ORACLE_DRAFT`는 `TASK_MANAGER_ENABLED`+`DATABASE_URL`을 실질 전제로 한다**(Codex#2: DRAFT-only·TASK_MANAGER off면 소비자 부재로 미영속 — config 주석·warn 로그로 안내).
-- **OutboxRelay 조건(Codex#3)**: P3-1의 relay 기동 조건에 `|| MANAGER_ORACLE_DRAFT` 추가 — DRAFT-only에서 approve가 만든 `oracle.approved` 아웃박스 잔류 방지.
+- `MANAGER_DECOMPOSE_ENABLED`(분해 생산자)·`TASK_MANAGER_ENABLED`(Supervisor) 전제 위에 얹힘. **초안 영속은 consumer(=Supervisor)가 돌아야 하므로 `MANAGER_ORACLE_DRAFT`는 `TASK_MANAGER_ENABLED`+`DATABASE_URL`을 실질 전제로 한다**(적대 검증#2: DRAFT-only·TASK_MANAGER off면 소비자 부재로 미영속 — config 주석·warn 로그로 안내).
+- **OutboxRelay 조건(적대 검증#3)**: P3-1의 relay 기동 조건에 `|| MANAGER_ORACLE_DRAFT` 추가 — DRAFT-only에서 approve가 만든 `oracle.approved` 아웃박스 잔류 방지.
 - approve 전이는 flag 무관(always-on·additive).
 
 ## 5. 테스트
@@ -109,7 +109,7 @@ export async function draftOracles(stories: Story[], deps: StageDeps): Promise<O
 
 ①`draftOracles`(커버리지 보장·상한·fallback)+테스트 ②스키마 additive(given/when/thenSteps·OracleDraft·payload)+회귀 0 ③pipeline/producer flag(ok만 채움) ④consumer `upsertDraft`(멱등·oracleId 파생) ⑤`approve` 전이(pending 가드·무조건 전이·no-op 안전) ⑥`MANAGER_ORACLE_DRAFT` flag + oracleStore 분리 배선 ⑦DB-level 통합 테스트(영속→승인→DoR 충족) ⑧**문서 최신화: CLAUDE.md(root/manager)·README.md·`docs/`·AGENTS.md(존재 시)**(blocker#11·전역 규칙) ⑨build·test·jscpd 0·audit 0.
 
-## 8. Codex 검증 반영 (2026-06-09)
+## 8. 적대 검증 반영 (2026-06-09)
 
 | # | 지적 | 반영 |
 |---|---|---|

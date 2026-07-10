@@ -244,7 +244,7 @@ P1d Task Manager의 디스패치 루프(dispatch→lease→complete→re-dispatc
 
 ## 워크스페이스 컨텍스트 주입 (P4a-2)
 
-P4-1의 핵심 한계(§6 Codex NEW-2 — `buildWorkerInput`이 placeholder `projectPath:'.'`라 실 에이전트가 `fs.realpath` 검증에서 거부)를 해소한다. 분해 시점의 `UserContext`를 그래프에 영속하고 워커가 에이전트 호출에 주입해 **실 에이전트 성공 완료가 성립**한다. 설계 스펙 [2026-06-10-p4a-2-workspace-context-injection-design.md](../../docs/superpowers/specs/2026-06-10-p4a-2-workspace-context-injection-design.md). **새 migration·flag 없음**(graph_dag JSONB additive·기존 flag 게이트 보존).
+P4-1의 핵심 한계(§6 재리뷰 NEW-2 — `buildWorkerInput`이 placeholder `projectPath:'.'`라 실 에이전트가 `fs.realpath` 검증에서 거부)를 해소한다. 분해 시점의 `UserContext`를 그래프에 영속하고 워커가 에이전트 호출에 주입해 **실 에이전트 성공 완료가 성립**한다. 설계 스펙 [2026-06-10-p4a-2-workspace-context-injection-design.md](../../docs/superpowers/specs/2026-06-10-p4a-2-workspace-context-injection-design.md). **새 migration·flag 없음**(graph_dag JSONB additive·기존 flag 게이트 보존).
 
 - **계약(additive optional)**: `decompose_request.payload.userContext`(`AbsoluteUserContextSchema` — userId·projectId·workspaceRoot·githubRepo?, **workspaceRoot 절대경로 강제** refine — 상대경로는 manager cwd mkdir→에이전트 cwd 해석으로 developer false-success를 만들므로 Zod 단계 거부) → `decomposition.emitted.payload.userContext`(위반 시 invalid_schema DLQ) → `task_graphs.graph_dag = {workPackages, userContext?}`.
 - **스레딩**: sessions.route → `handleDecomposeRequest(..., userContext?, ensureWs)`(trigger try 안에서 `ensureWorkspace` — task_request 경로 대칭·실패 시에도 finally cleanup) → `produceDecomposition(..., userContext?)`(ok·기술 fallback 경로 포함, inconsistent 경로 제외) → `handleDecompositionEmitted`가 `upsertGraph`에 전달. **실패 무음 금지(M8)**: trigger catch가 모든 실패(워크스페이스 검증·발행)를 `type:'error'`로 요청자에게 발행 후 rethrow — 미발행 시 세션이 응답 없이 해체돼 무한 대기하던 결함 해소(에러 발행 실패는 원 오류 보존).

@@ -99,7 +99,7 @@ export function freezeUnfrozen(
 
 /**
  * 충돌-회피 oracleId 파생: workflowId·storyId를 길이-prefix(`${len}:`)로 구분해 해싱(가변 길이 경계 모호성 제거,
- * Codex#1·D1). 제어문자 리터럴 없이 명시적 escape — `(a-b,c)`↔`(a,b-c)` 충돌 차단.
+ * 적대 검증#1·D1). 제어문자 리터럴 없이 명시적 escape — `(a-b,c)`↔`(a,b-c)` 충돌 차단.
  */
 export function oracleIdFor(workflowId: string, storyId: string): string {
   const h = createHash('sha256').update(`${workflowId.length}:${workflowId}:${storyId}`).digest('hex').slice(0, 32)
