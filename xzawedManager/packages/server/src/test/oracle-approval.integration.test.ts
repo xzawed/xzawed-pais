@@ -126,7 +126,7 @@ d('C3 oracle 승인 E2E (pg·wf-c3-e2e)', () => {
     expect(request).not.toBeNull()
     expect(request?.type).toBe('oracle_approval')
     expect(request?.workflowId).toBe(wf)
-    expect(request?.status).toBe('pending')
+    expect(request?.status).toBe('PENDING')
   })
 
   it('buildDecisionRecordedHandler + oracleStore → pending 오라클 승인', async () => {
