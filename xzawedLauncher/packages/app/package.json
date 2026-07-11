@@ -15,7 +15,7 @@
     "clsx": "^2.1.1",
     "electron-updater": "^6.3.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react-dom": "^19.2.7",
     "tailwind-merge": "^3.6.0",
     "zustand": "^5.0.0"
   },
