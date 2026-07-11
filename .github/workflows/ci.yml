@@ -168,7 +168,7 @@ jobs:
           cache-dependency-path: ${{ matrix.service }}/pnpm-lock.yaml
 
       - name: Download xzawedShared dist
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: xzawedShared-dist
           path: xzawedShared/dist/
@@ -630,70 +630,70 @@ jobs:
       # upload-artifact@v4 strips common path prefix from single-file artifacts,
       # so each artifact must be downloaded to its correct target directory.
       - name: Download coverage - xzawedOrchestrator
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           name: coverage-xzawedOrchestrator
           path: xzawedOrchestrator/packages
 
       - name: Download coverage - xzawedManager
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           name: coverage-xzawedManager
           path: xzawedManager/packages
 
       - name: Download coverage - xzawedPlanner
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           name: coverage-xzawedPlanner
           path: xzawedPlanner/coverage
 
       - name: Download coverage - xzawedDeveloper
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           name: coverage-xzawedDeveloper
           path: xzawedDeveloper/coverage
 
       - name: Download coverage - xzawedDesigner
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           name: coverage-xzawedDesigner
           path: xzawedDesigner/coverage
 
       - name: Download coverage - xzawedTester
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           name: coverage-xzawedTester
           path: xzawedTester/coverage
 
       - name: Download coverage - xzawedBuilder
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           name: coverage-xzawedBuilder
           path: xzawedBuilder/coverage
 
       - name: Download coverage - xzawedWatcher
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           name: coverage-xzawedWatcher
           path: xzawedWatcher/coverage
 
       - name: Download coverage - xzawedSecurity
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           name: coverage-xzawedSecurity
           path: xzawedSecurity/coverage
 
       - name: Download coverage - xzawedShared
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         continue-on-error: true
         with:
           name: coverage-xzawedShared
