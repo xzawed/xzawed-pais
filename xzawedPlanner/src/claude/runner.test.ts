@@ -177,6 +177,16 @@ describe('ClaudeRunner', () => {
     }
   })
 
+  it('fallback 시 경고를 로깅한다(무음 아님)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const mockClient = makeClient('계획을 세울 수 없습니다.')
+    AnthropicMock.mockImplementation(function () { return mockClient as any })
+    const runner = new ClaudeRunner('sk-ant-test', 'claude-sonnet-4-6')
+    await runner.generatePlan('API 서버 구축', {}, 'normal')
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
   it('빈 steps 배열 응답에서 fallback을 반환한다', async () => {
     const mockClient = makeClient(JSON.stringify({ steps: [], estimatedTime: '0 minutes' }))
     AnthropicMock.mockImplementation(function () { return mockClient as any })

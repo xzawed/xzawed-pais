@@ -177,6 +177,10 @@ export class ClaudeRunner {
   }
 
   private fallback(intent: string): { steps: Step[]; estimatedTime: string } {
+    // fallback은 JSON 미검출·비객체·PlanResponse safeParse 실패 경로에서만 호출된다 —
+    // 단일 generic step을 plan_complete로 발행하면 '실패한 계획'과 '정당한 1단계 계획'을
+    // Manager가 구분 못 하므로 파싱/검증 실패를 관측 가능화한다.
+    console.warn('[planner] LLM 응답 파싱/검증 실패 — 단일 generic step으로 폴백')
     return {
       steps: [{
         id: 'step-1',

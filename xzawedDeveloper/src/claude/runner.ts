@@ -101,6 +101,10 @@ export class ClaudeRunner {
         if (Array.isArray(parsed)) return { changes: parsed.filter(isFileChange) }
       } catch { /* noop */ }
     }
+    // 여기까지 오면 객체·배열 어느 형식으로도 유효한 changes를 못 얻은 것 = 파싱 실패.
+    // (정당한 빈 결과 {changes:[]}·[]는 위에서 조기 반환). 무로그 폴백은 malformed LLM
+    // 출력과 '변경 0건 성공'을 Manager가 구분 못 하게 만드므로 파싱 실패를 관측 가능화한다.
+    console.warn('[developer] LLM 응답 파싱 실패 — 유효한 changes 없음, 변경 0건으로 폴백')
     return { changes: [] }
   }
 

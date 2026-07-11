@@ -86,6 +86,14 @@ describe('ClaudeRunner.parseResponse', () => {
     expect(result.uiSpec.type).toBe('mockup_viewer')
   })
 
+  it('파싱 실패 시 경고를 로깅한다(무음 아님)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const result = asDesign(runner.parseResponse('컴포넌트를 만들 수 없습니다.', 'login form'))
+    expect(result.components[0]?.name).toBe('Component')
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
   it('uses fallback uiSpec when absent in response', () => {
     const result = asDesign(runner.parseResponse(
       '{"components":[{"name":"A","description":"b","props":{}}]}',
