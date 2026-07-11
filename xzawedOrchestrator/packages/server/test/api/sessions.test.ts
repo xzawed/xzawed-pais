@@ -148,4 +148,20 @@ describe('Sessions API', () => {
     expect(typeof publishCall.timestamp).toBe('number')
     expect(Array.isArray(publishCall.payload.context.history)).toBe(true)
   })
+
+  it('POST /sessions/:id/messages returns 400 for missing/empty/non-string content', async () => {
+    const { sessionId } = (await app.inject({ method: 'POST', url: '/sessions', payload: { userId: 'u' } })).json()
+    for (const payload of [{}, { content: '' }, { content: 123 }, { content: null }]) {
+      const res = await app.inject({ method: 'POST', url: `/sessions/${sessionId}/messages`, payload })
+      expect(res.statusCode).toBe(400)
+    }
+  })
+
+  it('POST /sessions/:id/messages returns 400 for unknown mode/gateMode', async () => {
+    const { sessionId } = (await app.inject({ method: 'POST', url: '/sessions', payload: { userId: 'u' } })).json()
+    const badMode = await app.inject({ method: 'POST', url: `/sessions/${sessionId}/messages`, payload: { content: 'hi', mode: 'nope' } })
+    expect(badMode.statusCode).toBe(400)
+    const badGate = await app.inject({ method: 'POST', url: `/sessions/${sessionId}/messages`, payload: { content: 'hi', gateMode: 'yolo' } })
+    expect(badGate.statusCode).toBe(400)
+  })
 })

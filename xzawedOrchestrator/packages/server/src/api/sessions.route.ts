@@ -382,6 +382,11 @@ export async function sessionsRoutes(
     return messageStore.get(req.params.id) ?? []
   })
 
+  const MessageBodySchema = z.object({
+    content: z.string().min(1),
+    gateMode: z.enum(['manual', 'auto']).optional(),
+    mode: z.enum(['chat', 'build']).optional(),
+  })
   app.post<{ Params: { id: string }; Body: { content: string; gateMode?: 'manual' | 'auto'; mode?: 'chat' | 'build' } }>(
     '/sessions/:id/messages',
     routeOpts,
@@ -389,6 +394,14 @@ export async function sessionsRoutes(
       const resolved = await resolveSession(req, reply)
       if (!resolved) return
       const { session } = resolved
+
+      // 수신 표면 런타임 검증: Body 제네릭은 컴파일 타임 주석일 뿐이라 malformed 본문
+      // (content 누락·비문자열·미지 mode/gateMode)이 400 없이 저장·실행되던 것을 봉합.
+      const bodyResult = MessageBodySchema.safeParse(req.body ?? {})
+      if (!bodyResult.success) {
+        return reply.status(400).send({ error: 'Invalid request body', details: bodyResult.error.flatten() })
+      }
+      const body = bodyResult.data
 
       const sessionId = req.params.id
       // Guard against concurrent message processing for the same session
@@ -400,14 +413,14 @@ export async function sessionsRoutes(
       let snapshot: Message[]
 
       if (msgRepo) {
-        await msgRepo.create(req.params.id, 'user', req.body.content)
+        await msgRepo.create(req.params.id, 'user', body.content)
         snapshot = await msgRepo.findBySession(req.params.id)
       } else {
         const msg: Message = {
           id: userMsgId,
           sessionId: req.params.id,
           role: 'user',
-          content: req.body.content,
+          content: body.content,
           timestamp: Date.now(),
         }
         const history = messageStore.get(req.params.id) ?? []
@@ -418,9 +431,9 @@ export async function sessionsRoutes(
       const capturedProjectId = session.projectId
       const capturedUserId = session.userId
       const capturedLocale = resolved.loc
-      const capturedGateMode = req.body.gateMode
-      const capturedMode = req.body.mode
-      const capturedContent = req.body.content
+      const capturedGateMode = body.gateMode
+      const capturedMode = body.mode
+      const capturedContent = body.content
 
       processingSessionIds.add(sessionId)
       // Live socket lookup, not a captured reference: a WS reconnect during the grace window
