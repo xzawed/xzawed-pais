@@ -15,6 +15,7 @@ import type { OracleScenario, OracleInvariant } from '../db/oracle.types.js'
 import { AbsoluteUserContextSchema } from '../types/user-context.js'
 import { buildOracleBrief } from './oracle-brief.js'
 import type { DecisionRequestInput } from './decision-brief.js'
+import { formatInconsistentReason, buildDecomposeFailureBrief } from './decompose-failure.js'
 
 // 단일 type 스트림(manager:decomposition:{wf})용 스키마 — 다른 type 메시지가 들어오면
 // BaseConsumer가 invalid_schema로 DLQ 격리한다(의도된 동작; P1d-4가 이 스트림을 다중화하면 재검토).
@@ -53,6 +54,10 @@ export interface DecompositionDeps {
   }
   /** C3: 주입 시 draft 영속 후 oracle_approval DecisionRequest 발행(MANAGER_ORACLE_DECISION). best-effort. */
   decisionStore?: { createRequest(input: DecisionRequestInput): Promise<unknown> }
+  /** C7 arm1(무조건): inconsistent 시 사람에게 error 노출(manager:to-orchestrator:{wf}). best-effort. */
+  notifyUser?: (workflowId: string, content: string) => Promise<void>
+  /** C7 arm2(MANAGER_DECISION_ROUTING): inconsistent 시 decompose_inconsistent DecisionRequest 발행. best-effort. */
+  failureDecisionStore?: { createRequest(input: DecisionRequestInput): Promise<unknown> }
 }
 
 export type DecompositionOutcome =
@@ -87,6 +92,33 @@ async function emitInconsistent(
   await deps.publish(stream, { envelope: env, type: 'decomposition.inconsistent', payload: { reason, ...extra } })
 }
 
+/** C7: inconsistent를 사람에게 노출 — arm1 notifyUser(error·무조건) + arm2 failureDecisionStore(decompose_inconsistent·projectId 존재 시). 둘 다 best-effort never-throw(소비 비차단). */
+async function surfaceInconsistent(
+  msg: DecompositionEmittedMessage,
+  deps: DecompositionDeps,
+  reason: InconsistentReason,
+  detail?: string,
+): Promise<void> {
+  const wf = msg.envelope.workflowId
+  if (deps.notifyUser) {
+    try {
+      await deps.notifyUser(wf, formatInconsistentReason(reason, detail))
+    } catch (err) {
+      console.warn('[decomposition] inconsistent notifyUser 실패(best-effort):', err)
+    }
+  }
+  const projectId = msg.payload.userContext?.projectId ?? null
+  if (deps.failureDecisionStore && projectId !== null) {
+    try {
+      await deps.failureDecisionStore.createRequest(
+        buildDecomposeFailureBrief({ workflowId: wf, projectId, reason, ...(detail !== undefined && { detail }) }),
+      )
+    } catch (err) {
+      console.warn('[decomposition] decompose_inconsistent 발행 실패(best-effort):', err)
+    }
+  }
+}
+
 /** 결정론 소비 핸들러: build → (구조오류|사이클 → inconsistent 발행) | (정상 → upsert). LLM 호출 0. */
 export async function handleDecompositionEmitted(
   msg: DecompositionEmittedMessage,
@@ -98,12 +130,15 @@ export async function handleDecompositionEmitted(
   try {
     graph = buildTaskGraph(wps)
   } catch (e) {
-    await emitInconsistent(msg, deps, 'structural', { detail: (e as Error).message })
+    const detail = (e as Error).message
+    await emitInconsistent(msg, deps, 'structural', { detail })
+    await surfaceInconsistent(msg, deps, 'structural', detail)
     return { status: 'inconsistent', reason: 'structural' }
   }
   const cycles = detectCycle(graph)
   if (cycles.length > 0) {
     await emitInconsistent(msg, deps, 'cycle', { cycles })
+    await surfaceInconsistent(msg, deps, 'cycle')
     return { status: 'inconsistent', reason: 'cycle' }
   }
   const { version } = await deps.repo.upsertGraph({
@@ -151,12 +186,16 @@ export function buildDecompositionConsumerHandler(
   afterPersisted?: (workflowId: string) => Promise<void>,
   oracleStore?: DecompositionDeps['oracleStore'],
   decisionStore?: DecompositionDeps['decisionStore'],
+  notifyUser?: DecompositionDeps['notifyUser'],
+  failureDecisionStore?: DecompositionDeps['failureDecisionStore'],
 ): (msg: DecompositionEmittedMessage) => Promise<void> {
   return async (msg) => {
     const outcome = await handleDecompositionEmitted(msg, {
       repo, publish,
       ...(oracleStore && { oracleStore }),
       ...(decisionStore && { decisionStore }),
+      ...(notifyUser && { notifyUser }),
+      ...(failureDecisionStore && { failureDecisionStore }),
     })
     if (outcome.status === 'persisted' && afterPersisted) {
       await afterPersisted(msg.envelope.workflowId)
@@ -172,10 +211,12 @@ export class DecompositionConsumer extends BaseConsumer<DecompositionEmittedMess
     afterPersisted?: (workflowId: string) => Promise<void>,
     oracleStore?: DecompositionDeps['oracleStore'],
     decisionStore?: DecompositionDeps['decisionStore'],
+    notifyUser?: DecompositionDeps['notifyUser'],
+    failureDecisionStore?: DecompositionDeps['failureDecisionStore'],
   ) {
     super(
       redis,
-      buildDecompositionConsumerHandler(repo, publish, afterPersisted, oracleStore, decisionStore),
+      buildDecompositionConsumerHandler(repo, publish, afterPersisted, oracleStore, decisionStore, notifyUser, failureDecisionStore),
       CONSUMER_GROUP,
       `manager-taskgraph-${process.pid}`,
       STREAM_PREFIX,

@@ -60,7 +60,7 @@ describe('handleDecomposeRequest', () => {
     const ensureWs = vi.fn().mockResolvedValue(undefined)
     const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
 
-    await handleDecomposeRequest('sess-uc', 'build it', mockDecompose(emitPublish), { publish: producerPublish }, cleanup, uc, undefined, ensureWs)
+    await handleDecomposeRequest('sess-uc', 'build it', mockDecompose(emitPublish), { publish: producerPublish }, cleanup, uc, undefined, undefined, ensureWs)
 
     expect(ensureWs).toHaveBeenCalledWith(uc)
     const emitMsg = emitPublish.mock.calls[0]![1]
@@ -71,7 +71,7 @@ describe('handleDecomposeRequest', () => {
   it('userContext 미전달 시 ensureWs 미호출 + payload에 userContext 키 없음', async () => {
     const emitPublish = vi.fn().mockResolvedValue('1-0')
     const ensureWs = vi.fn().mockResolvedValue(undefined)
-    await handleDecomposeRequest('sess-no-uc', 'build it', mockDecompose(emitPublish), { publish: vi.fn().mockResolvedValue('1-0') }, vi.fn().mockResolvedValue(undefined), undefined, undefined, ensureWs)
+    await handleDecomposeRequest('sess-no-uc', 'build it', mockDecompose(emitPublish), { publish: vi.fn().mockResolvedValue('1-0') }, vi.fn().mockResolvedValue(undefined), undefined, undefined, undefined, ensureWs)
     expect(ensureWs).not.toHaveBeenCalled()
     expect(emitPublish.mock.calls[0]![1].payload).not.toHaveProperty('userContext')
   })
@@ -83,7 +83,7 @@ describe('handleDecomposeRequest', () => {
     const ensureWs = vi.fn().mockRejectedValue(new Error('WORKSPACE_ROOT must not be filesystem root'))
     const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/' }
     await expect(
-      handleDecomposeRequest('sess-bad-ws', 'x', mockDecompose(emitPublish), { publish: producerPublish }, cleanup, uc, undefined, ensureWs),
+      handleDecomposeRequest('sess-bad-ws', 'x', mockDecompose(emitPublish), { publish: producerPublish }, cleanup, uc, undefined, undefined, ensureWs),
     ).rejects.toThrow(/filesystem root/)
     expect(emitPublish).not.toHaveBeenCalled()
     // task_request 경로 대칭 — 요청자가 무한 대기하지 않도록 error 메시지를 발행
@@ -100,7 +100,7 @@ describe('handleDecomposeRequest', () => {
     const ensureWs = vi.fn().mockRejectedValue(new Error('original failure'))
     const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/' }
     await expect(
-      handleDecomposeRequest('sess-double-fail', 'x', mockDecompose(vi.fn()), badProducer, cleanup, uc, undefined, ensureWs),
+      handleDecomposeRequest('sess-double-fail', 'x', mockDecompose(vi.fn()), badProducer, cleanup, uc, undefined, undefined, ensureWs),
     ).rejects.toThrow(/original failure/)
     expect(cleanup).toHaveBeenCalledTimes(1)
   })
@@ -124,6 +124,7 @@ describe('handleDecomposeRequest', () => {
       'sess-risk-reject', 'intent', mockDecompose(emitPublish), { publish: producerPublish }, cleanup,
       uc as never,
       riskClassify,
+      undefined,
       vi.fn().mockResolvedValue(undefined), // mock ensureWs — 실제 mkdir('/ws') 회피(CI EACCES)
     )
     // 리스크 분류가 reject했음에도 분해 경로는 그대로 완료
@@ -149,6 +150,7 @@ describe('handleDecomposeRequest', () => {
       'sess-risk', 'intent', mockDecompose(emitPublish), { publish: producerPublish }, cleanup,
       uc as never,
       riskClassify,
+      undefined,
       vi.fn().mockResolvedValue(undefined), // mock ensureWs — 실제 mkdir('/ws') 회피(CI EACCES)
     )
     // 1) riskClassify가 있으면 produceRiskClassification이 실제로 호출됨(인자 순서 단언)
@@ -158,7 +160,7 @@ describe('handleDecomposeRequest', () => {
     expect(producerPublish).toHaveBeenCalledWith(expect.objectContaining({ type: 'task_complete' }))
   })
 
-  it('수렴 실패 시 에스컬레이션 메시지 task_complete', async () => {
+  it('수렴 실패 시 에스컬레이션은 error 타입으로 발행(task_complete 아님)', async () => {
     const emitPublish = vi.fn().mockResolvedValue('1-0')
     const producerPublish = vi.fn().mockResolvedValue('1-0')
     const cleanup = vi.fn().mockResolvedValue(undefined)
@@ -173,11 +175,46 @@ describe('handleDecomposeRequest', () => {
 
     await handleDecomposeRequest('sess-3', 'build', decompose, { publish: producerPublish }, cleanup)
 
-    const completeMsg = producerPublish.mock.calls[0]![0]
-    expect(completeMsg.type).toBe('task_complete')
-    expect(completeMsg.payload.content).toContain('에스컬레이션')
+    const escMsg = producerPublish.mock.calls[0]![0]
+    expect(escMsg.type).toBe('error')                       // 재타이핑(escalation≠완료)
+    expect(escMsg.payload.content).toContain('분해 불일치')
+    expect(escMsg.payload.content).toContain('커버리지')
     const emitMsg = emitPublish.mock.calls[0]![1]
-    expect(emitMsg.type).toBe('decomposition.inconsistent')
+    expect(emitMsg.type).toBe('decomposition.inconsistent') // 진실원천 보존
     expect(cleanup).toHaveBeenCalledTimes(1)
+  })
+
+  it('수렴 실패 + decisionStore 주입 + projectId → decompose_inconsistent createRequest', async () => {
+    const producerPublish = vi.fn().mockResolvedValue('1-0')
+    const cleanup = vi.fn().mockResolvedValue(undefined)
+    const decisionStore = { createRequest: vi.fn().mockResolvedValue({ eventId: 'e1' }) }
+    const decompose = stagedDecompose(
+      vi.fn().mockResolvedValue('1-0'),
+      '{"epics":[{"epicRef":"e1","title":"T"}]}',
+      '{"stories":[{"storyId":"s1","epicRef":"e1","title":"T","deliverableIds":["d1"],"acceptanceCriteria":["x"]}]}',
+      '{"deliverables":["d1","d2"]}',
+      'garbage', 'garbage',
+    )
+    const uc = { userId: 'u', projectId: 'p9', workspaceRoot: '/ws' }
+
+    await handleDecomposeRequest('sess-esc-dec', 'build', decompose, { publish: producerPublish }, cleanup, uc as never, undefined, decisionStore, vi.fn().mockResolvedValue(undefined))
+
+    expect(decisionStore.createRequest).toHaveBeenCalledTimes(1)
+    const brief = decisionStore.createRequest.mock.calls[0]![0]
+    expect(brief.type).toBe('decompose_inconsistent')
+    expect(brief.projectId).toBe('p9')
+  })
+
+  it('수렴 실패 + decisionStore 미주입 → createRequest 미호출(error만)', async () => {
+    const producerPublish = vi.fn().mockResolvedValue('1-0')
+    const decompose = stagedDecompose(
+      vi.fn().mockResolvedValue('1-0'),
+      '{"epics":[{"epicRef":"e1","title":"T"}]}',
+      '{"stories":[{"storyId":"s1","epicRef":"e1","title":"T","deliverableIds":["d1"],"acceptanceCriteria":["x"]}]}',
+      '{"deliverables":["d1","d2"]}',
+      'garbage', 'garbage',
+    )
+    await handleDecomposeRequest('sess-esc-nodec', 'build', decompose, { publish: producerPublish }, vi.fn().mockResolvedValue(undefined))
+    expect(producerPublish.mock.calls[0]![0].type).toBe('error')
   })
 })

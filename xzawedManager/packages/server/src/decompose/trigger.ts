@@ -3,6 +3,8 @@ import type { UserContext } from '../types/user-context.js'
 import { ensureWorkspace } from '../workspace.js'
 import { produceDecomposition, type ProduceDeps } from './producer.js'
 import { produceRiskClassification, type RiskClassifyDeps } from './risk-producer.js'
+import { formatInconsistentReason, buildDecomposeFailureBrief } from '../streams/decompose-failure.js'
+import type { DecisionRequestInput } from '../streams/decision-brief.js'
 
 /**
  * decompose_request 처리 글루: (P4a-2) 워크스페이스 보장 → 분해 생산(→decomposition.emitted) →
@@ -18,6 +20,7 @@ export async function handleDecomposeRequest(
   cleanup: () => Promise<void>,
   userContext?: UserContext,
   riskClassify?: RiskClassifyDeps,
+  decisionStore?: { createRequest(input: DecisionRequestInput): Promise<unknown> },
   ensureWs: (uc: UserContext) => Promise<void> = ensureWorkspace,
 ): Promise<void> {
   try {
@@ -25,22 +28,37 @@ export async function handleDecomposeRequest(
       await ensureWs(userContext)
     }
     const { emitted, escalated } = await produceDecomposition(intent, sessionId, decompose, userContext)
-    // P2r-3: 프로젝트 리스크 분류(best-effort·never-throw·미승인 pending). decompose 결과와 무관.
+    // P2r-3: 프로젝트 리스크 분류(best-effort·never-throw). decompose 결과와 무관.
     if (riskClassify !== undefined) {
-      // P2r-3 best-effort: 리스크 분류 실패가 분해 경로(task_complete·M8)를 절대 깨지 않도록 구조적으로 격리.
-      // produceRiskClassification은 never-throw 계약이지만 여기서 한 번 더 차단(계약 위반·향후 변경 방어).
       await produceRiskClassification(intent, sessionId, riskClassify, userContext).catch(() => undefined)
     }
-    const content = escalated
-      ? '분해 불일치: 커버리지 수렴 실패 — 사람 검토 필요(에스컬레이션)'
-      : `분해 완료: ${emitted} WP emitted`
-    await producer.publish({
-      sessionId,
-      messageId: crypto.randomUUID(),
-      timestamp: Date.now(),
-      type: 'task_complete',
-      payload: { agentId: 'manager', content },
-    })
+    if (escalated) {
+      // C7: producer escalation은 항상 coverage(repair 소진). escalation은 완료가 아니므로 error로 발행(재타이핑).
+      await producer.publish({
+        sessionId,
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now(),
+        type: 'error',
+        payload: { agentId: 'manager', content: formatInconsistentReason('coverage') },
+      })
+      // C7 arm2: decisionStore 주입 + projectId 존재 시 decompose_inconsistent DecisionRequest(best-effort).
+      const projectId = userContext?.projectId
+      if (decisionStore && projectId) {
+        try {
+          await decisionStore.createRequest(buildDecomposeFailureBrief({ workflowId: sessionId, projectId, reason: 'coverage' }))
+        } catch (err) {
+          console.warn('[decompose] decompose_inconsistent 발행 실패(best-effort):', err)
+        }
+      }
+    } else {
+      await producer.publish({
+        sessionId,
+        messageId: crypto.randomUUID(),
+        timestamp: Date.now(),
+        type: 'task_complete',
+        payload: { agentId: 'manager', content: `분해 완료: ${emitted} WP emitted` },
+      })
+    }
   } catch (err) {
     // M8 무음 통과 금지: 실패(워크스페이스 검증·발행 등)를 요청자에게 error로 알린 뒤 재던진다
     // (task_request 경로 대칭 — 미발행 시 세션이 응답 없이 해체돼 무한 대기). 에러 발행 자체가

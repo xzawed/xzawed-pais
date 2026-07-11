@@ -27,6 +27,8 @@ export interface SessionsRouteOptions {
   decompose?: ProduceDeps
   /** P2r-3: 주입되면(flag on) decompose 완료 후 리스크 분류를 생산한다. 미주입이면 분기 무시. */
   riskClassify?: RiskClassifyDeps
+  /** C7: 주입되면(MANAGER_DECISION_ROUTING) decompose escalation을 decompose_inconsistent DecisionRequest로도 발행. */
+  decisionStore?: { createRequest(input: import('../streams/decision-brief.js').DecisionRequestInput): Promise<unknown> }
 }
 
 export function makeSessionStarter(
@@ -36,6 +38,7 @@ export function makeSessionStarter(
     watcherEventConsumer?: WatcherEventConsumer
     decompose?: ProduceDeps
     riskClassify?: RiskClassifyDeps
+    decisionStore?: SessionsRouteOptions['decisionStore']
     log: { error: (obj: unknown, msg: string) => void }
   },
 ) {
@@ -123,6 +126,7 @@ export function makeSessionStarter(
           cleanupSession,
           msg.payload.userContext, // P4a-2: 워크스페이스 컨텍스트 — 그래프 영속→실행 워커 주입
           opts.riskClassify, // P2r-3
+          opts.decisionStore, // C7 arm2
         ).catch((err: unknown) => {
           opts.log.error({ err, sessionId }, 'decompose_request handler error')
         })
@@ -164,6 +168,7 @@ export async function sessionsRoute(
     ...(opts.watcherEventConsumer !== undefined && { watcherEventConsumer: opts.watcherEventConsumer }),
     ...(opts.decompose !== undefined && { decompose: opts.decompose }),
     ...(opts.riskClassify !== undefined && { riskClassify: opts.riskClassify }),
+    ...(opts.decisionStore !== undefined && { decisionStore: opts.decisionStore }),
     log: { error: (obj, msg) => app.log.error(obj, msg) },
   })
 

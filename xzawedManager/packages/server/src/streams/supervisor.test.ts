@@ -3,7 +3,7 @@ import { makeEnvelope } from '@xzawed/agent-streams'
 import {
   buildCompletionHandler, CompletionSignalSchema, Supervisor, createSupervisor, shouldWireSupervisor,
   shouldWireOracleConsumer, shouldWireDecisionRoute, shouldWireRiskConsumer, buildWorkerConsumerDeps, shouldWireGoldenSignoff,
-  drainHeld, buildDispatchGate, shouldWireDegradedSignoff,
+  drainHeld, buildDispatchGate, shouldWireDegradedSignoff, shouldWireFailureDecision,
 } from './supervisor.js'
 import type { LeaseStore } from '../db/lease.repo.js'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
@@ -551,5 +551,17 @@ describe('shouldWireDegradedSignoff', () => {
     expect(shouldWireDegradedSignoff(true, true)).toBe(true)
     expect(shouldWireDegradedSignoff(true, false)).toBe(false)
     expect(shouldWireDegradedSignoff(false, true)).toBe(false)
+  })
+})
+
+describe('shouldWireFailureDecision (C7)', () => {
+  it('decisionRouting + decisionStore 둘 다면 true', () => {
+    expect(shouldWireFailureDecision(true, true)).toBe(true)
+  })
+  it('decisionRouting off면 false', () => {
+    expect(shouldWireFailureDecision(false, true)).toBe(false)
+  })
+  it('decisionStore 미주입이면 false', () => {
+    expect(shouldWireFailureDecision(true, false)).toBe(false)
   })
 })
