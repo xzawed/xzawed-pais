@@ -138,6 +138,9 @@ export class ClaudeRunner {
   }
 
   private fallback(intent: string): { components: ComponentSpec[]; uiSpec: UISpec } {
+    // fallback은 파싱/검증 실패 경로에서만 호출된다 — generic stub을 design_complete로
+    // 발행하면 malformed LLM 출력이 '성공'으로 위장되므로 파싱 실패를 관측 가능화한다.
+    console.warn('[designer] LLM 응답 파싱 실패 — 컴포넌트 스펙 없음, generic 폴백 사용')
     return {
       components: [{
         name: 'Component',

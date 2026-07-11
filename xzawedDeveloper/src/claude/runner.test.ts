@@ -39,6 +39,14 @@ describe('ClaudeRunner.parseResponse', () => {
     expect(result.knowledge).toBeUndefined()
   })
 
+  it('파싱 실패 시 경고를 로깅하고 변경 0건으로 폴백한다(무음 아님)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const result = runner.parseResponse('죄송하지만 코드를 생성할 수 없습니다.')
+    expect(result.changes).toEqual([])
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
   it('레거시 배열 형식도 계속 지원한다(하위호환)', () => {
     const input = JSON.stringify([{ path: 'src/a.ts', operation: 'create', content: 'x' }])
     const { changes, knowledge } = runner.parseResponse(input)
