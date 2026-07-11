@@ -90,6 +90,9 @@ async function runNpmAudit(npmPath: string, validPath: string): Promise<Security
     if (e && typeof e === 'object' && 'stdout' in e && typeof (e as { stdout: unknown }).stdout === 'string') {
       stdout = (e as { stdout: string }).stdout
     } else {
+      // 감사 불능(도구 부재·네트워크·package.json 없음)을 빈 결과로 fail-open한다 —
+      // '감사 불능'과 '취약점 없음'을 Manager가 구분 못 하므로 최소 로그로 관측 가능화.
+      console.warn('[security] npm audit 실행 실패 — 취약점 미검출로 fail-open(감사 불능 ≠ 안전):', e)
       return []
     }
   }
@@ -98,6 +101,7 @@ async function runNpmAudit(npmPath: string, validPath: string): Promise<Security
   try {
     auditData = JSON.parse(stdout) as NpmAuditOutput
   } catch {
+    console.warn('[security] npm audit 출력 JSON 파싱 실패 — 취약점 미검출로 fail-open')
     return []
   }
 
@@ -136,6 +140,7 @@ async function runPnpmAudit(pnpmPath: string, validPath: string): Promise<Securi
     if (e && typeof e === 'object' && 'stdout' in e && typeof (e as { stdout: unknown }).stdout === 'string') {
       stdout = (e as { stdout: string }).stdout
     } else {
+      console.warn('[security] pnpm audit 실행 실패 — 취약점 미검출로 fail-open(감사 불능 ≠ 안전):', e)
       return []
     }
   }
@@ -144,6 +149,7 @@ async function runPnpmAudit(pnpmPath: string, validPath: string): Promise<Securi
   try {
     auditData = JSON.parse(stdout) as PnpmAuditOutput
   } catch {
+    console.warn('[security] pnpm audit 출력 JSON 파싱 실패 — 취약점 미검출로 fail-open')
     return []
   }
 

@@ -84,6 +84,19 @@ describe('auditDeps', () => {
     expect(result).toEqual([])
   })
 
+  it('audit 실행 실패(감사 불능) 시 경고를 로깅한다 — 무음 fail-open 아님', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mockExecFile.mockImplementation(
+      ((_c: unknown, _a: unknown, _o: unknown, cb: (err: Error) => void) => {
+        cb(new Error('not found'))
+      }) as never,
+    )
+    const result = await auditDeps('/workspace/app', '/workspace')
+    expect(result).toEqual([])
+    expect(warn).toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
   it('parses npm audit JSON output into SecurityIssue[]', async () => {
     mockExecFile.mockImplementationOnce(cbSuccess(npmAuditOutput) as never)
 
