@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 import { useWizardStore } from '../../stores/wizard.store.js'
 import StepWelcome from './StepWelcome.js'
 import StepDocker from './StepDocker.js'

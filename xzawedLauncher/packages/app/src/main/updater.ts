@@ -1,7 +1,7 @@
 import { autoUpdater } from 'electron-updater'
 import { BrowserWindow, ipcMain } from 'electron'
 
-type ReleaseNote = string | { note?: string }
+type ReleaseNote = string | { note?: string | null }
 
 function resolveReleaseNotes(releaseNotes: string | ReleaseNote[] | null | undefined): string {
   if (typeof releaseNotes === 'string') return releaseNotes

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { useWizardStore } from '../../stores/wizard.store.js'
 import { useServicesStore } from '../../stores/services.store.js'
 import { SERVICE_NAMES } from '@xzawed/launcher-shared'

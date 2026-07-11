@@ -111,12 +111,12 @@ export async function getServiceStatuses(): Promise<ServiceState[]> {
     const rows = out.trim().split('\n').filter(Boolean).flatMap((l) => {
       try { return [JSON.parse(l) as Record<string, unknown>] } catch { return [] }
     })
-    return rows.map((r: { Name: string; State: string; Health?: string }) => {
-      const name = r.Name.replace(/^xzawed[_-]/, '').replace(/[_-]\d+$/, '') as ServiceName
+    return rows.map((r) => {
+      const name = String(r['Name'] ?? '').replace(/^xzawed[_-]/, '').replace(/[_-]\d+$/, '') as ServiceName
       let status: ServiceStatus = 'stopped'
-      if (r.State === 'running' && r.Health === 'healthy') status = 'running'
-      else if (r.State === 'running') status = 'starting'
-      else if (r.State === 'restarting') status = 'restarting'
+      if (r['State'] === 'running' && r['Health'] === 'healthy') status = 'running'
+      else if (r['State'] === 'running') status = 'starting'
+      else if (r['State'] === 'restarting') status = 'restarting'
       else if (r.State === 'exited') status = 'error'
       return { name, status, port: PORT_MAP[name] }
     })

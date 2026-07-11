@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type JSX } from 'react'
 import { useWizardStore } from '../../stores/wizard.store.js'
 
 export default function StepClaude(): JSX.Element {

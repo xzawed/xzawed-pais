@@ -5,6 +5,7 @@
     "dev": "pnpm --filter @xzawed/launcher-app dev",
     "build": "pnpm --filter @xzawed/launcher-shared build && pnpm --filter @xzawed/launcher-app build",
     "test": "pnpm --filter @xzawed/launcher-app test",
+    "typecheck": "pnpm --filter @xzawed/launcher-app typecheck",
     "package": "pnpm --filter @xzawed/launcher-app package"
   },
   "pnpm": {

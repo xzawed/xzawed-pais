@@ -132,6 +132,8 @@ function registerIpc(w: BrowserWindow): void {
   registerServiceIpc(w)
 }
 
+let trayInterval: ReturnType<typeof setInterval> | undefined
+
 app.whenReady().then(() => {
   const w = createWindow()
   registerIpc(w)
@@ -139,7 +141,7 @@ app.whenReady().then(() => {
   initUpdater(w)
 
   // Poll service statuses to update tray icon color
-  const trayInterval = setInterval(async () => {
+  trayInterval = setInterval(async () => {
     try {
       const { getServiceStatuses } = await import('./docker-manager.js')
       const states = await getServiceStatuses()
@@ -158,7 +160,7 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
-  clearInterval(trayInterval)
+  if (trayInterval) clearInterval(trayInterval)
   stopMonitoring()
   // Stop the Docker Compose stack when the user quits the app.
   // Note: before-quit is synchronous so we cannot await this; the containers

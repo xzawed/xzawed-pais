@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type JSX } from 'react'
 import { useWizardStore } from '../../stores/wizard.store.js'
 
 export default function StepDocker(): JSX.Element {
