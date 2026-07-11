@@ -20,7 +20,7 @@
     "@xzawed/agent-streams": "file:../../../xzawedShared",
     "fastify": "^5.10.0",
     "ioredis": "^5.6.0",
-    "pg": "^8.20.0",
+    "pg": "^8.22.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
