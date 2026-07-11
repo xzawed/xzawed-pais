@@ -30,7 +30,10 @@ export async function handleDecomposeRequest(
     const { emitted, escalated } = await produceDecomposition(intent, sessionId, decompose, userContext)
     // P2r-3: 프로젝트 리스크 분류(best-effort·never-throw). decompose 결과와 무관.
     if (riskClassify !== undefined) {
-      await produceRiskClassification(intent, sessionId, riskClassify, userContext).catch(() => undefined)
+      await produceRiskClassification(intent, sessionId, riskClassify, userContext).catch((err: unknown) =>
+        // best-effort·분해 비차단이나 무로그 swallow는 상시 실패(전 워크플로 MEDIUM 고정 열화)를 감지 불가로 만든다.
+        console.warn('[decompose] 리스크 분류 실패(best-effort·분해 비차단):', err),
+      )
     }
     if (escalated) {
       // C7: producer escalation은 항상 coverage(repair 소진). escalation은 완료가 아니므로 error로 발행(재타이핑).
