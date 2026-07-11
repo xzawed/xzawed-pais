@@ -298,6 +298,13 @@ export async function buildServer(
       'MANAGER_TASK_WORKER=true 이지만 TASK_MANAGER_ENABLED+DATABASE_URL 전제가 없어 실행 워커가 배선되지 않습니다(WP 미실행).',
     )
   }
+  // 역: Supervisor는 배선되나 실행 워커가 없으면 dispatch된 WP가 DISPATCHED에서 무음 정지한다
+  // (아무도 wp.dispatch_signal을 소비하지 않아 lease 만료→escalation으로만 드러남). 조용한 stall 오진 방지 경고.
+  if (config.TASK_MANAGER_ENABLED && pool && !config.MANAGER_TASK_WORKER) {
+    app.log.warn(
+      'TASK_MANAGER_ENABLED=true 이지만 MANAGER_TASK_WORKER=false — Supervisor가 WP를 DISPATCHED로 올리나 실행 워커가 없어 WP가 무음 정지합니다(lease 만료 시 escalation으로만 드러남).',
+    )
+  }
 
   // P4b-1: 검증 게이트는 워커가 배선돼야 의미가 있다 — 전제 없이 켜면 무동작. 오진 방지 경고.
   if (config.MANAGER_WP_VERIFY && !config.MANAGER_TASK_WORKER) {
