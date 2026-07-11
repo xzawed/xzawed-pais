@@ -1,3 +1,4 @@
+import type { JSX } from 'react'
 import { useWizardStore } from '../../stores/wizard.store.js'
 
 export default function StepWelcome(): JSX.Element {

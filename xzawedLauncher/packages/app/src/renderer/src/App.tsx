@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type JSX } from 'react'
 import WizardLayout from './components/wizard/WizardLayout.js'
 import Dashboard from './components/dashboard/Dashboard.js'
 import UpdateModal from './components/UpdateModal.js'

@@ -1,3 +1,5 @@
+import type { JSX } from 'react'
+
 interface Props { onComplete: () => void }
 
 export default function StepComplete({ onComplete }: Readonly<Props>): JSX.Element {

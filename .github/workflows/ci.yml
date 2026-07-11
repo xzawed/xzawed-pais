@@ -225,6 +225,12 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
         run: pnpm build
 
+      - name: Type Check
+        working-directory: xzawedLauncher
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: pnpm typecheck
+
       - name: Test
         working-directory: xzawedLauncher
         env:
