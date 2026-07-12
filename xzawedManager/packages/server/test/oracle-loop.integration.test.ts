@@ -10,7 +10,13 @@ const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL']
 
 // blocker#1(draft-only 영속)·#10(루프 실증) 포착: 실 Postgres로 영속→승인→DoR 충족 루프를 닫는다.
 // DB URL 없으면 skip(로컬·CI 환경 따라). 새 migration 없음(given/when/then은 scenarios JSONB 내부).
-describe.skipIf(!url)('P3-2 오라클 루프 통합(영속→승인→DoR)', () => {
+//
+// retry: 2 — 이 파일의 approvedOracleForStory 테스트가 CI 공유-pg 전체 스위트에서
+// 극히 드물게 transient 실패한 이력이 있으나(#397 1회), 로컬 pg+redis 77회 반복
+// (격리·병렬·직렬·직렬+redis)으로도 재현 불가. leaky 타이머·module-singleton
+// cross-file·데이터 오염(고유 workflow_id) 가설 모두 코드 조사로 배제. 재현 없는 추측
+// 수정 대신 bounded retry로 rare transient만 흡수한다(결정적 실패는 3회 모두 실패 → 마스킹 아님).
+describe.skipIf(!url)('P3-2 오라클 루프 통합(영속→승인→DoR)', { retry: 2 }, () => {
   it('upsertDraft(drafted) → approve(전이) → approvedByWorkflow → oracleSatisfiedSet이 WP를 satisfied로 산출', async () => {
     const pool = createPool(url!)
     // try/finally: assertion 실패 시에도 pool teardown 보장(미정리 시 Vitest 행).
