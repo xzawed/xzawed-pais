@@ -13,6 +13,11 @@ export { resolveWorkspaceRoot }
 
 type BuilderPayload = ManagerToBuilderMessage['payload']
 
+// 빌드 명령 allowlist는 의도적으로 관용적이다 — 사용자 자기 프로젝트를 다양한 툴체인으로
+// 빌드해야 하므로 npx/npm/pnpm/yarn 등이 임의 하위명령을 받아야 한다("빌드=임의 코드 실행"은
+// 빌드 에이전트의 본질적 기능). **진짜 방어는 executor.ts의 spawn(shell:false)**(셸 미경유 →
+// 메타문자·체이닝 무효)이며, 아래 allowlist + 메타문자 차단은 defense-in-depth다. 프리픽스를
+// 좁히면 legit 빌드(npx vite build·npm run build 등)를 깨므로 축소하지 않는다.
 const ALLOWED_PREFIXES = [
   'pnpm', 'npm', 'npx', 'yarn',
   'cargo build', 'make build', 'cmake',
@@ -28,7 +33,9 @@ function validateBuildCommand(cmd: string): void {
   if (!isAllowed) {
     throw new Error(`Build command not allowed: ${normalized}`)
   }
-  if (/[;&|`$><]/.test(normalized)) {
+  // 셸 메타문자 + 개행 차단(defense-in-depth). spawn(shell:false)이라 실제로는 무해하나,
+  // trim은 내부 개행을 남기므로 `npm run build\n<임의명령>` 류 주입 시도를 조기 거부한다.
+  if (/[;&|`$><\n\r]/.test(normalized)) {
     throw new Error(`Shell metacharacters are not permitted in build command`)
   }
 }

@@ -134,6 +134,11 @@ describe('Builder', () => {
     expectError('Shell metacharacters')
   })
 
+  it('allowlist 프리픽스로 시작해도 내부 개행 뒤 임의 명령은 거부한다 (defense-in-depth)', async () => {
+    await builder.handle(buildRequest({ command: 'npm run build\nrm -rf /' }))
+    expectError('Shell metacharacters')
+  })
+
   it('prefix 단어 경계 없이 이어지는 command는 거부한다 (e.g. pnpmbuild-arbitrary)', async () => {
     await builder.handle(buildRequest({ command: 'pnpmbuild-arbitrary' }))
     expectError('Build command not allowed')
