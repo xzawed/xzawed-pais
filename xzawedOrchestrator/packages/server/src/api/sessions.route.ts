@@ -151,7 +151,11 @@ export async function publishTaskToManager(
   pool?: Pool,
   locale: ServerLocale = 'ko',
   gateMode?: 'manual' | 'auto',
-): Promise<boolean> {
+): Promise<void> {
+  // chat(task) 경로는 로컬 러너가 이미 응답을 스트리밍한 뒤의 best-effort 다운스트림
+  // 전달이다. Manager/Redis 미가용이 chat 턴 완료('done')를 막지 않도록 실패를 비차단으로
+  // 삼킨다(로컬 chat 복원력). 전달이 유일 액션인 build 경로(publishDecomposeToManager)만
+  // 실패를 error로 표면화한다.
   const userContext = await buildUserContext(session, pool)
   try {
     await producer.publish({
@@ -168,11 +172,8 @@ export async function publishTaskToManager(
       },
     })
     getSocket()?.send(JSON.stringify({ type: 'status', content: t('status.forwarding', locale) }))
-    return true
   } catch (publishErr: unknown) {
-    // 비차단(크래시 방지)이나 성공/실패를 반환해 호출부가 드롭을 'done'으로 위장하지 않게 한다.
     log.warn({ err: publishErr }, 'Redis publish failed — Manager unavailable, skipping forwarding')
-    return false
   }
 }
 
@@ -452,6 +453,8 @@ export async function sessionsRoutes(
           if (shouldDecompose(capturedMode, decomposeEnabled)) {
             const userContext = await buildUserContext({ userId: capturedUserId, projectId: capturedProjectId }, pool)
             taskStore.create(sessionId, capturedContent)
+            // build 경로는 러너 스트리밍이 없고 Manager 전달이 유일 액션이다. 전달 실패 시
+            // 'done'은 아무것도 안 됐는데 완료로 위장하는 사일런트 실패이므로 error로 표면화.
             const forwarded = await publishDecomposeToManager(producer, sessionId, capturedContent, userContext, getSocket, app.log, capturedLocale)
             getSocket()?.send(JSON.stringify(forwarded
               ? { type: 'done', messageId: assistantMsgId }
@@ -473,11 +476,11 @@ export async function sessionsRoutes(
           taskStore.create(sessionId, intent)
 
           const capturedSession = { userId: capturedUserId, projectId: capturedProjectId }
-          const forwarded = await publishTaskToManager(producer, sessionId, intent, snapshot, capturedSession, getSocket, app.log, pool, capturedLocale, capturedGateMode)
+          // 러너가 이미 응답을 스트리밍했으므로 chat 턴은 완료됨('done'). Manager 전달은
+          // best-effort 다운스트림 트리거라 실패해도 턴을 error로 뒤집지 않는다.
+          await publishTaskToManager(producer, sessionId, intent, snapshot, capturedSession, getSocket, app.log, pool, capturedLocale, capturedGateMode)
 
-          getSocket()?.send(JSON.stringify(forwarded
-            ? { type: 'done', messageId: assistantMsgId }
-            : { type: 'error', content: t('error.processing_error', capturedLocale) }))
+          getSocket()?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
         } catch (err) {
           req.log.error({ err, sessionId }, 'Session processing error')
           getSocket()?.send(JSON.stringify({ type: 'error', content: t('error.processing_error', capturedLocale) }))

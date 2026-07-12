@@ -175,14 +175,15 @@ describe('publishDecomposeToManager', () => {
   })
 })
 
-describe('publishTaskToManager — 발행 성공/실패 반환', () => {
-  it('publish 성공 시 true, 실패 시 false 반환(드롭을 done으로 위장 방지)', async () => {
-    await expect(
-      publishTaskToManager(makeProducer(), SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, () => undefined, makeLog()),
-    ).resolves.toBe(true)
+// publishTaskToManager(chat 경로)는 러너 스트리밍 후 best-effort 전달이라 실패해도 비차단
+// (반환값 없음). Manager 미가용이 chat 턴 완료를 막지 않는 복원력 계약.
+describe('publishTaskToManager — 발행 실패 비차단(chat 복원력)', () => {
+  it('publish 실패 시 throw하지 않고 log.warn(턴은 done으로 완료·아래 route 통합 테스트가 검증)', async () => {
     const failing = { publish: vi.fn().mockRejectedValue(new Error('redis down')) } as unknown as StreamProducer
+    const log = makeLog()
     await expect(
-      publishTaskToManager(failing, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, () => undefined, makeLog()),
-    ).resolves.toBe(false)
+      publishTaskToManager(failing, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, () => undefined, log),
+    ).resolves.toBeUndefined()
+    expect((log.warn as ReturnType<typeof vi.fn>)).toHaveBeenCalled()
   })
 })
