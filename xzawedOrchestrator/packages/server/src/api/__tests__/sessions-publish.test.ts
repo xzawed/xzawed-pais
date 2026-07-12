@@ -164,10 +164,25 @@ describe('publishDecomposeToManager', () => {
     expect(msg.payload.intent).toBe('build a todo app')
     expect(msg.payload.userContext).toEqual(UC)
   })
-  it('publish 실패 시 throw하지 않고 log.warn', async () => {
+  it('publish 실패 시 throw하지 않고 false 반환 + log.warn(드롭을 done으로 위장 방지)', async () => {
     const producer = { publish: vi.fn().mockRejectedValue(new Error('redis down')) } as unknown as StreamProducer
     const log = makeLog()
-    await expect(publishDecomposeToManager(producer, SID, 'x', UC, () => undefined, log)).resolves.toBeUndefined()
+    await expect(publishDecomposeToManager(producer, SID, 'x', UC, () => undefined, log)).resolves.toBe(false)
     expect((log.warn as ReturnType<typeof vi.fn>)).toHaveBeenCalled()
+  })
+  it('publish 성공 시 true 반환', async () => {
+    await expect(publishDecomposeToManager(makeProducer(), SID, 'x', UC, () => undefined, makeLog())).resolves.toBe(true)
+  })
+})
+
+describe('publishTaskToManager — 발행 성공/실패 반환', () => {
+  it('publish 성공 시 true, 실패 시 false 반환(드롭을 done으로 위장 방지)', async () => {
+    await expect(
+      publishTaskToManager(makeProducer(), SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, () => undefined, makeLog()),
+    ).resolves.toBe(true)
+    const failing = { publish: vi.fn().mockRejectedValue(new Error('redis down')) } as unknown as StreamProducer
+    await expect(
+      publishTaskToManager(failing, SID, 'intent', SNAPSHOT, { userId: 'u1', projectId: null }, () => undefined, makeLog()),
+    ).resolves.toBe(false)
   })
 })

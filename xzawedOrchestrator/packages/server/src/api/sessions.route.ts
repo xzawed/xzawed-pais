@@ -122,7 +122,7 @@ export async function publishDecomposeToManager(
   getSocket: () => WebSocket | undefined,
   log: FastifyInstance['log'],
   locale: ServerLocale = 'ko',
-): Promise<void> {
+): Promise<boolean> {
   try {
     await producer.publish({
       sessionId,
@@ -132,8 +132,11 @@ export async function publishDecomposeToManager(
       payload: { intent, userContext },
     })
     getSocket()?.send(JSON.stringify({ type: 'status', content: t('status.forwarding', locale) }))
+    return true
   } catch (publishErr: unknown) {
+    // 비차단(크래시 방지)이나 성공/실패를 반환해 호출부가 드롭을 'done'으로 위장하지 않게 한다.
     log.warn({ err: publishErr }, 'Redis publish failed — Manager unavailable, skipping decompose forwarding')
+    return false
   }
 }
 
@@ -148,7 +151,7 @@ export async function publishTaskToManager(
   pool?: Pool,
   locale: ServerLocale = 'ko',
   gateMode?: 'manual' | 'auto',
-): Promise<void> {
+): Promise<boolean> {
   const userContext = await buildUserContext(session, pool)
   try {
     await producer.publish({
@@ -165,8 +168,11 @@ export async function publishTaskToManager(
       },
     })
     getSocket()?.send(JSON.stringify({ type: 'status', content: t('status.forwarding', locale) }))
+    return true
   } catch (publishErr: unknown) {
+    // 비차단(크래시 방지)이나 성공/실패를 반환해 호출부가 드롭을 'done'으로 위장하지 않게 한다.
     log.warn({ err: publishErr }, 'Redis publish failed — Manager unavailable, skipping forwarding')
+    return false
   }
 }
 
@@ -446,8 +452,10 @@ export async function sessionsRoutes(
           if (shouldDecompose(capturedMode, decomposeEnabled)) {
             const userContext = await buildUserContext({ userId: capturedUserId, projectId: capturedProjectId }, pool)
             taskStore.create(sessionId, capturedContent)
-            await publishDecomposeToManager(producer, sessionId, capturedContent, userContext, getSocket, app.log, capturedLocale)
-            getSocket()?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
+            const forwarded = await publishDecomposeToManager(producer, sessionId, capturedContent, userContext, getSocket, app.log, capturedLocale)
+            getSocket()?.send(JSON.stringify(forwarded
+              ? { type: 'done', messageId: assistantMsgId }
+              : { type: 'error', content: t('error.processing_error', capturedLocale) }))
             return
           }
 
@@ -465,9 +473,11 @@ export async function sessionsRoutes(
           taskStore.create(sessionId, intent)
 
           const capturedSession = { userId: capturedUserId, projectId: capturedProjectId }
-          await publishTaskToManager(producer, sessionId, intent, snapshot, capturedSession, getSocket, app.log, pool, capturedLocale, capturedGateMode)
+          const forwarded = await publishTaskToManager(producer, sessionId, intent, snapshot, capturedSession, getSocket, app.log, pool, capturedLocale, capturedGateMode)
 
-          getSocket()?.send(JSON.stringify({ type: 'done', messageId: assistantMsgId }))
+          getSocket()?.send(JSON.stringify(forwarded
+            ? { type: 'done', messageId: assistantMsgId }
+            : { type: 'error', content: t('error.processing_error', capturedLocale) }))
         } catch (err) {
           req.log.error({ err, sessionId }, 'Session processing error')
           getSocket()?.send(JSON.stringify({ type: 'error', content: t('error.processing_error', capturedLocale) }))
