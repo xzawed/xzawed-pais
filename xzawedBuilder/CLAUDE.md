@@ -90,7 +90,7 @@ interface BuildError { file?: string; line?: number; message: string; suggestion
 ## 구현 참고사항
 
 **보안 패턴**
-- `validateBuildCommand()`: `ALLOWED_PREFIXES`(`pnpm`, `npm`, `npx`, `yarn`, `cargo build`, `make`, `cmake`, `gradle`, `mvn`, `go build`, `tsc`, `webpack`, `vite build`) + 셸 메타문자 이중 차단
+- `validateBuildCommand()`: `ALLOWED_PREFIXES`(`pnpm`, `npm`, `npx`, `yarn`, `cargo build`, `make`, `cmake`, `gradle`, `mvn`, `go build`, `tsc`, `webpack`, `vite build`) + 셸 메타문자·개행(`\n\r`) 이중 차단. ⚠️ allowlist는 **의도적으로 관용적**(빌드=임의 코드 실행이 빌드 에이전트의 본질) — 진짜 방어는 `executor.ts`의 `spawn(shell:false)`(셸 미경유)이고 allowlist+메타문자 차단은 defense-in-depth. 프리픽스 축소는 legit 빌드(`npx vite build` 등)를 깨므로 하지 않음
 - `detector.ts`: `package.json scripts.build`는 신뢰하지 않음 — 의존성 기반 하드코딩 명령어만 반환
 - `executor.ts`: `spawn(bin, args, {shell:false})` 고정. `bin`이 빈 문자열이면 즉시 throw
 - `validatePath()`: `validateWorkspaceRoot()` 후 `fs.realpath`로 심볼릭 링크 우회 차단
