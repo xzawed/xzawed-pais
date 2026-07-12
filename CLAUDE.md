@@ -209,6 +209,11 @@ cd packages/server && pnpm test <파일>  # 단일 테스트 파일
 > ```bash
 > cd xzawedShared && pnpm install && pnpm build && cd ..
 > ```
+>
+> **♻️ shared 편집 후 복사본 새로고침**: 독립 서비스는 `@xzawed/agent-streams`를 `file:../xzawedShared`로 참조하며, `file:` dep은 install 시점에 node_modules로 **복사**된다. xzawedShared를 로컬에서 재빌드해도 이 복사본은 다음 install까지 **stale**로 남아 신규 파일 누락 등 혼란을 준다(CI·Docker는 매번 fresh install이라 무관). shared 편집 후 아래 한 번으로 빌드 + 7개 서비스 복사본을 일괄 새로고침한다(`pnpm install --frozen-lockfile`이 복사본만 갱신·lockfile 무오염):
+> ```bash
+> bash scripts/sync-shared.sh
+> ```
 
 ```bash
 pnpm install
