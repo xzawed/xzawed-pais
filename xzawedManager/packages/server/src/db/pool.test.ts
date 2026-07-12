@@ -3,7 +3,7 @@ import type { Pool } from 'pg'
 import { readdir, readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { runMigrations } from './pool.js'
+import { runMigrations, applyMigration } from './pool.js'
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), 'migrations')
 
@@ -53,5 +53,55 @@ describe('runMigrations', () => {
     await expect(runMigrations(pool)).rejects.toThrow(/migration boom/)
     expect(String(query.mock.calls.at(-1)![0])).toMatch(/pg_advisory_unlock/)
     expect(release).toHaveBeenCalledTimes(1)
+  })
+})
+
+// 공유 테스트 DB에서 마이그레이션 DDL(ShareLock/AccessExclusiveLock)과 동시 DML(RowExclusiveLock)의
+// 반대-순서 락 경합이 rare 데드락(40P01)을 일으켜 CI에서 무관 PR을 red로 만들던 flake 완화.
+// 마이그레이션은 IF NOT EXISTS 멱등 + 파일당 단일 트랜잭션이라 데드락 시 전체 롤백·재적용 안전.
+const noSleep = async (): Promise<void> => {}
+function pgError(code: string, message = code): Error {
+  return Object.assign(new Error(message), { code })
+}
+
+describe('applyMigration — 데드락/직렬화 재시도', () => {
+  test('첫 시도 성공 시 재시도하지 않는다(정상 경로 회귀 0)', async () => {
+    const query = vi.fn().mockResolvedValue(undefined)
+    await applyMigration({ query }, 'CREATE INDEX ...', noSleep)
+    expect(query).toHaveBeenCalledTimes(1)
+  })
+
+  test('40P01(deadlock_detected) 후 성공하면 재시도해 통과한다', async () => {
+    const query = vi.fn()
+      .mockRejectedValueOnce(pgError('40P01', 'deadlock detected'))
+      .mockResolvedValueOnce(undefined)
+    await applyMigration({ query }, 'CREATE INDEX ...', noSleep)
+    expect(query).toHaveBeenCalledTimes(2)
+  })
+
+  test('40001(serialization_failure)도 재시도 대상이다', async () => {
+    const query = vi.fn()
+      .mockRejectedValueOnce(pgError('40001', 'could not serialize'))
+      .mockResolvedValueOnce(undefined)
+    await applyMigration({ query }, 'sql', noSleep)
+    expect(query).toHaveBeenCalledTimes(2)
+  })
+
+  test('재시도 불가 에러(예: 42P01)는 즉시 전파한다(재시도 없음)', async () => {
+    const query = vi.fn().mockRejectedValue(pgError('42P01', 'undefined table'))
+    await expect(applyMigration({ query }, 'sql', noSleep)).rejects.toThrow('undefined table')
+    expect(query).toHaveBeenCalledTimes(1)
+  })
+
+  test('code 없는 일반 에러도 즉시 전파한다', async () => {
+    const query = vi.fn().mockRejectedValue(new Error('boom'))
+    await expect(applyMigration({ query }, 'sql', noSleep)).rejects.toThrow('boom')
+    expect(query).toHaveBeenCalledTimes(1)
+  })
+
+  test('상한(5회)까지 데드락이 지속되면 마지막 에러를 전파한다(무한 재시도 방지)', async () => {
+    const query = vi.fn().mockRejectedValue(pgError('40P01', 'deadlock detected'))
+    await expect(applyMigration({ query }, 'sql', noSleep)).rejects.toThrow('deadlock detected')
+    expect(query).toHaveBeenCalledTimes(5)
   })
 })
