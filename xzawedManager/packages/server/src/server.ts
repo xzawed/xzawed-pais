@@ -641,6 +641,13 @@ export async function buildServer(
   watcherEventConsumer.start()
 
   await app.register(healthRoute)
+  // 관측성: knowledge/oracle/risk 라우트는 admin/decision(authHook 없으면 미등록·fail-closed)과 달리
+  // 의도적으로 authHook 없이도 등록된다(oracleRoute·riskRoute 코멘트 참조 — oracle-tier·로컬/데모 개방).
+  // 다만 SERVICE_JWT_SECRET 미설정 시 이들의 쓰기(PATCH/DELETE·approve)가 무인증 노출되므로,
+  // 사일런트하지 않도록 기동 시 경고한다(동작은 불변 — 로컬 개발 보존, 프로덕션 운영자 경보).
+  if (!authHook) {
+    app.log.warn('SERVICE_JWT_SECRET 미설정 — knowledge/oracle/risk mutation 라우트가 무인증으로 노출됩니다(의도적 oracle-tier·로컬/개발 전용). 프로덕션은 AUTH=jwt + SERVICE_JWT_SECRET(32자+) 필수.')
+  }
   // 쓰기 경로(PATCH/DELETE)에만 서비스 토큰 요구(authHook). GET은 개방 유지.
   await app.register(knowledgeRoute, { ...(knowledgeRepo && { knowledgeRepo }), ...(authHook && { authHook }) })
   // P3-1/P3-2 Oracle 라우트(DOR||DRAFT·pool 시 공유 oracleStore): 작성·승인·조회. 쓰기는 authHook 설정 시 보호.
