@@ -187,6 +187,12 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
+    // G6: deploy-gate strict 모드. true면 게이트 부재·projectless·조회 오류를 fail-open 대신 차단
+    // (프리미엄 "차단=차단"). off→현행 fail-open 바이트 동일. 전제: MANAGER_DEPLOY_GATE.
+    MANAGER_DEPLOY_GATE_STRICT: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
     // B1: 결정 만료 sweep(=true). off면 expiresAt 미설정+sweep 미배선=현재 동작. 전제 TASK_MANAGER_ENABLED+DATABASE_URL.
     MANAGER_DECISION_EXPIRY: z.string().optional().transform((v) => v === 'true'),
     // B1: 결정 TTL(시간). server가 *3_600_000(ms)로 변환해 주입. 사람 대면이라 기본 72h.

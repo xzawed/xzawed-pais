@@ -69,3 +69,40 @@ describe('ReleaseDeployGate.checkDeploy (구현체 2케이스 + 위임)', () => 
     expect(v.reason).toContain('wf-9')
   })
 })
+
+describe('G6 deploy-gate strict 모드', () => {
+  const gateOf = (g: { status: 'passed' | 'blocked'; workflowId: string } | null) => ({ latestGateByProject: async () => g })
+  const decOf = (b: boolean) => ({ hasApprovedReleaseSignoff: async () => b })
+  const makeStrict = (gate: GateStub, dec: DecStub): ReleaseDeployGate =>
+    new ReleaseDeployGate(gate as never, dec as never, true)
+
+  it('evaluateDeployGate: 게이트 null + strict → 차단', () => {
+    const v = evaluateDeployGate({ gate: null, hasApprovedSignoff: false, strict: true })
+    expect(v.allowed).toBe(false)
+    expect(v.reason).toContain('strict')
+  })
+  it('evaluateDeployGate: 게이트 null + non-strict → 허용(회귀 0)', () => {
+    expect(evaluateDeployGate({ gate: null, hasApprovedSignoff: false, strict: false })).toEqual({ allowed: true })
+  })
+  it('checkDeploy: projectless(undefined·default) + strict → 차단', async () => {
+    const g = makeStrict(gateOf(null), decOf(false))
+    expect((await g.checkDeploy(undefined)).allowed).toBe(false)
+    expect((await g.checkDeploy('default')).allowed).toBe(false)
+  })
+  it('checkDeploy: 게이트 부재(null) + strict → 차단', async () => {
+    const g = makeStrict(gateOf(null), decOf(false))
+    expect((await g.checkDeploy('proj-x')).allowed).toBe(false)
+  })
+  it('checkDeploy: 조회 throw + strict → 차단(fail-closed)', async () => {
+    const g = makeStrict({ latestGateByProject: async () => { throw new Error('db down') } }, decOf(false))
+    expect((await g.checkDeploy('proj-x')).allowed).toBe(false)
+  })
+  it('checkDeploy: passed + strict → 여전히 허용(strict는 부재/오류만 차단)', async () => {
+    const g = makeStrict(gateOf({ status: 'passed', workflowId: 'wf-1' }), decOf(false))
+    expect((await g.checkDeploy('proj-x')).allowed).toBe(true)
+  })
+  it('checkDeploy: blocked + 사인오프 + strict → 허용', async () => {
+    const g = makeStrict(gateOf({ status: 'blocked', workflowId: 'wf-1' }), decOf(true))
+    expect((await g.checkDeploy('proj-x')).allowed).toBe(true)
+  })
+})

@@ -29,9 +29,20 @@ export interface DeployGatePort {
 export function evaluateDeployGate(input: {
   gate: { status: 'passed' | 'blocked'; workflowId: string } | null
   hasApprovedSignoff: boolean
+  /** G6 strict 모드: 게이트 부재(null)를 fail-open(허용) 대신 fail-closed(차단)로. 기본 false=현행. */
+  strict?: boolean
 }): DeployGateVerdict {
-  const { gate, hasApprovedSignoff } = input
-  if (gate === null) return { allowed: true }
+  const { gate, hasApprovedSignoff, strict } = input
+  if (gate === null) {
+    // strict: "게이트가 안 돌았다=아직 검증 안 됨"이므로 차단(프리미엄 "차단=차단"). 비-strict: 현행 fail-open.
+    return strict
+      ? {
+          allowed: false,
+          reason:
+            '릴리스 게이트가 생성되지 않았습니다(strict 모드). 배포 전 릴리스 게이트를 통과하세요.',
+        }
+      : { allowed: true }
+  }
   if (gate.status === 'passed') return { allowed: true }
   // gate.status === 'blocked'
   if (hasApprovedSignoff) return { allowed: true }
@@ -51,21 +62,35 @@ export class ReleaseDeployGate implements DeployGatePort {
   constructor(
     private readonly gates: ReleaseGateRepo,
     private readonly decisions: DecisionRepo,
+    /** G6 strict 모드(MANAGER_DEPLOY_GATE_STRICT). 게이트 식별 불가·조회 오류를 차단으로. 기본 false=현행. */
+    private readonly strict = false,
   ) {}
 
   async checkDeploy(projectId: string | undefined): Promise<DeployGateVerdict> {
-    // projectId 부재 또는 'default'(프로젝트 미선택 sentinel) → 게이트 식별 불가·프로젝트리스 취급 → fail-open
-    if (!projectId || projectId === PROJECTLESS_SENTINEL) return { allowed: true }
+    // projectId 부재 또는 'default'(프로젝트 미선택 sentinel) → 게이트 식별 불가.
+    // strict면 차단(프로젝트+통과 게이트 요구)·비-strict면 현행 fail-open.
+    if (!projectId || projectId === PROJECTLESS_SENTINEL) {
+      return this.strict
+        ? {
+            allowed: false,
+            reason:
+              '프로젝트가 선택되지 않아 릴리스 게이트를 확인할 수 없습니다(strict 모드). 프로젝트를 선택하고 릴리스 게이트를 통과하세요.',
+          }
+        : { allowed: true }
+    }
     try {
       const gate = await this.gates.latestGateByProject(projectId)
       const hasApprovedSignoff =
         gate?.status === 'blocked'
           ? await this.decisions.hasApprovedReleaseSignoff(gate.workflowId) // blocked일 때만 조회
           : false
-      return evaluateDeployGate({ gate, hasApprovedSignoff })
+      return evaluateDeployGate({ gate, hasApprovedSignoff, strict: this.strict })
     } catch (err) {
-      console.warn('[deploy-gate] checkDeploy 실패 — fail-open 허용', err) // never-throw(N3)
-      return { allowed: true }
+      // never-throw(N3). strict면 "확인 불가=차단"(안전), 비-strict면 현행 fail-open.
+      console.warn(`[deploy-gate] checkDeploy 실패 — ${this.strict ? 'strict 차단' : 'fail-open 허용'}`, err)
+      return this.strict
+        ? { allowed: false, reason: '릴리스 게이트 조회 실패(strict 모드). 안전을 위해 배포를 차단합니다.' }
+        : { allowed: true }
     }
   }
 }
