@@ -250,7 +250,8 @@ CLAUDE_MODE=api                   # api | cli | remote
 
 # 서버 간 연결
 MANAGER_URL=http://localhost:3001 # Manager 서비스 URL
-ORCHESTRATOR_DECOMPOSE_ENABLED=   # 선택: 기본 false(C6·#337). true면 POST messages `mode:'build'`을 decompose_request로 라우팅(자율 태스크그래프). off면 모든 메시지가 chat(task_request)·byte-identical. ⚠️실 활성엔 Manager의 MANAGER_DECOMPOSE_ENABLED+TASK_MANAGER_ENABLED 필요(off면 Manager가 error 발행). ⚠️build 모드는 절대 WORKSPACE_ROOT 필요(Manager AbsoluteUserContextSchema)
+PAIS_PROFILE=                     # 선택(G1·프리미엄 one-switch·Manager와 대칭). 설정 시 config.ts resolveProfileEnv가 parse 전에 프로필 기본값을 env에 병합(개별 env override 우선·미지 프로필→throw). autonomous → ORCHESTRATOR_DECOMPOSE_ENABLED=true(build 라우팅 활성). 자율 스택 대부분·JWT/DB 하드요구는 Manager PAIS_PROFILE이 담당(두 서비스에 같은 값 설정). off→회귀 0
+ORCHESTRATOR_DECOMPOSE_ENABLED=   # 선택: 기본 false(C6·#337). true면 POST messages `mode:'build'`을 decompose_request로 라우팅(자율 태스크그래프). off면 모든 메시지가 chat(task_request)·byte-identical. **config.decomposeEnabled로 일원화**(이전엔 server.ts가 process.env 직접 읽음 — PAIS_PROFILE 병합 위해 config 경유). ⚠️실 활성엔 Manager의 MANAGER_DECOMPOSE_ENABLED+TASK_MANAGER_ENABLED 필요(off면 Manager가 error 발행). ⚠️build 모드는 절대 WORKSPACE_ROOT 필요(Manager AbsoluteUserContextSchema)
 
 # 세션 WebSocket
 WS_CLEANUP_GRACE_MS=15000         # WS 끊김 후 세션 정리까지 대기하는 grace 기간(ms, 기본 15000)
