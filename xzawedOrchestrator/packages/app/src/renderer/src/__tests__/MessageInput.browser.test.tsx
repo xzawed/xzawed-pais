@@ -43,4 +43,15 @@ describe('MessageInput — 모드 토글', () => {
     fireEvent.click(screen.getByTestId('message-send-button'))
     expect(onSend).toHaveBeenCalledWith('build a todo app', 'build')
   })
+
+  test('모드 토글 버튼에 모드 설명 툴팁(title·aria-label)이 있다 (G2 명확화)', () => {
+    render(<MessageInput onSend={() => {}} disabled={false} />)
+    const chatBtn = screen.getByTestId('mode-toggle-chat')
+    const buildBtn = screen.getByTestId('mode-toggle-build')
+    for (const btn of [chatBtn, buildBtn]) {
+      expect(btn).toHaveAttribute('title')
+      expect(btn.getAttribute('title')).toBeTruthy()
+      expect(btn).toHaveAttribute('aria-label')
+    }
+  })
 })
