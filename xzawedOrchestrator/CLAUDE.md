@@ -40,10 +40,11 @@ packages/
 ├── server/     # Fastify 백엔드 (API, WebSocket, MCP, Claude 실행기, Redis Streams)
 │   └── src/
 │       ├── api/
-│       │   ├── sessions.route.ts     # POST /sessions, GET /sessions/:id/tasks, POST /sessions/:id/ui-actions(승인·명확화 결정 → info_response 발행); resolveSession() 헬퍼로 중복 검증 통합 (PR #129); **C6 인텐트 라우터(#337)**: POST messages body `mode?:'chat'|'build'` — `shouldDecompose(mode,decomposeEnabled)`면 대화형 runner 스킵·`buildUserContext`(task_request·decompose 공유 DRY)·원 요청을 `publishDecomposeToManager`로 `decompose_request` 발행(자율 태스크그래프), 아니면 현행 `publishTaskToManager`(task_request) byte-identical; **전달 실패 처리(#402)**: build 경로는 전달이 유일 액션이라 `publishDecomposeToManager` 실패 시 `error` 표면화(사일런트 `done` 위장 봉합)·chat 경로는 러너가 이미 응답 스트리밍 완료라 `publishTaskToManager`가 best-effort(실패해도 `done`으로 턴 완료·Manager/Redis 미가용에도 로컬 chat 복원력)
+│       │   ├── sessions.route.ts     # POST /sessions, GET /sessions/:id/tasks, POST /sessions/:id/ui-actions(승인·명확화 결정 → info_response 발행); resolveSession() 헬퍼로 중복 검증 통합 (PR #129); **C6 인텐트 라우터(#337)**: POST messages body `mode?:'chat'|'build'` — `shouldDecompose(mode,decomposeEnabled)`면 대화형 runner 스킵·`buildUserContext`(task_request·decompose 공유 DRY)·원 요청을 `publishDecomposeToManager`로 `decompose_request` 발행(자율 태스크그래프), 아니면 현행 `publishTaskToManager`(task_request) byte-identical; **전달 실패 처리(#402)**: build 경로는 전달이 유일 액션이라 `publishDecomposeToManager` 실패 시 `error` 표면화(사일런트 `done` 위장 봉합)·chat 경로는 러너가 이미 응답 스트리밍 완료라 `publishTaskToManager`가 best-effort(실패해도 `done`으로 턴 완료·Manager/Redis 미가용에도 로컬 chat 복원력); **G10 비용 write rate-limit(W14·#455)**: `registerLocalRateLimit` + per-route `withLimit(max)` — POST /sessions(10/min)·POST messages(30/min·LLM/decompose 비용 벡터)·POST ui-actions(60/min)에 `@fastify/rate-limit` 적용(IP 키잉·GET 무제한·상한+1회째 429). 스팸 비용 폭발·DoS 차단
 │       │   ├── knowledge.route.ts    # GET|PATCH|DELETE /projects/:id/knowledge[/:id] — Manager 위키 프록시(상태코드 pass-through, GET 실패 시 빈 목록 폴백; GET 비인증·읽기, PATCH/DELETE는 AUTH=jwt 시 user JWT + Manager 호출에 서비스 토큰 발급·전달 #213)
 │       │   ├── decisions.route.ts     # GET /projects/:id/decisions/pending(open·graceful {items:[]})|POST /projects/:id/decisions/:requestId/decision — Manager 결정 프록시(C1·#306). POST는 userAuthHook + decidedBy를 인증 사용자 JWT subject로 권위 주입(**client body 절대 미도달·M9 비부인**) + 전용 {svc:'decision-proxy'} 서비스 토큰. knowledge.route 패턴 복제
-│       │   ├── auth.route.ts         # POST /auth/register|login|refresh|logout, GET /auth/me (IP Rate Limiting)
+│       │   ├── auth.route.ts         # POST /auth/register|login|refresh|logout, GET /auth/me (IP Rate Limiting via registerLocalRateLimit)
+│       │   ├── rate-limit.ts         # registerLocalRateLimit(app) — @fastify/rate-limit global:false 등록 + 공용 429 응답(auth·sessions 공유 단일출처·CPD0·G10 #455)
 │       │   └── projects.route.ts     # CRUD + PUT|DELETE /projects/:id/github-token, GET /projects/:id/github-token/status
 │       ├── auth/
 │       │   ├── user-auth.hook.ts     # Bearer 헤더 + Sec-WebSocket-Protocol bearer.<token> 인증
@@ -172,7 +173,7 @@ packages/
 - **Vitest 3** + `vitest.config.ts` `projects` API — `unit` (node) + `browser` (playwright/chromium) 두 프로젝트 분리
   - `unit`: `test/**/*.test.ts` + `src/renderer/src/lib/parseAgentSteps.test.ts` (store, main 프로세스, 파서 유닛 테스트)
   - `browser`: `src/renderer/src/__tests__/**/*.browser.test.tsx` (App·Sidebar·ChatView(승인 카드)·WikiPanel·**DecisionsPanel**·**ChatLayout.decisions**·**decisions-api**·SettingsModal·CommandPalette·GitHubPanel·McpPanel·PluginPanel·detect-locale·app.store 등 컴포넌트·스토어 렌더링)
-  - 총 `pnpm test`: **247건** (app) + **440건** (server, Redis/DB 없으면 15건 skip → 425 pass) + **76건** (ui, jsdom) = **~763건**
+  - 총 `pnpm test`: **247건** (app) + **453건** (server, Redis/DB 없으면 15건 skip → 438 pass·G10 rate-limit 3건 포함) + **76건** (ui, jsdom) = **~776건**
 - **@vitest/browser + playwright** — 실제 Chromium에서 React 컴포넌트 렌더링 검증
 - **@testing-library/react** — 브라우저 모드 렌더링; `afterEach(cleanup)` 명시 필요
 - **@playwright/test** + `playwright._electron` — Electron E2E (`e2e/`, 110건/17 spec 파일, `pnpm test:e2e`)
