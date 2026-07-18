@@ -14,7 +14,7 @@
     "clean": "rimraf dist"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.52.0",
+    "@anthropic-ai/sdk": "^0.112.3",
     "@fastify/jwt": "^10.2.0",
     "@octokit/rest": "^22.0.1",
     "@xzawed/agent-streams": "file:../../../xzawedShared",
