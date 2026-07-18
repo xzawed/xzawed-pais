@@ -213,6 +213,9 @@ export function handleConsumerMessage(
         agentId: msg.payload.agentId,
         content: msg.payload.content,
         ...(msg.payload.uiSpec !== undefined ? { uiSpec: msg.payload.uiSpec } : {}),
+        // G5: 세션 누적 비용을 앱으로 릴레이(RightPanel이 실시간 지출 표시).
+        ...(msg.payload.costUsd !== undefined ? { costUsd: msg.payload.costUsd } : {}),
+        ...(msg.payload.tokensUsed !== undefined ? { tokensUsed: msg.payload.tokensUsed } : {}),
       }))
       break
     case 'task_complete':

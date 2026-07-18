@@ -129,6 +129,7 @@
   "right_panel": {
     "output_title": "Output",
     "waiting": "待機中...",
+    "cost": "コスト(USD)",
     "tokens": "トークン",
     "elapsed": "経過",
     "modified_files": "変更ファイル"

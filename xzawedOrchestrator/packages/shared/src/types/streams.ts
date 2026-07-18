@@ -64,5 +64,8 @@ export interface ManagerToOrchestratorMessage {
     approval?: ApprovalRequest
     /** knowledge_changed 이벤트의 대상 프로젝트 — 위키가 즉시 새로고침할지 판단. */
     projectId?: string
+    /** G5 고객 비용 가시성: 세션 누적 비용(USD)·토큰. status_update가 실어 보낸다. */
+    costUsd?: number
+    tokensUsed?: number
   }
 }

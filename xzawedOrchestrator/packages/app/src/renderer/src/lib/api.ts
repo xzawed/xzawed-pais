@@ -11,7 +11,7 @@ export type WsMessage =
   | { type: 'done'; messageId: string }
   | { type: 'error'; content: string }
   | { type: 'status'; content: string }
-  | { type: 'agent_status'; agentId: string; content: string }
+  | { type: 'agent_status'; agentId: string; content: string; costUsd?: number; tokensUsed?: number }
   | { type: 'agent_done'; agentId: string; content: string }
   | { type: 'agent_error'; agentId: string; content: string }
   | {

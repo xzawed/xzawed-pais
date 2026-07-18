@@ -18,6 +18,8 @@ interface ChatState {
   uiSpec: UISpec | null
   logLines: string[]
   tokenCount: number
+  /** G5 고객 비용 가시성: 현재 세션 누적 비용(USD·Manager costOf 추정). RightPanel 표시. */
+  sessionCostUsd: number
   elapsedMs: number
   modifiedFiles: string[]
   pendingInfoRequest: PendingInfoRequest | null
@@ -33,6 +35,7 @@ interface ChatState {
   setUiSpec: (spec: UISpec | null) => void
   addLogLine: (line: string) => void
   setTokenCount: (n: number) => void
+  setSessionCostUsd: (usd: number) => void
   setElapsedMs: (ms: number) => void
   addModifiedFile: (path: string) => void
   setPendingInfoRequest: (req: PendingInfoRequest | null) => void
@@ -50,6 +53,7 @@ const initialState = {
   uiSpec: null,
   logLines: [] as string[],
   tokenCount: 0,
+  sessionCostUsd: 0,
   elapsedMs: 0,
   modifiedFiles: [] as string[],
   pendingInfoRequest: null as PendingInfoRequest | null,
@@ -99,6 +103,8 @@ export const useChatStore = create<ChatState>((set) => ({
     set((state) => ({ logLines: [...state.logLines.slice(-199), line] })),
 
   setTokenCount: (tokenCount) => set({ tokenCount }),
+
+  setSessionCostUsd: (sessionCostUsd) => set({ sessionCostUsd }),
 
   setElapsedMs: (elapsedMs) => set({ elapsedMs }),
 

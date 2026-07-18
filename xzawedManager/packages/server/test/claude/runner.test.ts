@@ -110,6 +110,38 @@ describe('ClaudeRunner', () => {
     expect(mockPublish.mock.calls[0]![0]).toMatchObject({ type: 'status_update', payload: { agentId: 'manager' } })
   })
 
+  it('status_update가 세션 누적 비용(costUsd)·토큰을 실어 보낸다 (G5)', async () => {
+    mockCreate
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'text', text: 'planning' },
+          { type: 'tool_use', id: 'tool-1', name: 'plan_task', input: { intent: 'x', context: {} } },
+        ],
+        usage: { input_tokens: 1000, output_tokens: 500 },
+      })
+      .mockResolvedValueOnce({
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'done' }],
+        usage: { input_tokens: 200, output_tokens: 100 },
+      })
+
+    const registry = new ToolRegistry()
+    registry.register(makeFakeHandler(vi.fn().mockResolvedValue({ steps: [] })))
+    const { runner, sessionStore, producer } = makeRunner(registry)
+    sessionStore.create('sess-cost')
+    sessionStore.setGateDefaultMode('sess-cost', 'auto')
+
+    await runner.run({ sessionId: 'sess-cost', intent: 'x', context: {}, producer, sessionStore })
+
+    // 첫 Claude 호출(usage) 후 발행된 status_update가 세션 누적 비용·토큰을 실어야 한다.
+    const withCost = mockPublish.mock.calls
+      .map((c) => c[0] as { type: string; payload: { costUsd?: number; tokensUsed?: number } })
+      .find((m) => m.type === 'status_update' && typeof m.payload.costUsd === 'number' && m.payload.costUsd > 0)
+    expect(withCost).toBeDefined()
+    expect(withCost!.payload.tokensUsed).toBeGreaterThan(0)
+  })
+
   it('calls Claude with registry tools plus request_info tool', async () => {
     mockCreate.mockResolvedValueOnce({
       stop_reason: 'end_turn',

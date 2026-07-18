@@ -93,6 +93,26 @@ describe('useSessionWs', () => {
     expect(useChatStore.getState().pendingInfoRequest?.approval?.stage).toBe('plan_task')
   })
 
+  test('agent_status의 costUsd/tokensUsed를 세션 비용·토큰으로 반영한다 (G5)', () => {
+    useChatStore.setState({ sessionId: 'sess-1' })
+    render(<Harness />)
+    act(() => {
+      captured?.({ type: 'agent_status', agentId: 'manager', content: 'working', costUsd: 0.1234, tokensUsed: 5000 })
+    })
+    expect(useChatStore.getState().sessionCostUsd).toBe(0.1234)
+    expect(useChatStore.getState().tokenCount).toBe(5000)
+  })
+
+  test('agent_status에 cost 필드가 없으면 기존 값 유지(회귀 0)', () => {
+    useChatStore.setState({ sessionId: 'sess-1', sessionCostUsd: 0.5, tokenCount: 10 })
+    render(<Harness />)
+    act(() => {
+      captured?.({ type: 'agent_status', agentId: 'manager', content: 'no cost' })
+    })
+    expect(useChatStore.getState().sessionCostUsd).toBe(0.5)
+    expect(useChatStore.getState().tokenCount).toBe(10)
+  })
+
   test('agent_info_request에 동반된 uiSpec을 store에 반영한다(P4 승인 데모)', () => {
     useChatStore.setState({ sessionId: 'sess-1' })
     render(<Harness />)
