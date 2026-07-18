@@ -10,6 +10,7 @@ import { isGatedTool, effectiveMode, summarizeOutput, parseDecision, isKnowledge
 import type { GateMode, GateDecision } from '../gates/approval-gate.js'
 import { validateToolInput } from './validate-tool-input.js'
 import type { KnowledgeRepo } from '../db/knowledge.repo.js'
+import { costOf } from '@xzawed/agent-streams'
 import type {
   BudgetCircuitBreaker,
   BudgetRecordResult,
@@ -179,6 +180,22 @@ export class ClaudeRunner {
     }
   }
 
+  /**
+   * G5 고객 비용 가시성: 세션 누적 비용(USD·costOf 추정)·토큰. budget 서킷과 독립적으로 **항상**
+   * 집계한다(캡이 꺼져 있어도 고객은 비용을 봐야 한다). status_update가 payload로 실어 보낸다.
+   * ⚠️ in-memory 한계(budget 서킷과 동일·Grok 지적): 다중 인스턴스 미집계·프로세스 생애 동안
+   * 세션당 작은 엔트리 누적(정밀 정리·과금 원장은 G12 후속). 세션 단위 표시라 단일 프로세스 정확.
+   */
+  private readonly sessionCost = new Map<string, { usd: number; tokens: number }>()
+  private accumulateCost(sessionId: string, usage: Anthropic.Usage | undefined): void {
+    if (!usage) return
+    const prev = this.sessionCost.get(sessionId) ?? { usd: 0, tokens: 0 }
+    this.sessionCost.set(sessionId, {
+      usd: prev.usd + costOf(this.model, usage),
+      tokens: prev.tokens + (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0),
+    })
+  }
+
   /** §13: 호출 후 토큰 비용 누적. 트립 시 onTrip 알림(never-throw — 관측이 작업을 막지 않음). */
   private recordBudget(workflowId: string, usage: Anthropic.Usage | undefined): void {
     if (!this.budget || !usage) return
@@ -197,12 +214,18 @@ export class ClaudeRunner {
     type: ManagerToOrchestratorMessage['type'] = 'status_update',
   ): Promise<void> {
     try {
+      // G5: 세션 누적 비용(costOf 추정)을 payload에 실어 고객 UI가 실시간 지출을 표시.
+      const cost = this.sessionCost.get(sessionId)
       await producer.publish({
         sessionId,
         messageId: crypto.randomUUID(),
         timestamp: Date.now(),
         type,
-        payload: { agentId: 'manager', content },
+        payload: {
+          agentId: 'manager',
+          content,
+          ...(cost && { costUsd: cost.usd, tokensUsed: cost.tokens }),
+        },
       })
     } catch (err) {
       console.warn('[runner] publishStatus 실패 — 작업 계속:', err)
@@ -693,6 +716,8 @@ export class ClaudeRunner {
       this.providerCircuit?.breaker.onSuccess()
       // §13 budget 서킷: 호출 후 비용 누적(트립 시 onTrip 알림). 다음 iteration의 check가 차단.
       this.recordBudget(sessionId, response.usage)
+      // G5: budget 캡과 무관하게 세션 비용을 항상 집계(고객 가시성). status_update가 실어 보낸다.
+      this.accumulateCost(sessionId, response.usage)
 
       if (response.stop_reason === 'end_turn') {
         const text = response.content.find((b): b is Anthropic.TextBlock => b.type === 'text')?.text ?? ''

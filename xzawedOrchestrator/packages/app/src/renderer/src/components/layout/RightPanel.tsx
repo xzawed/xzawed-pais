@@ -23,7 +23,7 @@ function getLineColor(line: string): string {
 
 export function RightPanel({ style }: Readonly<{ style?: React.CSSProperties }>): React.JSX.Element {
   const { t } = useTranslation('app')
-  const { logLines, tokenCount, elapsedMs, modifiedFiles, isStreaming } = useChatStore()
+  const { logLines, tokenCount, sessionCostUsd, elapsedMs, modifiedFiles, isStreaming } = useChatStore()
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -65,6 +65,10 @@ export function RightPanel({ style }: Readonly<{ style?: React.CSSProperties }>)
 
       {/* Stats footer */}
       <div className="border-t border-border px-3 py-2 space-y-1">
+        <div className="flex justify-between text-[9px]" data-testid="right-panel-cost">
+          <span className="text-fg-ghost">{t('right_panel.cost')}</span>
+          <span className="text-agent-dev font-mono">${sessionCostUsd.toFixed(4)}</span>
+        </div>
         <div className="flex justify-between text-[9px]">
           <span className="text-fg-ghost">{t('right_panel.tokens')}</span>
           <span className="text-agent-dev font-mono">{tokenCount.toLocaleString()}</span>

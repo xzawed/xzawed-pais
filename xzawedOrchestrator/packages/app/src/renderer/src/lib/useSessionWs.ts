@@ -119,6 +119,9 @@ function handleWsMessage(msg: WsMessage, sessionId: string): void {
     case 'agent_status': {
       const agentTag = (msg.agentId ?? 'AGENT').toUpperCase().slice(0, 8)
       store.addLogLine(`[${agentTag}] ${msg.content}`)
+      // G5: 세션 누적 비용·토큰(Manager costOf 추정)을 RightPanel에 실시간 반영.
+      if (typeof msg.costUsd === 'number') store.setSessionCostUsd(msg.costUsd)
+      if (typeof msg.tokensUsed === 'number') store.setTokenCount(msg.tokensUsed)
       applyUiSpec(store, msg)
       break
     }

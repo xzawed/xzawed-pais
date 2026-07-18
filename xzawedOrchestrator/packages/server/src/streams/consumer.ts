@@ -21,6 +21,9 @@ const ManagerToOrchestratorMessageSchema = z.object({
     }).optional(),
     // knowledge_changed 대상 프로젝트(위키 실시간 갱신) — 빈 문자열은 거부(방어심층).
     projectId: z.string().min(1).optional(),
+    // G5 고객 비용 가시성: 세션 누적 비용(USD)·토큰. status_update가 실어 보낸다(additive).
+    costUsd: z.number().optional(),
+    tokensUsed: z.number().optional(),
   }),
 })
 

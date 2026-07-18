@@ -129,6 +129,7 @@
   "right_panel": {
     "output_title": "Output",
     "waiting": "Waiting...",
+    "cost": "Cost (USD)",
     "tokens": "Tokens",
     "elapsed": "Elapsed",
     "modified_files": "Modified"
