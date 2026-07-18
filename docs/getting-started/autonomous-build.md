@@ -51,4 +51,4 @@ Chat과 Build의 차이:
 | Build를 눌렀는데 일반 답변만 | 자율 프로필 미설정 | 양 서비스에 `PAIS_PROFILE=autonomous` 설정 |
 | Manager가 기동 거부 | autonomous인데 JWT/DB 없음 | `SERVICE_JWT_SECRET`(≥32)·`DATABASE_URL` 설정 |
 | `Unknown PAIS_PROFILE` | 프로필명 오타 | 현재 지원: `autonomous` |
-| WP가 오래 멈춤 | 검증 다단계 > lease 가시성 | `MANAGER_LEASE_VISIBILITY_MS` 상향(프로필 기본 600s) |
+| WP가 오래 멈춤 | 검증 다단계 > lease 가시성 | 활성 검증 채널에 맞춰 **자동 상향**됨(G8 auto-tune·verify/security 360s·heavy 채널 600s). 더 늘리려면 `MANAGER_LEASE_VISIBILITY_MS` 명시 상향 |

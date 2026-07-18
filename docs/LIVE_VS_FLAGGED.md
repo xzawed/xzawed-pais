@@ -44,7 +44,7 @@
 
 ## `PAIS_PROFILE=autonomous`가 켜는 것 (검증된 floor)
 
-`TASK_MANAGER_ENABLED`·`MANAGER_DECOMPOSE_ENABLED`·`MANAGER_TASK_WORKER`·`MANAGER_WP_VERIFY`=true + `MANAGER_LEASE_VISIBILITY_MS=600000` + 비용 캡(`MANAGER_BUDGET_PER_WORKFLOW_USD=5`·`DAILY=50`) + **`SERVICE_JWT_SECRET`(≥32)·`DATABASE_URL` 하드요구**(없으면 기동 거부). Orchestrator엔 `ORCHESTRATOR_DECOMPOSE_ENABLED=true`.
+`TASK_MANAGER_ENABLED`·`MANAGER_DECOMPOSE_ENABLED`·`MANAGER_TASK_WORKER`·`MANAGER_WP_VERIFY`=true + 비용 캡(`MANAGER_BUDGET_PER_WORKFLOW_USD=5`·`DAILY=50`) + **`SERVICE_JWT_SECRET`(≥32)·`DATABASE_URL` 하드요구**(없으면 기동 거부). Orchestrator엔 `ORCHESTRATOR_DECOMPOSE_ENABLED=true`. (lease 가시성은 G8 auto-tune이 활성 채널에 맞춰 자동 상향 — 수동 `MANAGER_LEASE_VISIBILITY_MS=600000` 불필요.)
 
 **의도적 미포함**(정직성): 고급 검증 채널·decision/oracle/risk 체인은 사람 시드 데이터가 있어야 의미가 있어 **opt-in**으로 남긴다 — 프로필은 "돌아가고 + 기본 검증"까지만 켠다.
 

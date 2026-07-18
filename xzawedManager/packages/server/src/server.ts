@@ -42,6 +42,7 @@ import { DecisionRepo } from './db/decision.repo.js'
 import { AdvisoryRepo } from './db/advisory.repo.js'
 import { ReleaseGateRepo } from './db/release-gate.repo.js'
 import { releaseGateWarnings } from './streams/server-release-gate.js'
+import { resolveLeaseVisibilityMs } from './streams/lease-visibility.js'
 import { oracleRoute } from './api/oracle.route.js'
 import { decisionRoute } from './api/decision.route.js'
 import { riskRoute } from './api/risk.route.js'
@@ -311,12 +312,21 @@ export async function buildServer(
   if (config.MANAGER_WP_VERIFY && !config.MANAGER_TASK_WORKER) {
     app.log.warn('MANAGER_WP_VERIFY=true 이지만 MANAGER_TASK_WORKER가 꺼져 있어 검증 게이트가 동작하지 않습니다.')
   }
-  // P4b-1: 검증 게이트는 develop_code WP당 에이전트 호출을 최대 3회(실행+빌드+테스트, 각 120s)로 늘린다 —
-  // lease 가시성 창이 그보다 짧으면 건강한 검증 도중 lease가 만료돼 false reclaim·중복 신호가 발생한다
-  // (스테일 신호는 워커 DONE 가드가 흡수하나 reclaim 자체가 낭비). 가시성 하한 경고.
-  if (config.MANAGER_WP_VERIFY && config.MANAGER_LEASE_VISIBILITY_MS < 360_000) {
+  // G8: lease 가시성 auto-tune — 활성 검증 채널이 요구하는 가시성 바닥값을 계산해 configured가 낮으면 자동 상향한다
+  // (올리기만·낮추진 않음). verify/security=360s(120s×3), heavy(conformance/impact/property/mutation)=600s.
+  // 이전에는 채널별로 "가시성이 낮다"는 경고 4개를 냈으나(운영자가 수동 교정해야 함), 프리미엄 목표상 자동 교정한다.
+  const leaseVisibility = resolveLeaseVisibilityMs({
+    configuredMs: config.MANAGER_LEASE_VISIBILITY_MS,
+    wpVerify: config.MANAGER_WP_VERIFY,
+    wpConformance: config.MANAGER_WP_CONFORMANCE,
+    wpImpact: config.MANAGER_WP_IMPACT,
+    wpProperty: config.MANAGER_WP_PROPERTY,
+    wpMutation: config.MANAGER_WP_MUTATION,
+    wpSecurity: config.MANAGER_WP_SECURITY,
+  })
+  if (leaseVisibility.bumped) {
     app.log.warn(
-      `MANAGER_WP_VERIFY=true 인데 MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms < 360000ms(에이전트 타임아웃 120s×3) — 검증 도중 lease 만료로 false reclaim 위험. 가시성 상향 권장.`,
+      `[lease] MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms 가 활성 검증 채널(${leaseVisibility.drivers.join(',')}) 요구 바닥값 ${leaseVisibility.floorMs}ms 보다 낮아 ${leaseVisibility.effectiveMs}ms 로 자동 상향합니다(false reclaim 방지). 명시 상향하려면 MANAGER_LEASE_VISIBILITY_MS 를 조정하세요.`,
     )
   }
 
@@ -330,13 +340,7 @@ export async function buildServer(
   if (config.MANAGER_WP_CONFORMANCE && !oracleStore) {
     app.log.warn('MANAGER_WP_CONFORMANCE=true 이지만 oracleStore(DATABASE_URL+OracleRepo)가 없어 conformance가 항상 skip됩니다.')
   }
-  // P4b-2: conformance는 develop_code WP당 에이전트 호출을 최대 4회(실행+빌드+테스트+author+conformance-run, 각 120s)로
-  // 늘린다 — 가시성 창이 600s보다 짧으면 검증 도중 lease 만료(false reclaim) 위험이 더 커진다. 가시성 하한 경고.
-  if (config.MANAGER_WP_CONFORMANCE && config.MANAGER_LEASE_VISIBILITY_MS < 600_000) {
-    app.log.warn(
-      `MANAGER_WP_CONFORMANCE=true 인데 MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms < 600000ms(에이전트 타임아웃 120s×최대 5단계) — conformance 검증 도중 lease 만료로 false reclaim 위험. 가시성 상향 권장.`,
-    )
-  }
+  // (G8: conformance 가시성 하한 경고는 lease auto-tune으로 대체 — 위 resolveLeaseVisibilityMs가 600s로 자동 상향.)
 
   // P4: impact는 verifyWp 안 develop_code 경로에서만 동작하므로 MANAGER_WP_VERIFY off면 무음 no-op. 오진 방지 경고.
   if (config.MANAGER_WP_IMPACT && !config.MANAGER_WP_VERIFY) {
@@ -360,12 +364,7 @@ export async function buildServer(
   if (config.MANAGER_WP_MUTATION && !config.MANAGER_WP_VERIFY) {
     app.log.warn('MANAGER_WP_MUTATION=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 mutation 채널이 동작하지 않습니다(verifyWp 미경유).')
   }
-  // P4: mutation은 스위트를 K회 재실행하므로 WP당 비용이 가장 크다 — lease 가시성이 짧으면 검증 중 false reclaim 위험. 하한 경고.
-  if (config.MANAGER_WP_MUTATION && config.MANAGER_LEASE_VISIBILITY_MS < 600_000) {
-    app.log.warn(
-      `MANAGER_WP_MUTATION=true 인데 MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms < 600000ms — mutation은 스위트 K회 재실행으로 가장 비싸 검증 중 lease 만료(false reclaim) 위험. 가시성 상향 강력 권장.`,
-    )
-  }
+  // (G8: mutation 가시성 하한 경고는 lease auto-tune으로 대체 — 위 resolveLeaseVisibilityMs가 600s로 자동 상향.)
   // G7: mutation은 wp.risk >= MANAGER_MUTATION_MIN_RISK(기본 HIGH)일 때만 발화하는데, wp.risk는 risk 분류→승인→
   // 라우팅 체인이 HIGH로 write-back해야 올라간다. min-risk=HIGH인데 그 체인(RISK_CLASSIFY+RISK_ROUTING)이
   // 불완전하면 wp.risk는 기본 MEDIUM에 머물러 mutation이 **항상 skip**된다(무음 no-op·W7). 이를 표면화한다.
@@ -384,13 +383,7 @@ export async function buildServer(
   if (config.MANAGER_WP_SECURITY && !config.MANAGER_WP_VERIFY) {
     app.log.warn('MANAGER_WP_SECURITY=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 security 채널이 동작하지 않습니다(verifyWp 미경유).')
   }
-  // P4 4d: security는 develop_code WP당 에이전트 호출을 1회 더 추가한다 — 가시성 창이 짧으면 검증 중 false reclaim 위험. 하한 경고.
-  // 360000ms = 기본 가시성 300000ms + 검증 단계 — verify 게이트 하한과 동일.
-  if (config.MANAGER_WP_SECURITY && config.MANAGER_LEASE_VISIBILITY_MS < 360_000) {
-    app.log.warn(
-      `MANAGER_WP_SECURITY=true 인데 MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms < 360000ms — security 채널이 에이전트 호출을 1회 추가해 검증 중 lease 만료(false reclaim) 위험. 가시성 상향 권장.`,
-    )
-  }
+  // (G8: security 가시성 하한 경고는 lease auto-tune으로 대체 — 위 resolveLeaseVisibilityMs가 360s로 자동 상향.)
 
   // P4: advisory는 verdict.ok 후(verifyWp 경로) develop_code WP에만 생산되므로 MANAGER_WP_VERIFY가 꺼져 있으면
   // 무동작(무음 no-op). 전제 없이 켜면 사용자가 제안을 기대하나 아무 일도 없으므로 오진 방지 경고.
@@ -487,7 +480,8 @@ export async function buildServer(
       },
       {
         sweepMs: config.MANAGER_LEASE_SWEEP_MS,
-        visibilityMs: config.MANAGER_LEASE_VISIBILITY_MS,
+        // G8: auto-tune된 가시성(활성 채널 바닥값과 configured 중 큰 값). config 값보다 낮아지지 않음.
+        visibilityMs: leaseVisibility.effectiveMs,
         maxAttempts: config.MANAGER_LEASE_MAX_ATTEMPTS,
         oracleDor: config.MANAGER_ORACLE_DOR,
         // C3: 오라클 승인 결정(=MANAGER_ORACLE_DECISION). off면 oracle_approval 미발행·미소비(회귀 0). oracleStore+decisionStore 동반 시만 활성.
