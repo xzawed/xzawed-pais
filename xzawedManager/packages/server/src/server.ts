@@ -261,6 +261,7 @@ export async function buildServer(
       ? new ReleaseDeployGate(
           releaseStore ?? new ReleaseGateRepo(pool),
           decisionStore ?? new DecisionRepo(pool),
+          config.MANAGER_DEPLOY_GATE_STRICT, // G6: strict면 fail-open 분기를 차단으로
         )
       : undefined
   if (config.GITHUB_TOKEN) {
