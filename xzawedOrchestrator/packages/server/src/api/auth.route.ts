@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import type { Pool } from 'pg'
-import rateLimit from '@fastify/rate-limit'
+import { registerLocalRateLimit } from './rate-limit.js'
 import { UserRepo, toPublic } from '../auth/user.repo.js'
 import { RefreshRepo } from '../auth/refresh.repo.js'
 import { hashPassword, verifyPassword } from '../auth/password.js'
@@ -23,14 +23,7 @@ export async function authRoutes(
   const refreshes = new RefreshRepo(pool)
   const authHook = makeUserAuthHook(userJwtSecret)
 
-  await app.register(rateLimit, {
-    global: false,
-    errorResponseBuilder: () => ({
-      statusCode: 429,
-      error: 'Too Many Requests',
-      message: 'Too many requests, please try again later',
-    }),
-  })
+  await registerLocalRateLimit(app)
 
   app.post<{ Body: { email: string; password: string; displayName?: string } }>(
     '/auth/register',
