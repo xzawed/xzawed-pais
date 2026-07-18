@@ -140,6 +140,8 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     managerUrl: config.managerUrl,
     ...(userAuthHook && { userAuthHook }),
     ...(signServiceToken && { signServiceToken }),
+    // G11 Slice 0: 쓰기 경로 프로젝트 소유권 게이트(IDOR 폐색). userAuthHook+dbPool 동반 시만 배선.
+    ...(dbPool && { pool: dbPool }),
   })
   const signDecisionToken = (config.auth === 'jwt' && config.serviceJwtSecret)
     ? (): string => app.jwt.sign({ svc: 'decision-proxy' }, { expiresIn: '60s' })
@@ -148,6 +150,8 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     managerUrl: config.managerUrl,
     ...(userAuthHook && { userAuthHook }),
     ...(signDecisionToken && { signServiceToken: signDecisionToken }),
+    // G11 Slice 0: 제출(POST) 프로젝트 소유권 게이트(IDOR 폐색). userAuthHook+dbPool 동반 시만 배선.
+    ...(dbPool && { pool: dbPool }),
   })
 
   await app.register(sessionsRoutes, {

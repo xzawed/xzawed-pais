@@ -298,3 +298,51 @@ describe('knowledgeRoutes (proxy)', () => {
     })
   })
 })
+
+describe('knowledgeRoutes 프로젝트 소유권 게이트 (G11 Slice 0·IDOR 폐색)', () => {
+  const mockPool = (rows: unknown[]): import('pg').Pool =>
+    ({ query: vi.fn().mockResolvedValue({ rows }) }) as unknown as import('pg').Pool
+  async function buildOwned(rows: unknown[]) {
+    const app = Fastify()
+    await app.register(knowledgeRoutes, {
+      managerUrl: 'http://manager:3001',
+      userAuthHook: makeUserAuthHook(USER_SECRET),
+      pool: mockPool(rows),
+    })
+    return app
+  }
+  const auth = { authorization: `Bearer ${userToken()}` }
+
+  it('비소유 프로젝트 PATCH → 404·Manager 미호출(IDOR 차단)', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const app = await buildOwned([]) // 소유 프로젝트 없음
+    const res = await app.inject({ method: 'PATCH', url: '/projects/not-mine/knowledge/5', headers: auth, payload: { content: 'x' } })
+    expect(res.statusCode).toBe(404)
+    expect(fetchMock).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  it('비소유 프로젝트 DELETE → 404·Manager 미호출(IDOR 차단)', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const app = await buildOwned([])
+    const res = await app.inject({ method: 'DELETE', url: '/projects/not-mine/knowledge/5', headers: auth })
+    expect(res.statusCode).toBe(404)
+    expect(fetchMock).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  it('소유 프로젝트 PATCH → Manager로 프록시(정상 소유자 회귀 0)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200, headers: new Headers({ 'content-type': 'application/json' }),
+      text: () => Promise.resolve(JSON.stringify({ ok: true })),
+    } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    const app = await buildOwned([{ id: 'mine', user_id: 'u1' }]) // u1 소유
+    const res = await app.inject({ method: 'PATCH', url: '/projects/mine/knowledge/5', headers: auth, payload: { content: 'x' } })
+    expect(res.statusCode).toBe(200)
+    expect(fetchMock).toHaveBeenCalled()
+    await app.close()
+  })
+})

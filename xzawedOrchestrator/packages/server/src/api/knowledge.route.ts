@@ -1,4 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import type { Pool } from 'pg'
+import { projectOwnershipPreHandler } from '../auth/ownership.js'
 
 type RouteHook = (req: FastifyRequest, reply: FastifyReply) => Promise<void>
 
@@ -8,6 +10,8 @@ interface KnowledgeRoutesConfig {
   userAuthHook?: RouteHook
   /** 설정 시 Manager 쓰기 호출에 실을 서비스 토큰을 발급한다(서비스 간 인증). */
   signServiceToken?: () => string
+  /** G11 Slice 0: 설정 시 쓰기 경로에 프로젝트 소유권 게이트(IDOR 폐색). userAuthHook 동반 필요. */
+  pool?: Pool
 }
 
 /** Manager 쓰기 호출용 헤더 — 서비스 토큰이 있으면 Authorization을 덧붙인다. */
@@ -51,8 +55,11 @@ export async function knowledgeRoutes(
   app: FastifyInstance,
   config: KnowledgeRoutesConfig,
 ): Promise<void> {
-  // 쓰기 경로(PATCH/DELETE)에만 적용. 미설정(기본)이면 개방 유지(하위호환).
-  const writePreHandler = config.userAuthHook ? [config.userAuthHook] : []
+  // 쓰기 경로(PATCH/DELETE/restore)에만 적용. 미설정(기본)이면 개방 유지(하위호환).
+  // G11 Slice 0: userAuthHook(로그인) 다음에 소유권 게이트를 추가해 IDOR 폐색(pool 주입 시). 정상 소유자 회귀 0.
+  const writePreHandler: RouteHook[] = []
+  if (config.userAuthHook) writePreHandler.push(config.userAuthHook)
+  if (config.userAuthHook && config.pool) writePreHandler.push(projectOwnershipPreHandler(config.pool))
 
   app.get<{ Params: { projectId: string }; Querystring: { limit?: string; q?: string; source?: string; category?: string; deleted?: string } }>(
     '/projects/:projectId/knowledge',
