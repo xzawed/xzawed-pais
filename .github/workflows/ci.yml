@@ -349,6 +349,70 @@ jobs:
           REDIS_URL: redis://localhost:6379
         run: pnpm test -- --reporter=verbose src/__tests__/redis-streams.integration.test.ts
 
+  # ── Manager Redis wiring E2E (G9 Slice C) ─────────────────────────────────
+  # 프리미엄(autonomous) 프로필이 켜는 실 소비자 루프가 build→WP→verify→완료 아크를 실제로 닫는지
+  # 실 Redis+PG로 증명(Slice A는 소비자 우회라 배선 미증명). Manager turborepo 잡은 redis가 없어
+  # premium-profile-wiring.integration.test.ts를 REDIS_URL 부재로 skip → 이 전용 잡에서만 실행.
+  manager-redis-integration:
+    name: Manager Redis Wiring Integration
+    runs-on: ubuntu-latest
+    needs: [turborepo]
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://localhost:6379
+      TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: pnpm/action-setup@d15e628ca66d93ee5f352c71671a7bc6a97af5c9 # v6.0.8
+        with:
+          version: 10
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: xzawedManager/pnpm-lock.yaml
+
+      - name: Build xzawedShared
+        working-directory: xzawedShared
+        run: pnpm install && pnpm build
+
+      - name: Install
+        working-directory: xzawedManager
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        working-directory: xzawedManager
+        run: pnpm build
+
+      - name: Run Manager Redis wiring E2E
+        working-directory: xzawedManager/packages/server
+        run: pnpm vitest run test/premium-profile-wiring.integration.test.ts
+
   # ── Playwright E2E (Electron) ─────────────────────────────────────────────
   playwright-e2e:
     name: Playwright E2E
@@ -777,12 +841,12 @@ jobs:
   all-checks-pass:
     name: All checks pass
     runs-on: ubuntu-latest
-    needs: [turborepo, independent, redis-integration, playwright-e2e, launcher, shared-lib, i18n-check, module-boundaries]
+    needs: [turborepo, independent, redis-integration, manager-redis-integration, playwright-e2e, launcher, shared-lib, i18n-check, module-boundaries]
     if: always()
     steps:
       - name: Check results
         run: |
-          if [[ "${{ needs.turborepo.result }}" != "success" || "${{ needs.independent.result }}" != "success" || "${{ needs.redis-integration.result }}" != "success" || "${{ needs.playwright-e2e.result }}" != "success" || "${{ needs.launcher.result }}" != "success" || "${{ needs.shared-lib.result }}" != "success" || "${{ needs.i18n-check.result }}" != "success" || "${{ needs.module-boundaries.result }}" != "success" ]]; then
+          if [[ "${{ needs.turborepo.result }}" != "success" || "${{ needs.independent.result }}" != "success" || "${{ needs.redis-integration.result }}" != "success" || "${{ needs.manager-redis-integration.result }}" != "success" || "${{ needs.playwright-e2e.result }}" != "success" || "${{ needs.launcher.result }}" != "success" || "${{ needs.shared-lib.result }}" != "success" || "${{ needs.i18n-check.result }}" != "success" || "${{ needs.module-boundaries.result }}" != "success" ]]; then
             echo "One or more jobs failed"
             exit 1
           fi
