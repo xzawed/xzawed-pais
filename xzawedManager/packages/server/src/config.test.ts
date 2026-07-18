@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { loadConfig } from './config.js'
+import { loadConfig, resolveProfileEnv } from './config.js'
 
 /** 공통 env(MODE·ANTHROPIC_API_KEY) 저장/복원 + 추가 키 정리. 블록 내에서 호출. */
 function withBaseEnv(extraKeys: string[]): void {
@@ -683,5 +683,115 @@ describe('config MANAGER_DEGRADED_SIGNOFF', () => {
   it("'true'면 true", () => {
     process.env['MANAGER_DEGRADED_SIGNOFF'] = 'true'
     expect(loadConfig().MANAGER_DEGRADED_SIGNOFF).toBe(true)
+  })
+})
+
+describe('PAIS_PROFILE — resolveProfileEnv (순수)', () => {
+  it('PAIS_PROFILE 미설정 시 env를 그대로 반환(회귀 0·동일 참조)', () => {
+    const env = { FOO: 'bar' } as NodeJS.ProcessEnv
+    expect(resolveProfileEnv(env)).toBe(env)
+  })
+
+  it('빈 문자열 PAIS_PROFILE도 미설정으로 취급(그대로 반환)', () => {
+    const env = { PAIS_PROFILE: '' } as NodeJS.ProcessEnv
+    expect(resolveProfileEnv(env)).toBe(env)
+  })
+
+  it('autonomous 프로필이 미설정 플래그를 검증된 기본값으로 채운다', () => {
+    const out = resolveProfileEnv({ PAIS_PROFILE: 'autonomous' } as NodeJS.ProcessEnv)
+    expect(out['TASK_MANAGER_ENABLED']).toBe('true')
+    expect(out['MANAGER_DECOMPOSE_ENABLED']).toBe('true')
+    expect(out['MANAGER_TASK_WORKER']).toBe('true')
+    expect(out['MANAGER_WP_VERIFY']).toBe('true')
+    expect(out['MANAGER_LEASE_VISIBILITY_MS']).toBe('600000')
+    expect(out['MANAGER_BUDGET_PER_WORKFLOW_USD']).toBe('5')
+    expect(out['MANAGER_BUDGET_DAILY_USD']).toBe('50')
+  })
+
+  it('개별 env가 프로필을 override한다(사용자 우선)', () => {
+    const out = resolveProfileEnv({
+      PAIS_PROFILE: 'autonomous',
+      MANAGER_WP_VERIFY: 'false',
+      MANAGER_LEASE_VISIBILITY_MS: '900000',
+    } as NodeJS.ProcessEnv)
+    expect(out['MANAGER_WP_VERIFY']).toBe('false') // 명시 override 우선
+    expect(out['MANAGER_LEASE_VISIBILITY_MS']).toBe('900000')
+    expect(out['TASK_MANAGER_ENABLED']).toBe('true') // 미설정은 프로필값
+  })
+
+  it('미지 프로필은 명확한 에러를 throw한다', () => {
+    expect(() => resolveProfileEnv({ PAIS_PROFILE: 'bogus' } as NodeJS.ProcessEnv)).toThrow(
+      /Unknown PAIS_PROFILE.*bogus/,
+    )
+  })
+})
+
+describe('PAIS_PROFILE — loadConfig 통합', () => {
+  const PROFILE_KEYS = [
+    'PAIS_PROFILE', 'TASK_MANAGER_ENABLED', 'MANAGER_DECOMPOSE_ENABLED', 'MANAGER_TASK_WORKER',
+    'MANAGER_WP_VERIFY', 'MANAGER_LEASE_VISIBILITY_MS', 'MANAGER_BUDGET_PER_WORKFLOW_USD',
+    'MANAGER_BUDGET_DAILY_USD', 'SERVICE_JWT_SECRET', 'DATABASE_URL',
+  ]
+  const BASE_KEYS = [...PROFILE_KEYS, 'ANTHROPIC_API_KEY', 'MODE']
+  const saved: Record<string, string | undefined> = {}
+  beforeEach(() => {
+    for (const k of BASE_KEYS) saved[k] = process.env[k]
+    for (const k of PROFILE_KEYS) delete process.env[k]
+    process.env['ANTHROPIC_API_KEY'] = 'k'
+    process.env['MODE'] = 'local' // 테스트 환경 MODE='test'가 enum 파싱을 깨지 않도록(기존 withBaseEnv 패턴)
+  })
+  afterEach(() => {
+    for (const k of BASE_KEYS) {
+      if (saved[k] !== undefined) process.env[k] = saved[k]
+      else delete process.env[k]
+    }
+  })
+
+  it('autonomous + JWT + DB → 자율 스택이 켜진다', () => {
+    process.env['PAIS_PROFILE'] = 'autonomous'
+    process.env['SERVICE_JWT_SECRET'] = 'x'.repeat(32)
+    process.env['DATABASE_URL'] = 'postgres://localhost/db'
+    const c = loadConfig()
+    expect(c.TASK_MANAGER_ENABLED).toBe(true)
+    expect(c.MANAGER_DECOMPOSE_ENABLED).toBe(true)
+    expect(c.MANAGER_TASK_WORKER).toBe(true)
+    expect(c.MANAGER_WP_VERIFY).toBe(true)
+    expect(c.MANAGER_LEASE_VISIBILITY_MS).toBe(600_000)
+    expect(c.MANAGER_BUDGET_PER_WORKFLOW_USD).toBe(5)
+    expect(c.MANAGER_BUDGET_DAILY_USD).toBe(50)
+  })
+
+  it('autonomous인데 SERVICE_JWT_SECRET 없으면 기동 거부', () => {
+    process.env['PAIS_PROFILE'] = 'autonomous'
+    process.env['DATABASE_URL'] = 'postgres://localhost/db'
+    expect(() => loadConfig()).toThrow(/SERVICE_JWT_SECRET/)
+  })
+
+  it('autonomous인데 DATABASE_URL 없으면 기동 거부', () => {
+    process.env['PAIS_PROFILE'] = 'autonomous'
+    process.env['SERVICE_JWT_SECRET'] = 'x'.repeat(32)
+    expect(() => loadConfig()).toThrow(/DATABASE_URL/)
+  })
+
+  it('개별 override가 프로필보다 우선(MANAGER_WP_VERIFY=false)', () => {
+    process.env['PAIS_PROFILE'] = 'autonomous'
+    process.env['SERVICE_JWT_SECRET'] = 'x'.repeat(32)
+    process.env['DATABASE_URL'] = 'postgres://localhost/db'
+    process.env['MANAGER_WP_VERIFY'] = 'false'
+    const c = loadConfig()
+    expect(c.MANAGER_WP_VERIFY).toBe(false)
+    expect(c.TASK_MANAGER_ENABLED).toBe(true) // 미override는 프로필값 유지
+  })
+
+  it('PAIS_PROFILE 미설정 시 자율 스택 기본 off(회귀 0)', () => {
+    const c = loadConfig()
+    expect(c.TASK_MANAGER_ENABLED).toBe(false)
+    expect(c.MANAGER_WP_VERIFY).toBe(false)
+    expect(c.MANAGER_LEASE_VISIBILITY_MS).toBe(300_000) // 기존 기본값 유지
+  })
+
+  it('미지 PAIS_PROFILE은 기동 거부(명확한 에러)', () => {
+    process.env['PAIS_PROFILE'] = 'bogus'
+    expect(() => loadConfig()).toThrow(/Unknown PAIS_PROFILE/)
   })
 })

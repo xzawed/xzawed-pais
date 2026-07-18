@@ -7,6 +7,10 @@ const configSchema = z
     REDIS_URL: z.string().default('redis://localhost:6379'),
     PORT: z.coerce.number().default(3001),
     MODE: z.enum(['local', 'remote']).default('local'),
+    // 프리미엄 프로필 프리셋(G1). 설정 시 resolveProfileEnv가 parse 전에 그 프로필의 검증된
+    // 플래그 기본값을 env에 병합한다(개별 env override 우선). 미지 프로필은 resolveProfileEnv가
+    // 먼저 throw하므로 여기 도달하는 값은 항상 알려진 프로필. autonomous 하드요구는 superRefine.
+    PAIS_PROFILE: z.string().optional(),
     SERVICE_JWT_SECRET: z.string().optional(),
     DATABASE_URL: z.string().optional(),
     GITHUB_TOKEN: z.string().optional(),
@@ -244,10 +248,66 @@ const configSchema = z
         message: 'SERVICE_JWT_SECRET must be at least 32 characters when provided',
       })
     }
+    // PAIS_PROFILE=autonomous 하드요구(G1/G3 선반영): JWT·DB 없으면 기동 거부. 프리미엄 자율
+    // 프로필은 무인증 mutation·미배선(DB 부재)으로 조용히 강등되면 안 된다 — 명확히 실패한다.
+    if (val.PAIS_PROFILE === 'autonomous') {
+      if (val.SERVICE_JWT_SECRET === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['SERVICE_JWT_SECRET'],
+          message: 'PAIS_PROFILE=autonomous requires SERVICE_JWT_SECRET (>=32 chars)',
+        })
+      }
+      if (val.DATABASE_URL === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['DATABASE_URL'],
+          message: 'PAIS_PROFILE=autonomous requires DATABASE_URL',
+        })
+      }
+    }
   })
 
 export type Config = z.infer<typeof configSchema>
 
+// 프리미엄 프로필 프리셋(G1). 프로필명 → 그 프로필이 켜는 검증된 플래그 기본값.
+// 값은 문자열(env 계약) — parse 전에 env에 병합되어 각 플래그 스키마가 정상 변환한다.
+// 고급 verify 채널·decision/oracle/risk 체인은 opt-in으로 남긴다(사람 시드 오라클/golden·
+// risk 승인이 있어야 의미가 있어 기본 on이면 skip/차단 — 오약속 방지).
+export const PROFILES: Record<string, Record<string, string>> = {
+  autonomous: {
+    TASK_MANAGER_ENABLED: 'true',
+    MANAGER_DECOMPOSE_ENABLED: 'true',
+    MANAGER_TASK_WORKER: 'true',
+    MANAGER_WP_VERIFY: 'true',
+    MANAGER_LEASE_VISIBILITY_MS: '600000', // 검증 다단계 중 false reclaim 방지(300s→600s 바닥)
+    MANAGER_BUDGET_PER_WORKFLOW_USD: '5', // 비용 캡 기본-on(G5 선반영)
+    MANAGER_BUDGET_DAILY_USD: '50',
+  },
+}
+
+/**
+ * PAIS_PROFILE이 설정돼 있으면 그 프로필의 기본값을 env 복사본에 병합해 반환한다.
+ * - 미설정/빈 값: env 그대로(바이트 동일·회귀 0).
+ * - 미지 프로필: 명확한 에러 throw.
+ * - 개별 env가 이미 설정돼 있으면 프로필을 override(사용자 우선).
+ */
+export function resolveProfileEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const profile = env['PAIS_PROFILE']
+  if (profile === undefined || profile === '') return env
+  const preset = PROFILES[profile]
+  if (preset === undefined) {
+    throw new Error(
+      `Unknown PAIS_PROFILE: '${profile}'. Known profiles: ${Object.keys(PROFILES).join(', ')}`,
+    )
+  }
+  const merged: NodeJS.ProcessEnv = { ...env }
+  for (const [key, value] of Object.entries(preset)) {
+    if (merged[key] === undefined) merged[key] = value // 명시 env 우선
+  }
+  return merged
+}
+
 export function loadConfig(): Config {
-  return configSchema.parse(process.env)
+  return configSchema.parse(resolveProfileEnv(process.env))
 }
