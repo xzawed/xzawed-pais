@@ -12,4 +12,4 @@ CREATE TABLE IF NOT EXISTS projects (
   UNIQUE(user_id, slug)
 );
 
-CREATE INDEX idx_projects_user_id ON projects(user_id);
+CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id);
