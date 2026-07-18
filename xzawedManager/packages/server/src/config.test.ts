@@ -795,3 +795,35 @@ describe('PAIS_PROFILE — loadConfig 통합', () => {
     expect(() => loadConfig()).toThrow(/Unknown PAIS_PROFILE/)
   })
 })
+
+describe('G3 — MODE=remote 프로덕션 auth 하드페일', () => {
+  const KEYS = ['MODE', 'SERVICE_JWT_SECRET', 'ANTHROPIC_API_KEY']
+  const saved: Record<string, string | undefined> = {}
+  beforeEach(() => {
+    for (const k of KEYS) saved[k] = process.env[k]
+    process.env['ANTHROPIC_API_KEY'] = 'k'
+    delete process.env['SERVICE_JWT_SECRET']
+  })
+  afterEach(() => {
+    for (const k of KEYS) {
+      if (saved[k] !== undefined) process.env[k] = saved[k]
+      else delete process.env[k]
+    }
+  })
+
+  it('MODE=remote인데 SERVICE_JWT_SECRET 없으면 기동 거부', () => {
+    process.env['MODE'] = 'remote'
+    expect(() => loadConfig()).toThrow(/SERVICE_JWT_SECRET/)
+  })
+
+  it('MODE=remote + SERVICE_JWT_SECRET(≥32) → 통과', () => {
+    process.env['MODE'] = 'remote'
+    process.env['SERVICE_JWT_SECRET'] = 'x'.repeat(32)
+    expect(loadConfig().MODE).toBe('remote')
+  })
+
+  it('MODE=local(기본)은 SERVICE_JWT_SECRET 없어도 통과(회귀 0)', () => {
+    process.env['MODE'] = 'local'
+    expect(loadConfig().MODE).toBe('local')
+  })
+})

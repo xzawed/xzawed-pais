@@ -248,6 +248,16 @@ const configSchema = z
         message: 'SERVICE_JWT_SECRET must be at least 32 characters when provided',
       })
     }
+    // G3: 프로덕션 auth 하드페일. MODE=remote(원격 배포)인데 SERVICE_JWT_SECRET이 없으면 기동 거부 —
+    // knowledge/oracle/risk mutation 라우트가 무인증 개방되면 안 된다(#406은 경고, G3는 remote에서 차단).
+    // MODE=local(기본)은 무변경 — 로컬 dev는 무인증+경고 유지(회귀 0).
+    if (val.MODE === 'remote' && val.SERVICE_JWT_SECRET === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['SERVICE_JWT_SECRET'],
+        message: 'MODE=remote requires SERVICE_JWT_SECRET (production auth — mutation routes must not be open in remote deployments)',
+      })
+    }
     // PAIS_PROFILE=autonomous 하드요구(G1/G3 선반영): JWT·DB 없으면 기동 거부. 프리미엄 자율
     // 프로필은 무인증 mutation·미배선(DB 부재)으로 조용히 강등되면 안 된다 — 명확히 실패한다.
     if (val.PAIS_PROFILE === 'autonomous') {
