@@ -55,7 +55,9 @@
     "info_response_placeholder": "응답을 입력하세요...",
     "demo_preview_empty": "미리보기를 표시할 내용이 없습니다",
     "mode_chat": "대화",
-    "mode_build": "빌드"
+    "mode_build": "빌드",
+    "mode_chat_hint": "대화형 질의응답 — 자율 실행 없이 답변만",
+    "mode_build_hint": "자율 멀티에이전트 빌드 — 계획→개발→테스트→빌드 자동 수행 (자율 프로필 필요)"
   },
   "mcp": {
     "title": "🔌 MCP 서버",

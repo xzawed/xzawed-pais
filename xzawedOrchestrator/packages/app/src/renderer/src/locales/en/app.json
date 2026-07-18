@@ -55,7 +55,9 @@
     "info_response_placeholder": "Type your response...",
     "demo_preview_empty": "Nothing to preview",
     "mode_chat": "Chat",
-    "mode_build": "Build"
+    "mode_build": "Build",
+    "mode_chat_hint": "Conversational Q&A — answers only, no autonomous execution",
+    "mode_build_hint": "Autonomous multi-agent build — plan→develop→test→build (requires autonomous profile)"
   },
   "mcp": {
     "title": "🔌 MCP Servers",

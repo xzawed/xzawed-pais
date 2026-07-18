@@ -75,6 +75,8 @@ export function MessageInput({ onSend, disabled }: Readonly<Props>): React.JSX.E
               data-testid="mode-toggle-chat"
               onClick={() => setMode('chat')}
               className={modeBtnClass(mode === 'chat')}
+              title={t('chat.mode_chat_hint')}
+              aria-label={t('chat.mode_chat_hint')}
             >
               {t('chat.mode_chat')}
             </button>
@@ -83,6 +85,8 @@ export function MessageInput({ onSend, disabled }: Readonly<Props>): React.JSX.E
               data-testid="mode-toggle-build"
               onClick={() => setMode('build')}
               className={modeBtnClass(mode === 'build')}
+              title={t('chat.mode_build_hint')}
+              aria-label={t('chat.mode_build_hint')}
             >
               {t('chat.mode_build')}
             </button>

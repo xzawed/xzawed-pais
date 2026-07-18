@@ -55,7 +55,9 @@
     "info_response_placeholder": "応答を入力してください...",
     "demo_preview_empty": "プレビューする内容がありません",
     "mode_chat": "チャット",
-    "mode_build": "ビルド"
+    "mode_build": "ビルド",
+    "mode_chat_hint": "対話型Q&A — 自律実行なし、回答のみ",
+    "mode_build_hint": "自律マルチエージェントビルド — 計画→開発→テスト→ビルド (自律プロファイル必須)"
   },
   "mcp": {
     "title": "🔌 MCPサーバー",
