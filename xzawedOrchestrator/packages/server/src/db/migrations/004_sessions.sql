@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_sessions_user_project ON sessions(user_id, project_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_project ON sessions(user_id, project_id);
 
 CREATE TABLE IF NOT EXISTS messages (
   id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -19,4 +19,4 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_messages_session ON messages(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at);
