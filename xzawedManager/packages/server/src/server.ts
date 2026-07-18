@@ -366,6 +366,19 @@ export async function buildServer(
       `MANAGER_WP_MUTATION=true 인데 MANAGER_LEASE_VISIBILITY_MS=${config.MANAGER_LEASE_VISIBILITY_MS}ms < 600000ms — mutation은 스위트 K회 재실행으로 가장 비싸 검증 중 lease 만료(false reclaim) 위험. 가시성 상향 강력 권장.`,
     )
   }
+  // G7: mutation은 wp.risk >= MANAGER_MUTATION_MIN_RISK(기본 HIGH)일 때만 발화하는데, wp.risk는 risk 분류→승인→
+  // 라우팅 체인이 HIGH로 write-back해야 올라간다. min-risk=HIGH인데 그 체인(RISK_CLASSIFY+RISK_ROUTING)이
+  // 불완전하면 wp.risk는 기본 MEDIUM에 머물러 mutation이 **항상 skip**된다(무음 no-op·W7). 이를 표면화한다.
+  if (
+    config.MANAGER_WP_MUTATION &&
+    config.MANAGER_WP_VERIFY &&
+    config.MANAGER_MUTATION_MIN_RISK === 'HIGH' &&
+    (!config.MANAGER_RISK_CLASSIFY || !config.MANAGER_RISK_ROUTING)
+  ) {
+    app.log.warn(
+      'MANAGER_WP_MUTATION=true·MANAGER_MUTATION_MIN_RISK=HIGH 인데 risk write-back 체인(MANAGER_RISK_CLASSIFY+MANAGER_RISK_ROUTING)이 불완전해 wp.risk가 기본 MEDIUM에 머물러 mutation이 항상 skip됩니다(무음 no-op). risk 체인을 켜 HIGH 승인·write-back하거나, MANAGER_MUTATION_MIN_RISK를 MEDIUM/LOW로 낮추세요.',
+    )
+  }
 
   // P4 4d: security는 verifyWp 안 develop_code 경로에서만 동작하므로 MANAGER_WP_VERIFY off면 무음 no-op. 오진 방지 경고.
   if (config.MANAGER_WP_SECURITY && !config.MANAGER_WP_VERIFY) {
