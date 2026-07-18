@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import type { Pool } from 'pg'
+import { registerLocalRateLimit } from './rate-limit.js'
 import type { WebSocket } from 'ws'
 import type { SessionStore } from '../sessions/session.store.js'
 import type { ClaudeRunner, RunOptions } from '../claude/runner.interface.js'
@@ -284,6 +285,14 @@ export async function sessionsRoutes(
   const effectiveAuthHook = userAuthHook ?? authHook
   const routeOpts = effectiveAuthHook ? { preHandler: effectiveAuthHook } : {}
 
+  // W14: 비용 write 엔드포인트 rate-limit — POST messages는 LLM 호출/decompose_request를 트리거하므로 스팸 시
+  // 비용 폭발·DoS. GET(읽기)은 무제한. auth 라우트와 공유 헬퍼(registerLocalRateLimit·CPD0).
+  await registerLocalRateLimit(app)
+  const withLimit = (max: number): Record<string, unknown> => ({
+    ...routeOpts,
+    config: { rateLimit: { max, timeWindow: '1 minute' } },
+  })
+
   function cleanupSession(sessionId: string): void {
     sessionCleanup.get(sessionId)?.()
     sessionCleanup.delete(sessionId)
@@ -333,7 +342,7 @@ export async function sessionsRoutes(
     projectId: z.string().optional(),
   })
 
-  app.post('/sessions', routeOpts, async (req, reply) => {
+  app.post('/sessions', withLimit(10), async (req, reply) => {
     const bodyResult = CreateSessionBodySchema.safeParse(req.body ?? {})
     if (!bodyResult.success) {
       return reply.status(400).send({ error: 'Invalid request body', details: bodyResult.error.flatten() })
@@ -399,7 +408,7 @@ export async function sessionsRoutes(
   })
   app.post<{ Params: { id: string }; Body: { content: string; gateMode?: 'manual' | 'auto'; mode?: 'chat' | 'build' } }>(
     '/sessions/:id/messages',
-    routeOpts,
+    withLimit(30),
     async (req, reply) => {
       const resolved = await resolveSession(req, reply)
       if (!resolved) return
@@ -510,7 +519,7 @@ export async function sessionsRoutes(
     Body: { action: string; data: Record<string, unknown> }
   }>(
     '/sessions/:id/ui-actions',
-    routeOpts,
+    withLimit(60),
     async (req, reply) => {
       const resolved = await resolveSession(req, reply)
       if (!resolved) return
