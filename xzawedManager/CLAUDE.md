@@ -527,9 +527,9 @@ ANTHROPIC_API_KEY=sk-...
 CLAUDE_MODEL=claude-sonnet-4-6
 REDIS_URL=redis://localhost:6379
 PORT=3001
-MODE=local
+MODE=local              # local(기본)|remote. ⚠️ G3: MODE=remote(프로덕션)면 SERVICE_JWT_SECRET 필수 — 없으면 기동 거부(무인증 knowledge/oracle/risk mutation 개방 차단). MODE=local은 무변경(#406 경고 유지)
 GITHUB_TOKEN=            # 선택: 설정 시 github_ops 핸들러 활성화
-SERVICE_JWT_SECRET=      # 선택: 설정 시 JWT 인증 활성화 (32자 이상 필수)
+SERVICE_JWT_SECRET=      # 선택: 설정 시 JWT 인증 활성화 (32자 이상 필수). ⚠️ MODE=remote·PAIS_PROFILE=autonomous면 필수(하드페일)
 DATABASE_URL=            # 선택: DB 연결 문자열
 MANAGER_GATE_FAILSAFE=   # 선택: 기본 true. 'false'면 승인 게이트 레거시 fail-open 복원
 MANAGER_MAX_GATE_REASKS= # 선택: needs_human 재요청 최대 횟수(기본 3), 초과 시 세션 중단
