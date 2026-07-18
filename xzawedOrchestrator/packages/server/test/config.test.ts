@@ -9,6 +9,8 @@ describe('config', () => {
     delete process.env.REDIS_URL
     delete process.env.SERVICE_JWT_SECRET
     delete process.env.USER_JWT_SECRET
+    delete process.env.PAIS_PROFILE
+    delete process.env.ORCHESTRATOR_DECOMPOSE_ENABLED
     process.env.ANTHROPIC_API_KEY = 'sk-test-key' // NOSONAR
   })
 
@@ -61,5 +63,44 @@ describe('config', () => {
     delete process.env.REMOTE_HOST
     delete process.env.REMOTE_USER
     delete process.env.REMOTE_KEY_PATH
+  })
+
+  it('decomposeEnabled는 기본 false (회귀 0)', async () => {
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().decomposeEnabled).toBe(false)
+  })
+
+  it('ORCHESTRATOR_DECOMPOSE_ENABLED=true → decomposeEnabled true', async () => {
+    process.env.ORCHESTRATOR_DECOMPOSE_ENABLED = 'true'
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().decomposeEnabled).toBe(true)
+  })
+
+  it('PAIS_PROFILE=autonomous → decomposeEnabled true (프리셋 병합)', async () => {
+    process.env.PAIS_PROFILE = 'autonomous'
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().decomposeEnabled).toBe(true)
+  })
+
+  it('개별 env가 PAIS_PROFILE을 override (ORCHESTRATOR_DECOMPOSE_ENABLED=false)', async () => {
+    process.env.PAIS_PROFILE = 'autonomous'
+    process.env.ORCHESTRATOR_DECOMPOSE_ENABLED = 'false'
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().decomposeEnabled).toBe(false)
+  })
+
+  it('미지 PAIS_PROFILE은 기동 거부(명확한 에러)', async () => {
+    process.env.PAIS_PROFILE = 'bogus'
+    const { loadConfig } = await import('../src/config.js')
+    expect(() => loadConfig()).toThrow(/Unknown PAIS_PROFILE/)
+  })
+
+  it('resolveProfileEnv: 미설정→동일 참조 반환·미지 프로필→throw', async () => {
+    const { resolveProfileEnv } = await import('../src/config.js')
+    const env = { FOO: 'bar' } as NodeJS.ProcessEnv
+    expect(resolveProfileEnv(env)).toBe(env)
+    expect(() => resolveProfileEnv({ PAIS_PROFILE: 'bogus' } as NodeJS.ProcessEnv)).toThrow(
+      /Unknown PAIS_PROFILE/,
+    )
   })
 })
