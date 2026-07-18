@@ -300,7 +300,7 @@ packages/server/src/
 |---------|--------|------|
 | `MANAGER_OUTBOX_POLL_MS` | `500` | 아웃박스 릴레이 폴링 주기 ms |
 | `MANAGER_LEASE_SWEEP_MS` | `30000` | lease 만료 sweep 주기 ms |
-| `MANAGER_LEASE_VISIBILITY_MS` | `300000` | lease 가시성 타임아웃 ms |
+| `MANAGER_LEASE_VISIBILITY_MS` | `300000` | lease 가시성 타임아웃 ms. **활성 검증 채널 요구 바닥값(verify/security 360s·conformance/impact/property/mutation 600s)보다 낮으면 기동 시 자동 상향**(G8 auto-tune·올리기만·명시 상향은 여기서 조정) |
 | `MANAGER_LEASE_MAX_ATTEMPTS` | `3` | 최대 디스패치 시도 — 초과 시 escalate |
 | `MANAGER_DECOMPOSE_REPAIR_MAX` | `2` | 분해 P4 repair 루프 최대 반복 — 소진 시 `decomposition.inconsistent` |
 | `CLAUDE_TIMEOUT_MS` | `120000` | 단계 LLM 호출 타임아웃 ms |
