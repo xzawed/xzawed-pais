@@ -25,6 +25,14 @@ async function safeRollback(client: PoolClient): Promise<void> {
 export class OracleRepo {
   constructor(private readonly pool: Pool, private readonly now: () => number = () => Date.now()) {}
 
+  /** 오라클 전체 upsert(사람 시드 경로).
+   *  ⚠️ G11 Slice 4: 이 경로는 tenant_id를 채우지 않는다(영구 미태깅) — 유일한 호출자가
+   *  `api/oracle.route.ts`의 `POST /workflows/:workflowId/oracles`이고, Manager authHook은
+   *  서비스 토큰만 검증해 `authUser`가 없으므로(C6) 태그 소스가 실제로 존재하지 않는다.
+   *  분해 경로(`upsertDraft`)만 태그된다. **Slice 4b는 오라클 읽기에 테넌트 술어를 얹기 전에
+   *  이 경로의 태그 소스를 먼저 확보해야 한다**(예: 라우트에 orgId claim 전달) — 그러지 않으면
+   *  `approvedGoldensForStory`·`approvedInvariantsForStory`·`approvedOracleForStory`가 null을
+   *  반환하고 conformance/impact/property 채널이 조용히 fail-open skip된다. */
   async upsert(oracle: Oracle): Promise<void> {
     await this.pool.query(
       `INSERT INTO oracles (oracle_id, workflow_id, story_id, version, status, scenarios, invariants, golden_refs, coverage)

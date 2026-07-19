@@ -161,7 +161,7 @@ describe('appendWpEvent — 멱등키 event_type 분리(§8 생명주기 충돌 
   it('같은 (wf,wp,attempt)라도 dispatched·completed가 분리된 멱등키를 받는다 — 키 충돌 dedup 유실 방지', async () => {
     const c = captureClient()
     const append = (eventType: string, fromState: string, toState: string) =>
-      appendWpEvent(c.client, wpEnvelope('wf', 'a', 0, 1), { workflowId: 'wf', wpId: 'a', attempt: 0, stepN: 0, eventType, fromState, toState })
+      appendWpEvent(c.client, wpEnvelope('wf', 'a', 0, 1), { workflowId: 'wf', wpId: 'a', attempt: 0, stepN: 0, eventType, fromState, toState, tenantId: null })
     await append('wp.dispatched', 'DRAFTED', 'DISPATCHED')
     await append('wp.completed', 'DISPATCHED', 'DONE')
     expect(c.keys).toEqual(['wf:wp-a:0:wp.dispatched', 'wf:wp-a:0:wp.completed'])
