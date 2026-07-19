@@ -209,4 +209,28 @@ d('G11 Slice 4 tenant 태깅 (pg)', () => {
       await pool.query(`DELETE FROM advisory_findings WHERE workflow_id = $1`, [wf])
     }
   })
+
+  it('recordEvidence·recordGate가 tenant_id를 기록한다', async () => {
+    const { ReleaseGateRepo } = await import('../src/db/release-gate.repo.js')
+    const repo = new ReleaseGateRepo(pool)
+    const wf = `wf-tt-gate-${randomUUID()}`
+    try {
+      await repo.recordEvidence(wf, 'a', 0, [{ channel: 'tc', outcome: 'passed' }], 'org-1')
+      const ev = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM wp_verification_results WHERE workflow_id = $1`, [wf],
+      )
+      expect(ev.rows[0]?.tenant_id).toBe('org-1')
+
+      await repo.recordGate(wf, 'v1', { status: 'passed', perWp: [], blockingReasons: [] }, 'org-1')
+      const g = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM release_gates WHERE workflow_id = $1`, [wf],
+      )
+      expect(g.rows[0]?.tenant_id).toBe('org-1')
+    } finally {
+      await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+      await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+      await pool.query(`DELETE FROM release_gates WHERE workflow_id = $1`, [wf])
+      await pool.query(`DELETE FROM wp_verification_results WHERE workflow_id = $1`, [wf])
+    }
+  })
 })

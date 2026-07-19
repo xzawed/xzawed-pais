@@ -87,7 +87,8 @@ export interface WorkerDeps {
   isProviderFailure?: (err: unknown) => boolean
   /** P5-1 릴리스 게이트: verdict.ok 시 채널 증거를 영속(best-effort). off면 미주입(회귀 0). */
   releaseGateEnabled?: boolean
-  releaseStore?: { recordEvidence(workflowId: string, wpId: string, attempt: number, outcomes: ChannelOutcome[]): Promise<void> }
+  /** G11 Slice 4: tenantId(5번째 인자)는 워커 userContext 유래. */
+  releaseStore?: { recordEvidence(workflowId: string, wpId: string, attempt: number, outcomes: ChannelOutcome[], tenantId: string | null): Promise<void> }
 }
 
 export type WorkerOutcome =
@@ -252,7 +253,7 @@ async function runVerifyGate(
     ...(collect && { recordOutcome: (c: ChannelOutcome['channel'], o: ChannelOutcome['outcome']) => evidence.push({ channel: c, outcome: o }) }),
   })
   if (verdict.ok) {
-    if (collect) await persistVerificationEvidence(deps, workflowId, msg, evidence)
+    if (collect) await persistVerificationEvidence(deps, workflowId, msg, evidence, userContext)
     return null
   }
   try {
@@ -263,13 +264,15 @@ async function runVerifyGate(
   return { status: 'verification_failed', wpId: msg.payload.wpId, reason: verdict.reason }
 }
 
-/** P5-1: verdict.ok 시 수집한 채널 증거를 best-effort 영속(완료를 막지 않음·게이트는 증거 부재를 un-proven 처리). */
+/** P5-1: verdict.ok 시 수집한 채널 증거를 best-effort 영속(완료를 막지 않음·게이트는 증거 부재를 un-proven 처리).
+ *  G11 Slice 4: 테넌트 태그는 워커 userContext 유래. */
 async function persistVerificationEvidence(
   deps: WorkerDeps, workflowId: string, msg: WpDispatchSignalMessage, evidence: ChannelOutcome[],
+  userContext: UserContext | undefined,
 ): Promise<void> {
   if (evidence.length === 0 || !deps.releaseStore) return
   try {
-    await deps.releaseStore.recordEvidence(workflowId, msg.payload.wpId, msg.payload.attempt, evidence)
+    await deps.releaseStore.recordEvidence(workflowId, msg.payload.wpId, msg.payload.attempt, evidence, userContext?.tenantId ?? null)
   } catch (err) {
     console.error('[worker] wp.verified 증거 영속 실패(게이트는 증거 부재를 un-proven 처리):', err)
   }
