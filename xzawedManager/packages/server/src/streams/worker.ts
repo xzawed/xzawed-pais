@@ -312,7 +312,11 @@ export async function maybeRequestGoldenSignoff(
   try {
     const count = await deps.oracleStore.unfrozenGoldenCount(workflowId)
     if (count > 0) {
-      await deps.decisionStore.createRequest(buildGoldenBrief({ workflowId, projectId: userContext?.projectId ?? null, goldenCount: count }))
+      await deps.decisionStore.createRequest({
+        ...buildGoldenBrief({ workflowId, projectId: userContext?.projectId ?? null, goldenCount: count }),
+        // G11 Slice 4: 테넌트 태그를 워커 userContext에서 파생(추가 조회 0).
+        tenantId: userContext?.tenantId ?? null,
+      })
     }
   } catch (err) {
     console.warn('[worker] golden_signoff 발행 실패(best-effort·완료는 영향 0):', err)

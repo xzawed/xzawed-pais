@@ -8,6 +8,8 @@ export interface EscalationInfo {
   stepN: number
   /** C0/C1: 생성 시점 프로젝트 스코프(graph_dag.userContext.projectId). 미해석은 null. */
   projectId?: string | null
+  /** G11 Slice 4: 생성 시점 테넌트 스코프(graph_dag.userContext.tenantId, lease.ts resolveScope 경유). 미해석은 null. */
+  tenantId?: string | null
 }
 
 /** `DecisionRepo.createRequest` 입력의 구조적 부분집합 — repo 직접 결합 회피(M3). */
@@ -20,6 +22,9 @@ export interface DecisionRequestInput {
   context?: DecisionRequest['context']
   severity?: DecisionRequest['severity']
   projectId?: string | null
+  /** G11 Slice 4: 테넌트 태그(생성 시점 userContext.tenantId). 저장소 인자이지 브리프 내용이 아니므로
+   *  순수 빌더는 미설정 — 호출부가 store.createRequest 스프레드 시 얹는다. */
+  tenantId?: string | null
   /** B1: 결정 TTL 만료 시각(ISO). 핸들러가 now+TTL로 주입·순수 빌더는 미설정. */
   expiresAt?: string | null
 }
@@ -88,6 +93,6 @@ export function makeEscalationBrief(
   return async (info) => {
     const nowFn = opts?.now ?? Date.now
     const expiresAt = expiresAtFrom(nowFn(), opts?.ttlMs)
-    await store.createRequest({ ...buildDefectBrief(info), ...(expiresAt && { expiresAt }) })
+    await store.createRequest({ ...buildDefectBrief(info), tenantId: info.tenantId ?? null, ...(expiresAt && { expiresAt }) })
   }
 }

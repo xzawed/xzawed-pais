@@ -45,6 +45,8 @@ export interface DecisionExpiryStore {
     language?: string
     expiresAt?: string | null
     projectId?: string | null
+    /** G11 Slice 4: 재에스컬레이션은 원 요청의 테넌트를 승계(아래 buildDecisionExpiredHandler). */
+    tenantId?: string | null
   }): Promise<{ eventId: string } | null>
 }
 
@@ -85,6 +87,9 @@ export function buildDecisionExpiredHandler(deps: DecisionExpiryDeps): (msg: Dec
         correlationId: req.correlationId,
         wpId: req.wpId,
         projectId: req.projectId,
+        // G11 Slice 4: 테넌트는 **원 요청 행**에서 승계한다(이 소비자에 userContext가 없고,
+        // 있더라도 원 요청의 테넌트가 정답 — 재에스컬레이션은 같은 결정의 연장이다).
+        tenantId: req.tenantId,
         severity: req.severity,
         language: req.language,
         context: {

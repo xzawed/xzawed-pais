@@ -210,6 +210,31 @@ d('G11 Slice 4 tenant 태깅 (pg)', () => {
     }
   })
 
+  it('createRequest가 decision_requests에 tenant_id를 기록하고 읽기 경로로 되돌려준다', async () => {
+    const { DecisionRepo } = await import('../src/db/decision.repo.js')
+    const repo = new DecisionRepo(pool)
+    const wf = `wf-tt-dec-${randomUUID()}`
+    const requestId = `${wf}:wp-a:0`
+    try {
+      await repo.createRequest({
+        requestId, type: 'defect_brief', workflowId: wf,
+        correlationId: wf, projectId: 'p1', tenantId: 'org-1',
+      })
+      const { rows } = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM decision_requests WHERE request_id = $1`, [requestId],
+      )
+      expect(rows[0]?.tenant_id).toBe('org-1')
+
+      // 읽기 경로가 태그를 실어 나른다(Task 10의 B1 승계가 여기에 의존).
+      const req = await repo.getRequest(requestId)
+      expect(req?.tenantId).toBe('org-1')
+    } finally {
+      await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+      await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+      await pool.query(`DELETE FROM decision_requests WHERE workflow_id = $1`, [wf])
+    }
+  })
+
   it('recordEvidence·recordGate가 tenant_id를 기록한다', async () => {
     const { ReleaseGateRepo } = await import('../src/db/release-gate.repo.js')
     const repo = new ReleaseGateRepo(pool)

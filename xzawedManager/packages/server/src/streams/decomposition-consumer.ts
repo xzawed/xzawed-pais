@@ -112,9 +112,11 @@ async function surfaceInconsistent(
   const projectId = msg.payload.userContext?.projectId ?? null
   if (deps.failureDecisionStore && projectId !== null) {
     try {
-      await deps.failureDecisionStore.createRequest(
-        buildDecomposeFailureBrief({ workflowId: wf, projectId, reason, ...(detail !== undefined && { detail }) }),
-      )
+      await deps.failureDecisionStore.createRequest({
+        ...buildDecomposeFailureBrief({ workflowId: wf, projectId, reason, ...(detail !== undefined && { detail }) }),
+        // G11 Slice 4: 테넌트 태그를 userContext에서 파생(추가 조회 0).
+        tenantId: msg.payload.userContext?.tenantId ?? null,
+      })
     } catch (err) {
       console.warn('[decomposition] decompose_inconsistent 발행 실패(best-effort):', err)
     }
@@ -167,11 +169,14 @@ export async function handleDecompositionEmitted(
   // C3: draft 영속 후 oracle_approval DecisionRequest 발행(per-workflow). best-effort never-throw.
   if (deps.oracleStore && deps.decisionStore && msg.payload.oracleDrafts.length > 0) {
     try {
-      await deps.decisionStore.createRequest(buildOracleBrief({
-        workflowId,
-        projectId: msg.payload.userContext?.projectId ?? null,
-        storyCount: msg.payload.oracleDrafts.length,
-      }))
+      await deps.decisionStore.createRequest({
+        ...buildOracleBrief({
+          workflowId,
+          projectId: msg.payload.userContext?.projectId ?? null,
+          storyCount: msg.payload.oracleDrafts.length,
+        }),
+        tenantId: msg.payload.userContext?.tenantId ?? null,
+      })
     } catch (err) {
       console.warn('[decomposition] oracle_approval 발행 실패(best-effort·영속은 완료):', err)
     }

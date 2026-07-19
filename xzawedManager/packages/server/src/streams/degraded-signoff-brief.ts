@@ -7,6 +7,8 @@ export interface DegradedDispatchInfo {
   wpId: string
   stepN: number
   projectId?: string | null
+  /** G11 Slice 4: 보류 시점 테넌트 스코프(handleDispatch가 이미 로드한 graph_dag.userContext.tenantId). 미해석은 null. */
+  tenantId?: string | null
 }
 
 /**
@@ -44,6 +46,6 @@ export function makeDegradedDispatchBrief(
   return async (info) => {
     const nowFn = opts?.now ?? Date.now
     const expiresAt = expiresAtFrom(nowFn(), opts?.ttlMs)
-    await store.createRequest({ ...buildDegradedDispatchBrief(info), ...(expiresAt && { expiresAt }) })
+    await store.createRequest({ ...buildDegradedDispatchBrief(info), tenantId: info.tenantId ?? null, ...(expiresAt && { expiresAt }) })
   }
 }

@@ -263,7 +263,7 @@ describe('handleDispatch N2 DEGRADED HIGH-risk 게이트', () => {
     const out = await handleDispatch('wf-1', { ...deps, getMode: () => 'DEGRADED', onDegradedHighRisk, isHighRiskDispatchApproved })
     expect(out.dispatched).toEqual([])
     expect(recordDispatch).not.toHaveBeenCalled()
-    expect(onDegradedHighRisk).toHaveBeenCalledWith({ workflowId: 'wf-1', wpId: 'a', stepN: 0, projectId: null })
+    expect(onDegradedHighRisk).toHaveBeenCalledWith({ workflowId: 'wf-1', wpId: 'a', stepN: 0, projectId: null, tenantId: null })
   })
 
   it('N2: DEGRADED + HIGH-risk + 승인됨 → 정상 디스패치', async () => {

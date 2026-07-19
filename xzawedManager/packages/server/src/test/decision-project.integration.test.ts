@@ -18,8 +18,8 @@ d('DecisionRepo project scope (pg)', () => {
 
   it('createRequest가 project_id 영속·pendingByProject가 프로젝트 격리', async () => {
     const repo = new DecisionRepo(pool)
-    await repo.createRequest({ requestId: 'wf-dp-1:wp-a:0', type: 'defect_brief', workflowId: 'wf-dp-1', correlationId: 'wf-dp-1', projectId: 'proj-A' })
-    await repo.createRequest({ requestId: 'wf-dp-2:wp-b:0', type: 'defect_brief', workflowId: 'wf-dp-2', correlationId: 'wf-dp-2', projectId: 'proj-B' })
+    await repo.createRequest({ requestId: 'wf-dp-1:wp-a:0', type: 'defect_brief', workflowId: 'wf-dp-1', correlationId: 'wf-dp-1', projectId: 'proj-A', tenantId: null })
+    await repo.createRequest({ requestId: 'wf-dp-2:wp-b:0', type: 'defect_brief', workflowId: 'wf-dp-2', correlationId: 'wf-dp-2', projectId: 'proj-B', tenantId: null })
     const a = await repo.pendingByProject('proj-A')
     expect(a.map((r) => r.requestId)).toEqual(['wf-dp-1:wp-a:0'])
     expect(a[0]?.projectId).toBe('proj-A')
@@ -27,7 +27,7 @@ d('DecisionRepo project scope (pg)', () => {
 
   it('legacy NULL project_id 행은 pendingByProject에 미포함', async () => {
     const repo = new DecisionRepo(pool)
-    await repo.createRequest({ requestId: 'wf-dp-3:wp-c:0', type: 'defect_brief', workflowId: 'wf-dp-3', correlationId: 'wf-dp-3' }) // projectId 없음 → null
+    await repo.createRequest({ requestId: 'wf-dp-3:wp-c:0', type: 'defect_brief', workflowId: 'wf-dp-3', correlationId: 'wf-dp-3', tenantId: null }) // projectId 없음 → null
     const a = await repo.pendingByProject('proj-A')
     expect(a.find((r) => r.requestId === 'wf-dp-3:wp-c:0')).toBeUndefined()
   })

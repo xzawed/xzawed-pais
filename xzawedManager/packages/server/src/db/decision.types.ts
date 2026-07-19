@@ -58,6 +58,8 @@ export const DecisionRequestSchema = z.object({
   correlationId: z.string().min(1),
   /** C0/C1: 프로젝트 스코프(생성 시점 graph_dag.userContext.projectId). legacy/미해석은 null. */
   projectId: z.string().nullable().default(null),
+  /** G11 Slice 4: 테넌트 태그(생성 시점 userContext.tenantId). legacy 행은 null. 읽기 격리는 Slice 4b. */
+  tenantId: z.string().nullable().default(null),
   context: DecisionContextSchema,
   severity: z.enum(['blocking', 'advisory']).default('blocking'),
   status: z.enum(['PENDING', 'RESOLVED', 'EXPIRED', 'SUPERSEDED']).default('PENDING'),

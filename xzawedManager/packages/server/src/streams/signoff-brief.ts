@@ -1,6 +1,6 @@
 import type { DecisionRequestInput, DecisionBriefStore } from './decision-brief.js'
 import { expiresAtFrom } from './decision-brief.js'
-import type { GraphQueryPort } from './lease.js'
+import { resolveScope, type GraphQueryPort } from './lease.js'
 
 /** gate.blocked 페이로드의 사인오프 브리프 입력(release-consumer가 전달). */
 export interface SignoffBriefInfo {
@@ -35,19 +35,9 @@ export function buildSignoffBrief(info: SignoffBriefInfo, projectId?: string | n
   }
 }
 
-/** 그래프에서 projectId 조회 — 미주입·미존재·실패는 null(N3 never-throw·C0 패턴). */
-async function resolveProjectId(graphStore: GraphQueryPort | undefined, workflowId: string): Promise<string | null> {
-  if (!graphStore) return null
-  try {
-    return (await graphStore.getGraph(workflowId))?.userContext?.projectId ?? null
-  } catch (err) {
-    console.warn('[signoff-brief] projectId 조회 실패(best-effort·null 강등):', err)
-    return null
-  }
-}
-
 /**
- * gate.blocked → DecisionRequest 핸들러(makeEscalationBrief 패턴). projectId 스레딩 후 createRequest.
+ * gate.blocked → DecisionRequest 핸들러(makeEscalationBrief 패턴). projectId·tenantId 스레딩 후 createRequest.
+ * 그래프 조회는 resolveScope(lease.ts, GraphQueryPort 정의처 공유)로 한 번만 — 조회 중복 없음.
  * throw 방어는 호출자(release-consumer)가 best-effort로 감싼다.
  */
 export function makeSignoffBrief(
@@ -56,9 +46,9 @@ export function makeSignoffBrief(
   opts?: { now?: () => number; ttlMs?: number },
 ): (info: SignoffBriefInfo) => Promise<void> {
   return async (info) => {
-    const projectId = await resolveProjectId(graphStore, info.workflowId)
+    const { projectId, tenantId } = await resolveScope(graphStore, info.workflowId)
     const nowFn = opts?.now ?? Date.now
     const expiresAt = expiresAtFrom(nowFn(), opts?.ttlMs)
-    await store.createRequest({ ...buildSignoffBrief(info, projectId), ...(expiresAt && { expiresAt }) })
+    await store.createRequest({ ...buildSignoffBrief(info, projectId), tenantId, ...(expiresAt && { expiresAt }) })
   }
 }

@@ -48,7 +48,10 @@ export async function handleDecomposeRequest(
       const projectId = userContext?.projectId
       if (decisionStore && projectId) {
         try {
-          await decisionStore.createRequest(buildDecomposeFailureBrief({ workflowId: sessionId, projectId, reason: 'coverage' }))
+          await decisionStore.createRequest({
+            ...buildDecomposeFailureBrief({ workflowId: sessionId, projectId, reason: 'coverage' }),
+            tenantId: userContext?.tenantId ?? null,
+          })
         } catch (err) {
           console.warn('[decompose] decompose_inconsistent 발행 실패(best-effort):', err)
         }

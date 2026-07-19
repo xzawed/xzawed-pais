@@ -66,7 +66,10 @@ export async function produceRiskClassification(
     })
     const { version } = await deps.repo.upsert({ workflowId, classification, tenantId: userContext?.tenantId ?? null })
     if (classification.humanGate.required && deps.decisionStore) {
-      await deps.decisionStore.createRequest(buildRiskBrief({ workflowId, version, classification }))
+      await deps.decisionStore.createRequest({
+        ...buildRiskBrief({ workflowId, version, classification }),
+        tenantId: userContext?.tenantId ?? null,
+      })
     }
     deps.log?.('[risk] 분류 영속(pending)', { workflowId, risk: classification.risk, humanGate: classification.humanGate.required })
     return { classified: true, risk: classification.risk }
