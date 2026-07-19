@@ -49,8 +49,9 @@ export interface WorkerDeps {
   }
   /** Slice 1: golden freeze 사인오프 활성(=MANAGER_GOLDEN_SIGNOFF && oracleStore && decisionStore 주입). */
   goldenSignoffEnabled?: boolean
-  /** Slice 1: golden_diff DecisionRequest 발행 포트(C3 oracle_approval 패턴). 미주입이면 미발행(회귀 0). */
-  decisionStore?: { createRequest(input: DecisionRequestInput): Promise<unknown> }
+  /** Slice 1: golden_diff DecisionRequest 발행 포트(C3 oracle_approval 패턴). 미주입이면 미발행(회귀 0).
+   *  G11 Slice 4 리뷰 수정: tenantId를 seam에서 필수화(decision-brief.ts DecisionBriefStore와 동일 이유). */
+  decisionStore?: { createRequest(input: DecisionRequestInput & { tenantId: string | null }): Promise<unknown> }
   /** P4b-2: conformance 채널 활성(=MANAGER_WP_CONFORMANCE && oracleStore 주입). */
   conformanceEnabled?: boolean
   /** P4: impact golden-differential 채널 활성(=MANAGER_WP_IMPACT && oracleStore 주입). verifyWp로 전달. */

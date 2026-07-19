@@ -45,8 +45,10 @@ export interface DecisionExpiryStore {
     language?: string
     expiresAt?: string | null
     projectId?: string | null
-    /** G11 Slice 4: 재에스컬레이션은 원 요청의 테넌트를 승계(아래 buildDecisionExpiredHandler). */
-    tenantId?: string | null
+    /** G11 Slice 4: 재에스컬레이션은 원 요청의 테넌트를 승계(아래 buildDecisionExpiredHandler).
+     *  리뷰 수정: seam에서 필수화(decision-brief.ts DecisionBriefStore와 동일 이유 — 옵셔널이면
+     *  이 인터페이스에 필드를 추가만 해도 누락이 컴파일 에러가 되지 않는다). */
+    tenantId: string | null
   }): Promise<{ eventId: string } | null>
 }
 

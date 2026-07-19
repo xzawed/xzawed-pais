@@ -54,12 +54,14 @@ export interface DecompositionDeps {
       tenantId: string | null
     }) => Promise<void>
   }
-  /** C3: 주입 시 draft 영속 후 oracle_approval DecisionRequest 발행(MANAGER_ORACLE_DECISION). best-effort. */
-  decisionStore?: { createRequest(input: DecisionRequestInput): Promise<unknown> }
+  /** C3: 주입 시 draft 영속 후 oracle_approval DecisionRequest 발행(MANAGER_ORACLE_DECISION). best-effort.
+   *  G11 Slice 4 리뷰 수정: tenantId를 seam에서 필수화(decision-brief.ts DecisionBriefStore와 동일 이유). */
+  decisionStore?: { createRequest(input: DecisionRequestInput & { tenantId: string | null }): Promise<unknown> }
   /** C7 arm1(무조건): inconsistent 시 사람에게 error 노출(manager:to-orchestrator:{wf}). best-effort. */
   notifyUser?: (workflowId: string, content: string) => Promise<void>
-  /** C7 arm2(MANAGER_DECISION_ROUTING): inconsistent 시 decompose_inconsistent DecisionRequest 발행. best-effort. */
-  failureDecisionStore?: { createRequest(input: DecisionRequestInput): Promise<unknown> }
+  /** C7 arm2(MANAGER_DECISION_ROUTING): inconsistent 시 decompose_inconsistent DecisionRequest 발행. best-effort.
+   *  G11 Slice 4 리뷰 수정: tenantId를 seam에서 필수화. */
+  failureDecisionStore?: { createRequest(input: DecisionRequestInput & { tenantId: string | null }): Promise<unknown> }
 }
 
 export type DecompositionOutcome =

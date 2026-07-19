@@ -29,9 +29,14 @@ export interface DecisionRequestInput {
   expiresAt?: string | null
 }
 
-/** DecisionRepo의 createRequest만 의존(구조적). */
+/**
+ * DecisionRepo의 createRequest만 의존(구조적). G11 Slice 4 리뷰 수정: `tenantId`를 **seam에서 필수화**
+ * (`DecisionRequestInput.tenantId`는 옵셔널로 남겨 순수 빌더는 무영향 — dispatch.ts `onDegradedHighRisk`
+ * 선례 형태). 이전엔 이 인터페이스가 옵셔널을 그대로 노출해 `DecisionRepo.createRequest`의 필수 인자가
+ * 호출부까지 도달하지 못했다(초과 프로퍼티 검사로 착시된 "9곳 에러" — 실제 강제는 0).
+ */
 export interface DecisionBriefStore {
-  createRequest(req: DecisionRequestInput): Promise<{ eventId: string } | null>
+  createRequest(req: DecisionRequestInput & { tenantId: string | null }): Promise<{ eventId: string } | null>
 }
 
 /** B1: now(ms)+ttlMs → ISO 만료 시각. ttlMs 미설정/비양수면 undefined(만료 없음·회귀 0). 순수. */

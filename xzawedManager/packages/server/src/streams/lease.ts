@@ -74,17 +74,18 @@ async function reclaimOne(item: ReclaimItem, deps: SweepDeps, visibilityMs: numb
 /**
  * 그래프에서 프로젝트·테넌트 스코프를 함께 조회(getGraph 1회) — 미주입·미존재·실패는 둘 다 null
  * (N3 never-throw: lease escalation 비차단). GraphQueryPort 정의처(공유 위치)에 두어 signoff-brief.ts와
- * CPD 없이 재사용한다(G11 Slice 4).
+ * CPD 없이 재사용한다(G11 Slice 4). `caller`는 실패 로그 귀속 태그 — 호출부가 자기 이름을 넘겨
+ * 장애 분류를 오도하지 않게 한다(예: signoff-brief 실패가 lease-sweep으로 잘못 찍히던 것 정정).
  */
 export async function resolveScope(
-  graphStore: GraphQueryPort | undefined, workflowId: string,
+  graphStore: GraphQueryPort | undefined, workflowId: string, caller: string,
 ): Promise<{ projectId: string | null; tenantId: string | null }> {
   if (!graphStore) return { projectId: null, tenantId: null }
   try {
     const uc = (await graphStore.getGraph(workflowId))?.userContext
     return { projectId: uc?.projectId ?? null, tenantId: uc?.tenantId ?? null }
   } catch (err) {
-    console.warn('[lease-sweep] 스코프 조회 실패(best-effort·null 강등):', err)
+    console.warn(`[${caller}] 스코프 조회 실패(best-effort·null 강등):`, err)
     return { projectId: null, tenantId: null }
   }
 }
@@ -96,7 +97,7 @@ async function escalateOne(item: ReclaimItem, deps: SweepDeps, outcome: SweepOut
   })
   if (r.status !== 'escalated') { outcome.skipped += 1; return }
   if (deps.onEscalated) {
-    const { projectId, tenantId } = await resolveScope(deps.graphStore, item.workflowId)
+    const { projectId, tenantId } = await resolveScope(deps.graphStore, item.workflowId, 'lease-sweep')
     try {
       await deps.onEscalated({ workflowId: item.workflowId, wpId: item.wpId, attempt: item.attempt, stepN: item.stepN, projectId, tenantId })
     } catch (err) {

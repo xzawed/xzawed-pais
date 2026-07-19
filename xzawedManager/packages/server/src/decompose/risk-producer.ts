@@ -23,8 +23,9 @@ export interface RiskClassifyDeps {
   isProviderFailure?: (err: unknown) => boolean
   now?: () => number
   log?: (msg: string, data?: Record<string, unknown>) => void
-  /** C5: humanGate.required 분류를 risk_classification DecisionRequest로 발행(MANAGER_RISK_DECISION). */
-  decisionStore?: { createRequest(input: DecisionRequestInput): Promise<unknown> }
+  /** C5: humanGate.required 분류를 risk_classification DecisionRequest로 발행(MANAGER_RISK_DECISION).
+   *  G11 Slice 4 리뷰 수정: tenantId를 seam에서 필수화(decision-brief.ts DecisionBriefStore와 동일 이유). */
+  decisionStore?: { createRequest(input: DecisionRequestInput & { tenantId: string | null }): Promise<unknown> }
 }
 
 /**

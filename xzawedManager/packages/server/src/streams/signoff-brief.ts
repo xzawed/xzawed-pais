@@ -46,7 +46,7 @@ export function makeSignoffBrief(
   opts?: { now?: () => number; ttlMs?: number },
 ): (info: SignoffBriefInfo) => Promise<void> {
   return async (info) => {
-    const { projectId, tenantId } = await resolveScope(graphStore, info.workflowId)
+    const { projectId, tenantId } = await resolveScope(graphStore, info.workflowId, 'signoff-brief')
     const nowFn = opts?.now ?? Date.now
     const expiresAt = expiresAtFrom(nowFn(), opts?.ttlMs)
     await store.createRequest({ ...buildSignoffBrief(info, projectId), tenantId, ...(expiresAt && { expiresAt }) })
