@@ -5,6 +5,9 @@ export interface AccessTokenPayload {
   sub: string
   email: string
   displayName: string | null
+  /** G11 Slice 1: 소속 테넌트 신원(모델 C). enforcement 0 — 아직 어떤 쿼리도 필터하지 않는다.
+   *  optional: orgId 없는 레거시 토큰(백필 전 발급)도 verify 통과(하위호환). */
+  orgId?: string | null
 }
 
 export interface IssuedRefreshToken {

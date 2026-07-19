@@ -82,9 +82,33 @@ describe.skipIf(!hasDb)('auth routes integration', () => {
   })
 
   afterAll(async () => {
+    // G11: org_id FK 순서 — user 먼저 삭제 후 연결 tenant 정리(고아 방지).
+    const orphan = await dbPool.query<{ org_id: string | null }>('SELECT org_id FROM users WHERE email = $1', [email]).catch(() => ({ rows: [] as { org_id: string | null }[] }))
     await dbPool.query('DELETE FROM users WHERE email = $1', [email]).catch(() => {})
+    for (const r of orphan.rows) if (r.org_id) await dbPool.query('DELETE FROM tenants WHERE id = $1', [r.org_id]).catch(() => {})
     await dbPool.end().catch(() => {})
     await app?.close()
+  })
+
+  it('G11 Slice 1: register가 개인 org 자동 생성·JWT에 orgId claim 실림', async () => {
+    const em = `g11-${randomUUID()}@test.example.com`
+    const regRes = await app.inject({ method: 'POST', url: '/auth/register', payload: { email: em, password } })
+    expect(regRes.statusCode).toBe(201)
+    const body = regRes.json() as { user: { id: string }; accessToken: string }
+
+    // JWT access token에 orgId claim이 실린다(enforcement 0이지만 신원은 흐른다).
+    const decoded = verifyAccessToken(body.accessToken, 'integration-test-secret-key-32chars!!')
+    expect(decoded.orgId).toBeTruthy()
+
+    // DB: user.org_id 설정 + 대응 tenants 행 존재(원자 생성).
+    const { rows } = await dbPool.query<{ org_id: string }>('SELECT org_id FROM users WHERE id = $1', [body.user.id])
+    expect(rows[0]?.org_id).toBe(decoded.orgId)
+    const { rows: orgRows } = await dbPool.query('SELECT id FROM tenants WHERE id = $1', [decoded.orgId])
+    expect(orgRows).toHaveLength(1)
+
+    // cleanup(FK 순서: user → tenant)
+    await dbPool.query('DELETE FROM users WHERE id = $1', [body.user.id]).catch(() => {})
+    await dbPool.query('DELETE FROM tenants WHERE id = $1', [decoded.orgId]).catch(() => {})
   })
 
   it('register → login → refresh → logout → me 전체 흐름', async () => {
