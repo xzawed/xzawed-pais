@@ -7,12 +7,14 @@ import {
 
 /** advisory 영속 포트(AdvisoryRepo가 구조적 만족). 워커가 주입. */
 export interface AdvisoryStore {
-  recordFindings(workflowId: string, wpId: string, attempt: number, findings: AdvisoryFinding[]): Promise<void>
+  recordFindings(workflowId: string, wpId: string, attempt: number, findings: AdvisoryFinding[], tenantId: string | null): Promise<void>
 }
 
 /** produceAdvisory 의존: LLM seam(StageDeps=claude/model/timeoutMs) + 영속 포트. */
 export interface AdvisoryProducerDeps extends StageDeps {
   advisoryStore: AdvisoryStore
+  /** G11 Slice 4: 테넌트 태그(워커 userContext 유래). 부재는 정상(null). */
+  tenantId: string | null
   /** G1: §13 서킷(러너·decompose와 동일 인스턴스). 미주입이면 무보호(회귀 0). */
   budget?: BudgetCircuitBreaker
   provider?: ProviderCircuitBreaker
@@ -67,7 +69,7 @@ export async function produceAdvisory(
         severity: 'advisory' as const, sourceLens: 'optimization' as const,
       }))
     if (findings.length === 0) return
-    await deps.advisoryStore.recordFindings(workflowId, wp.id, attempt, findings)
+    await deps.advisoryStore.recordFindings(workflowId, wp.id, attempt, findings, deps.tenantId)
   } catch (err) {
     // best-effort: advisory 실패는 완료/게이트에 영향 0(N3). 관측 로그만.
     console.warn('[advisory] 생산 실패(best-effort·게이트 무관):', err)

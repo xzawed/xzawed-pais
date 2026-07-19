@@ -171,4 +171,21 @@ d('G11 Slice 4 tenant 태깅 (pg)', () => {
     expect(rows[0]?.tenant_id).toBe('org-1')
     await pool.query(`DELETE FROM risk_classifications WHERE workflow_id = $1`, [wf])
   })
+
+  it('recordFindings가 advisory_findings에 tenant_id를 기록한다', async () => {
+    const { AdvisoryRepo } = await import('../src/db/advisory.repo.js')
+    const repo = new AdvisoryRepo(pool)
+    const wf = 'wf-tt-adv-1'
+    await repo.recordFindings(wf, 'a', 0, [
+      { rank: 1, title: 't', rationale: 'r', severity: 'advisory', sourceLens: 'optimization' },
+    ], 'org-1')
+    const { rows } = await pool.query<{ tenant_id: string | null }>(
+      `SELECT tenant_id FROM advisory_findings WHERE workflow_id = $1`, [wf],
+    )
+    expect(rows[0]?.tenant_id).toBe('org-1')
+
+    await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+    await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+    await pool.query(`DELETE FROM advisory_findings WHERE workflow_id = $1`, [wf])
+  })
 })

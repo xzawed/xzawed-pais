@@ -20,7 +20,8 @@ interface FindingRow {
 export class AdvisoryRepo {
   constructor(private readonly pool: Pool, private readonly now: () => number = () => Date.now()) {}
 
-  async recordFindings(workflowId: string, wpId: string, attempt: number, findings: AdvisoryFinding[]): Promise<void> {
+  /** G11 Slice 4: tenantId는 워커의 userContext 유래(DB 왕복 0). */
+  async recordFindings(workflowId: string, wpId: string, attempt: number, findings: AdvisoryFinding[], tenantId: string | null): Promise<void> {
     if (findings.length === 0) return
     const client = await this.pool.connect()
     try {
@@ -46,10 +47,10 @@ export class AdvisoryRepo {
       for (const finding of findings) {
         await client.query(
           `INSERT INTO advisory_findings
-             (workflow_id, wp_id, attempt, rank, title, rationale, severity, source_lens, event_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+             (workflow_id, wp_id, attempt, rank, title, rationale, severity, source_lens, event_id, tenant_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
            ON CONFLICT (workflow_id, wp_id, attempt, rank) DO NOTHING`,
-          [workflowId, wpId, attempt, finding.rank, finding.title, finding.rationale, finding.severity, finding.sourceLens, env.eventId],
+          [workflowId, wpId, attempt, finding.rank, finding.title, finding.rationale, finding.severity, finding.sourceLens, env.eventId, tenantId],
         )
       }
       await client.query('COMMIT')

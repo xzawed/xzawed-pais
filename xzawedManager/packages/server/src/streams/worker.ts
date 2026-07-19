@@ -216,7 +216,7 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
     const gate = await runVerifyGate(tool, wp, result, msg, userContext, deps)
     if (gate) return gate // 실패 = 완료 미발행(lease 백스톱 reclaim→escalate·N5) + 관측 이벤트.
     // P4 advisory(N3): verdict가 이미 확정된 뒤에만 비차단 생산 — 게이트는 advisory를 모른다.
-    await maybeProduceAdvisory(tool, workflowId, wp, msg.payload.attempt, result, deps)
+    await maybeProduceAdvisory(tool, workflowId, wp, msg.payload.attempt, result, userContext, deps)
     // Slice 1: verdict.ok 후 미freeze golden 있으면 golden_diff 사인오프 요청(best-effort·완료 영향 0).
     await maybeRequestGoldenSignoff(tool, workflowId, userContext, deps)
     await publishCompletion(deps, workflowId, wpId, msg.payload.attempt)
@@ -278,7 +278,8 @@ async function persistVerificationEvidence(
 /** P4 advisory(N3): develop_code WP의 verdict.ok 후 비차단 optimization 제안을 생산한다(produceAdvisory는
  *  best-effort never-throw — 게이트·완료에 영향 0). flag+LLM seam+advisoryStore 전부 주입 시에만 동작. */
 async function maybeProduceAdvisory(
-  tool: string, workflowId: string, wp: WorkPackage, attempt: number, result: unknown, deps: WorkerDeps,
+  tool: string, workflowId: string, wp: WorkPackage, attempt: number, result: unknown,
+  userContext: UserContext | undefined, deps: WorkerDeps,
 ): Promise<void> {
   if (
     !deps.advisoryEnabled || tool !== 'develop_code' ||
@@ -288,6 +289,8 @@ async function maybeProduceAdvisory(
   }
   await produceAdvisory(workflowId, wp, attempt, result, {
     claude: deps.claude, model: deps.model, timeoutMs: deps.timeoutMs, advisoryStore: deps.advisoryStore,
+    // G11 Slice 4: 테넌트 태그를 워커 userContext에서 파생해 전달(getGraph 재조회 0).
+    tenantId: userContext?.tenantId ?? null,
     ...(deps.budget && { budget: deps.budget }),
     ...(deps.provider && { provider: deps.provider }),
     ...(deps.isProviderFailure && { isProviderFailure: deps.isProviderFailure }),
