@@ -96,17 +96,25 @@ export async function buildUserContext(
   const envFallback = process.env.WORKSPACE_ROOT ?? '/workspace'
   if (session.projectId) {
     let workspaceRoot = envFallback
+    let tenantId: string | null = null
     if (pool) {
       const repo = new ProjectRepo(pool)
       const project = await repo.findByIdAndUser(session.projectId, session.userId)
       workspaceRoot = resolveSessionWorkspaceRoot(project, envFallback)
+      tenantId = project?.orgId ?? null // G11 Slice 3: 프로젝트 소유 org를 테넌트로 전파(모델 C)
     }
     assertNotFilesystemRoot(workspaceRoot)
-    return { userId: session.userId, projectId: session.projectId, workspaceRoot }
+    return { userId: session.userId, projectId: session.projectId, workspaceRoot, ...(tenantId != null && { tenantId }) }
   }
   // AUTH=none 또는 프로젝트 미선택 시: 기본 workspace를 전달하여 Manager가 register_project를 호출하지 않도록 방지
+  // G11 Slice 3: 프로젝트 미선택이면 사용자 org를 테넌트로 조회(pool 있을 때). 무DB/무org면 미설정(하위호환).
+  let tenantId: string | null = null
+  if (pool) {
+    const { rows } = await pool.query<{ org_id: string | null }>('SELECT org_id FROM users WHERE id = $1', [session.userId])
+    tenantId = rows[0]?.org_id ?? null
+  }
   assertNotFilesystemRoot(envFallback)
-  return { userId: session.userId, projectId: 'default', workspaceRoot: envFallback }
+  return { userId: session.userId, projectId: 'default', workspaceRoot: envFallback, ...(tenantId != null && { tenantId }) }
 }
 
 /** C6: build 모드 + 플래그면 분해 라우팅. 순수 결정. */

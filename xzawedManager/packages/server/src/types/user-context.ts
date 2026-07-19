@@ -5,6 +5,9 @@ export const UserContextSchema = z.object({
   userId: z.string(),
   projectId: z.string(),
   workspaceRoot: z.string(),
+  // G11 Slice 3: 소유 org(테넌트)·Orchestrator가 전파. additive optional — 미포함 레거시 메시지 그대로 통과.
+  //   스키마에 명시해야 z.object 기본 strip에 지워지지 않고 graph_dag 영속·워커 주입까지 흐른다(Slice 4 소비 토대).
+  tenantId: z.string().optional(),
   githubRepo: z.object({
     owner: z.string(),
     repo: z.string(),

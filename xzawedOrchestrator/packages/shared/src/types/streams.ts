@@ -7,6 +7,9 @@ export interface UserContext {
   userId: string
   projectId: string
   workspaceRoot: string
+  /** G11 Slice 3: 소유 org(테넌트) — Orchestrator→Manager 전파 캐리어. 모델 C·프로젝트/사용자 org.
+   *  optional·additive: AUTH=none/무DB 경로는 미설정(하위호환). Manager UserContextSchema가 동형 수용. */
+  tenantId?: string
   githubRepo?: { owner: string; repo: string; branch: string }
 }
 
