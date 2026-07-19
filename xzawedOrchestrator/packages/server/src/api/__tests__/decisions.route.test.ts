@@ -122,3 +122,51 @@ describe('decisionsRoutes (proxy)', () => {
     await app.close()
   })
 })
+
+describe('decisionsRoutes 프로젝트 소유권 게이트 (G11 Slice 0·IDOR 폐색)', () => {
+  const mockPool = (rows: unknown[]): import('pg').Pool =>
+    ({ query: vi.fn().mockResolvedValue({ rows }) }) as unknown as import('pg').Pool
+  async function buildOwned(rows: unknown[]) {
+    const app = Fastify()
+    await app.register(decisionsRoutes, {
+      managerUrl: 'http://manager:3001',
+      userAuthHook: makeUserAuthHook(USER_SECRET),
+      pool: mockPool(rows), // findByIdAndUser가 rows 반환(소유)/빈배열(비소유)
+    })
+    return app
+  }
+  const auth = { authorization: `Bearer ${userToken()}` }
+
+  it('비소유 프로젝트 제출 → 404·Manager 미호출(IDOR 차단)', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const app = await buildOwned([]) // 소유 프로젝트 없음 → assertProjectOwner 404
+    const res = await app.inject({ method: 'POST', url: '/projects/not-mine/decisions/r1/decision', headers: auth, payload: { choice: 'approve' } })
+    expect(res.statusCode).toBe(404)
+    expect(fetchMock).not.toHaveBeenCalled() // Manager 프록시 도달 전 단락
+    await app.close()
+  })
+
+  it('소유 프로젝트 제출 → Manager로 프록시(정상 소유자 회귀 0)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200, headers: new Headers({ 'content-type': 'application/json' }),
+      text: () => Promise.resolve(JSON.stringify({ ok: true })),
+    } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    const app = await buildOwned([{ id: 'mine', user_id: 'po-7' }]) // po-7 소유
+    const res = await app.inject({ method: 'POST', url: '/projects/mine/decisions/r1/decision', headers: auth, payload: { choice: 'approve' } })
+    expect(res.statusCode).toBe(200)
+    expect(fetchMock).toHaveBeenCalled() // 소유자는 통과
+    await app.close()
+  })
+
+  it('미인증 제출 → 401(소유권 게이트 이전 userAuthHook 단락)', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const app = await buildOwned([{ id: 'mine', user_id: 'po-7' }])
+    const res = await app.inject({ method: 'POST', url: '/projects/mine/decisions/r1/decision', payload: { choice: 'approve' } })
+    expect(res.statusCode).toBe(401)
+    expect(fetchMock).not.toHaveBeenCalled()
+    await app.close()
+  })
+})
