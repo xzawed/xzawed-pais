@@ -71,4 +71,49 @@ d('G11 Slice 4 tenant 태깅 (pg)', () => {
     expect(rows[0]?.tenant_id).toBeNull()
     await pool.query(`DELETE FROM task_graphs WHERE workflow_id = $1`, [wf])
   })
+
+  it('recordDispatch가 wp_leases·wp_state_log에 tenant_id를 기록한다', async () => {
+    const { DispatchStore } = await import('../src/db/dispatch.repo.js')
+    const store = new DispatchStore(pool)
+    const wf = 'wf-tt-dispatch-1'
+    const r = await store.recordDispatch({
+      workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED',
+      visibilityMs: 60_000, tenantId: 'org-1',
+    })
+    expect(r.status).toBe('recorded')
+
+    const lease = await pool.query<{ tenant_id: string | null }>(
+      `SELECT tenant_id FROM wp_leases WHERE workflow_id = $1 AND wp_id = 'a'`, [wf],
+    )
+    expect(lease.rows[0]?.tenant_id).toBe('org-1')
+
+    const log = await pool.query<{ tenant_id: string | null }>(
+      `SELECT tenant_id FROM wp_state_log WHERE workflow_id = $1 AND wp_id = 'a'`, [wf],
+    )
+    expect(log.rows[0]?.tenant_id).toBe('org-1')
+
+    await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+    await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+    await pool.query(`DELETE FROM wp_state_log WHERE workflow_id = $1`, [wf])
+    await pool.query(`DELETE FROM wp_leases WHERE workflow_id = $1`, [wf])
+  })
+
+  it('recordDispatch가 tenantId=null이면 tenant_id를 NULL로 둔다', async () => {
+    const { DispatchStore } = await import('../src/db/dispatch.repo.js')
+    const store = new DispatchStore(pool)
+    const wf = 'wf-tt-dispatch-2'
+    await store.recordDispatch({
+      workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED',
+      visibilityMs: 60_000, tenantId: null,
+    })
+    const lease = await pool.query<{ tenant_id: string | null }>(
+      `SELECT tenant_id FROM wp_leases WHERE workflow_id = $1 AND wp_id = 'a'`, [wf],
+    )
+    expect(lease.rows[0]?.tenant_id).toBeNull()
+
+    await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+    await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+    await pool.query(`DELETE FROM wp_state_log WHERE workflow_id = $1`, [wf])
+    await pool.query(`DELETE FROM wp_leases WHERE workflow_id = $1`, [wf])
+  })
 })

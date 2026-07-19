@@ -141,6 +141,8 @@ export async function handleDispatch(workflowId: string, deps: DispatchDeps): Pr
       }
     }
     const r = await deps.store.recordDispatch({
+      // G11 Slice 4: 그래프에 영속된 userContext에서 테넌트 태그 파생(추가 조회 0).
+      tenantId: stored.userContext?.tenantId ?? null,
       workflowId,
       wpId: item.wpId,
       stepN: item.stepN,

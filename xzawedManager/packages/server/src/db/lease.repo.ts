@@ -57,6 +57,8 @@ const LEASE_COLS = 'workflow_id, wp_id, attempt, owner, status, expires_at, step
 interface AppendArgs {
   workflowId: string; wpId: string; attempt: number; stepN: number
   eventType: string; fromState: string; toState: string; reason: string
+  /** G11 Slice 4: reclaim/escalate/reopen/complete는 태깅 대상 아님(dispatch가 원 태그 보유) — 호출부가 null 명시. */
+  tenantId: string | null
 }
 
 /**
@@ -128,6 +130,7 @@ export class LeaseStore {
       {
         workflowId: input.workflowId, wpId: input.wpId, attempt: input.nextAttempt, stepN: input.stepN,
         eventType: WP_DISPATCHED_EVENT, fromState: DISPATCHED_STATE, toState: DISPATCHED_STATE, reason: 'reclaim',
+        tenantId: null, // G11 Slice 4: reclaim/escalate 경로는 태깅 대상 아님(dispatch가 원 태그 보유)
       },
     )
     return res === null ? { status: 'skipped' } : { status: 'reclaimed', ...res }
@@ -150,6 +153,7 @@ export class LeaseStore {
       {
         workflowId: input.workflowId, wpId: input.wpId, attempt: input.attempt, stepN: input.stepN,
         eventType: WP_ESCALATED_EVENT, fromState: DISPATCHED_STATE, toState: ESCALATED_STATE, reason: 'max_attempts',
+        tenantId: null, // G11 Slice 4: reclaim/escalate 경로는 태깅 대상 아님(dispatch가 원 태그 보유)
       },
     )
     return res === null ? { status: 'skipped' } : { status: 'escalated', ...res }
@@ -179,6 +183,7 @@ export class LeaseStore {
       {
         workflowId: input.workflowId, wpId: input.wpId, attempt: newAttempt, stepN: cur.stepN,
         eventType: WP_DISPATCHED_EVENT, fromState: ESCALATED_STATE, toState: DISPATCHED_STATE, reason: 'human_fix_reverify',
+        tenantId: null, // G11 Slice 4: reclaim/escalate 경로는 태깅 대상 아님(dispatch가 원 태그 보유)
       },
     )
     return res === null ? { status: 'skipped' } : { status: 'reopened', attempt: newAttempt, ...res }
@@ -204,6 +209,7 @@ export class LeaseStore {
       {
         workflowId: input.workflowId, wpId: input.wpId, attempt: input.attempt, stepN: input.stepN,
         eventType: WP_COMPLETED_EVENT, fromState: DISPATCHED_STATE, toState: DONE_STATE, reason: 'completed',
+        tenantId: null, // G11 Slice 4: reclaim/escalate 경로는 태깅 대상 아님(dispatch가 원 태그 보유)
       },
     )
     return res === null ? { status: 'skipped' } : { status: 'completed', ...res }

@@ -81,7 +81,7 @@ describe('DispatchStore.recordDispatch (P1d-5a: lease + WP 고정 멱등키)', (
     expect(log[4]).toBe(ev[0])
     expect(ob[0]).toBe(ev[0])
     expect(ev[8]).toBe(7777)
-    expect(log[6]).toBe(7777)
+    expect(log[7]).toBe(7777) // wp_state_log: tenant_id(G11 Slice 4)가 index 6에 삽입되며 occurred_at이 7로 이동
   })
 
   it('wp_state_log에 DRAFTED→DISPATCHED 전이, manager_outbox에 manager:events 스트림·메시지', async () => {
