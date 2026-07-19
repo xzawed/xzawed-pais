@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { Pool } from 'pg'
-import type { RiskClassification } from '@xzawed/agent-streams'
+import { makeEnvelope, type RiskClassification } from '@xzawed/agent-streams'
 import { runMigrations } from '../src/db/pool.js'
 
 const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL']
@@ -256,6 +256,39 @@ d('G11 Slice 4 tenant 태깅 (pg)', () => {
       await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
       await pool.query(`DELETE FROM release_gates WHERE workflow_id = $1`, [wf])
       await pool.query(`DELETE FROM wp_verification_results WHERE workflow_id = $1`, [wf])
+    }
+  })
+
+  it('B1 재에스컬레이션이 원 요청의 tenant_id를 승계한다', async () => {
+    const { DecisionRepo } = await import('../src/db/decision.repo.js')
+    const { buildDecisionExpiredHandler } = await import('../src/streams/decision-expiry-consumer.js')
+    const { DECISION_EXPIRED_EVENT } = await import('../src/db/decision.types.js')
+    const repo = new DecisionRepo(pool)
+    const wf = `wf-tt-reesc-${randomUUID()}`
+    const orig = `${wf}:wp-a:0`
+    try {
+      await repo.createRequest({
+        requestId: orig, type: 'defect_brief', workflowId: wf, correlationId: wf,
+        projectId: 'p1', tenantId: 'org-1', severity: 'blocking',
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+      })
+
+      const handler = buildDecisionExpiredHandler({
+        decisionStore: repo, maxReescalations: 1, ttlMs: 60_000, now: () => Date.now(),
+      })
+      const envelope = makeEnvelope({ correlationId: wf, workflowId: wf, stepId: 'decision.expired', attemptId: 0 })
+      await handler({ envelope, type: DECISION_EXPIRED_EVENT, payload: { requestId: orig } })
+
+      const { rows } = await pool.query<{ request_id: string; tenant_id: string | null }>(
+        `SELECT request_id, tenant_id FROM decision_requests WHERE workflow_id = $1 AND request_id <> $2`,
+        [wf, orig],
+      )
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.tenant_id).toBe('org-1')
+    } finally {
+      await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+      await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+      await pool.query(`DELETE FROM decision_requests WHERE workflow_id = $1`, [wf])
     }
   })
 })
