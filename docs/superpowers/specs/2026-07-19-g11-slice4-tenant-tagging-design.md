@@ -125,7 +125,7 @@ export interface GraphQueryPort {
 
 ### 4. C5 유실 방어
 
-`task_graphs`만 `ON CONFLICT DO UPDATE`이므로 보존 규칙을 명시한다:
+10개 테이블 중 upsert 의미론(`ON CONFLICT DO UPDATE`)을 쓰는 건 `task_graphs`·`oracles`·`risk_classifications` 3개뿐이므로 이 3개에 보존 규칙을 명시한다(예시는 `task_graphs`):
 
 ```sql
 ON CONFLICT (workflow_id) DO UPDATE
@@ -136,7 +136,7 @@ ON CONFLICT (workflow_id) DO UPDATE
       updated_at = NOW()
 ```
 
-한 번 붙은 테넌트는 tenantId 없는 재분해가 와도 지워지지 않는다. 나머지 9개 테이블은 전부 `ON CONFLICT ... DO NOTHING`이라 태그가 자연히 멱등이다.
+한 번 붙은 테넌트는 tenantId 없는 재분해가 와도 지워지지 않는다. `oracles`(`upsertDraft`)·`risk_classifications`(`upsert`)도 같은 이유로 동일한 COALESCE 보존 규칙을 쓴다. 나머지 7개 테이블은 전부 `ON CONFLICT ... DO NOTHING`이라 COALESCE가 애초에 적용 불가하며, 태그가 자연히 멱등이다.
 
 ### 5. 인자 계약 — required-but-nullable
 
