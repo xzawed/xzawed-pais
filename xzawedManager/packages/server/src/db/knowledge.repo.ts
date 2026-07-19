@@ -34,11 +34,12 @@ export interface KnowledgeAuditRecord {
 export class KnowledgeRepo {
   constructor(private readonly pool: Pool) {}
 
-  async insertMany(projectId: string, entries: KnowledgeEntry[]): Promise<void> {
+  /** G11 Slice 4: tenantId는 호출부(runner)의 userContext 유래. 부재는 정상(null). */
+  async insertMany(projectId: string, entries: KnowledgeEntry[], tenantId: string | null): Promise<void> {
     for (const e of entries) {
       await this.pool.query(
-        `INSERT INTO domain_knowledge (project_id, content, source_agent, category, approver) VALUES ($1, $2, $3, $4, $5)`,
-        [projectId, e.content, e.sourceAgent, e.category ?? null, e.approver ?? null],
+        `INSERT INTO domain_knowledge (project_id, content, source_agent, category, approver, tenant_id) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [projectId, e.content, e.sourceAgent, e.category ?? null, e.approver ?? null, tenantId],
       )
     }
   }

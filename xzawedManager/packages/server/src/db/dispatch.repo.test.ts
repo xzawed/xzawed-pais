@@ -81,7 +81,7 @@ describe('DispatchStore.recordDispatch (P1d-5a: lease + WP 고정 멱등키)', (
     expect(log[4]).toBe(ev[0])
     expect(ob[0]).toBe(ev[0])
     expect(ev[8]).toBe(7777)
-    expect(log[6]).toBe(7777)
+    expect(log[7]).toBe(7777) // wp_state_log: tenant_id(G11 Slice 4)가 index 6에 삽입되며 occurred_at이 7로 이동
   })
 
   it('wp_state_log에 DRAFTED→DISPATCHED 전이, manager_outbox에 manager:events 스트림·메시지', async () => {
@@ -161,7 +161,7 @@ describe('appendWpEvent — 멱등키 event_type 분리(§8 생명주기 충돌 
   it('같은 (wf,wp,attempt)라도 dispatched·completed가 분리된 멱등키를 받는다 — 키 충돌 dedup 유실 방지', async () => {
     const c = captureClient()
     const append = (eventType: string, fromState: string, toState: string) =>
-      appendWpEvent(c.client, wpEnvelope('wf', 'a', 0, 1), { workflowId: 'wf', wpId: 'a', attempt: 0, stepN: 0, eventType, fromState, toState })
+      appendWpEvent(c.client, wpEnvelope('wf', 'a', 0, 1), { workflowId: 'wf', wpId: 'a', attempt: 0, stepN: 0, eventType, fromState, toState, tenantId: null })
     await append('wp.dispatched', 'DRAFTED', 'DISPATCHED')
     await append('wp.completed', 'DISPATCHED', 'DONE')
     expect(c.keys).toEqual(['wf:wp-a:0:wp.dispatched', 'wf:wp-a:0:wp.completed'])

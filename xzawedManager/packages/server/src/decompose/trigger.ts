@@ -20,7 +20,8 @@ export async function handleDecomposeRequest(
   cleanup: () => Promise<void>,
   userContext?: UserContext,
   riskClassify?: RiskClassifyDeps,
-  decisionStore?: { createRequest(input: DecisionRequestInput): Promise<unknown> },
+  // G11 Slice 4 리뷰 수정: tenantId를 seam에서 필수화(decision-brief.ts DecisionBriefStore와 동일 이유).
+  decisionStore?: { createRequest(input: DecisionRequestInput & { tenantId: string | null }): Promise<unknown> },
   ensureWs: (uc: UserContext) => Promise<void> = ensureWorkspace,
 ): Promise<void> {
   try {
@@ -48,7 +49,10 @@ export async function handleDecomposeRequest(
       const projectId = userContext?.projectId
       if (decisionStore && projectId) {
         try {
-          await decisionStore.createRequest(buildDecomposeFailureBrief({ workflowId: sessionId, projectId, reason: 'coverage' }))
+          await decisionStore.createRequest({
+            ...buildDecomposeFailureBrief({ workflowId: sessionId, projectId, reason: 'coverage' }),
+            tenantId: userContext?.tenantId ?? null,
+          })
         } catch (err) {
           console.warn('[decompose] decompose_inconsistent 발행 실패(best-effort):', err)
         }

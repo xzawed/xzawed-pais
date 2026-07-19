@@ -10,7 +10,7 @@ const DEFAULT_TIMEOUT_MS = 120_000
 
 /** RiskClassificationRepo.upsert만 좁게 — 테스트 mock·결합 최소. */
 export interface RiskUpsertPort {
-  upsert(input: { workflowId: string; classification: RiskClassification }): Promise<{ version: number }>
+  upsert(input: { workflowId: string; classification: RiskClassification; tenantId: string | null }): Promise<{ version: number }>
 }
 
 export interface RiskClassifyDeps {
@@ -23,8 +23,9 @@ export interface RiskClassifyDeps {
   isProviderFailure?: (err: unknown) => boolean
   now?: () => number
   log?: (msg: string, data?: Record<string, unknown>) => void
-  /** C5: humanGate.required 분류를 risk_classification DecisionRequest로 발행(MANAGER_RISK_DECISION). */
-  decisionStore?: { createRequest(input: DecisionRequestInput): Promise<unknown> }
+  /** C5: humanGate.required 분류를 risk_classification DecisionRequest로 발행(MANAGER_RISK_DECISION).
+   *  G11 Slice 4 리뷰 수정: tenantId를 seam에서 필수화(decision-brief.ts DecisionBriefStore와 동일 이유). */
+  decisionStore?: { createRequest(input: DecisionRequestInput & { tenantId: string | null }): Promise<unknown> }
 }
 
 /**
@@ -64,9 +65,12 @@ export async function produceRiskClassification(
       claims,
       complianceFrameworks: normalizeFrameworks(investigation.complianceFrameworks),
     })
-    const { version } = await deps.repo.upsert({ workflowId, classification })
+    const { version } = await deps.repo.upsert({ workflowId, classification, tenantId: userContext?.tenantId ?? null })
     if (classification.humanGate.required && deps.decisionStore) {
-      await deps.decisionStore.createRequest(buildRiskBrief({ workflowId, version, classification }))
+      await deps.decisionStore.createRequest({
+        ...buildRiskBrief({ workflowId, version, classification }),
+        tenantId: userContext?.tenantId ?? null,
+      })
     }
     deps.log?.('[risk] 분류 영속(pending)', { workflowId, risk: classification.risk, humanGate: classification.humanGate.required })
     return { classified: true, risk: classification.risk }

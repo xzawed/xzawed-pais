@@ -45,6 +45,10 @@ export interface DecisionExpiryStore {
     language?: string
     expiresAt?: string | null
     projectId?: string | null
+    /** G11 Slice 4: 재에스컬레이션은 원 요청의 테넌트를 승계(아래 buildDecisionExpiredHandler).
+     *  리뷰 수정: seam에서 필수화(decision-brief.ts DecisionBriefStore와 동일 이유 — 옵셔널이면
+     *  이 인터페이스에 필드를 추가만 해도 누락이 컴파일 에러가 되지 않는다). */
+    tenantId: string | null
   }): Promise<{ eventId: string } | null>
 }
 
@@ -85,6 +89,9 @@ export function buildDecisionExpiredHandler(deps: DecisionExpiryDeps): (msg: Dec
         correlationId: req.correlationId,
         wpId: req.wpId,
         projectId: req.projectId,
+        // G11 Slice 4: 테넌트는 **원 요청 행**에서 승계한다(이 소비자에 userContext가 없고,
+        // 있더라도 원 요청의 테넌트가 정답 — 재에스컬레이션은 같은 결정의 연장이다).
+        tenantId: req.tenantId,
         severity: req.severity,
         language: req.language,
         context: {

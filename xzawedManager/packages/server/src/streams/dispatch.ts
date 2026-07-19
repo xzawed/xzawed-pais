@@ -55,7 +55,11 @@ export interface DispatchDeps {
   /** N2: DEGRADED 모드에서 HIGH-risk WP가 사인오프 승인됐는지 조회(주입 시). 미승인이면 보류. */
   isHighRiskDispatchApproved?: (workflowId: string, wpId: string) => Promise<boolean>
   /** N2: DEGRADED HIGH-risk WP 보류 시 콜백(degraded_dispatch DecisionRequest 생성). */
-  onDegradedHighRisk?: (info: { workflowId: string; wpId: string; stepN: number; projectId: string | null }) => Promise<void>
+  onDegradedHighRisk?: (info: {
+    workflowId: string; wpId: string; stepN: number; projectId: string | null
+    /** G11 Slice 4: 그래프에 이미 영속된 userContext.tenantId(추가 조회 0). */
+    tenantId: string | null
+  }) => Promise<void>
 }
 
 export interface DispatchOutcome {
@@ -136,11 +140,18 @@ export async function handleDispatch(workflowId: string, deps: DispatchDeps): Pr
     if (degradedSignoffActive && deps.getMode?.() === 'DEGRADED' && wpById.get(item.wpId)?.risk === 'HIGH') {
       const approved = await deps.isHighRiskDispatchApproved!(workflowId, item.wpId)
       if (!approved) {
-        await deps.onDegradedHighRisk!({ workflowId, wpId: item.wpId, stepN: item.stepN, projectId: stored.userContext?.projectId ?? null })
+        await deps.onDegradedHighRisk!({
+          workflowId, wpId: item.wpId, stepN: item.stepN,
+          projectId: stored.userContext?.projectId ?? null,
+          // G11 Slice 4: 그래프에 이미 로드된 userContext에서 테넌트 태그 파생(추가 조회 0).
+          tenantId: stored.userContext?.tenantId ?? null,
+        })
         continue // 보류 — recordDispatch·publish 미실행. WP는 DRAFTED 유지(전이 0).
       }
     }
     const r = await deps.store.recordDispatch({
+      // G11 Slice 4: 그래프에 영속된 userContext에서 테넌트 태그 파생(추가 조회 0).
+      tenantId: stored.userContext?.tenantId ?? null,
       workflowId,
       wpId: item.wpId,
       stepN: item.stepN,

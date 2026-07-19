@@ -1142,7 +1142,7 @@ describe('ClaudeRunner', () => {
       const r = new ClaudeRunner(client, 'm', registry, repo as never)
       await r.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore, userContext: userCtx } as Parameters<typeof r.run>[0])
 
-      expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [{ content: '결제는 Stripe', sourceAgent: 'plan_task' }])
+      expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [{ content: '결제는 Stripe', sourceAgent: 'plan_task' }], null)
     })
 
     it('result.knowledge 저장 후 knowledge_changed를 발행한다(위키 실시간 갱신)', async () => {
@@ -1190,7 +1190,7 @@ describe('ClaudeRunner', () => {
       expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [
         { content: '결제는 Stripe', sourceAgent: 'plan_task', category: 'decision' },
         { content: '미분류 항목', sourceAgent: 'plan_task' },
-      ])
+      ], null)
     })
 
     it('repo가 없으면 주입·저장을 건너뛰고 기존 흐름을 유지한다', async () => {
@@ -1231,7 +1231,7 @@ describe('ClaudeRunner', () => {
       // 승인자(userContext.userId='u1')가 approver로 기록된다(provenance·audit)
       expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [
         { content: '결제는 Stripe로 결정', sourceAgent: 'approval-gate', category: 'decision', approver: 'u1' },
-      ])
+      ], null)
     })
 
     it('승인 시 saveToWiki 없으면 게이트 결정을 저장하지 않는다', async () => {
@@ -1272,7 +1272,7 @@ describe('ClaudeRunner', () => {
       )
       expect(repo.insertMany).toHaveBeenCalledWith('proj-1', [
         { content: 'PO가 편집한 결정 요약', sourceAgent: 'approval-gate', category: 'decision', approver: 'u1' },
-      ])
+      ], null)
     })
 
     it('승인 결정 저장(saveToWiki) 후 knowledge_changed를 발행한다(위키 실시간 갱신)', async () => {

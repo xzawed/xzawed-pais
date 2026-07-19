@@ -123,7 +123,7 @@ export class LeaseStore {
       env,
       `UPDATE wp_leases SET attempt = $1, expires_at = $2, status = $3, event_id = $4, updated_at = NOW()
         WHERE workflow_id = $5 AND wp_id = $6 AND status = $7 AND attempt = $8
-        RETURNING wp_id`,
+        RETURNING wp_id, tenant_id`,
       [input.nextAttempt, expiresAt, LEASE_ACTIVE, env.eventId, input.workflowId, input.wpId, LEASE_ACTIVE, expectedAttempt],
       {
         workflowId: input.workflowId, wpId: input.wpId, attempt: input.nextAttempt, stepN: input.stepN,
@@ -145,7 +145,7 @@ export class LeaseStore {
       env,
       `UPDATE wp_leases SET status = $1, updated_at = NOW()
         WHERE workflow_id = $2 AND wp_id = $3 AND status = $4
-        RETURNING wp_id`,
+        RETURNING wp_id, tenant_id`,
       [LEASE_ESCALATED, input.workflowId, input.wpId, LEASE_ACTIVE],
       {
         workflowId: input.workflowId, wpId: input.wpId, attempt: input.attempt, stepN: input.stepN,
@@ -174,7 +174,7 @@ export class LeaseStore {
       env,
       `UPDATE wp_leases SET status = $1, attempt = $2, expires_at = $3, event_id = $4, updated_at = NOW()
         WHERE workflow_id = $5 AND wp_id = $6 AND status = $7
-        RETURNING wp_id`,
+        RETURNING wp_id, tenant_id`,
       [LEASE_ACTIVE, newAttempt, expiresAt, env.eventId, input.workflowId, input.wpId, LEASE_ESCALATED],
       {
         workflowId: input.workflowId, wpId: input.wpId, attempt: newAttempt, stepN: cur.stepN,
@@ -199,7 +199,7 @@ export class LeaseStore {
       env,
       `UPDATE wp_leases SET status = $1, updated_at = NOW()
         WHERE workflow_id = $2 AND wp_id = $3 AND status = $4
-        RETURNING wp_id`,
+        RETURNING wp_id, tenant_id`,
       [LEASE_RELEASED, input.workflowId, input.wpId, LEASE_ACTIVE],
       {
         workflowId: input.workflowId, wpId: input.wpId, attempt: input.attempt, stepN: input.stepN,
@@ -213,6 +213,15 @@ export class LeaseStore {
    * lease 전이 공통 tx: UPDATE(호출자가 동시 sweep 직렬화 가드를 WHERE에 포함 — reclaim은 attempt CAS,
    * escalate는 status 단방향 전이) → 0행이면 skip(null·다른 sweep이 선점) → appendWpEvent → COMMIT.
    * ROLLBACK 가드로 연결 손상 시 원본 오류 보존.
+   *
+   * G11 Slice 4(수정): 호출자 4곳(reclaim/escalate/reopen/complete)의 UPDATE는 전부 `RETURNING wp_id, tenant_id`
+   * 이다 — dispatch가 최초 INSERT 시 심은 권위 있는 tenant_id가 `wp_leases` 행에 이미 있고, UPDATE는 그 행을
+   * 갱신할 뿐이라 컬럼을 지정하지 않으면 값이 보존된다(wp_leases에 한해 참). 그 값을 RETURNING으로 읽어
+   * appendWpEvent에 전달한다. **wp_state_log는 append-only라 매 호출마다 새 행이 INSERT되므로 "보존할 원 태그"가
+   * 없다** — 이전엔 호출부가 `tenantId: null`을 하드코딩해 reclaim/escalate/reopen/complete가 남기는 wp_state_log
+   * 행이 전부 미태깅이었다(§ "reclaim/escalate는 dispatch가 원 태그 보유"라는 이전 주석은 wp_leases와 wp_state_log를
+   * 혼동한 오류). 지금은 UPDATE 결과에서 읽은 태그를 그 호출의 wp_state_log INSERT에도 실어, 같은 WP의 모든
+   * 생명주기 행(dispatched/reclaimed/escalated/completed)이 동일 tenant_id를 갖는다.
    */
   private async transition(
     env: EventEnvelope, updateSql: string, updateParams: unknown[], append: AppendArgs,
@@ -220,8 +229,9 @@ export class LeaseStore {
     const client: PoolClient = await this.pool.connect()
     try {
       await client.query('BEGIN')
-      const upd = await client.query(updateSql, updateParams)
-      if (upd.rows.length === 0) {
+      const upd = await client.query<{ wp_id: string; tenant_id: string | null }>(updateSql, updateParams)
+      const updRow = upd.rows[0]
+      if (!updRow) {
         try {
           await client.query('ROLLBACK')
         } catch {
@@ -229,7 +239,7 @@ export class LeaseStore {
         }
         return null
       }
-      const res = await appendWpEvent(client, env, append)
+      const res = await appendWpEvent(client, env, { ...append, tenantId: updRow.tenant_id ?? null })
       await client.query('COMMIT')
       return res
     } catch (err) {

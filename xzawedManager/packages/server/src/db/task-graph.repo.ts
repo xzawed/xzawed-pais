@@ -73,22 +73,25 @@ export class TaskGraphRepo {
     private readonly now: () => number = () => Date.now(),
   ) {}
 
-  /** 워크플로 그래프 프로젝션 upsert(재분해 시 version++·graph_dag 교체). */
+  /** 워크플로 그래프 프로젝션 upsert(재분해 시 version++·graph_dag 교체).
+   *  G11 Slice 4: tenant_id는 userContext에서 파생(새 인자 없음 → 호출부 누락이 구조적으로 불가능).
+   *  재분해가 tenantId 없이 오면 COALESCE로 기존 테넌트를 보존한다(graph_dag 전체 교체와 달리 유실 없음). */
   async upsertGraph(input: PersistGraphInput): Promise<{ version: number }> {
     const dag = JSON.stringify({
       workPackages: input.workPackages,
       ...(input.userContext != null && { userContext: input.userContext }),
     })
     const { rows } = await this.pool.query<{ version: number }>(
-      `INSERT INTO task_graphs (workflow_id, graph_dag, event_id, version, created_at, updated_at)
-         VALUES ($1, $2, $3, 1, NOW(), NOW())
+      `INSERT INTO task_graphs (workflow_id, graph_dag, event_id, version, tenant_id, created_at, updated_at)
+         VALUES ($1, $2, $3, 1, $4, NOW(), NOW())
        ON CONFLICT (workflow_id) DO UPDATE
          SET graph_dag  = EXCLUDED.graph_dag,
              event_id   = EXCLUDED.event_id,
+             tenant_id  = COALESCE(EXCLUDED.tenant_id, task_graphs.tenant_id),
              version    = task_graphs.version + 1,
              updated_at = NOW()
        RETURNING version`,
-      [input.workflowId, dag, input.eventId ?? null],
+      [input.workflowId, dag, input.eventId ?? null, input.userContext?.tenantId ?? null],
     )
     const row = rows[0]
     if (!row) throw new Error('upsertGraph: no row returned')
@@ -123,7 +126,11 @@ export class TaskGraphRepo {
     }
   }
 
-  /** WP 상태 전이를 append-only 기록(INSERT only). */
+  /** WP 상태 전이를 append-only 기록(INSERT only).
+   *  ⚠️ G11 Slice 4: 이 메서드의 wp_state_log INSERT는 tenant_id 컬럼을 채우지 않는다(미태깅) — 프로덕션 호출자
+   *  0곳(테스트 전용, dispatch/lease 경로는 dispatch.repo.ts의 appendWpEvent를 쓴다)이라 오늘은 구멍이 아니지만,
+   *  나중에 실 호출자가 붙으면 그 writer가 남기는 wp_state_log 행만 영구 미태깅으로 남는다(범위 확대 방지 위해
+   *  코드는 그대로 두고 이 주석만 남긴다). */
   async appendTransition(input: WpTransitionInput): Promise<{ seq: number }> {
     const { rows } = await this.pool.query<{ seq: number | string }>(
       `INSERT INTO wp_state_log (workflow_id, wp_id, from_state, to_state, event_id, reason, occurred_at)

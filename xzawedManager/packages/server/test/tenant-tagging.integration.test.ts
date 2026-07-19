@@ -1,0 +1,328 @@
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { randomUUID } from 'node:crypto'
+import { Pool } from 'pg'
+import { makeEnvelope, type RiskClassification } from '@xzawed/agent-streams'
+import { runMigrations } from '../src/db/pool.js'
+
+const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL']
+const d = url ? describe : describe.skip
+
+/** G11 Slice 4: 쓰기 태깅(tenant_id). 읽기 격리는 하지 않으므로 "행에 값이 기록되는가"만 검증한다. */
+d('G11 Slice 4 tenant 태깅 (pg)', () => {
+  let pool: Pool
+  beforeAll(async () => { pool = new Pool({ connectionString: url }); await runMigrations(pool) })
+  afterAll(async () => { await pool.end() })
+
+  const TAGGED_TABLES = [
+    'task_graphs', 'wp_state_log', 'wp_leases', 'oracles', 'decision_requests',
+    'risk_classifications', 'advisory_findings', 'wp_verification_results',
+    'release_gates', 'domain_knowledge',
+  ]
+
+  it.each(TAGGED_TABLES)('%s에 tenant_id 컬럼이 존재한다', async (table) => {
+    const { rows } = await pool.query<{ data_type: string }>(
+      `SELECT data_type FROM information_schema.columns
+        WHERE table_name = $1 AND column_name = 'tenant_id'`,
+      [table],
+    )
+    expect(rows[0]?.data_type).toBe('text')
+  })
+
+  it('upsertGraph가 userContext.tenantId를 tenant_id로 영속하고, 재분해 시 보존한다', async () => {
+    const { TaskGraphRepo } = await import('../src/db/task-graph.repo.js')
+    const repo = new TaskGraphRepo(pool)
+    const wf = `wf-tt-graph-${randomUUID()}`
+    try {
+      const wp = {
+        id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null,
+        acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' as const,
+      }
+      const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/tt', tenantId: 'org-1' }
+
+      await repo.upsertGraph({ workflowId: wf, workPackages: [wp], eventId: null, userContext: uc })
+      const first = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM task_graphs WHERE workflow_id = $1`, [wf],
+      )
+      expect(first.rows[0]?.tenant_id).toBe('org-1')
+
+      // C5: 재분해가 tenantId 없이 와도 기존 테넌트는 지워지지 않는다(COALESCE 보존).
+      const ucNoTenant = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/tt' }
+      await repo.upsertGraph({ workflowId: wf, workPackages: [wp], eventId: null, userContext: ucNoTenant })
+      const second = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM task_graphs WHERE workflow_id = $1`, [wf],
+      )
+      expect(second.rows[0]?.tenant_id).toBe('org-1')
+    } finally {
+      await pool.query(`DELETE FROM task_graphs WHERE workflow_id = $1`, [wf])
+    }
+  })
+
+  it('upsertGraph가 tenantId 없는 userContext면 tenant_id를 NULL로 둔다', async () => {
+    const { TaskGraphRepo } = await import('../src/db/task-graph.repo.js')
+    const repo = new TaskGraphRepo(pool)
+    const wf = `wf-tt-graph-${randomUUID()}`
+    try {
+      const wp = {
+        id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null,
+        acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' as const,
+      }
+      await repo.upsertGraph({
+        workflowId: wf, workPackages: [wp], eventId: null,
+        userContext: { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/tt' },
+      })
+      const { rows } = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM task_graphs WHERE workflow_id = $1`, [wf],
+      )
+      expect(rows[0]?.tenant_id).toBeNull()
+    } finally {
+      await pool.query(`DELETE FROM task_graphs WHERE workflow_id = $1`, [wf])
+    }
+  })
+
+  it('recordDispatch가 wp_leases·wp_state_log에 tenant_id를 기록한다', async () => {
+    const { DispatchStore } = await import('../src/db/dispatch.repo.js')
+    const store = new DispatchStore(pool)
+    const wf = `wf-tt-dispatch-${randomUUID()}`
+    try {
+      const r = await store.recordDispatch({
+        workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED',
+        visibilityMs: 60_000, tenantId: 'org-1',
+      })
+      expect(r.status).toBe('recorded')
+
+      const lease = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM wp_leases WHERE workflow_id = $1 AND wp_id = 'a'`, [wf],
+      )
+      expect(lease.rows[0]?.tenant_id).toBe('org-1')
+
+      const log = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM wp_state_log WHERE workflow_id = $1 AND wp_id = 'a'`, [wf],
+      )
+      expect(log.rows[0]?.tenant_id).toBe('org-1')
+    } finally {
+      await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+      await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+      await pool.query(`DELETE FROM wp_state_log WHERE workflow_id = $1`, [wf])
+      await pool.query(`DELETE FROM wp_leases WHERE workflow_id = $1`, [wf])
+    }
+  })
+
+  it('recordDispatch가 tenantId=null이면 tenant_id를 NULL로 둔다', async () => {
+    const { DispatchStore } = await import('../src/db/dispatch.repo.js')
+    const store = new DispatchStore(pool)
+    const wf = `wf-tt-dispatch-${randomUUID()}`
+    try {
+      await store.recordDispatch({
+        workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED',
+        visibilityMs: 60_000, tenantId: null,
+      })
+      const lease = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM wp_leases WHERE workflow_id = $1 AND wp_id = 'a'`, [wf],
+      )
+      expect(lease.rows[0]?.tenant_id).toBeNull()
+    } finally {
+      await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+      await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+      await pool.query(`DELETE FROM wp_state_log WHERE workflow_id = $1`, [wf])
+      await pool.query(`DELETE FROM wp_leases WHERE workflow_id = $1`, [wf])
+    }
+  })
+
+  it('recordDispatch→complete 후 wp_state_log의 두 행(DISPATCHED·DONE) 모두 tenant_id가 태깅된다', async () => {
+    // G11 Slice 4 Fix 1: append-only wp_state_log는 reclaim/escalate/reopen/complete마다 새 행을 INSERT한다.
+    // recordDispatch가 남기는 DISPATCHED 행뿐 아니라 recordCompletion이 남기는 DONE 행도 같은 테넌트로
+    // 태깅돼야 한다 — 그러지 않으면 latestStates(seq DESC)가 4b에서 tenant_id 술어를 얹는 순간 최신(DONE·NULL)
+    // 행이 필터에서 사라지고 그 전 DISPATCHED 행이 최신으로 뽑혀 완료된 WP가 미완료로 보인다.
+    const { DispatchStore } = await import('../src/db/dispatch.repo.js')
+    const { LeaseStore } = await import('../src/db/lease.repo.js')
+    const dispatchStore = new DispatchStore(pool)
+    const leaseStore = new LeaseStore(pool)
+    const wf = `wf-tt-complete-${randomUUID()}`
+    try {
+      const dispatched = await dispatchStore.recordDispatch({
+        workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED',
+        visibilityMs: 60_000, tenantId: 'org-1',
+      })
+      expect(dispatched.status).toBe('recorded')
+
+      const completed = await leaseStore.recordCompletion({ workflowId: wf, wpId: 'a', attempt: 0, stepN: 0 })
+      expect(completed.status).toBe('completed')
+
+      const log = await pool.query<{ to_state: string; tenant_id: string | null }>(
+        `SELECT to_state, tenant_id FROM wp_state_log WHERE workflow_id = $1 AND wp_id = 'a' ORDER BY seq ASC`, [wf],
+      )
+      expect(log.rows).toHaveLength(2)
+      expect(log.rows.map((r) => r.to_state)).toEqual(['DISPATCHED', 'DONE'])
+      expect(log.rows.every((r) => r.tenant_id === 'org-1')).toBe(true)
+    } finally {
+      await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+      await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+      await pool.query(`DELETE FROM wp_state_log WHERE workflow_id = $1`, [wf])
+      await pool.query(`DELETE FROM wp_leases WHERE workflow_id = $1`, [wf])
+    }
+  })
+
+  it('insertMany가 domain_knowledge에 tenant_id를 기록한다', async () => {
+    const { KnowledgeRepo } = await import('../src/db/knowledge.repo.js')
+    const repo = new KnowledgeRepo(pool)
+    const projectId = `proj-tt-${randomUUID()}`
+    try {
+      await repo.insertMany(projectId, [{ content: 'c1', sourceAgent: 'tester' }], 'org-1')
+      await repo.insertMany(projectId, [{ content: 'c2', sourceAgent: 'tester' }], null)
+
+      const { rows } = await pool.query<{ content: string; tenant_id: string | null }>(
+        `SELECT content, tenant_id FROM domain_knowledge WHERE project_id = $1 ORDER BY content`, [projectId],
+      )
+      expect(rows.map((r) => [r.content, r.tenant_id])).toEqual([['c1', 'org-1'], ['c2', null]])
+    } finally {
+      await pool.query(`DELETE FROM domain_knowledge WHERE project_id = $1`, [projectId])
+    }
+  })
+
+  it('upsertDraft가 oracles에 tenant_id를 기록한다', async () => {
+    const { OracleRepo } = await import('../src/db/oracle.repo.js')
+    const repo = new OracleRepo(pool)
+    const wf = `wf-tt-oracle-${randomUUID()}`
+    try {
+      await repo.upsertDraft({ workflowId: wf, storyId: 's1', scenarios: [], coverage: {}, tenantId: 'org-1' })
+      const { rows } = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM oracles WHERE workflow_id = $1`, [wf],
+      )
+      expect(rows[0]?.tenant_id).toBe('org-1')
+    } finally {
+      await pool.query(`DELETE FROM oracles WHERE workflow_id = $1`, [wf])
+    }
+  })
+
+  it('risk upsert가 risk_classifications에 tenant_id를 기록한다', async () => {
+    const { RiskClassificationRepo } = await import('../src/db/risk-classification.repo.js')
+    const repo = new RiskClassificationRepo(pool)
+    const wf = `wf-tt-risk-${randomUUID()}`
+    try {
+      const classification: RiskClassification = {
+        projectId: 'p1',
+        risk: 'MEDIUM',
+        dimensionScores: {
+          domain: { score: 0, confidence: 0 },
+          complexity: { score: 0, confidence: 0 },
+          external_deps: { score: 0, confidence: 0 },
+          compliance: { score: 0, confidence: 0 },
+        },
+        complianceFrameworks: [],
+        claims: [],
+        modelRouting: { PM: 'opus', Developer: 'sonnet', Designer: 'sonnet', Tester: 'sonnet', Security: 'sonnet' },
+        humanGate: { required: false, reason: '' },
+        classifierModel: 'opus',
+        audit: { approvedBy: null, approvedAt: null, version: 1 },
+      }
+      await repo.upsert({ workflowId: wf, classification, tenantId: 'org-1' })
+      const { rows } = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM risk_classifications WHERE workflow_id = $1`, [wf],
+      )
+      expect(rows[0]?.tenant_id).toBe('org-1')
+    } finally {
+      await pool.query(`DELETE FROM risk_classifications WHERE workflow_id = $1`, [wf])
+    }
+  })
+
+  it('recordFindings가 advisory_findings에 tenant_id를 기록한다', async () => {
+    const { AdvisoryRepo } = await import('../src/db/advisory.repo.js')
+    const repo = new AdvisoryRepo(pool)
+    const wf = `wf-tt-adv-${randomUUID()}`
+    try {
+      await repo.recordFindings(wf, 'a', 0, [
+        { rank: 1, title: 't', rationale: 'r', severity: 'advisory', sourceLens: 'optimization' },
+      ], 'org-1')
+      const { rows } = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM advisory_findings WHERE workflow_id = $1`, [wf],
+      )
+      expect(rows[0]?.tenant_id).toBe('org-1')
+    } finally {
+      await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+      await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+      await pool.query(`DELETE FROM advisory_findings WHERE workflow_id = $1`, [wf])
+    }
+  })
+
+  it('createRequest가 decision_requests에 tenant_id를 기록하고 읽기 경로로 되돌려준다', async () => {
+    const { DecisionRepo } = await import('../src/db/decision.repo.js')
+    const repo = new DecisionRepo(pool)
+    const wf = `wf-tt-dec-${randomUUID()}`
+    const requestId = `${wf}:wp-a:0`
+    try {
+      await repo.createRequest({
+        requestId, type: 'defect_brief', workflowId: wf,
+        correlationId: wf, projectId: 'p1', tenantId: 'org-1',
+      })
+      const { rows } = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM decision_requests WHERE request_id = $1`, [requestId],
+      )
+      expect(rows[0]?.tenant_id).toBe('org-1')
+
+      // 읽기 경로가 태그를 실어 나른다(Task 10의 B1 승계가 여기에 의존).
+      const req = await repo.getRequest(requestId)
+      expect(req?.tenantId).toBe('org-1')
+    } finally {
+      await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+      await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+      await pool.query(`DELETE FROM decision_requests WHERE workflow_id = $1`, [wf])
+    }
+  })
+
+  it('recordEvidence·recordGate가 tenant_id를 기록한다', async () => {
+    const { ReleaseGateRepo } = await import('../src/db/release-gate.repo.js')
+    const repo = new ReleaseGateRepo(pool)
+    const wf = `wf-tt-gate-${randomUUID()}`
+    try {
+      await repo.recordEvidence(wf, 'a', 0, [{ channel: 'tc', outcome: 'passed' }], 'org-1')
+      const ev = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM wp_verification_results WHERE workflow_id = $1`, [wf],
+      )
+      expect(ev.rows[0]?.tenant_id).toBe('org-1')
+
+      await repo.recordGate(wf, 'v1', { status: 'passed', perWp: [], blockingReasons: [] }, 'org-1')
+      const g = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM release_gates WHERE workflow_id = $1`, [wf],
+      )
+      expect(g.rows[0]?.tenant_id).toBe('org-1')
+    } finally {
+      await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+      await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+      await pool.query(`DELETE FROM release_gates WHERE workflow_id = $1`, [wf])
+      await pool.query(`DELETE FROM wp_verification_results WHERE workflow_id = $1`, [wf])
+    }
+  })
+
+  it('B1 재에스컬레이션이 원 요청의 tenant_id를 승계한다', async () => {
+    const { DecisionRepo } = await import('../src/db/decision.repo.js')
+    const { buildDecisionExpiredHandler } = await import('../src/streams/decision-expiry-consumer.js')
+    const { DECISION_EXPIRED_EVENT } = await import('../src/db/decision.types.js')
+    const repo = new DecisionRepo(pool)
+    const wf = `wf-tt-reesc-${randomUUID()}`
+    const orig = `${wf}:wp-a:0`
+    try {
+      await repo.createRequest({
+        requestId: orig, type: 'defect_brief', workflowId: wf, correlationId: wf,
+        projectId: 'p1', tenantId: 'org-1', severity: 'blocking',
+        expiresAt: new Date(Date.now() - 1000).toISOString(),
+      })
+
+      const handler = buildDecisionExpiredHandler({
+        decisionStore: repo, maxReescalations: 1, ttlMs: 60_000, now: () => Date.now(),
+      })
+      const envelope = makeEnvelope({ correlationId: wf, workflowId: wf, stepId: 'decision.expired', attemptId: 0 })
+      await handler({ envelope, type: DECISION_EXPIRED_EVENT, payload: { requestId: orig } })
+
+      const { rows } = await pool.query<{ request_id: string; tenant_id: string | null }>(
+        `SELECT request_id, tenant_id FROM decision_requests WHERE workflow_id = $1 AND request_id <> $2`,
+        [wf, orig],
+      )
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.tenant_id).toBe('org-1')
+    } finally {
+      await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+      await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+      await pool.query(`DELETE FROM decision_requests WHERE workflow_id = $1`, [wf])
+    }
+  })
+})

@@ -9,9 +9,10 @@ export interface CompletionDeps {
   dispatch: DispatchDeps
   /** P5-1 릴리스 게이트: all-WP-done 시 평가·영속(best-effort). 미주입이면 미평가(회귀 0). */
   releaseGateEnabled?: boolean
+  /** G11 Slice 4: recordGate 4번째 인자(tenantId)는 이미 보유한 getGraph 결과(stored.userContext)에서 파생. */
   releaseStore?: {
     evidenceForWorkflow(workflowId: string): Promise<Map<string, ChannelOutcome[]>>
-    recordGate(workflowId: string, gateVersion: string, result: ReleaseGateResult): Promise<{ eventId: string } | null>
+    recordGate(workflowId: string, gateVersion: string, result: ReleaseGateResult, tenantId: string | null): Promise<{ eventId: string } | null>
   }
 }
 
@@ -56,7 +57,7 @@ async function maybeEvaluateReleaseGate(workflowId: string, deps: CompletionDeps
     const evidence = await deps.releaseStore.evidenceForWorkflow(workflowId)
     const result = evaluateReleaseGate(stored.workPackages, evidence)
     const version = doneSetVersion(states)
-    await deps.releaseStore.recordGate(workflowId, version, result)
+    await deps.releaseStore.recordGate(workflowId, version, result, stored.userContext?.tenantId ?? null)
     return result.status
   } catch (err) {
     console.error('[completion] 릴리스 게이트 평가 실패 — best-effort 미발행(gate.passed 없음 → 후속 promote는 닫힌 채 유지). 완료는 정상 진행:', err)

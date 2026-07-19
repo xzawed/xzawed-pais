@@ -8,6 +8,8 @@ export interface EscalationInfo {
   stepN: number
   /** C0/C1: 생성 시점 프로젝트 스코프(graph_dag.userContext.projectId). 미해석은 null. */
   projectId?: string | null
+  /** G11 Slice 4: 생성 시점 테넌트 스코프(graph_dag.userContext.tenantId, lease.ts resolveScope 경유). 미해석은 null. */
+  tenantId?: string | null
 }
 
 /** `DecisionRepo.createRequest` 입력의 구조적 부분집합 — repo 직접 결합 회피(M3). */
@@ -20,13 +22,21 @@ export interface DecisionRequestInput {
   context?: DecisionRequest['context']
   severity?: DecisionRequest['severity']
   projectId?: string | null
+  /** G11 Slice 4: 테넌트 태그(생성 시점 userContext.tenantId). 저장소 인자이지 브리프 내용이 아니므로
+   *  순수 빌더는 미설정 — 호출부가 store.createRequest 스프레드 시 얹는다. */
+  tenantId?: string | null
   /** B1: 결정 TTL 만료 시각(ISO). 핸들러가 now+TTL로 주입·순수 빌더는 미설정. */
   expiresAt?: string | null
 }
 
-/** DecisionRepo의 createRequest만 의존(구조적). */
+/**
+ * DecisionRepo의 createRequest만 의존(구조적). G11 Slice 4 리뷰 수정: `tenantId`를 **seam에서 필수화**
+ * (`DecisionRequestInput.tenantId`는 옵셔널로 남겨 순수 빌더는 무영향 — dispatch.ts `onDegradedHighRisk`
+ * 선례 형태). 이전엔 이 인터페이스가 옵셔널을 그대로 노출해 `DecisionRepo.createRequest`의 필수 인자가
+ * 호출부까지 도달하지 못했다(초과 프로퍼티 검사로 착시된 "9곳 에러" — 실제 강제는 0).
+ */
 export interface DecisionBriefStore {
-  createRequest(req: DecisionRequestInput): Promise<{ eventId: string } | null>
+  createRequest(req: DecisionRequestInput & { tenantId: string | null }): Promise<{ eventId: string } | null>
 }
 
 /** B1: now(ms)+ttlMs → ISO 만료 시각. ttlMs 미설정/비양수면 undefined(만료 없음·회귀 0). 순수. */
@@ -88,6 +98,6 @@ export function makeEscalationBrief(
   return async (info) => {
     const nowFn = opts?.now ?? Date.now
     const expiresAt = expiresAtFrom(nowFn(), opts?.ttlMs)
-    await store.createRequest({ ...buildDefectBrief(info), ...(expiresAt && { expiresAt }) })
+    await store.createRequest({ ...buildDefectBrief(info), tenantId: info.tenantId ?? null, ...(expiresAt && { expiresAt }) })
   }
 }

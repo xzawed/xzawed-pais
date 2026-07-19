@@ -378,7 +378,7 @@ export class ClaudeRunner {
       .filter((e): e is { content: string; sourceAgent: string; category?: string } => e !== null)
     if (entries.length === 0) return false
     try {
-      await this.knowledgeRepo.insertMany(userContext.projectId, entries)
+      await this.knowledgeRepo.insertMany(userContext.projectId, entries, userContext.tenantId ?? null)
       return true
     } catch (err) {
       console.warn('[runner] 위키 저장 실패 — 작업 계속:', err)
@@ -397,7 +397,7 @@ export class ClaudeRunner {
       await this.knowledgeRepo.insertMany(userContext.projectId, [
         // 승인자(userContext.userId)를 기록해 결정 provenance·audit를 남긴다
         { content: summary, sourceAgent: 'approval-gate', category: 'decision', ...(userContext.userId ? { approver: userContext.userId } : {}) },
-      ])
+      ], userContext.tenantId ?? null)
       return true
     } catch (err) {
       console.warn('[runner] 승인 결정 위키 저장 실패 — 작업 계속:', err)

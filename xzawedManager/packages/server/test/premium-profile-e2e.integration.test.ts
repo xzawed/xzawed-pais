@@ -74,7 +74,7 @@ describe('G9 프리미엄 프로필 아크 E2E (autonomous 프로필이 build→
       // develop_code WP 2개(a → b 의존). 검증 게이트 파생 체크(build+test)가 실행되려면 workspaceRoot 필수.
       //  oracleRef non-null: autonomous 프로필은 MANAGER_ORACLE_DOR를 켜지 않으므로 기본 DoR 게이트
       //  (readiness.ts: oracleRef != null)가 적용된다 — 분해가 생성하는 WP는 oracleRef를 가진다(실 프로필 경로).
-      const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/g9' }
+      const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/g9', tenantId: 'org-g9' }
       const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: 'or-a', acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' }
       const b: WorkPackage = { id: 'b', storyId: 's2', owningRole: 'developer', oracleRef: 'or-b', acceptanceCriteria: ['AC2'], dependencies: ['a'], attributionCounters: {}, status: 'draft' }
       await repo.upsertGraph({ workflowId: wf, workPackages: [a, b], eventId: null, userContext: uc })
@@ -129,6 +129,18 @@ describe('G9 프리미엄 프로필 아크 E2E (autonomous 프로필이 build→
       // 검증 게이트가 실제로 파생 build+test를 각 WP에 실행했음(프로필 verify가 휴면이 아님).
       expect(build).toHaveBeenCalledTimes(2)
       expect(test).toHaveBeenCalledTimes(2)
+
+      // G11 Slice 4: 태그가 아크 전 구간(그래프→lease→검증증거)에 실제로 박혔는지 end-to-end 확인.
+      const graphTag = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM task_graphs WHERE workflow_id = $1`, [wf],
+      )
+      expect(graphTag.rows[0]?.tenant_id).toBe('org-g9')
+
+      const leaseTags = await pool.query<{ tenant_id: string | null }>(
+        `SELECT tenant_id FROM wp_leases WHERE workflow_id = $1`, [wf],
+      )
+      expect(leaseTags.rows).toHaveLength(2)
+      expect(leaseTags.rows.every((r) => r.tenant_id === 'org-g9')).toBe(true)
     } finally {
       await cleanup(pool)
       await closePool()

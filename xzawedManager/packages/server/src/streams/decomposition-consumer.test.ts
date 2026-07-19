@@ -147,6 +147,7 @@ describe('handleDecompositionEmitted — oracleDrafts upsert (P3-2)', () => {
     expect(out).toEqual({ status: 'persisted', version: 1 })
     expect(oracleStore.upsertDraft).toHaveBeenCalledWith({
       workflowId: 'wf-1', storyId: 's1', scenarios: draft.scenarios, coverage: draft.coverage, invariants: draft.invariants,
+      tenantId: null,
     })
   })
 

@@ -18,8 +18,9 @@ async function safeRollback(client: PoolClient): Promise<void> {
 export class ReleaseGateRepo {
   constructor(private readonly pool: Pool, private readonly now: () => number = () => Date.now()) {}
 
-  /** develop_code/run_tests/build_project WP의 채널 outcome을 단일 tx로 영속(M5/M7). 멱등(M6). */
-  async recordEvidence(workflowId: string, wpId: string, attempt: number, outcomes: ChannelOutcome[]): Promise<void> {
+  /** develop_code/run_tests/build_project WP의 채널 outcome을 단일 tx로 영속(M5/M7). 멱등(M6).
+   *  G11 Slice 4: tenantId는 워커의 userContext 유래(DB 왕복 0). */
+  async recordEvidence(workflowId: string, wpId: string, attempt: number, outcomes: ChannelOutcome[], tenantId: string | null): Promise<void> {
     if (outcomes.length === 0) return
     const client = await this.pool.connect()
     try {
@@ -44,10 +45,10 @@ export class ReleaseGateRepo {
       )
       for (const o of outcomes) {
         await client.query(
-          `INSERT INTO wp_verification_results (workflow_id, wp_id, attempt, channel, outcome, event_id)
-           VALUES ($1,$2,$3,$4,$5,$6)
+          `INSERT INTO wp_verification_results (workflow_id, wp_id, attempt, channel, outcome, event_id, tenant_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
            ON CONFLICT (workflow_id, wp_id, attempt, channel) DO NOTHING`,
-          [workflowId, wpId, attempt, o.channel, o.outcome, env.eventId],
+          [workflowId, wpId, attempt, o.channel, o.outcome, env.eventId, tenantId],
         )
       }
       await client.query('COMMIT')
@@ -58,18 +59,19 @@ export class ReleaseGateRepo {
     }
   }
 
-  /** 게이트 결과를 단일 tx로 영속 + gate.passed/blocked 발행. 동일 (wf,version) 재평가는 ON CONFLICT → null(이중 emit 차단·M6). */
-  async recordGate(workflowId: string, gateVersion: string, result: ReleaseGateResult): Promise<{ eventId: string } | null> {
+  /** 게이트 결과를 단일 tx로 영속 + gate.passed/blocked 발행. 동일 (wf,version) 재평가는 ON CONFLICT → null(이중 emit 차단·M6).
+   *  G11 Slice 4: tenantId는 completion.ts가 이미 보유한 getGraph 결과(stored.userContext)에서 파생 — 새 DB 조회 0. */
+  async recordGate(workflowId: string, gateVersion: string, result: ReleaseGateResult, tenantId: string | null): Promise<{ eventId: string } | null> {
     const eventType = result.status === 'passed' ? GATE_PASSED_EVENT : GATE_BLOCKED_EVENT
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
       const ins = await client.query(
-        `INSERT INTO release_gates (workflow_id, gate_version, status, per_wp, blocking_reasons, event_id)
-         VALUES ($1,$2,$3,$4,$5,$6)
+        `INSERT INTO release_gates (workflow_id, gate_version, status, per_wp, blocking_reasons, event_id, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
          ON CONFLICT (workflow_id, gate_version) DO NOTHING
          RETURNING id`,
-        [workflowId, gateVersion, result.status, JSON.stringify(result.perWp), JSON.stringify(result.blockingReasons), null],
+        [workflowId, gateVersion, result.status, JSON.stringify(result.perWp), JSON.stringify(result.blockingReasons), null, tenantId],
       )
       if (ins.rowCount === 0) { await safeRollback(client); return null }
       const env = makeEnvelope(

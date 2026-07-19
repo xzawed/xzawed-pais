@@ -17,6 +17,7 @@ interface RequestRow {
   request_id: string; type: string; workflow_id: string; wp_id: string | null
   correlation_id: string; context: unknown; severity: string; status: string
   language: string; expires_at: Date | string | null; project_id: string | null
+  tenant_id: string | null
 }
 interface DecisionRow {
   decision_id: string; request_id: string; decided_by: string; authority: string | null
@@ -31,6 +32,7 @@ function rowToRequest(r: RequestRow): DecisionRequest {
     status: r.status, language: r.language,
     expiresAt: r.expires_at instanceof Date ? r.expires_at.toISOString() : r.expires_at,
     projectId: r.project_id,
+    tenantId: r.tenant_id,
   })
 }
 function rowToDecision(r: DecisionRow): HumanDecision {
@@ -53,6 +55,8 @@ export class DecisionRepo {
     requestId: string; type: DecisionRequest['type']; workflowId: string; correlationId: string
     wpId?: string | null; context?: DecisionRequest['context']; severity?: DecisionRequest['severity']
     language?: string; expiresAt?: string | null; projectId?: string | null
+    /** G11 Slice 4: 필수(값은 null 허용) — 호출부가 테넌트 유무를 명시적으로 답하게 강제한다. */
+    tenantId: string | null
   }): Promise<{ eventId: string } | null> {
     const parsed = DecisionRequestSchema.parse({ ...req, status: DECISION_PENDING })
     const client = await this.pool.connect()
@@ -60,11 +64,12 @@ export class DecisionRepo {
       await client.query('BEGIN')
       const ins = await client.query(
         `INSERT INTO decision_requests
-           (request_id, type, workflow_id, wp_id, correlation_id, context, severity, status, language, expires_at, project_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+           (request_id, type, workflow_id, wp_id, correlation_id, context, severity, status, language, expires_at, project_id, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          ON CONFLICT (request_id) DO NOTHING`,
         [parsed.requestId, parsed.type, parsed.workflowId, parsed.wpId, parsed.correlationId,
-          JSON.stringify(parsed.context), parsed.severity, parsed.status, parsed.language, parsed.expiresAt, parsed.projectId],
+          JSON.stringify(parsed.context), parsed.severity, parsed.status, parsed.language, parsed.expiresAt,
+          parsed.projectId, parsed.tenantId],
       )
       if (ins.rowCount === 0) { await safeRollback(client); return null }
       const eventId = await this.appendEvent(client, {

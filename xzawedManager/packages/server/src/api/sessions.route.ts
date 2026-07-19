@@ -27,8 +27,13 @@ export interface SessionsRouteOptions {
   decompose?: ProduceDeps
   /** P2r-3: 주입되면(flag on) decompose 완료 후 리스크 분류를 생산한다. 미주입이면 분기 무시. */
   riskClassify?: RiskClassifyDeps
-  /** C7: 주입되면(MANAGER_DECISION_ROUTING) decompose escalation을 decompose_inconsistent DecisionRequest로도 발행. */
-  decisionStore?: { createRequest(input: import('../streams/decision-brief.js').DecisionRequestInput): Promise<unknown> }
+  /** C7: 주입되면(MANAGER_DECISION_ROUTING) decompose escalation을 decompose_inconsistent DecisionRequest로도 발행.
+   *  G11 Slice 4 리뷰 수정: tenantId를 seam에서 필수화(decision-brief.ts DecisionBriefStore와 동일 이유). */
+  decisionStore?: {
+    createRequest(
+      input: import('../streams/decision-brief.js').DecisionRequestInput & { tenantId: string | null },
+    ): Promise<unknown>
+  }
 }
 
 export function makeSessionStarter(

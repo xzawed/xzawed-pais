@@ -25,6 +25,14 @@ async function safeRollback(client: PoolClient): Promise<void> {
 export class OracleRepo {
   constructor(private readonly pool: Pool, private readonly now: () => number = () => Date.now()) {}
 
+  /** 오라클 전체 upsert(사람 시드 경로).
+   *  ⚠️ G11 Slice 4: 이 경로는 tenant_id를 채우지 않는다(영구 미태깅) — 유일한 호출자가
+   *  `api/oracle.route.ts`의 `POST /workflows/:workflowId/oracles`이고, Manager authHook은
+   *  서비스 토큰만 검증해 `authUser`가 없으므로(C6) 태그 소스가 실제로 존재하지 않는다.
+   *  분해 경로(`upsertDraft`)만 태그된다. **Slice 4b는 오라클 읽기에 테넌트 술어를 얹기 전에
+   *  이 경로의 태그 소스를 먼저 확보해야 한다**(예: 라우트에 orgId claim 전달) — 그러지 않으면
+   *  `approvedGoldensForStory`·`approvedInvariantsForStory`·`approvedOracleForStory`가 null을
+   *  반환하고 conformance/impact/property 채널이 조용히 fail-open skip된다. */
   async upsert(oracle: Oracle): Promise<void> {
     await this.pool.query(
       `INSERT INTO oracles (oracle_id, workflow_id, story_id, version, status, scenarios, invariants, golden_refs, coverage)
@@ -41,20 +49,24 @@ export class OracleRepo {
 
   /** P3-2 초안 영속(멱등): oracleId=oracleIdFor(wf,storyId)로 pending INSERT. ON CONFLICT는 pending일 때만 덮어씀
    *  (version 불변→재시도/재분해 인플레 방지·blocker#6; approved/superseded는 WHERE로 보존·D1 oracleId 단일출처). */
-  async upsertDraft(input: { workflowId: string; storyId: string; scenarios: OracleScenario[]; coverage: Record<string, string[]>; invariants?: OracleInvariant[] }): Promise<void> {
+  async upsertDraft(input: { workflowId: string; storyId: string; scenarios: OracleScenario[]; coverage: Record<string, string[]>; invariants?: OracleInvariant[]; tenantId: string | null }): Promise<void> {
     const oracleId = oracleIdFor(input.workflowId, input.storyId)
     // F5: invariants를 scenarios와 함께 영속(additive·미전달 시 []). ON CONFLICT는 pending일 때만 덮어씀(승인 보존).
     // invariants도 scenarios처럼 EXCLUDED로 덮어쓴다 — 재upsert(재분해/재시도) 시 pending 행의 외부-시드 invariants는
     // 유실(scenarios와 동일 의미·초안이 권위 원천). property 채널은 approved 행의 human_approved만 읽어 영향 0.
+    // G11 Slice 4: tenant_id는 pending 재upsert 시 COALESCE로 갱신된다(EXCLUDED.tenant_id가 null이면 기존 값 보존 —
+    // 재분해가 tenantId 없이 와도 유실 없음). 승인된(approved/superseded) 행이 보호되는 건 COALESCE 때문이 아니라
+    // 바로 아래 `WHERE oracles.status = 'pending'` 가드 때문이다 — SET 절 전체(tenant_id 포함)가 그 행엔 적용되지 않는다.
     await this.pool.query(
-      `INSERT INTO oracles (oracle_id, workflow_id, story_id, version, status, scenarios, invariants, coverage)
-         VALUES ($1,$2,$3,1,'pending',$4,$5,$6)
+      `INSERT INTO oracles (oracle_id, workflow_id, story_id, version, status, scenarios, invariants, coverage, tenant_id)
+         VALUES ($1,$2,$3,1,'pending',$4,$5,$6,$7)
        ON CONFLICT (oracle_id) DO UPDATE SET
          scenarios = EXCLUDED.scenarios, invariants = EXCLUDED.invariants,
-         coverage = EXCLUDED.coverage, status = 'pending'
+         coverage = EXCLUDED.coverage, status = 'pending',
+         tenant_id = COALESCE(EXCLUDED.tenant_id, oracles.tenant_id)
          WHERE oracles.status = 'pending'`,
       [oracleId, input.workflowId, input.storyId, JSON.stringify(input.scenarios),
-        JSON.stringify(input.invariants ?? []), JSON.stringify(input.coverage)],
+        JSON.stringify(input.invariants ?? []), JSON.stringify(input.coverage), input.tenantId],
     )
   }
 

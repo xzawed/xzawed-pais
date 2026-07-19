@@ -21,6 +21,8 @@ export interface RecordDispatchInput {
   toState?: string
   causationId?: string | null
   reason?: string | null
+  /** G11 Slice 4: 테넌트 태그(userContext.tenantId 유래). 부재는 정상(null) — 격리 술어는 Slice 4b. */
+  tenantId: string | null
 }
 
 export type RecordDispatchResult =
@@ -46,6 +48,8 @@ export interface AppendWpEventInput {
   fromState: string
   toState: string
   reason?: string | null
+  /** G11 Slice 4: wp_state_log 테넌트 태그. 호출자(lease 경로 포함)가 명시적으로 넘긴다. */
+  tenantId: string | null
 }
 
 /**
@@ -72,10 +76,10 @@ export async function appendWpEvent(
     ],
   )
   const { rows } = await client.query<{ seq: number | string }>(
-    `INSERT INTO wp_state_log (workflow_id, wp_id, from_state, to_state, event_id, reason, occurred_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `INSERT INTO wp_state_log (workflow_id, wp_id, from_state, to_state, event_id, reason, tenant_id, occurred_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      RETURNING seq`,
-    [input.workflowId, input.wpId, input.fromState, input.toState, env.eventId, input.reason ?? null, env.occurredAt],
+    [input.workflowId, input.wpId, input.fromState, input.toState, env.eventId, input.reason ?? null, input.tenantId, env.occurredAt],
   )
   const row = rows[0]
   if (!row) throw new Error('appendWpEvent: no row returned')
@@ -109,11 +113,11 @@ export class DispatchStore {
       await client.query('BEGIN')
       // lease 획득(dedup 게이트): 이미 lease면 ON CONFLICT 0행 → deduped. event_id로 dispatch event 공유.
       const lease = await client.query(
-        `INSERT INTO wp_leases (workflow_id, wp_id, attempt, owner, status, expires_at, step_n, event_id)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        `INSERT INTO wp_leases (workflow_id, wp_id, attempt, owner, status, expires_at, step_n, event_id, tenant_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          ON CONFLICT (workflow_id, wp_id) DO NOTHING
          RETURNING wp_id`,
-        [workflowId, wpId, attempt, input.owner ?? null, LEASE_ACTIVE, expiresAt, stepN, env.eventId],
+        [workflowId, wpId, attempt, input.owner ?? null, LEASE_ACTIVE, expiresAt, stepN, env.eventId, input.tenantId],
       )
       if (lease.rows.length === 0) {
         // 빈 tx(ON CONFLICT 0행) 폐기. ROLLBACK 실패(연결 손상)해도 deduped는 정상 결과라
@@ -131,6 +135,7 @@ export class DispatchStore {
         fromState,
         toState: input.toState ?? DISPATCHED_STATE,
         reason: input.reason ?? null,
+        tenantId: input.tenantId,
       })
       await client.query('COMMIT')
       return { status: 'recorded', eventId, seq }
