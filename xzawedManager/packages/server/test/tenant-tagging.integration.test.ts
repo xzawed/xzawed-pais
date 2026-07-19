@@ -116,4 +116,18 @@ d('G11 Slice 4 tenant 태깅 (pg)', () => {
     await pool.query(`DELETE FROM wp_state_log WHERE workflow_id = $1`, [wf])
     await pool.query(`DELETE FROM wp_leases WHERE workflow_id = $1`, [wf])
   })
+
+  it('insertMany가 domain_knowledge에 tenant_id를 기록한다', async () => {
+    const { KnowledgeRepo } = await import('../src/db/knowledge.repo.js')
+    const repo = new KnowledgeRepo(pool)
+    await repo.insertMany('proj-tt', [{ content: 'c1', sourceAgent: 'tester' }], 'org-1')
+    await repo.insertMany('proj-tt', [{ content: 'c2', sourceAgent: 'tester' }], null)
+
+    const { rows } = await pool.query<{ content: string; tenant_id: string | null }>(
+      `SELECT content, tenant_id FROM domain_knowledge WHERE project_id = 'proj-tt' ORDER BY content`,
+    )
+    expect(rows.map((r) => [r.content, r.tenant_id])).toEqual([['c1', 'org-1'], ['c2', null]])
+
+    await pool.query(`DELETE FROM domain_knowledge WHERE project_id = 'proj-tt'`)
+  })
 })

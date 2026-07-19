@@ -15,32 +15,32 @@ function mockMutationPool(rowCount: number) {
 describe('KnowledgeRepo', () => {
   it('insertMany는 빈 배열이면 쿼리하지 않는다', async () => {
     const pool = mockPool()
-    await new KnowledgeRepo(pool).insertMany('p1', [])
+    await new KnowledgeRepo(pool).insertMany('p1', [], null)
     expect(pool.query).not.toHaveBeenCalled()
   })
 
-  it('insertMany는 각 항목을 project_id·content·source_agent·category로 INSERT한다', async () => {
+  it('insertMany는 각 항목을 project_id·content·source_agent·category·tenant_id로 INSERT한다', async () => {
     const pool = mockPool()
     const entries: KnowledgeEntry[] = [
       { content: '결제는 Stripe 사용', sourceAgent: 'planner', category: 'decision' },
       { content: 'PII는 암호화', sourceAgent: 'planner' },
     ]
-    await new KnowledgeRepo(pool).insertMany('p1', entries)
+    await new KnowledgeRepo(pool).insertMany('p1', entries, 'org-1')
     expect(pool.query).toHaveBeenCalledTimes(2)
-    // approver는 5번째 파라미터 — 없으면 null
-    expect(pool.query.mock.calls[0][1]).toEqual(['p1', '결제는 Stripe 사용', 'planner', 'decision', null])
+    // approver는 5번째 파라미터 — 없으면 null. tenantId는 6번째 파라미터(G11 Slice 4)
+    expect(pool.query.mock.calls[0][1]).toEqual(['p1', '결제는 Stripe 사용', 'planner', 'decision', null, 'org-1'])
     // category 없으면 null로 저장
-    expect(pool.query.mock.calls[1][1]).toEqual(['p1', 'PII는 암호화', 'planner', null, null])
+    expect(pool.query.mock.calls[1][1]).toEqual(['p1', 'PII는 암호화', 'planner', null, null, 'org-1'])
   })
 
   it('insertMany는 approver가 있으면 5번째 파라미터로 저장한다(승인자 audit)', async () => {
     const pool = mockPool()
     await new KnowledgeRepo(pool).insertMany('p1', [
       { content: '승인된 결정', sourceAgent: 'approval-gate', category: 'decision', approver: 'user-1' },
-    ])
+    ], null)
     const [sql, params] = pool.query.mock.calls[0]
-    expect(sql).toMatch(/INSERT INTO domain_knowledge \(project_id, content, source_agent, category, approver\)/i)
-    expect(params).toEqual(['p1', '승인된 결정', 'approval-gate', 'decision', 'user-1'])
+    expect(sql).toMatch(/INSERT INTO domain_knowledge \(project_id, content, source_agent, category, approver, tenant_id\)/i)
+    expect(params).toEqual(['p1', '승인된 결정', 'approval-gate', 'decision', 'user-1', null])
   })
 
   it('recentByProject는 approver를 SELECT하고 있으면 매핑, 없으면 생략한다', async () => {
