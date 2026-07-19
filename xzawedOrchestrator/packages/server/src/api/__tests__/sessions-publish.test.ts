@@ -29,9 +29,9 @@ function makeLog() {
   return { warn: vi.fn(), error: vi.fn() } as unknown as FastifyBaseLogger
 }
 
-function makeProject(workspace_path: string | null = '/ws'): Project {
+function makeProject(workspace_path: string | null = '/ws', orgId: string | null = null): Project {
   return {
-    id: 'proj-1', userId: 'u1', orgId: null, name: 'test', slug: 'test',
+    id: 'proj-1', userId: 'u1', orgId, name: 'test', slug: 'test',
     description: null, githubOwner: null, githubRepo: null, githubBranch: 'main',
     createdAt: new Date(), updatedAt: new Date(),
     workspace_path,
@@ -137,6 +137,18 @@ describe('buildUserContext', () => {
     expect(mockFindByIdAndUser).toHaveBeenCalledWith('proj-1', 'u1')
     expect(uc.workspaceRoot).toBe('/custom/ws')
   })
+  it('G11 Slice 3: project.orgId를 tenantId로 전파(Manager 캐리어)', async () => {
+    mockFindByIdAndUser.mockResolvedValueOnce(makeProject('/custom/ws', 'org-42'))
+    const uc = await buildUserContext({ userId: 'u1', projectId: 'proj-1' }, {} as Pool)
+    expect(uc.tenantId).toBe('org-42')
+  })
+
+  it('G11 Slice 3: project.orgId 없으면 tenantId 미포함(하위호환)', async () => {
+    mockFindByIdAndUser.mockResolvedValueOnce(makeProject('/custom/ws', null))
+    const uc = await buildUserContext({ userId: 'u1', projectId: 'proj-1' }, {} as Pool)
+    expect(uc.tenantId).toBeUndefined()
+  })
+
   it('workspaceRoot가 fs 루트면 throw', async () => {
     const { parse } = await import('node:path')
     process.env.WORKSPACE_ROOT = parse(process.cwd()).root
