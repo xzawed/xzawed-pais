@@ -20,18 +20,20 @@ interface ClassificationRow {
 export class RiskClassificationRepo {
   constructor(private readonly pool: Pool, private readonly now: () => number = () => Date.now()) {}
 
-  /** 분류 영속(pending). 재채점 시 version++·status=pending·이전 승인 무효(재승인 필요 N6). */
-  async upsert(input: { workflowId: string; classification: RiskClassification }): Promise<{ version: number }> {
+  /** 분류 영속(pending). 재채점 시 version++·status=pending·이전 승인 무효(재승인 필요 N6).
+   *  G11 Slice 4: tenant_id는 기록만(술어 미사용) — 재채점 시 COALESCE로 기존 태그 보존. */
+  async upsert(input: { workflowId: string; classification: RiskClassification; tenantId: string | null }): Promise<{ version: number }> {
     const c = input.classification
     const { rows } = await this.pool.query<{ version: number }>(
-      `INSERT INTO risk_classifications (workflow_id, project_id, version, status, risk, artifact)
-         VALUES ($1,$2,1,'pending',$3,$4)
+      `INSERT INTO risk_classifications (workflow_id, project_id, version, status, risk, artifact, tenant_id)
+         VALUES ($1,$2,1,'pending',$3,$4,$5)
        ON CONFLICT (workflow_id) DO UPDATE SET
          version = risk_classifications.version + 1, status = 'pending',
          risk = EXCLUDED.risk, artifact = EXCLUDED.artifact, project_id = EXCLUDED.project_id,
+         tenant_id = COALESCE(EXCLUDED.tenant_id, risk_classifications.tenant_id),
          approved_at = NULL, approved_by = NULL
        RETURNING version`,
-      [input.workflowId, c.projectId, c.risk, JSON.stringify(c)],
+      [input.workflowId, c.projectId, c.risk, JSON.stringify(c), input.tenantId],
     )
     const row = rows[0]
     if (!row) throw new Error('upsert: no row returned')

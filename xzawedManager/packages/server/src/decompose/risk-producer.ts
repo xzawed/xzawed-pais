@@ -10,7 +10,7 @@ const DEFAULT_TIMEOUT_MS = 120_000
 
 /** RiskClassificationRepo.upsert만 좁게 — 테스트 mock·결합 최소. */
 export interface RiskUpsertPort {
-  upsert(input: { workflowId: string; classification: RiskClassification }): Promise<{ version: number }>
+  upsert(input: { workflowId: string; classification: RiskClassification; tenantId: string | null }): Promise<{ version: number }>
 }
 
 export interface RiskClassifyDeps {
@@ -64,7 +64,7 @@ export async function produceRiskClassification(
       claims,
       complianceFrameworks: normalizeFrameworks(investigation.complianceFrameworks),
     })
-    const { version } = await deps.repo.upsert({ workflowId, classification })
+    const { version } = await deps.repo.upsert({ workflowId, classification, tenantId: userContext?.tenantId ?? null })
     if (classification.humanGate.required && deps.decisionStore) {
       await deps.decisionStore.createRequest(buildRiskBrief({ workflowId, version, classification }))
     }

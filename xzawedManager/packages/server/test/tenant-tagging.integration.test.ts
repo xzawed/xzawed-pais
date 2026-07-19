@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { Pool } from 'pg'
+import type { RiskClassification } from '@xzawed/agent-streams'
 import { runMigrations } from '../src/db/pool.js'
 
 const url = process.env['TEST_DATABASE_URL'] ?? process.env['DATABASE_URL']
@@ -141,5 +142,33 @@ d('G11 Slice 4 tenant 태깅 (pg)', () => {
     )
     expect(rows[0]?.tenant_id).toBe('org-1')
     await pool.query(`DELETE FROM oracles WHERE workflow_id = $1`, [wf])
+  })
+
+  it('risk upsert가 risk_classifications에 tenant_id를 기록한다', async () => {
+    const { RiskClassificationRepo } = await import('../src/db/risk-classification.repo.js')
+    const repo = new RiskClassificationRepo(pool)
+    const wf = 'wf-tt-risk-1'
+    const classification: RiskClassification = {
+      projectId: 'p1',
+      risk: 'MEDIUM',
+      dimensionScores: {
+        domain: { score: 0, confidence: 0 },
+        complexity: { score: 0, confidence: 0 },
+        external_deps: { score: 0, confidence: 0 },
+        compliance: { score: 0, confidence: 0 },
+      },
+      complianceFrameworks: [],
+      claims: [],
+      modelRouting: { PM: 'opus', Developer: 'sonnet', Designer: 'sonnet', Tester: 'sonnet', Security: 'sonnet' },
+      humanGate: { required: false, reason: '' },
+      classifierModel: 'opus',
+      audit: { approvedBy: null, approvedAt: null, version: 1 },
+    }
+    await repo.upsert({ workflowId: wf, classification, tenantId: 'org-1' })
+    const { rows } = await pool.query<{ tenant_id: string | null }>(
+      `SELECT tenant_id FROM risk_classifications WHERE workflow_id = $1`, [wf],
+    )
+    expect(rows[0]?.tenant_id).toBe('org-1')
+    await pool.query(`DELETE FROM risk_classifications WHERE workflow_id = $1`, [wf])
   })
 })
