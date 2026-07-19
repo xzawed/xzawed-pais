@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Pool } from 'pg'
 import type { FastifyReply } from 'fastify'
-import { assertProjectOwner } from '../ownership.js'
+import { assertProjectOwner, assertProjectInOrg } from '../ownership.js'
 import { ProjectRepo } from '../../projects/project.repo.js'
 
 vi.mock('../../projects/project.repo.js', () => ({
@@ -71,5 +71,33 @@ describe('assertProjectOwner', () => {
     await expect(
       assertProjectOwner('user-1', 'proj-1', makePool(), reply)
     ).rejects.toThrow('DB connection failed')
+  })
+})
+
+describe('assertProjectInOrg (G11 Slice 2 — org 경계 소유권)', () => {
+  let mockFindByIdAndOrg: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    mockFindByIdAndOrg = vi.fn()
+    vi.mocked(ProjectRepo).mockImplementation(function () { return ({
+      findByIdAndOrg: mockFindByIdAndOrg,
+    }) as unknown as ProjectRepo })
+  })
+
+  it('org에 속한 프로젝트를 반환한다', async () => {
+    mockFindByIdAndOrg.mockResolvedValue(MOCK_PROJECT)
+    const reply = makeReply()
+    const result = await assertProjectInOrg('org-1', 'proj-1', makePool(), reply)
+    expect(result).toEqual(MOCK_PROJECT)
+    expect(reply.status).not.toHaveBeenCalled()
+    expect(mockFindByIdAndOrg).toHaveBeenCalledWith('proj-1', 'org-1')
+  })
+
+  it('org 미소속 프로젝트는 404·false(비노출=IDOR 방어)', async () => {
+    mockFindByIdAndOrg.mockResolvedValue(undefined)
+    const reply = makeReply()
+    const result = await assertProjectInOrg('org-1', 'proj-other-org', makePool(), reply)
+    expect(result).toBe(false)
+    expect(reply.status).toHaveBeenCalledWith(404)
   })
 })

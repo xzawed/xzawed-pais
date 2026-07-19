@@ -6,6 +6,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: 'proj-1',
     userId: 'user-1',
+    orgId: null,
     name: 'test',
     slug: 'test',
     description: null,
