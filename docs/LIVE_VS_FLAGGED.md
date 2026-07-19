@@ -52,4 +52,4 @@
 
 서비스 표·상세의 ✅·기능 서술은 **"머지·테스트 완료"**를 뜻하지 **"기본 배포에서 활성"**을 뜻하지 않는다. 자율/검증/의사결정 관련 서술은 위 "Flagged" 표를 함께 보라. 어떤 SKU를 파느냐(챗 어시스턴트 vs 자율 팩토리 vs 멀티테넌트 SaaS)에 따라 켤 플래그가 다르며, 후자로 갈수록 [공동 검증 보고서](analysis/claude-grok-premium-verification.md)의 미해결 갭(멀티테넌시·과금·SLO)이 추가로 필요하다.
 
-> **⚠️ G11 멀티테넌시 = 착수됨·아직 강제 아님(정직성):** Tier-2 G11 Slice 0(위키·결정 프록시 IDOR 폐색)·Slice 1(tenants+users.org_id+JWT orgId claim)은 머지됐으나 **신원(identity)만** 확립하고 **테넌트 격리는 아직 강제하지 않는다**(enforcement 0 — orgId가 토큰에 흐르나 어떤 쿼리도 tenant로 필터하지 않음). 실제 테넌트 데이터 경계·per-tenant 비용 격리·팀/RBAC는 Slice 2~5·G12~G14 후속. **"멀티테넌트 SaaS 준비 완료"로 오인 금지** — 현재는 단일 사용자 경로가 바이트 동일이고 테넌트 경계는 미완이다.
+> **⚠️ G11 멀티테넌시 = 전파 토대 완성·아직 강제 아님(정직성):** Tier-2 G11 Slice 0(위키·결정 프록시 IDOR 폐색)·Slice 1(tenants+users.org_id+JWT orgId claim)·Slice 2(projects.org_id·소유권 org-우선)·Slice 3(UserContext.tenantId 캐리어·Orchestrator→Manager 전파)은 머지됐으나 **신원 확립 + 전파까지만**이고 **테넌트 데이터 격리는 아직 강제하지 않는다**(enforcement 0 — tenantId가 토큰·UserContext·graph_dag로 흐르나 어떤 Manager 쿼리도 tenant로 필터하지 않음). 실제 테넌트 데이터 경계(Slice 4)·per-tenant 비용 격리(Slice 5)·팀/RBAC·과금·SLO는 후속. **"멀티테넌트 SaaS 준비 완료"로 오인 금지** — 현재는 단일 사용자 경로가 바이트 동일이고 데이터 격리 enforcement는 미완이다.
