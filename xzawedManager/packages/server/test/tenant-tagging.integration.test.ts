@@ -25,4 +25,50 @@ d('G11 Slice 4 tenant 태깅 (pg)', () => {
     )
     expect(rows[0]?.data_type).toBe('text')
   })
+
+  it('upsertGraph가 userContext.tenantId를 tenant_id로 영속하고, 재분해 시 보존한다', async () => {
+    const { TaskGraphRepo } = await import('../src/db/task-graph.repo.js')
+    const repo = new TaskGraphRepo(pool)
+    const wf = 'wf-tt-graph-1'
+    const wp = {
+      id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null,
+      acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' as const,
+    }
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/tt', tenantId: 'org-1' }
+
+    await repo.upsertGraph({ workflowId: wf, workPackages: [wp], eventId: null, userContext: uc })
+    const first = await pool.query<{ tenant_id: string | null }>(
+      `SELECT tenant_id FROM task_graphs WHERE workflow_id = $1`, [wf],
+    )
+    expect(first.rows[0]?.tenant_id).toBe('org-1')
+
+    // C5: 재분해가 tenantId 없이 와도 기존 테넌트는 지워지지 않는다(COALESCE 보존).
+    const ucNoTenant = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/tt' }
+    await repo.upsertGraph({ workflowId: wf, workPackages: [wp], eventId: null, userContext: ucNoTenant })
+    const second = await pool.query<{ tenant_id: string | null }>(
+      `SELECT tenant_id FROM task_graphs WHERE workflow_id = $1`, [wf],
+    )
+    expect(second.rows[0]?.tenant_id).toBe('org-1')
+
+    await pool.query(`DELETE FROM task_graphs WHERE workflow_id = $1`, [wf])
+  })
+
+  it('upsertGraph가 tenantId 없는 userContext면 tenant_id를 NULL로 둔다', async () => {
+    const { TaskGraphRepo } = await import('../src/db/task-graph.repo.js')
+    const repo = new TaskGraphRepo(pool)
+    const wf = 'wf-tt-graph-2'
+    const wp = {
+      id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null,
+      acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' as const,
+    }
+    await repo.upsertGraph({
+      workflowId: wf, workPackages: [wp], eventId: null,
+      userContext: { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/tt' },
+    })
+    const { rows } = await pool.query<{ tenant_id: string | null }>(
+      `SELECT tenant_id FROM task_graphs WHERE workflow_id = $1`, [wf],
+    )
+    expect(rows[0]?.tenant_id).toBeNull()
+    await pool.query(`DELETE FROM task_graphs WHERE workflow_id = $1`, [wf])
+  })
 })
