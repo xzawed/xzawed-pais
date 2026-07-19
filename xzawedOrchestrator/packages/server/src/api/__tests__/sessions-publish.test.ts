@@ -31,7 +31,7 @@ function makeLog() {
 
 function makeProject(workspace_path: string | null = '/ws'): Project {
   return {
-    id: 'proj-1', userId: 'u1', name: 'test', slug: 'test',
+    id: 'proj-1', userId: 'u1', orgId: null, name: 'test', slug: 'test',
     description: null, githubOwner: null, githubRepo: null, githubBranch: 'main',
     createdAt: new Date(), updatedAt: new Date(),
     workspace_path,

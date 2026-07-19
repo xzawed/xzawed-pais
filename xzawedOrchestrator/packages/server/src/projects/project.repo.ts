@@ -14,6 +14,8 @@ export interface ProjectWorkspace {
 export interface Project {
   id: string
   userId: string
+  /** G11 Slice 2: 소유 org(모델 C·소유 user의 org). 백필 후 non-null. */
+  orgId: string | null
   name: string
   slug: string
   description: string | null
@@ -41,6 +43,7 @@ export interface ProjectUpdate {
 interface ProjectRow {
   id: string
   user_id: string
+  org_id: string | null
   name: string
   slug: string
   description: string | null
@@ -61,6 +64,7 @@ function rowToProject(row: ProjectRow): Project {
   return {
     id: row.id,
     userId: row.user_id,
+    orgId: row.org_id ?? null,
     name: row.name,
     slug: row.slug,
     description: row.description,
@@ -104,8 +108,9 @@ export class ProjectRepo {
     const slug = options.slug ?? toSlug(name)
     try {
       const { rows } = await this.pool.query<ProjectRow>(
-        `INSERT INTO projects (user_id, name, slug, description, github_owner, github_repo, github_branch)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        // G11 Slice 2: org_id를 소유 user의 org에서 서브쿼리로 자동 설정(양 caller 시그니처 무변).
+        `INSERT INTO projects (user_id, org_id, name, slug, description, github_owner, github_repo, github_branch)
+         VALUES ($1, (SELECT org_id FROM users WHERE id = $1), $2, $3, $4, $5, $6, $7)
          RETURNING *`,
         [
           userId,
@@ -149,6 +154,16 @@ export class ProjectRepo {
     const { rows } = await this.pool.query<ProjectRow>(
       'SELECT * FROM projects WHERE id = $1 AND user_id = $2',
       [id, userId]
+    )
+    const row = rows[0]
+    return row ? rowToProject(row) : undefined
+  }
+
+  /** G11 Slice 2: org 경계 소유권 조회(모델 C·소유권 게이트가 org-우선으로 소비). */
+  async findByIdAndOrg(id: string, orgId: string): Promise<Project | undefined> {
+    const { rows } = await this.pool.query<ProjectRow>(
+      'SELECT * FROM projects WHERE id = $1 AND org_id = $2',
+      [id, orgId]
     )
     const row = rows[0]
     return row ? rowToProject(row) : undefined
