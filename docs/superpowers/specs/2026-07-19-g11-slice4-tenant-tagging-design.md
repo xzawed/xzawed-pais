@@ -136,7 +136,7 @@ ON CONFLICT (workflow_id) DO UPDATE
       updated_at = NOW()
 ```
 
-한 번 붙은 테넌트는 tenantId 없는 재분해가 와도 지워지지 않는다. `oracles`(`upsertDraft`)·`risk_classifications`(`upsert`)도 같은 이유로 동일한 COALESCE 보존 규칙을 쓴다. 나머지 7개 테이블은 전부 `ON CONFLICT ... DO NOTHING`이라 COALESCE가 애초에 적용 불가하며, 태그가 자연히 멱등이다.
+한 번 붙은 테넌트는 tenantId 없는 재분해가 와도 지워지지 않는다. `oracles`(`upsertDraft`)·`risk_classifications`(`upsert`)도 같은 이유로 동일한 COALESCE 보존 규칙을 쓴다. 나머지 7개 테이블은 `ON CONFLICT ... DO NOTHING`이거나(5개) `ON CONFLICT` 절이 아예 없어(`wp_state_log`·`domain_knowledge` — append-only INSERT) COALESCE가 애초에 적용 불가하며, 태그가 자연히 멱등이다.
 
 ### 5. 인자 계약 — required-but-nullable
 
