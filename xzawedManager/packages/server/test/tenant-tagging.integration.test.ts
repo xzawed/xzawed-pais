@@ -130,4 +130,16 @@ d('G11 Slice 4 tenant 태깅 (pg)', () => {
 
     await pool.query(`DELETE FROM domain_knowledge WHERE project_id = 'proj-tt'`)
   })
+
+  it('upsertDraft가 oracles에 tenant_id를 기록한다', async () => {
+    const { OracleRepo } = await import('../src/db/oracle.repo.js')
+    const repo = new OracleRepo(pool)
+    const wf = 'wf-tt-oracle-1'
+    await repo.upsertDraft({ workflowId: wf, storyId: 's1', scenarios: [], coverage: {}, tenantId: 'org-1' })
+    const { rows } = await pool.query<{ tenant_id: string | null }>(
+      `SELECT tenant_id FROM oracles WHERE workflow_id = $1`, [wf],
+    )
+    expect(rows[0]?.tenant_id).toBe('org-1')
+    await pool.query(`DELETE FROM oracles WHERE workflow_id = $1`, [wf])
+  })
 })

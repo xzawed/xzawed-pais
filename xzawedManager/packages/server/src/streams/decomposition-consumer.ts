@@ -50,6 +50,8 @@ export interface DecompositionDeps {
       scenarios: OracleScenario[]
       coverage: Record<string, string[]>
       invariants: OracleInvariant[]
+      /** G11 Slice 4: userContext.tenantId 유래(부재는 null). */
+      tenantId: string | null
     }) => Promise<void>
   }
   /** C3: 주입 시 draft 영속 후 oracle_approval DecisionRequest 발행(MANAGER_ORACLE_DECISION). best-effort. */
@@ -158,6 +160,7 @@ export async function handleDecompositionEmitted(
         scenarios: d.scenarios,
         coverage: d.coverage,
         invariants: d.invariants,
+        tenantId: msg.payload.userContext?.tenantId ?? null,
       })
     }
   }

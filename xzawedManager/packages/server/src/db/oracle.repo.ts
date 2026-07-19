@@ -41,20 +41,22 @@ export class OracleRepo {
 
   /** P3-2 초안 영속(멱등): oracleId=oracleIdFor(wf,storyId)로 pending INSERT. ON CONFLICT는 pending일 때만 덮어씀
    *  (version 불변→재시도/재분해 인플레 방지·blocker#6; approved/superseded는 WHERE로 보존·D1 oracleId 단일출처). */
-  async upsertDraft(input: { workflowId: string; storyId: string; scenarios: OracleScenario[]; coverage: Record<string, string[]>; invariants?: OracleInvariant[] }): Promise<void> {
+  async upsertDraft(input: { workflowId: string; storyId: string; scenarios: OracleScenario[]; coverage: Record<string, string[]>; invariants?: OracleInvariant[]; tenantId: string | null }): Promise<void> {
     const oracleId = oracleIdFor(input.workflowId, input.storyId)
     // F5: invariants를 scenarios와 함께 영속(additive·미전달 시 []). ON CONFLICT는 pending일 때만 덮어씀(승인 보존).
     // invariants도 scenarios처럼 EXCLUDED로 덮어쓴다 — 재upsert(재분해/재시도) 시 pending 행의 외부-시드 invariants는
     // 유실(scenarios와 동일 의미·초안이 권위 원천). property 채널은 approved 행의 human_approved만 읽어 영향 0.
+    // G11 Slice 4: tenant_id는 최초 INSERT에만 — 승인된 행의 태그를 재upsert가 덮어쓰지 않는다.
     await this.pool.query(
-      `INSERT INTO oracles (oracle_id, workflow_id, story_id, version, status, scenarios, invariants, coverage)
-         VALUES ($1,$2,$3,1,'pending',$4,$5,$6)
+      `INSERT INTO oracles (oracle_id, workflow_id, story_id, version, status, scenarios, invariants, coverage, tenant_id)
+         VALUES ($1,$2,$3,1,'pending',$4,$5,$6,$7)
        ON CONFLICT (oracle_id) DO UPDATE SET
          scenarios = EXCLUDED.scenarios, invariants = EXCLUDED.invariants,
-         coverage = EXCLUDED.coverage, status = 'pending'
+         coverage = EXCLUDED.coverage, status = 'pending',
+         tenant_id = COALESCE(EXCLUDED.tenant_id, oracles.tenant_id)
          WHERE oracles.status = 'pending'`,
       [oracleId, input.workflowId, input.storyId, JSON.stringify(input.scenarios),
-        JSON.stringify(input.invariants ?? []), JSON.stringify(input.coverage)],
+        JSON.stringify(input.invariants ?? []), JSON.stringify(input.coverage), input.tenantId],
     )
   }
 
