@@ -46,7 +46,9 @@ export class OracleRepo {
     // F5: invariants를 scenarios와 함께 영속(additive·미전달 시 []). ON CONFLICT는 pending일 때만 덮어씀(승인 보존).
     // invariants도 scenarios처럼 EXCLUDED로 덮어쓴다 — 재upsert(재분해/재시도) 시 pending 행의 외부-시드 invariants는
     // 유실(scenarios와 동일 의미·초안이 권위 원천). property 채널은 approved 행의 human_approved만 읽어 영향 0.
-    // G11 Slice 4: tenant_id는 최초 INSERT에만 — 승인된 행의 태그를 재upsert가 덮어쓰지 않는다.
+    // G11 Slice 4: tenant_id는 pending 재upsert 시 COALESCE로 갱신된다(EXCLUDED.tenant_id가 null이면 기존 값 보존 —
+    // 재분해가 tenantId 없이 와도 유실 없음). 승인된(approved/superseded) 행이 보호되는 건 COALESCE 때문이 아니라
+    // 바로 아래 `WHERE oracles.status = 'pending'` 가드 때문이다 — SET 절 전체(tenant_id 포함)가 그 행엔 적용되지 않는다.
     await this.pool.query(
       `INSERT INTO oracles (oracle_id, workflow_id, story_id, version, status, scenarios, invariants, coverage, tenant_id)
          VALUES ($1,$2,$3,1,'pending',$4,$5,$6,$7)
