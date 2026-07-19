@@ -48,7 +48,7 @@ export async function authRoutes(
       const user = await users.create(email, passwordHash, displayName)
 
       const accessToken = issueAccessToken(
-        { sub: user.id, email: user.email, displayName: user.displayName },
+        { sub: user.id, email: user.email, displayName: user.displayName, orgId: user.orgId },
         userJwtSecret
       )
       const { token: refreshToken, hash, expiresAt } = issueRefreshToken()
@@ -74,7 +74,7 @@ export async function authRoutes(
       if (!valid) return reply.status(401).send({ error: 'Invalid credentials' })
 
       const accessToken = issueAccessToken(
-        { sub: user.id, email: user.email, displayName: user.displayName },
+        { sub: user.id, email: user.email, displayName: user.displayName, orgId: user.orgId },
         userJwtSecret
       )
       const { token: refreshToken, hash, expiresAt } = issueRefreshToken()
@@ -115,7 +115,7 @@ export async function authRoutes(
 
         const { token: newRefreshToken, hash, expiresAt } = issueRefreshToken()
         const accessToken = issueAccessToken(
-          { sub: user.id, email: user.email, displayName: user.displayName },
+          { sub: user.id, email: user.email, displayName: user.displayName, orgId: user.orgId },
           userJwtSecret
         )
 
