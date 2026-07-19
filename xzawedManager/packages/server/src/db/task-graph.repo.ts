@@ -126,7 +126,11 @@ export class TaskGraphRepo {
     }
   }
 
-  /** WP 상태 전이를 append-only 기록(INSERT only). */
+  /** WP 상태 전이를 append-only 기록(INSERT only).
+   *  ⚠️ G11 Slice 4: 이 메서드의 wp_state_log INSERT는 tenant_id 컬럼을 채우지 않는다(미태깅) — 프로덕션 호출자
+   *  0곳(테스트 전용, dispatch/lease 경로는 dispatch.repo.ts의 appendWpEvent를 쓴다)이라 오늘은 구멍이 아니지만,
+   *  나중에 실 호출자가 붙으면 그 writer가 남기는 wp_state_log 행만 영구 미태깅으로 남는다(범위 확대 방지 위해
+   *  코드는 그대로 두고 이 주석만 남긴다). */
   async appendTransition(input: WpTransitionInput): Promise<{ seq: number }> {
     const { rows } = await this.pool.query<{ seq: number | string }>(
       `INSERT INTO wp_state_log (workflow_id, wp_id, from_state, to_state, event_id, reason, occurred_at)

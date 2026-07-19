@@ -128,6 +128,40 @@ d('G11 Slice 4 tenant 태깅 (pg)', () => {
     }
   })
 
+  it('recordDispatch→complete 후 wp_state_log의 두 행(DISPATCHED·DONE) 모두 tenant_id가 태깅된다', async () => {
+    // G11 Slice 4 Fix 1: append-only wp_state_log는 reclaim/escalate/reopen/complete마다 새 행을 INSERT한다.
+    // recordDispatch가 남기는 DISPATCHED 행뿐 아니라 recordCompletion이 남기는 DONE 행도 같은 테넌트로
+    // 태깅돼야 한다 — 그러지 않으면 latestStates(seq DESC)가 4b에서 tenant_id 술어를 얹는 순간 최신(DONE·NULL)
+    // 행이 필터에서 사라지고 그 전 DISPATCHED 행이 최신으로 뽑혀 완료된 WP가 미완료로 보인다.
+    const { DispatchStore } = await import('../src/db/dispatch.repo.js')
+    const { LeaseStore } = await import('../src/db/lease.repo.js')
+    const dispatchStore = new DispatchStore(pool)
+    const leaseStore = new LeaseStore(pool)
+    const wf = `wf-tt-complete-${randomUUID()}`
+    try {
+      const dispatched = await dispatchStore.recordDispatch({
+        workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED',
+        visibilityMs: 60_000, tenantId: 'org-1',
+      })
+      expect(dispatched.status).toBe('recorded')
+
+      const completed = await leaseStore.recordCompletion({ workflowId: wf, wpId: 'a', attempt: 0, stepN: 0 })
+      expect(completed.status).toBe('completed')
+
+      const log = await pool.query<{ to_state: string; tenant_id: string | null }>(
+        `SELECT to_state, tenant_id FROM wp_state_log WHERE workflow_id = $1 AND wp_id = 'a' ORDER BY seq ASC`, [wf],
+      )
+      expect(log.rows).toHaveLength(2)
+      expect(log.rows.map((r) => r.to_state)).toEqual(['DISPATCHED', 'DONE'])
+      expect(log.rows.every((r) => r.tenant_id === 'org-1')).toBe(true)
+    } finally {
+      await pool.query(`DELETE FROM manager_outbox WHERE event_id IN (SELECT event_id FROM manager_events WHERE session_id = $1)`, [wf])
+      await pool.query(`DELETE FROM manager_events WHERE session_id = $1`, [wf])
+      await pool.query(`DELETE FROM wp_state_log WHERE workflow_id = $1`, [wf])
+      await pool.query(`DELETE FROM wp_leases WHERE workflow_id = $1`, [wf])
+    }
+  })
+
   it('insertMany가 domain_knowledge에 tenant_id를 기록한다', async () => {
     const { KnowledgeRepo } = await import('../src/db/knowledge.repo.js')
     const repo = new KnowledgeRepo(pool)
