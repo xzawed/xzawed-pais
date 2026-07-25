@@ -26,8 +26,8 @@ importers:
   packages/server:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: ^0.112.3
-        version: 0.112.3(zod@3.25.76)
+        specifier: ^0.115.0
+        version: 0.115.0(zod@3.25.76)
       '@fastify/jwt':
         specifier: ^10.2.0
         version: 10.2.0
@@ -74,8 +74,8 @@ importers:
 
 packages:
 
-  '@anthropic-ai/sdk@0.112.3':
-    resolution: {integrity: sha512-wjcozJlitVIuBEw9cj/xBuRznwkhcLmXmNzlFoeHbh4AvrDG3HGZrdvEOTTmobcbhjGkfOpKbmDTCQ4s9LQvCg==}
+  '@anthropic-ai/sdk@0.115.0':
+    resolution: {integrity: sha512-BJrFIVyjNuU8lfDyIJTvlRYzgQg+zEl78BxE7fq8esULsGz9IRQvGtW5spq3tydmtjQb/GFdooKGdGsetpx+lQ==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -1021,8 +1021,8 @@ packages:
     resolution: {integrity: sha512-r34yH/GlQpKZbU1BvFFqOjhISRo1MNx1tWYsYvmj6KIRHSPMT2+yHOEb1SG6NMvRoHRF0a07kCOox/9yakl1vg==}
     hasBin: true
 
-  postcss@8.5.19:
-    resolution: {integrity: sha512-Mz8SaolMd8nB+G13WkORcxQKHZ/NE4xXevtkJHVuG+guo9/wYKlIMTKAqGdEmYOXR2ijPjTYNHssizdaVSUNdQ==}
+  postcss@8.5.23:
+    resolution: {integrity: sha512-g50586zr4bZmwFiTlflMu8E0bDTb5I5gertgwAKmsdUlTQIhZtunzUlD1WSzwcVWPoAVpsrA6vlfCD7oXvRwgg==}
     engines: {node: ^10 || ^12 || >=14}
 
   postgres-array@2.0.0:
@@ -1306,7 +1306,7 @@ packages:
 
 snapshots:
 
-  '@anthropic-ai/sdk@0.112.3(zod@3.25.76)':
+  '@anthropic-ai/sdk@0.115.0(zod@3.25.76)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
@@ -2185,7 +2185,7 @@ snapshots:
       sonic-boom: 4.2.1
       thread-stream: 4.2.0
 
-  postcss@8.5.19:
+  postcss@8.5.23:
     dependencies:
       nanoid: 3.3.16
       picocolors: 1.1.1
@@ -2368,7 +2368,7 @@ snapshots:
       esbuild: 0.28.1
       fdir: 6.5.0(picomatch@4.0.5)
       picomatch: 4.0.5
-      postcss: 8.5.19
+      postcss: 8.5.23
       rollup: 4.62.2
       tinyglobby: 0.2.17
     optionalDependencies:
