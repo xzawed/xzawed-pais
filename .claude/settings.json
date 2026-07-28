@@ -21,6 +21,10 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node .claude/hooks/grok-risk-signal.mjs"
+          },
+          {
+            "type": "command",
             "command": "node .claude/hooks/pre-commit.mjs"
           },
           {
