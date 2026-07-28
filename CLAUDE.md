@@ -283,12 +283,46 @@ bash scripts/install-hooks.sh
 
 ### Claude Code 스킬 (`.claude/commands/`)
 
-- `/pr-ready` — PR 생성 전 7단계 자동 체크 (빌드·테스트·audit·CPD·E2E선택자·i18n·Dockerfile)
+- `/pr-ready` — PR 생성 전 8단계 자동 체크 (빌드·테스트·audit·CPD·E2E선택자·i18n·Dockerfile·위험신호 정산)
 - `/e2e-electron` — E2E 스펙 금지 패턴 자동 감지 및 수정 가이드
 - `/i18n-add <ns.key> <ko-text>` — ko/en/ja 3개 파일 동시 i18n 키 추가
 - `/sonar-check` — SonarCloud 품질 게이트 로컬 사전 검증
 - `/contract-drift-check` — 여러 파일에 복제된 계약 정의(타입 유니언·스키마 필드·IPC 채널) 드리프트 읽기전용 진단 (tsc 사각지대)
 - `/dev-path-guard-audit` — Developer·Builder·Tester 경로/명령 실행 보안 불변식 읽기전용 정적 감사
+- `/grok-verify <주장>` — 주장을 Grok에 **독립 반증** 위임 (격리 워크트리 실증, 수정 금지)
+- `/grok-apply <스펙>` — 스펙 고정된 다중 파일 기계적 편집을 Grok에 위임 (설계 재량 0, 전수 diff 검증 필수)
+
+### AI 협업 규약
+
+이 저장소에는 외부 협력자가 셋 붙어 있다. **역할이 겹치면 셋 다 안 쓰게 되므로** 경계를 고정한다.
+
+| 협력자 | 역할 | 산출물 |
+|---|---|---|
+| **Claude** | 아키텍트·통합·머지 결정·정직성 판단 | 설계·PR·최종 판단 |
+| **Grok** | 실행과 증거 (기계적 적용 / 격리 실증) | 후보 diff + 명령 로그 |
+| **Codex** (`codex:codex-rescue`) | 막혔을 때 2차 진단·대안 구현 | 근본원인·대안 |
+| **CodeRabbit** | PR 코드 리뷰 의견 | 리뷰 코멘트 |
+
+**Grok에 위임 가능한 것** — 스펙이 완전히 고정됐거나, 판단 없이 증거만 필요한 일:
+
+- 3개 이상 파일에 대한 기계적 편집 (`pnpm.overrides` 일괄 추가, 동일 필드 변경, 승인된 골든 예제 복제)
+- 격리 워크트리에서의 실증 검증 (의존성 major 범프, flag off 동등성, 빌드·테스트 실제 통과 여부)
+- 읽기 전용 인벤토리 (플래그 목록, `IF NOT EXISTS` 없는 인덱스, 특정 심볼 사용처)
+
+**Grok에 위임 금지** — Grok 스스로도 자신의 실패 지점으로 지목한 영역:
+
+- 서비스 간 계약 (Redis 메시지·Zod 스키마·복제된 enum) — tsc가 교차검증 못 하는 사각지대
+- 플래그 정직성과 live/dormant 구분 (`docs/LIVE_VS_FLAGGED.md`, 이 문서의 상태 표)
+- fail-open ↔ fail-closed 의미론, 보안 표면(`spawn`·경로 검증·authHook·테넌트 경계)
+- 아키텍처·슬라이스 순서·PR 전략, 범위가 모호한 "개선" 리팩터 (CPD 임계값 0을 깨뜨린다)
+
+**불변 규칙 셋:**
+
+1. **Grok의 출력은 항상 후보다.** 머지 결정은 Claude가 한다. 요약을 신뢰의 근거로 쓰지 않고 diff를 직접 본다.
+2. **Grok에 의견을 묻지 않는다.** 의견 채널은 Codex·CodeRabbit 둘로 충분하다. Grok에는 반증 가능한 명제만 넘긴다.
+3. **PASS 주장에 명령 로그가 없으면 안 돌린 것으로 취급한다.** 통합 테스트는 pg/Redis 없이 skip되므로 skip 수를 항상 별도 확인한다.
+
+위험 신호는 `.claude/hooks/grok-risk-signal.mjs`(커밋 시 비차단 경고)가 알리고, 정산은 `/pr-ready` 8단계에서 한다.
 
 ### 규칙
 
