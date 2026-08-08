@@ -44,8 +44,8 @@ test.describe('세션 라이프사이클', () => {
   test('세션 생성 후 세션 목록에 항목이 존재한다', async ({ page }) => {
     const chat = new ChatPage(page)
     await chat.clickNewSession()
-    const count = await page.getByTestId('session-list-item').count()
-    expect(count).toBeGreaterThanOrEqual(1)
+    // count()는 auto-wait가 없어 렌더 전에 0을 읽는다 — web-first 단언으로 재시도를 건다
+    await expect(page.getByTestId('session-list-item')).not.toHaveCount(0)
   })
 
   test('세션 생성 중 버튼이 비활성화된다', async ({ page }) => {
