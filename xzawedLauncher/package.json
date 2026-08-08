@@ -24,12 +24,6 @@
       "fast-uri@3": "^3.1.5",
       "nanoid": "^3.3.17",
       "postcss": "^8.5.18"
-    },
-    "auditConfig": {
-      "_comment": "GHSA-mh99-v99m-4gvg: brace-expansion DoS. Reached only through electron-builder (devDependency, build-time packaging) via app-builder-lib -> @electron/asar@3.4.1 -> minimatch@3, which app-builder-lib pins exactly. The only patched release is brace-expansion 5.0.8, whose CJS build removed the callable default export and therefore breaks minimatch 3/9 at runtime. Glob input is our own asar config, never untrusted. Revisit when electron-builder moves to @electron/asar@4.",
-      "ignoreGhsas": [
-        "GHSA-mh99-v99m-4gvg"
-      ]
     }
   }
 }

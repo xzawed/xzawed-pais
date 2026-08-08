@@ -41,15 +41,8 @@
       "ip-address": "^10.3.1",
       "nanoid": "^3.3.17",
       "postcss": "^8.5.18",
-      "react-router": "^7.18.0",
+      "react-router": "^7.18.2",
       "shescape": "^2.1.14"
-    },
-    "auditConfig": {
-      "_comment": "GHSA-qwww-vcr4-c8h2: react-router RSC-mode CSRF. Only reachable via unstable RSC APIs; this app uses MemoryRouter (declarative mode) inside Electron, so the vulnerable code path does not exist here. Fixed only in react-router 8.x, which drops the react-router-dom package and requires an import migration. Revisit when migrating to v8. GHSA-mh99-v99m-4gvg: brace-expansion DoS. Reached only through electron-builder (devDependency, build-time packaging) via app-builder-lib -> @electron/asar@3.4.1 -> minimatch@3, which app-builder-lib pins exactly. The only patched release is brace-expansion 5.0.8, whose CJS build removed the callable default export and therefore breaks minimatch 3/9 at runtime. Glob input is our own asar config, never untrusted. Revisit when electron-builder moves to @electron/asar@4.",
-      "ignoreGhsas": [
-        "GHSA-qwww-vcr4-c8h2",
-        "GHSA-mh99-v99m-4gvg"
-      ]
     }
   }
 }
