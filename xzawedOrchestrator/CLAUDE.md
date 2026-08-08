@@ -68,7 +68,7 @@ packages/
 │           ├── task.ts               # Task 타입 (pending→running→completed/failed)
 │           └── task.store.ts         # TaskStore — 세션별 인메모리 Map 관리
 └── app/        # Electron 앱 (React 19 + Zustand + electron-vite)
-    ├── e2e/                          # Playwright E2E 테스트 (110건, 17 spec 파일)
+    ├── e2e/                          # Playwright E2E 테스트 (119건, 19 spec 파일)
     │   ├── fixtures.ts               # Electron 자동 실행 fixture — electronApp/page/loginApp/loginPage
     │   ├── helpers/
     │   │   └── mock-server.ts        # HTTP route mock 헬퍼 (auth/sessions/health)
@@ -78,7 +78,7 @@ packages/
     │   │   ├── SettingsModal.ts      # 설정 모달 POM
     │   │   ├── CommandPalette.ts     # 커맨드 팔레트 POM (Control+K)
     │   │   └── panels/               # GitHubPanel/McpPanel/PluginPanel POM
-    │   ├── specs/                    # 기능별 E2E 스펙 (PR #129 신규, 97건)
+    │   ├── specs/                    # 기능별 E2E 스펙 (PR #129 신규·현재 106건)
     │   │   ├── auth/login.spec.ts
     │   │   ├── chat/{message-flow,session-lifecycle,streaming}.spec.ts
     │   │   ├── error-states/{auth-failure,server-disconnect}.spec.ts
@@ -174,14 +174,14 @@ packages/
 - **Vitest 3** + `vitest.config.ts` `projects` API — `unit` (node) + `browser` (playwright/chromium) 두 프로젝트 분리
   - `unit`: `test/**/*.test.ts` + `src/renderer/src/lib/parseAgentSteps.test.ts` (store, main 프로세스, 파서 유닛 테스트)
   - `browser`: `src/renderer/src/__tests__/**/*.browser.test.tsx` (App·Sidebar·ChatView(승인 카드)·WikiPanel·**DecisionsPanel**·**ChatLayout.decisions**·**decisions-api**·SettingsModal·CommandPalette·GitHubPanel·McpPanel·PluginPanel·detect-locale·app.store 등 컴포넌트·스토어 렌더링)
-  - 총 `pnpm test`: **247건** (app) + **474건** (server, Redis/DB 없으면 일부 skip·G10 rate-limit·#457 마이그레이션 멱등 정적가드·G11 Slice 0~3 IDOR/테넌트 신원/프로젝트 org/tenantId 캐리어 포함) + **76건** (ui, jsdom) = **~797건**
+  - 총 `pnpm test`: **250건** (app) + **474건** (server, Redis/DB 없으면 일부 skip·G10 rate-limit·#457 마이그레이션 멱등 정적가드·G11 Slice 0~3 IDOR/테넌트 신원/프로젝트 org/tenantId 캐리어 포함) + **76건** (ui, jsdom) = **800건**
 - **@vitest/browser + playwright** — 실제 Chromium에서 React 컴포넌트 렌더링 검증
 - **@testing-library/react** — 브라우저 모드 렌더링; `afterEach(cleanup)` 명시 필요
-- **@playwright/test** + `playwright._electron` — Electron E2E (`e2e/`, 110건/17 spec 파일, `pnpm test:e2e`)
+- **@playwright/test** + `playwright._electron` — Electron E2E (`e2e/`, 119건/19 spec 파일, `pnpm test:e2e`)
   - `e2e/fixtures.ts`: `electronApp`/`page` + `loginApp`/`loginPage` fixture (ELECTRON_TEST_ROUTE 환경변수 분기)
   - `e2e/pages/`: Page Object Model — ChatPage, LoginPage, SettingsModal, CommandPalette, panels/
   - `e2e/helpers/mock-server.ts`: HTTP route mock (auth/sessions/health)
-  - `e2e/specs/`: 기능별 분류 — auth/chat/error-states/i18n/panels/projects/settings/ui (PR #129 신규, 97건)
+  - `e2e/specs/`: 기능별 분류 — auth/chat/error-states/i18n/panels/projects/settings/ui (PR #129 신규·현재 106건)
   - data-testid: ActivityBar·Sidebar·GitHubPanel·McpPanel·MessageInput·CodeBlock·PipelineStrip·ChatView·streaming-indicator·command-palette-item 등
   - CI: `playwright-e2e` 잡 (`ubuntu-latest`, `xvfb-run`, Electron 바이너리 다운로드)
 - **Redis 통합 테스트** (`packages/server/src/__tests__/redis-streams.integration.test.ts`) — 7건, `REDIS_URL` 없으면 skip
