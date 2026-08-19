@@ -68,6 +68,8 @@ Orchestrator 추가: React 19 + Electron 43 + Zustand, Tailwind v4, shadcn/ui, P
 
 모든 메시지는 `{ sessionId, messageId, timestamp, type, payload }` 봉투를 쓴다. 재시도·DLQ 격리·멱등 소비는 shared `BaseConsumer`가 담당한다.
 
+**이 봉투는 강제되지 않는다.** shared의 `CollabMessage`는 TypeScript 타입일 뿐이고 각 서비스가 자기 `types.ts`에 Zod로 다시 선언한다(제약도 제각각이다). tsc가 이 경계를 교차검증하지 못하므로 봉투를 바꿀 때는 `/contract-drift-check`로 대조한다. 참고로 `EventEnvelopeSchema`는 이것과 **다른 것**이다 — 이벤트소싱 메타데이터(`eventId`·`correlationId`·`causationId`·`idempotencyKey` 등)이지 스트림 봉투가 아니다.
+
 ## 환경 변수
 
 각 서비스의 `.env.example`을 `.env`로 복사한다 — 단 **`xzawedShared`·`xzawedLauncher`에는 없다**(전자는 라이브러리, 후자는 Electron 앱).
@@ -87,7 +89,7 @@ Watcher는 Claude API를 쓰지 않아 API 키가 불필요하다. 서비스별 
 코드만 봐서는 알 수 없는 것들. 상세와 E2E 패턴은 [docs/development/testing-patterns.md](docs/development/testing-patterns.md).
 
 - **블로킹 I/O mock은 `setImmediate`로 macrotask를 양보해야 한다.** `xreadgroup`을 `mockResolvedValue(null)`로 즉시 resolve하면 마이크로태스크 루프가 macrotask 큐를 굶겨 `stop()`이 영영 호출되지 않고 OOM으로 죽는다.
-- **테스트 환경에서 ioredis 재연결을 끈다.** `retryStrategy: process.env['VITEST'] === 'true' ? () => null : undefined`. 안 그러면 무한 재연결이 이벤트 루프를 살려둔다.
+- **자기 ioredis 클라이언트를 만드는 서비스는 테스트에서 재연결을 꺼야 한다.** `retryStrategy: process.env['VITEST'] === 'true' ? () => null : undefined`. 안 그러면 무한 재연결이 이벤트 루프를 살려둔다. 현재 해당하는 것은 **Manager·Orchestrator 둘뿐**이고, 에이전트 7종은 자기 클라이언트 없이 shared `BaseConsumer`를 쓴다.
 - **E2E 선택자는 `data-testid` 전용이다.** i18n 적용 후 텍스트 기반 선택자는 로케일이 바뀌면 깨진다.
 - **`.count()`는 auto-wait가 없다.** 즉시 스냅샷이라 렌더 전 0을 읽는다. **열린 Dependabot PR 15건을 전부 red로 만든 CI 상시 실패의 원인이었다.** 재시도가 걸리는 `expect(...).not.toHaveCount(0)`을 쓴다.
 - **통합 테스트는 DB·Redis가 없으면 skip된다.** 로컬 그린이 CI 그린이 아니다 — skip 수를 항상 확인한다.
@@ -151,7 +153,7 @@ node scripts/check-i18n.js                     # ko/en/ja 일치
 2. **Grok에 의견을 묻지 않는다.** 의견 채널은 Codex·CodeRabbit으로 충분하다. Grok에는 반증 가능한 명제만 넘긴다.
 3. **PASS 주장에 명령 로그가 없으면 안 돌린 것으로 취급한다.** 통합 테스트는 pg/Redis 없이 skip되므로 skip 수를 별도 확인한다.
 
-실측 운영 지식 — **Grok 위임은 항목 3개 이하로 쪼갠다.** 5개 이상을 한 번에 넘기면 600초 타임아웃이 재현되고, 판단을 빼고 순수 기계 추출만 맡길 때 가장 안정적이다.
+실측 운영 지식 — **Grok 위임은 하위 검사 항목 총합이 6~8개를 넘지 않게 쪼갠다.** 블록 수가 아니라 실제 검사 수가 기준이다(블록 3개여도 그 안이 서비스 11개×검사 3종이면 33개라 600초 타임아웃이 재현된다). 단일 항목은 항상 성공한다. 판단을 빼고 순수 기계 추출만 맡길 때 가장 안정적이다.
 
 위험 신호는 `.claude/hooks/grok-risk-signal.mjs`가 알리고 정산은 `/pr-ready`에서 한다.
 
