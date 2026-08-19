@@ -56,12 +56,12 @@ cd packages/server && pnpm test <파일>
 
 | 지점 | 부재·오류 시 |
 |---|---|
-| 승인 게이트 파싱 실패·미지 응답 | **fail-closed** — 자동 승인 금지, 사람에게 재요청 |
-| 검증 게이트 (증거 없음·판정 불가) | **fail-closed** — 완료 미발행 |
-| 빈 테스트 스위트 | **fail-closed** — `passed>0` 미만이면 통과로 치지 않는다 |
-| 릴리스 게이트 (증거 부재·skip) | **fail-closed** — CLOSED |
+| 승인 게이트 파싱 실패·미지 응답 | **fail-closed** — 자동 승인 금지, `needs_human`으로 재요청. `MANAGER_GATE_FAILSAFE=false`가 레거시 fail-open 탈출구 |
+| 검증 게이트 (증거 없음·판정 불가) | **fail-closed** — verdict 실패 시 `publishCompletion` 전에 반환 |
+| 빈 테스트 스위트 | **fail-closed** — `success && failed===0`이어도 `passed<=0`이면 vacuous로 차단 |
+| 릴리스 게이트 (증거 부재·skip) | **fail-closed** — `status:'blocked'` |
 | 오라클 승인 tx 중 bad JSON | **fail-closed** — ROLLBACK |
-| **배포 게이트 (게이트 부재·조회 오류)** | **fail-open — 허용한다.** `MANAGER_DEPLOY_GATE_STRICT`를 켜야 차단으로 바뀐다 |
+| **배포 게이트 (게이트 부재·`'default'` sentinel·조회 오류)** | **fail-open — 허용한다.** `MANAGER_DEPLOY_GATE_STRICT`를 켜야 차단으로 바뀐다 |
 | advisory 채널 | **비차단** — 구조적으로 verdict 경로에 유입되지 않는다 |
 | 리스크·오라클·골든 미승인 | **skip** — 미승인 산출물은 라우팅도 게이트도 바꾸지 않는다 |
 
