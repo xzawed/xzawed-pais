@@ -10,7 +10,7 @@ cd packages/server && pnpm dev      # tsx watch
 cd packages/server && pnpm test <파일>
 ```
 
-통합 테스트는 `DATABASE_URL`·Redis 없으면 **describe.skip으로 조용히 빠진다**. 로컬 그린을 CI 그린으로 착각하지 말 것 — `pnpm test` 출력의 skip 수를 항상 확인한다.
+`*.integration.test.ts` 33개는 DB가 없으면 **skip된다**(`TEST_DATABASE_URL ?? DATABASE_URL` 기준, 31개). `REDIS_URL`까지 보는 것은 2개뿐이다. globalSetup이 경고를 한 번 찍지만 스위트는 초록으로 끝나므로, **로컬 그린을 CI 그린으로 착각하지 말 것** — `pnpm test` 출력의 skip 수를 항상 확인한다.
 
 ## src/ 책임 지도
 
@@ -19,9 +19,10 @@ cd packages/server && pnpm test <파일>
 | `claude/runner.ts` | tool-calling 루프. 승인 게이트·도메인 위키 주입·교차질의 라우팅·서킷브레이커가 여기 붙는다 |
 | `tools/` | ToolHandler 레지스트리. `redis-agent-handler.ts`가 7개 에이전트 RPC를 담당 |
 | `gates/approval-gate.ts` | 승인 게이트 순수 모듈(`effectiveMode`·`parseDecision`·`GATED_TOOLS`·`DEPLOY_TOOLS`) |
-| `streams/` | Supervisor와 소비자들. 분해·디스패치·lease·워커·검증·결정·리스크·릴리스·강등 |
-| `db/` | 저장소 계층 + `migrations/001~017`. 각 `*.types.ts`가 Zod 스키마 정본 |
-| `api/` | `sessions`·`knowledge`·`decision`·`oracle`·`risk`·`admin` 라우트 |
+| `decompose/` | **분해 생산자.** `pipeline.ts`의 다단계 LLM 분해와 `map.ts`의 WorkPackage 매핑. 소비는 `streams/`가 한다 |
+| `streams/` | Supervisor와 소비자들. 디스패치·lease·워커·검증·결정·리스크·릴리스·강등 |
+| `db/` | 저장소 계층 + `migrations/001~017`. `oracle`·`decision`·`advisory`의 `*.types.ts`는 Zod 정본이지만 `release-gate.types.ts`는 TS 인터페이스, `risk-classification.types.ts`는 이벤트 상수다(아티팩트 스키마는 shared에 있다) |
+| `api/` | `sessions`·`knowledge`·`decision`·`oracle`·`risk`·`admin`·`health` 라우트 |
 
 ## 계약
 
@@ -37,7 +38,7 @@ cd packages/server && pnpm test <파일>
 | 서브시스템 | 하는 일 | 코드 |
 |---|---|---|
 | 이벤트소싱·아웃박스 | append-only 이벤트가 진실원천, 상태는 replay로 파생. 상태변경과 발행을 단일 tx로 원자화(dual-write 금지) | `db/event-store.ts` · `streams/outbox-relay.ts` |
-| 분해 | 요청 → epics → story → deliverable → WorkPackage. 실패 시 자가수선 후 소진되면 사람에게 에스컬레이션 | `streams/decompose*.ts` |
+| 분해 | 요청 → epics → story → deliverable → WorkPackage. 실패 시 자가수선 후 소진되면 사람에게 에스컬레이션 | `decompose/pipeline.ts` · `streams/decomposition-consumer.ts` |
 | Task Graph | WP 그래프 영속(가변 프로젝션 + append-only 상태 로그). WP id는 content-hash라 재진입해도 불변 | `db/task-graph.repo.ts` |
 | 디스패치 · Lease | ready WP를 에이전트에 할당하고 가시성 타임아웃으로 회수. 만료 sweep이 attempt를 올리고 상한 초과 시 에스컬레이션 | `db/dispatch.repo.ts` · `db/lease.repo.ts` |
 | 실행 워커 | 할당된 WP를 owningRole 에이전트로 자율 실행하고 완료를 발행 | `streams/worker.ts` |
@@ -69,7 +70,8 @@ cd packages/server && pnpm test <파일>
 
 ## 함정
 
-- **`MANAGER_WP_MUTATION`만 켜면 영원히 skip된다.** mutation은 `wp.risk ≥ HIGH`일 때만 발화하는데 `wp.risk`는 리스크 분류→승인→라우팅 체인이 HIGH로 write-back해야 올라간다. 그 체인 없이 켜면 기본 MEDIUM이라 항상 건너뛴다(기동 시 경고). 체인을 켜거나 `MANAGER_MUTATION_MIN_RISK`를 낮춰야 실발화한다.
+- **`MANAGER_WP_MUTATION`만 켜면 영원히 skip된다.** mutation은 `wp.risk ≥ MANAGER_MUTATION_MIN_RISK`(기본 HIGH)일 때만 발화하는데, 분해가 만드는 WP의 `risk`는 스키마 기본값 **MEDIUM**이고 이를 올리는 유일한 생산 경로가 리스크 분류→사람 승인→`updateWpRisks` write-back이다. 체인이 없으면 항상 건너뛴다. **체인을 켜는 것은 필요조건이지 충분조건이 아니다** — 분류가 실제로 HIGH로 채점되고 승인까지 돼야 한다(write-back은 승인된 등급을 그대로 쓴다). `MANAGER_MUTATION_MIN_RISK`를 낮추는 쪽이 확실하다.
+  기동 경고는 **`MUTATION + VERIFY + minRisk=HIGH + 체인 불완전`** 조합에서만 뜬다. VERIFY가 꺼져 있으면 다른 경고가 뜨고 채널은 애초에 검증 루프에 들어가지도 않는다.
 - **lease 가시성은 자동 상향된다.** 활성 검증 채널이 요구하는 바닥값보다 설정값이 낮으면 기동 시 올린다(올리기만, 낮추지 않음). 채널을 여럿 켜면 WP당 에이전트 호출이 9단계까지 가므로 수동 상향은 불필요하지만 값이 바뀌었다는 로그는 확인한다.
 - **Gherkin `then`은 thenable 함정**이다. 필드명이 `then`이면 Promise로 오인되어 await가 삼킨다 → `thenSteps`를 쓴다.
 - **오라클 초안은 소비자 없이는 영속되지 않는다.** 초안 생성만 켜고 Supervisor(`TASK_MANAGER_ENABLED`+`DATABASE_URL`)를 끄면 emit은 되는데 저장이 안 된다.
@@ -84,7 +86,11 @@ cd packages/server && pnpm test <파일>
 
 10개 테이블 행에 `tenant_id`를 **기록만** 한다. **읽기 술어가 0줄이므로 테넌트 간 데이터는 분리되지 않는다.** 격리는 후속 슬라이스다.
 
-`upsert` 의미론을 쓰는 3개 테이블은 `COALESCE`로 기존 태그를 보존한다. **`oracles`는 writer 둘 중 하나만 태깅된다** — 사람이 `POST /oracles`로 시드하는 경로는 Manager에 인증 사용자가 없어 태그 소스 자체가 없고 영구 NULL이다. 읽기 격리를 얹기 전에 이 경로의 태그 소스를 먼저 확보해야 하며, 그러지 않으면 오라클 조회가 조용히 null을 반환해 conformance·impact·property 채널이 skip된다.
+`upsert` 의미론을 쓰는 3개 테이블은 `COALESCE`로 기존 태그를 보존한다.
+
+**`oracles`는 writer 둘 중 하나만 태깅된다.** 분해 경로(`upsertDraft`)는 `userContext.tenantId`를 싣지만, 사람이 `POST /oracles`로 시드하는 `upsert`는 INSERT 컬럼 목록에 `tenant_id`가 아예 없다 — Manager의 인증 훅은 서비스 토큰 `jwtVerify()`만 하고 사용자·org 클레임을 꺼내지 않으므로 태그 소스 자체가 없다. 따라서 그 경로로 들어온 행은 NULL로 남는다(DB 제약이 아니라 writer의 성질이다 — 같은 `oracleId`에 pending 상태로 `upsertDraft`가 뒤따르면 `COALESCE`가 채울 수는 있으나, POST는 클라이언트 지정 id를, 초안은 해시 파생 id를 쓰므로 기본적으로 충돌하지 않는다).
+
+읽기 격리를 얹기 전에 이 경로의 태그 소스를 먼저 확보해야 한다. 그러지 않으면 오라클 조회가 조용히 null을 반환해 conformance·impact·property 채널이 skip된다.
 
 ## 환경 변수
 
@@ -96,11 +102,15 @@ cd packages/server && pnpm test <파일>
 grep -n "전제" packages/server/src/config.ts   # 플래그 간 의존 체인
 ```
 
-기동 시 하드페일하는 것만 여기 적는다.
+기동을 거부하는 조건은 전부 `configSchema`의 제약과 `superRefine`에서 나온다. 자주 걸리는 것:
 
-- `MODE=remote`면 `SERVICE_JWT_SECRET`(32자 이상) **필수**. 없으면 기동 거부 — 무인증 mutation 개방을 막는다
-- `PAIS_PROFILE=autonomous`면 `SERVICE_JWT_SECRET`·`DATABASE_URL` **필수**(하드페일). 미지 프로필은 throw
-- `PAIS_PROFILE`은 parse 전에 검증된 플래그 묶음을 env에 병합한다. 개별 env가 우선한다
+- `ANTHROPIC_API_KEY`는 **모든 모드에서 필수**다. 없으면 parse 단계에서 기동 실패
+- `SERVICE_JWT_SECRET`은 **설정했다면** 32자 이상이어야 한다 — `MODE=local`에서도 적용된다
+- `MODE=remote`면 `SERVICE_JWT_SECRET`이 **있어야** 한다(무인증 mutation 개방 차단)
+- `PAIS_PROFILE=autonomous`면 `SERVICE_JWT_SECRET`·`DATABASE_URL` 둘 다 필수. 미지 프로필은 throw
+- 그 밖에도 스키마 제약을 어기면 기동을 거부한다(`MODE`가 `local|remote`가 아니거나 수치 필드가 범위를 벗어나는 경우 등). **이 목록은 대표 사례이지 전수가 아니다 — 전수는 `config.ts`가 갖는다**
+
+`PAIS_PROFILE`은 parse 전에 검증된 플래그 묶음을 env에 병합하며, 이미 설정된 개별 env가 우선한다.
 
 ## 참고
 
