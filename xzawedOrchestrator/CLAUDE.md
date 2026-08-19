@@ -32,14 +32,14 @@ cd packages/app && pnpm test:e2e    # Playwright + Electron
 
 전 저장소 공통 원칙은 [docs/development/security-patterns.md](../docs/development/security-patterns.md). 이 서비스 고유분만 적는다.
 
-- **CLI 플래그 인젝션 차단** — `cli-runner.ts`가 `--` end-of-options 구분자를 쓴다. LLM 생성 문자열이 플래그로 해석되는 것을 막는 지점이다
+- **CLI 플래그 인젝션 차단** — `cli-runner.ts`가 마지막 사용자 메시지 **바로 앞에** `--` end-of-options 구분자를 넣는다(두 argv 분기 모두). 사용자 문자열이 플래그로 해석되는 것을 막는 지점이다. 단 `--system-prompt`·`--resume` 값은 `--` **앞**에 놓이므로, 그 자리에 외부 입력을 흘리면 이 방어가 적용되지 않는다(현재 세션 경로는 `systemPrompt`를 넘기지 않는다)
 - **OAuth CSRF** — `randomBytes(32)`로 state를 만들고 콜백에서 검증(`github-oauth-handler.ts`)
 - **MCP 프로세스** — command allowlist + 위험 args 차단(`mcp-process-manager.ts`)
 - **GitHub 토큰은 렌더러에 내려가지 않는다.** main 프로세스에서만 접근하고, 렌더러는 메모리 스토어의 accessToken만 쓴다(디스크 재조회 금지)
 - **WebSocket 인증** — 헤더를 쓸 수 없으므로 `Sec-WebSocket-Protocol: bearer.<token>` 폴백을 쓴다
 - **토큰 복원 중 리다이렉트 보류** — `isRestoring` 가드가 없으면 앱 시작 시 성급하게 `/login`으로 튕긴다
-- **쓰기 rate limit** — 세션 생성·메시지·UI 액션에 걸린다. LLM 비용이 걸린 경로라 스팸이 곧 비용이다. GET은 무제한
-- **소유권 게이트** — 프로젝트 스코프 라우트는 미소유 시 404로 단락한다(존재 여부를 흘리지 않기 위해 403이 아니라 404다)
+- **rate limit은 전면 적용이 아니다.** 플러그인이 `global: false`라 라우트별로 명시한 곳만 걸린다. 현재 걸린 것은 세션 쓰기 3개(`POST /sessions` 10/분 · `POST /sessions/:id/messages` 30/분 · `POST /sessions/:id/ui-actions` 60/분 — LLM 비용 경로)와 인증 3개(`register`·`login` 5/분, `refresh` 20/분)뿐이다. **프로젝트 CRUD·github-token·knowledge 수정·결정 제출 등 나머지 쓰기 라우트는 무제한**이다. GET에는 어디에도 안 걸려 있다
+- **소유권 게이트** — 프로젝트 스코프 쓰기는 미소유 시 **404**로 단락한다. 존재 여부를 흘리지 않기 위한 의도적 선택이라 403이 아니다(서버 코드에 `status(403)`은 0건). 단 **`GET /projects/:projectId/knowledge`와 `GET .../decisions/pending`은 이 pre-handler를 타지 않는다** — 프로젝트 스코프인데 열린 읽기다
 
 ## 함정
 
