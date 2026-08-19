@@ -67,7 +67,7 @@ interface TestFailure { file: string; testName: string; message: string; suggest
 
 | 변수 | 필수 | 기본값 | 설명 |
 |---|---|---|---|
-| `TEST_TIMEOUT_MS` | 선택 | `120000` | 테스트 실행 타임아웃 (ms) |
+| `TEST_TIMEOUT_MS` | 선택 | `60000` | 테스트 실행 타임아웃 (ms) |
 
 ## 구현 참고사항
 
