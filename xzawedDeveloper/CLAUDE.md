@@ -5,21 +5,6 @@
 xzawedDeveloper는 xzawed 멀티 에이전트 시스템의 **코드 생성 에이전트**다.
 xzawedManager로부터 계획(plan)과 프로젝트 경로를 받아 코드를 생성·수정하고 결과를 반환한다.
 
-**현재 상태: 구현 완료 (64/64 테스트 통과)**
-
-## 핵심 명령어
-
-```bash
-# xzawedShared 먼저 빌드 필수
-cd ../xzawedShared && pnpm install && pnpm build && cd ../xzawedDeveloper
-
-pnpm install       # 의존성 설치
-pnpm dev           # tsx watch 개발 모드
-pnpm test          # Vitest 전체 테스트
-pnpm test <파일>   # 단일 파일 테스트
-pnpm build         # TypeScript 컴파일 → dist/
-```
-
 ## 디렉토리 구조
 
 ```
@@ -75,14 +60,7 @@ interface FileChange {
 
 ## 환경 변수
 
-| 변수 | 필수 | 기본값 | 설명 |
-|---|---|---|---|
-| `ANTHROPIC_API_KEY` | 필수 | — | Anthropic API 인증 키 |
-| `CLAUDE_MODEL` | 선택 | `claude-sonnet-4-6` | Claude 모델 |
-| `REDIS_URL` | 선택 | `redis://localhost:6379` | Redis 연결 URL |
-| `PORT` | 선택 | `3003` | HTTP 서버 포트 |
-| `MODE` | 선택 | `local` | 실행 모드 |
-| `WORKSPACE_ROOT` | 필수 | — | 허용 경로 상한선 (절대경로, 파일시스템 루트 불가) |
+`src/config.ts`의 Zod 스키마가 진실원천이다. 공통 변수(`ANTHROPIC_API_KEY`·`CLAUDE_MODEL`·`REDIS_URL`·`PORT`·`MODE`·`WORKSPACE_ROOT`)와 그 의미는 [루트 CLAUDE.md](../CLAUDE.md)에 있다.
 
 ## 구현 참고사항
 

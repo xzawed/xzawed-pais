@@ -5,21 +5,6 @@
 xzawedBuilder는 xzawed 멀티 에이전트 시스템의 **빌드 에이전트**다.
 xzawedManager로부터 프로젝트 경로와 빌드 타깃을 받아 빌드를 실행하고 결과 아티팩트를 반환한다.
 
-**현재 상태: 구현 완료 (71/71 테스트 통과)**
-
-## 핵심 명령어
-
-```bash
-# xzawedShared 먼저 빌드 필수
-cd ../xzawedShared && pnpm install && pnpm build && cd ../xzawedBuilder
-
-pnpm install       # 의존성 설치
-pnpm dev           # tsx watch 개발 모드
-pnpm test          # Vitest 전체 테스트
-pnpm test <파일>   # 단일 파일 테스트
-pnpm build         # TypeScript 컴파일 → dist/
-```
-
 ## 디렉토리 구조
 
 ```
@@ -77,14 +62,12 @@ interface BuildError { file?: string; line?: number; message: string; suggestion
 
 ## 환경 변수
 
+`src/config.ts`의 Zod 스키마가 진실원천이다. 공통 변수(`ANTHROPIC_API_KEY`·`CLAUDE_MODEL`·`REDIS_URL`·`PORT`·`MODE`·`WORKSPACE_ROOT`)와 그 의미는 [루트 CLAUDE.md](../CLAUDE.md)에 있다.
+
+이 서비스 고유 변수만 적는다.
+
 | 변수 | 필수 | 기본값 | 설명 |
 |---|---|---|---|
-| `ANTHROPIC_API_KEY` | 필수 | — | Anthropic API 인증 키 |
-| `CLAUDE_MODEL` | 선택 | `claude-sonnet-4-6` | Claude 모델 |
-| `REDIS_URL` | 선택 | `redis://localhost:6379` | Redis 연결 URL |
-| `PORT` | 선택 | `3006` | HTTP 서버 포트 |
-| `MODE` | 선택 | `local` | 실행 모드 |
-| `WORKSPACE_ROOT` | 필수 | — | 허용 경로 상한선 (절대경로, 파일시스템 루트 불가) |
 | `BUILD_TIMEOUT_MS` | 선택 | `120000` | 빌드 타임아웃 (ms) |
 
 ## 구현 참고사항
@@ -106,7 +89,5 @@ interface BuildError { file?: string; line?: number; message: string; suggestion
 
 **협업 (createCollaborativeHandler)**
 - `handle()`는 `createCollaborativeHandler`로 감싸 다른 에이전트의 교차질의에 `runner.answerQuery`로 답변(답변자 역할 — 교차질의 개시·지식 emit은 없음)
-
-**아키텍처 상세:** `docs/services/builder-architecture.md`
 
 **Manager 연결:** `xzawedManager/packages/server/src/tools/build-project.ts` (`createBuildProjectHandler`)
