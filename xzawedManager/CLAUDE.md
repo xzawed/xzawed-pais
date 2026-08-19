@@ -1,622 +1,108 @@
-# CLAUDE.md
+# CLAUDE.md — xzawedManager
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Claude tool-calling 루프와 하위 에이전트 디스패치를 담당하는 서비스(포트 3001). Turborepo(`packages/server`).
 
-## 프로젝트 개요
-
-xzawedManager(총관리자)는 xzawed 멀티 에이전트 시스템의 **두 번째 계층**이다.  
-xzawedOrchestrator로부터 Redis Streams로 작업 지시를 수신하고, Claude tool-calling 루프를 통해 처리한 뒤 결과를 반환한다.
-
-현재 상태: **구현 완료 (server 1331 테스트 — CI pg+redis 전체 통과, 로컬 DB/redis 부재 시 통합 skip)**
-
-> **G11 Slice 3 tenantId 캐리어(#462)**: `types/user-context.ts UserContextSchema`에 `tenantId?` optional 추가. z.object 기본이 미지 키를 strip하므로 스키마에 명시해야 Orchestrator가 실어 보낸 tenantId가 strip되지 않고 graph_dag 영속·워커 주입까지 흐른다(Slice 4 소비 토대). `.strict()` 미사용이라 additive DLQ 위험 0. 7 에이전트 무변경(미소비·spread 통과).
-
-> **G11 Slice 4 테넌트 쓰기 태깅(#464)** — **⚠️ 격리가 아니라 태깅이다**(정직성 필독): Manager가 쓰는 10개 테이블(`task_graphs`·`wp_state_log`·`wp_leases`·`oracles`·`decision_requests`·`risk_classifications`·`advisory_findings`·`wp_verification_results`·`release_gates`·`domain_knowledge`)의 행에 `tenant_id`를 기록만 한다 — **읽기 술어가 0줄**이므로 어떤 Manager 쿼리도 tenant로 필터하지 않고, 테넌트 간 데이터는 여전히 분리되지 않는다(격리는 Slice 4b 후속). `migrations/017_tenant_tagging.sql`이 10개 테이블에 `tenant_id TEXT` 컬럼을 additive로 추가(백필 0·인덱스 0·플래그 0·항상 켜짐). 태그 소스는 Slice 3이 실어 온 `userContext.tenantId` **단일**(크로스 서비스 조인 0·추가 DB 조회 0). 인자 계약은 **required-but-nullable**(`tenantId: string | null`) — 저장소·포트 seam을 `DecisionRequestInput & { tenantId: string | null }` 같은 교차 타입으로 조여 **호출부가 tenantId 전달을 누락하면 실제 컴파일 에러(TS2379)**가 되게 강제(문서화가 아니라 타입시스템 강제 — ⚠️단 `tsconfig.json`이 `**/*.test.ts`를 exclude하므로 강제는 `src/` 프로덕션 코드에만 성립·테스트 호출부는 미검사). upsert 의미론(`ON CONFLICT DO UPDATE`)을 쓰는 3개 테이블(`task_graphs`·`oracles`·`risk_classifications`) 전부 `COALESCE(EXCLUDED.tenant_id, <table>.tenant_id)`로 기존 태그를 보존(재분해 시 tenantId 미전달이어도 유실 방지) — 나머지 7개는 `ON CONFLICT DO NOTHING`이거나(5개) `ON CONFLICT` 절 자체가 없어(`wp_state_log`·`domain_knowledge` — append-only) COALESCE가 애초에 적용 불가(태그가 자연히 멱등). **B1 재에스컬레이션은 유일한 예외**로 소스가 `userContext`가 아니라 원 요청 행에서 테넌트를 승계한다. ⚠️ **`oracles`는 writer 둘 중 하나만 태깅된다**: 분해 경로(`upsertDraft`)는 태그되지만, 사람 `POST /oracles` 시드가 타는 `upsert`는 C6(Manager엔 `authUser`가 없음 — `verifyServiceToken`은 `jwtVerify()`만 수행)라 태그 소스 자체가 없어 **영구 NULL**이다(코드로 고칠 수 없음). golden freeze 슬라이스(아래 `## golden freeze 사인오프`)가 명시한 "golden 초안은 사람 `POST /oracles` 시드"가 정확히 이 미태깅 경로라, impact 채널이 소비하는 golden을 담은 오라클 행에는 애초에 태그가 없다 — **Slice 4b는 오라클 읽기에 테넌트 술어를 얹기 전에 이 경로의 태그 소스를 먼저 확보해야 한다**(예: 라우트에 orgId claim 전달), 그러지 않으면 `approvedGoldensForStory`·`approvedInvariantsForStory`·`approvedOracleForStory`가 조용히 null을 반환해 conformance/impact/property 채널이 fail-open(skip)된다. Manager 러너는 버전 추적 없이 매 기동 전량 마이그레이션을 재실행하므로 Orchestrator보다 더 필요했던 **마이그레이션 멱등성 정적 가드**(`src/__tests__/migrate-idempotent.test.ts`)를 이번에 이식. 검증: 저장소별 pg 통합 테스트(`test/tenant-tagging.integration.test.ts`)+G9 프리미엄 아크 E2E 전파 단언+정적 가드. 범위 밖(후속): 읽기 술어·격리(Slice 4b)·백필(legacy 행 영구 NULL)·인덱스·`manager_events`/`manager_outbox`(INSERT 7곳 복제 — `appendEvent` 헬퍼 추출 선행)·전역 sweep 3종 공정성(Slice 5 계열). 별건으로 발견된 소유권 검증 부재(`PATCH /oracles/:oracleId/approve`·`PATCH /workflows/:workflowId/risk-classification/approve` projectId 미검증)·교차 사인오프(`hasApprovedReleaseSignoff`/`hasApprovedDegradedDispatch`)는 태깅으로 고쳐지지 않는 별도 보안 슬라이스 후보.
-
-> **통합 테스트 게이트**: `test/*.integration.test.ts`는 `TEST_DATABASE_URL ?? DATABASE_URL`로 게이트(CI turborepo 잡이 `TEST_DATABASE_URL` 주입 — 이전엔 `DATABASE_URL`만 읽어 **CI에서 한 번도 실행되지 않았음**). cleanup은 전부 파일별 prefix 스코프(`wf-comp-`·`wf-disp-`·`wf-lease-`·`wf-dc-`·`wf-tgp-`·`wf-ew-`·`wf-orc-`·`es-it`) — 비스코프 DELETE는 병렬 형제 테스트의 행을 지워 간헐 실패를 만든다. `runMigrations`는 pg advisory lock으로 동시 실행 직렬화(병렬 테스트·다중 인스턴스 기동 공통 방어) + **데드락(40P01)/직렬화 실패(40001) 시 백오프 재시도**(`applyMigration`·파일당 단일 tx라 원자 롤백·전부 IF NOT EXISTS 멱등이라 재적용 안전·#403 — advisory lock은 migration↔migration만 직렬화하고 공유 테스트 DB에서 migration DDL(ShareLock)↔다른 파일 동시 DML(RowExclusiveLock) 데드락은 못 막아, 관측된 migration-victim을 재시도로 흡수). — 8개 ToolHandler 모두 `RedisAgentHandler` 또는 직접 Octokit 기반으로 구현. 코드로 강제하는 승인 게이트(`gates/`, **fail-safe 포함**)·프로젝트 도메인 위키(`db/knowledge.repo.ts`·`api/knowledge.route.ts`)·AgentQuery 교차질의 라우팅·**세션 이벤트소싱+아웃박스**(`db/event-store.ts`·`streams/outbox-relay.ts`, flag 가역) 추가. JWT 인증 미들웨어 에러 코드 분기 추가. Redis 계약 통합 테스트는 `REDIS_URL` 없으면 skip. consumer.ts Redis 단절 복구(xreadgroup try/catch) + xack try/finally 보장. runner.ts request_info 누락 필드·빈 tool_use 블록 입력 검증 추가. **관측성(#406)**: `TEST_DATABASE_URL`/`DATABASE_URL` 부재 시 vitest `globalSetup`(`test/vitest-global-setup.ts`)이 통합 테스트 skip을 1회 경고(커버리지 증발 사일런트 방지·CI는 DB 주입이라 무경고). `knowledge`/`oracle`/`risk` mutation 라우트는 admin/decision(fail-closed 미등록)과 달리 의도적으로 authHook 없이도 등록되므로, `SERVICE_JWT_SECRET` 미설정 시 기동 경고(무인증 노출 경보·등록 동작 불변).
-
-**최근 반영(PR-1 게이트 fail-safe)**: 승인 응답이 파싱 불가·비객체·미지 decision이면 자동 승인(fail-open)하지 않고 `needs_human`으로 사람 재검토를 요청한다(같은 산출물·사유 안내, `MAX_GATE_REASKS` 초과 시 세션 중단). revise 소진도 무음 통과 대신 에스컬레이션. `MANAGER_GATE_FAILSAFE=false`로 레거시 fail-open 복원 가능. senario M8(무음 통과 금지)·N1(불확실=실패) 구현.
-
-**최근 반영(#212~#216)**: 게이트 승인 시 PO가 저장 전 요약을 편집하는 `wikiSummary`(#212), 위키 쓰기 경로(PATCH/DELETE) 서비스 JWT 인증(#213), 전역 게이트 모드 `task_request.payload.gateMode`→`setGateDefaultMode` 배선(#215), 명확화·교차질의 **재실행 산출물도 승인 게이트를 거치도록** `finalizeAgentResult` 공통화(#216).
-
-설계 스펙: `docs/specs/2026-05-15-manager-design.md`
-
-## 핵심 명령어
+## 명령
 
 ```bash
-# 의존성 설치
-pnpm install
-
-# 서버 개발 모드
-cd packages/server && pnpm dev
-
-# 전체 테스트
-pnpm test
-
-# 특정 패키지 테스트
-cd packages/server && pnpm test
-
-# 특정 테스트 파일 실행
-cd packages/server && pnpm test src/tools/plan-task.test.ts
-
-# 빌드
-pnpm build
+pnpm install && pnpm build          # 루트에서 (turbo)
+cd packages/server && pnpm dev      # tsx watch
+cd packages/server && pnpm test <파일>
 ```
 
-## 아키텍처
+통합 테스트는 `DATABASE_URL`·Redis 없으면 **describe.skip으로 조용히 빠진다**. 로컬 그린을 CI 그린으로 착각하지 말 것 — `pnpm test` 출력의 skip 수를 항상 확인한다.
 
-```
-packages/
-└── server/
-    └── src/
-        ├── index.ts            # 진입점: Redis consumer 시작
-        ├── config.ts           # 환경 변수 검증
-        ├── server.ts           # Fastify HTTP (/health, port 3001)
-        ├── streams/            # Redis consumer + producer + outbox-relay.ts(아웃박스→Redis 폴링 릴레이) + outbox-publish.ts(**하드닝: createOutboxPublish** — 봉투 메시지를 manager_events+manager_outbox 단일 tx 적재하는 `DecomposePublish`, decompose emission을 raw 발행 대신 트랜잭셔널 아웃박스 경유로 at-least-once·truth-source 정합). StreamConsumer·SessionGatewayConsumer(P1c-3)·StreamProducer·WatcherEventConsumer(P1c-4, readGroupMulti)·RedisAgentHandler·switch-project·register-project(P1c-5, RequestReplyPort RPC 라운드트립)는 전송을 @xzawed/agent-streams RedisEventBus(EventBus/StreamConsumerPort/RequestReplyPort)에 위임. RedisAgentHandler ensureSessionStream(xgroup)·notifyGateway는 잔류(후속). DecompositionConsumer(P1d-2, decomposition.emitted→TaskGraph 빌드·영속, 미배선). dispatch.ts(P1d-4 planDispatch 순수+handleDispatch 오케스트레이션, P1d-6 done-set 파생, **P3-1 oracleStore 주입→satisfied-set DoR**, **P4-1 publish 주입 시 wp.dispatch_signal 발행**)·lease.ts(P1d-5b planReclaim 순수+handleLeaseSweep, **P4-1 reclaim 시 wp.dispatch_signal 발행**, **C0 `GraphQueryPort`+`resolveProjectId`(never-throw N3)·escalateOne이 projectId 조회 #303**)·completion.ts(P1d-6 handleCompletion: 완료→재디스패치)·oracle-consumer.ts(P3-1 buildOracleApprovedHandler·OracleApprovedSchema: oracle.approved→재디스패치)·dispatch-signal.ts(**P4-1 wp.dispatch_signal 트리거 계약**: WpDispatchSignalSchema·publishDispatchSignal·DISPATCH_SIGNAL_STREAM='manager:dispatched:main'·멱등키 wpId 고정·dispatch/lease/worker 공유)·worker.ts(**P4-1 실행 워커**: handleWpDispatchSignal·buildWorkerInput·shouldWireWorker·WorkerConsumer·AgentExecutor; **P4b-1 verifyEnabled 검증 게이트**)·verify.ts(**P4b-1 실 검증 코어**: judgePrimaryResult·planVerificationChecks·verifyWp·publishVerificationFailed — fail-closed; **P4 impact N8**: runAuthoredCheck<T>(conformance/impact/property/mutation 공유 author→run)·executeAuthoredTest·runImpactCheck golden-differential hard-AND·**P4 property**: runPropertyCheck·데이터 주도 채널 루프 hard-AND·**P4 mutation N8 강화**: runMutationCheck·buildMutationHarnessPlan·meetsMinRisk HIGH-gate·**P4 4d security 채널**: runSecurityCheck — SAST blocking·source-tagged(static/deps 차단·llm 제외 N6)·채널 루프 마지막 append)·advisory.ts(**P4 advisory 채널 N3**: produceAdvisory best-effort never-throw·AdvisoryStore 포트 — verdict.ok 후 비차단 optimization 생산·게이트 무관)·lease-sweeper.ts(P1d-7 LeaseSweeper 타이머, P4-1 publish 스레딩)·supervisor.ts(P1d-7 Supervisor 생명주기·createSupervisor·shouldWireSupervisor·buildCompletionHandler, **P3-1 oracleConsumer 조건부 배선**, **P3-2 shouldWireOracleConsumer 순수 게이트·SupervisorConfig.oracleDor·oracleStore를 decompositionConsumer에 upsertDraft용 주입**, **P4-1 shouldWireWorker·SupervisorConfig.taskWorker·workerConsumer 조건부 배선·dispatch/leaseSweeper에 publish 합류**)·dispatch-constants.ts(디스패치/lease/완료 상태·이벤트 상수 단일출처). **P1d-7부터 `TASK_MANAGER_ENABLED`+DATABASE_URL이면 server.ts에 Supervisor 배선(이전 미배선 핸들러 가동)**
-        ├── decompose/          # decompose/(map.ts·pipeline.ts·producer.ts·trigger.ts·stages/) — **P2-3a 다단계 분해 생산자**: decompose_request→다단계 LLM 분해(epics→vertical slice→독립 deliverables→roles→**P6 infer-edges**)→커버리지 매트릭스 보고(로그 전용)·**P4 repair 루프(K회·수렴 시 진행·소진 시 decomposition.inconsistent 에스컬레이션)**·**세로슬라이스 소프트 린트(로그)**→content-hash WP[]→decomposition.emitted 발행(`MANAGER_DECOMPOSE_ENABLED` flag, off면 회귀 0; Supervisor가 소비). **하드닝: pool 있으면 발행을 `createOutboxPublish`(트랜잭셔널 아웃박스) 경유 — emission이 크래시·전송실패에도 재발행되는 at-least-once·이벤트소싱 truth-source 정합(M5/M7), pool 없으면 raw 발행 강등(경고). producer 코드 무수정(`publish` 배선만 교체)·OutboxRelay 조건에 DECOMPOSE 추가.** **P3-2: `stages/draft-oracles.ts`(draftOracles — ok 경로에서 story별 GWT 시나리오 초안 생성·미커버 AC stub 보장·`MAX_SCENARIOS_PER_STORY=8` 상한·oracleId 미부여)·pipeline `runDecomposition(...,draftEnabled)`·producer가 oracleDrafts를 ok 경로 payload에 additive emit(`MANAGER_ORACLE_DRAFT` flag)** **P6 간선 추론·epicId(`stages/infer-edges.ts`): `inferStoryDependencies`(§6 llm_infer_edges — story-level 선행 의존 LLM 추론·단일 story는 미호출)+`acyclicStoryDependencies`(순수 비순환 정제: 자기참조·미지·사이클 유발 간선 결정론 드롭)→pipeline이 선행 story의 WP들로 WP-level 간선 파생(FLAT 제거·`dependsOn:[]`→실 DAG)·story `epicRef`를 WP `epicId`로 전파(§7 Epic→Story→WP 추적성). 실패 시 빈 의존(FLAT degrade·회귀 0)**
-        ├── claude/runner.ts    # Claude tool-calling 루프 (승인 게이트·위키 주입/저장·AgentQuery 라우팅·**§13 budget 서킷**: 호출 전 check(fail-closed)·호출 후 record·트립 시 onTrip 알림, optional 주입·미주입 시 회귀 0·**§13 provider 서킷**: 호출 전 before(open이면 fail-fast)·실패 시 onFailure(`isProviderFailure` duck-typing 분류·429/5xx/529·연결/타임아웃만)·성공 시 onSuccess, optional·회귀 0)
-        ├── gates/              # approval-gate.ts: 게이트 모드·대상·결정 파싱
-        ├── db/                 # knowledge.repo.ts + session.repo.ts + event-store.ts(이벤트소싱 append+replay) + task-graph.repo.ts(P1d-3 Task Graph 영속) + dispatch.repo.ts(P1d-4 디스패치 원자 적재 + P1d-5a lease 획득·dedup·appendWpEvent) + lease.repo.ts(P1d-5b LeaseStore 만료 조회·reclaim·escalate + P1d-6 recordCompletion) + oracle.types.ts(P3-1 OracleSchema·OracleScenarioSchema·coveredCriteria; **P3-2 given/when/thenSteps 시나리오 필드(Gherkin 'Then'은 thenable 함정 회피 위해 `thenSteps`)·OracleDraftSchema(oracleId 없음)·`oracleIdFor(wf,storyId)` 충돌-회피 해시 파생·**P4b-3 OracleInvariantSchema(§4)·OracleGoldenSchema(§5)·OracleSchema invariants/goldenRefs additive default []**) + oracle.repo.ts(P3-1 OracleRepo: approve 단일 tx·approvedByWorkflow·upsert·listByWorkflow; **P3-2 upsertDraft(멱등 pending·oracleIdFor 단일출처)·approve가 drafted→human_approved 일괄 전이+pending 가드**·**P4b-3 upsert가 invariants/golden_refs 영속·approve/upsertDraft는 보존**·**P4 impact: `approvedGoldensForStory`(승인 golden_refs 조회·golden-differential 베이스라인·읽기만 N7)**·**P4 property: `approvedInvariantsForStory`(승인 invariants 조회·읽기만 N7)**) + decision.types.ts/decision.repo.ts(**P6 M9 의사결정 영속·#288**: DecisionRequest/HumanDecision/SignOff append-only·단일 tx 아웃박스·**C0 결정 프로젝트 스코프·#303**: `DecisionRequest.projectId` additive(migration 015)·`createRequest` project_id INSERT·`pendingByProject(projectId)` 인덱스 조회·**B1 #312: `expiredPendingRequests`/`expireRequest`(만료 sweep 입력·PENDING→EXPIRED·decision.expired 발행)·`rowToRequest` TIMESTAMPTZ→ISO 정규화**) + risk-classification.types.ts/risk-classification.repo.ts(**P2r-2 리스크 분류 영속**: RiskClassification 프로젝션·사람 승인 전이·approvedForWorkflow N6) + advisory.types.ts/advisory.repo.ts(**P4 advisory 채널 N3**: AdvisoryRepo.recordFindings 단일 tx 아웃박스·findingsByWorkflow·`wp.advisory.found`) + pool.ts + migrations/(001~017·011 decisions·012 risk_classifications·013 advisory_findings·014 release_gate(wp_verification_results·release_gates)·015 decision_requests.project_id additive·016 decision_requests sweep 인덱스(status,expires_at)·**017 G11 Slice 4 테넌트 쓰기 태깅**(10개 테이블 `tenant_id TEXT` additive·백필·인덱스 0·격리 아님 — 상세는 위 G11 Slice 4 노트))
-        ├── tools/              # ToolHandler 11개 (7 RedisAgent + register-project + switch-project + github-ops* + deploy-project* / *GITHUB_TOKEN 조건부) + agent-tool-map.ts + errors.ts
-        ├── sessions/           # 세션 상태 추적 (session.store.ts: gateConfig·waitForInfo·게이트 override·EventStore 컴포지션)
-        └── api/                # health 라우트 + knowledge.route.ts(GET 비인증·읽기; PATCH/DELETE는 authHook 설정 시 서비스 JWT 필요) + oracle.route.ts(P3-1 POST 생성·PATCH approve·GET 조회; 쓰기는 authHook 설정 시 보호) + admin.route.ts(**DLQ 재처리 운영 라우트** `POST /api/admin/dlq/redrive` → shared `redriveDlq`로 격리 메시지를 멱등 마커 선삭제 후 원 스트림 재발행·reason 필터·count 상한·**인증 필수**(부수효과 권한 엔드포인트라 authHook 없으면 server.ts가 미등록 — open admin endpoint 금지)·getRedis 주입형)
-```
+## src/ 책임 지도
 
-## Redis Streams 인터페이스
-
-**수신:** `orchestrator:to-manager:{sessionId}` (consumer group: `manager-consumers`)
-| type | 처리 |
+| 경로 | 책임 |
 |---|---|
-| `task_request` | Claude tool-calling 루프 시작. `payload.gateMode`(`manual\|auto`) 있으면 세션 기본 승인 모드로 적용(`setGateDefaultMode`) |
-| `info_response` | 대기 중 루프 재개. `answer`가 승인 게이트 응답이면 JSON 결정(`{decision: approve\|revise\|abort, rememberAuto?, saveToWiki?, wikiSummary?, feedback?}`)으로 해석 (`parseDecision`) |
-| `abort` | 루프 즉시 중단 |
-| `decompose_request` | `payload.intent` → flag on(`MANAGER_DECOMPOSE_ENABLED`)이면 4단계 LLM 분해+P4 repair 루프(소진 시 에스컬레이션)→decomposition.emitted 발행(Supervisor 소비). **flag off면 무음 drop이 아니라 명시 `error` 발행+세션 정리(M8 — 이전엔 ladder 미일치로 무음 drop·요청자 무한 대기·consumer 누수)**. `payload.userContext`(optional, P4a-2) 있으면 `ensureWorkspace` 후 그래프에 영속→실행 워커 주입 |
+| `claude/runner.ts` | tool-calling 루프. 승인 게이트·도메인 위키 주입·교차질의 라우팅·서킷브레이커가 여기 붙는다 |
+| `tools/` | ToolHandler 레지스트리. `redis-agent-handler.ts`가 7개 에이전트 RPC를 담당 |
+| `gates/approval-gate.ts` | 승인 게이트 순수 모듈(`effectiveMode`·`parseDecision`·`GATED_TOOLS`·`DEPLOY_TOOLS`) |
+| `streams/` | Supervisor와 소비자들. 분해·디스패치·lease·워커·검증·결정·리스크·릴리스·강등 |
+| `db/` | 저장소 계층 + `migrations/001~017`. 각 `*.types.ts`가 Zod 스키마 정본 |
+| `api/` | `sessions`·`knowledge`·`decision`·`oracle`·`risk`·`admin` 라우트 |
 
-**발신:** `manager:to-orchestrator:{sessionId}`
-| type | 시점 |
+## 계약
+
+- **Redis**: `manager:to-{agent}:{sessionId}` 발신 → `{agent}:to-manager:{sessionId}` 수신. 소비자 그룹은 `{목적지}-consumers`. 봉투·재시도·DLQ·멱등 소비는 `@xzawed/agent-streams`의 `BaseConsumer`가 담당
+- **에이전트 RPC**: `tools/`의 inputSchema와 7개 에이전트의 `src/types.ts`가 **같은 계약을 각자 재정의**한다. tsc가 이 경계를 교차검증하지 못하므로 한쪽만 고치면 런타임까지 조용하다. 변경 시 `/contract-drift-check`로 대조한다
+- **HTTP**: Orchestrator ↔ Manager. `UserContext`(projectId·workspaceRoot·tenantId)가 요청에 실려 그래프까지 전파된다
+- **DB 스키마**: `db/migrations/*.sql`이 정본. 문서에 복사하지 않는다
+
+## 자율 아크
+
+기본값은 **대화형 챗 + 사람 승인 게이트**다. 아래 서브시스템은 전부 플래그 뒤에 있고 기본 off다. 무엇이 켜져 있는지는 [`docs/LIVE_VS_FLAGGED.md`](../docs/LIVE_VS_FLAGGED.md)를 본다.
+
+| 서브시스템 | 하는 일 | 코드 |
+|---|---|---|
+| 이벤트소싱·아웃박스 | append-only 이벤트가 진실원천, 상태는 replay로 파생. 상태변경과 발행을 단일 tx로 원자화(dual-write 금지) | `db/event-store.ts` · `streams/outbox-relay.ts` |
+| 분해 | 요청 → epics → story → deliverable → WorkPackage. 실패 시 자가수선 후 소진되면 사람에게 에스컬레이션 | `streams/decompose*.ts` |
+| Task Graph | WP 그래프 영속(가변 프로젝션 + append-only 상태 로그). WP id는 content-hash라 재진입해도 불변 | `db/task-graph.repo.ts` |
+| 디스패치 · Lease | ready WP를 에이전트에 할당하고 가시성 타임아웃으로 회수. 만료 sweep이 attempt를 올리고 상한 초과 시 에스컬레이션 | `db/dispatch.repo.ts` · `db/lease.repo.ts` |
+| 실행 워커 | 할당된 WP를 owningRole 에이전트로 자율 실행하고 완료를 발행 | `streams/worker.ts` |
+| 검증 게이트 | 완료를 **실행 결과로만** 판정한다. LLM 선언은 근거가 아니다 | `streams/verify.ts` |
+| 오라클 | GWT 시나리오·불변식 초안을 생성하고 **사람 승인**을 거쳐 검증 입력이 된다 | `db/oracle.repo.ts` |
+| 의사결정 영속 | 사람 결정을 append-only·비부인으로 영속. 만료 sweep과 바운드 재에스컬레이션 포함 | `db/decision.repo.ts` |
+| 리스크 분류 | 프로젝트 intent를 4차원 조사 → 점수화 → **사람 승인 후에만** 라우팅 확정 | `streams/risk-*.ts` |
+| 릴리스 · 배포 게이트 | WP별 검증 증거를 집계해 릴리스를 판정하고, 배포의 하드 전제로 건다 | `streams/release-gate.ts` · `tools/deploy-gate.ts` |
+| 운영 강등 모드 | NORMAL/DEGRADED/SAFE를 신호로 추적하고 디스패치를 보류·재개한다 | `streams/mode-controller.ts` |
+
+검증 게이트의 다섯 채널(파생·conformance·impact·property·security)은 전부 **hard-AND**다. 하나라도 실패하면 완료를 발행하지 않고 lease 백스톱이 회수한다. 채널별 판정 기준은 `streams/verify.ts`의 `judgePrimaryResult`가 단일 지점이다.
+
+## fail-closed / fail-open
+
+**어느 쪽인지 헷갈리면 여기를 본다. 반대로 알면 사고가 난다.**
+
+| 지점 | 부재·오류 시 |
 |---|---|
-| `status_update` | 도구 호출 시작/완료마다 |
-| `info_request` | 사용자 추가 입력 필요 시 (uiSpec 포함 가능). 승인 게이트는 `approval: { stage, summary, mode }` 페이로드로 발행 |
-| `task_complete` | 모든 처리 완료 |
-| `error` | 처리 실패 |
-
-## ToolHandler 패턴
-
-> **§13 벌크헤드**: 7개 `RedisAgentHandler`(plan/develop/design/test/build/watch/security)는 생성자에 optional `bulkhead?`를 받아 `execute`를 `bulkhead.run(agentName, …)`로 감싼다(단일 chokepoint — 러너 메인 루프·재실행·교차질의·Task Manager 워커의 모든 에이전트 RPC를 커버). server.ts가 `MANAGER_BULKHEAD_*` 캡 >0이면 공유 `Bulkhead` 1개를 7개 팩토리에 주입(미주입이면 직접 실행·회귀 0).
-
-```typescript
-interface ToolHandler<TInput = unknown, TOutput = unknown> {
-  name: string
-  description: string
-  inputSchema: Anthropic.Tool['input_schema']  // JSON Schema (Zod 아님 — Anthropic API에 직접 전달)
-  execute(input: TInput, sessionId: string): Promise<TOutput>
-}
-```
-
-11개 핸들러 (상시 9개 + 조건부 2개):
-
-**상시 등록 (9개)**:
-- 7개 `RedisAgentHandler` 팩토리: `createPlanTaskHandler`, `createDevelopCodeHandler`, `createDesignUiHandler`, `createRunTestsHandler`, `createBuildProjectHandler`, `createWatchChangesHandler`, `createSecurityAuditHandler`
-- `createRegisterProjectHandler` — 프로젝트 등록 (workspace clone/init)
-- `createSwitchProjectHandler` — 프로젝트 전환
-
-**조건부 등록 (GITHUB_TOKEN 설정 시, 2개)**:
-- `createGithubOpsHandler` — Octokit 직접 호출 (createRepo, createBranch, commitAndPush, createPR, createIssue, mergeBranch, listRepos, listBranches)
-- `createDeployProjectHandler` — GitHub 저장소에 프로젝트 파일 배포
-
-## 승인 게이트 (`gates/approval-gate.ts`)
-
-코드로 강제하는 단계별 승인 게이트. 에이전트 디스패치 도구 결과를 PO가 검토·승인해야 다음으로 진행한다.
-
-- **모드**: `GateMode = 'manual' | 'auto'`. `GateConfig`(defaultMode + 단계별 overrides)는 세션별로 `session.store.ts`가 보관. `defaultMode`는 `task_request.payload.gateMode`(전역 게이트 모드 설정 UI)로 `setGateDefaultMode`에서 설정. `effectiveMode(config, stage)`가 단계 적용 모드를 결정 — 단, **배포는 항상 manual**.
-- **대상**: `isGatedTool` = `GATED_TOOLS`(plan_task·design_ui·develop_code·run_tests·build_project·watch_changes·security_audit) ∪ `DEPLOY_TOOLS`(deploy_project, auto override 무시 — 항상 수동 승인). `KNOWLEDGE_BEARING_STAGES`(plan_task·design_ui·develop_code·security_audit)는 위키 저장이 의미 있는 단계.
-- **결정 파싱**: `parseDecision(answer, failSafe=true)`가 `info_response.answer`(JSON)를 `GateDecision`(`approve{rememberAuto, saveToWiki, wikiSummary?}` | `revise{feedback}` | `abort` | `needs_human{reason}`)으로 해석. **fail-safe(기본)**: 파싱 불가·비객체·미지 decision 값은 자동 승인 대신 `needs_human`으로 에스컬레이션(시스템 결함은 approve가 아님). `failSafe=false`(env `MANAGER_GATE_FAILSAFE=false`)면 레거시 approve fail-open으로 복원. `wikiSummary`(PO가 저장 전 편집한 요약)는 비어있지 않은 문자열일 때만 채택(2000자 클램프).
-- **요약**: `summarizeOutput(stage, result)` — content 우선, 없으면 직렬화(2000자 상한).
-- **runner 게이트 훅** (`runner.ts` `applyApprovalGate`, 공통 후처리 `finalizeAgentResult` 경유): manual이면 `info_request`(`approval: { stage, summary, mode }`) 발행 후 `waitForInfo`로 대기.
-  - `approve` → 결과 반환. `rememberAuto: true`면 해당 단계 override를 auto로 전환. `saveToWiki: true`면 `saveApprovedDecision`으로 승인 결정을 위키에 누적(`wikiSummary` 있으면 그 편집본을 우선 저장).
-  - `revise` → 피드백을 `clarificationContext`로 추가해 재실행 후 재게이트 (`MANAGER_MAX_GATE_REVISES` 상한). **fail-safe면 소진 시 무음 통과 대신 에스컬레이션**(`onReviseExhausted`); 레거시면 마지막 산출물 반환.
-  - `abort` → 세션 abort + `GateAbortError` throw(루프 종료, `escalateGate` 공통).
-  - **`needs_human`(fail-safe)** → 자동 승인 금지. 같은 산출물로 **사유와 함께 사람에게 재요청**(`reaskNotice`, 에이전트 재실행 아님). `MAX_GATE_REASKS`(`MANAGER_MAX_GATE_REASKS`, 기본 3) 초과 시 에스컬레이션(`assertReaskWithinCap`). 상한 env는 `parsePositiveInt`로 NaN/0/음수 방어(잘못된 값이 fail-safe 상한을 무력화하지 못하도록).
-  - **재실행 경로도 동일 게이트 적용(#216)**: 명확화·교차질의로 재실행(`reExecuteWithContext`)된 산출물도 `finalizeAgentResult`를 거쳐 승인 게이트를 우회하지 않는다(`GateAbortError`는 재던져 세션 종료 보존).
-
-## 도메인 위키 (`db/knowledge.repo.ts` · `api/knowledge.route.ts`)
-
-프로젝트 단위 도메인 지식(`domain_knowledge`)을 누적·재주입해 에이전트 간 지식을 공유한다.
-
-- **타입**: `KnowledgeEntry`(쓰기: content·sourceAgent·category?) / `KnowledgeRecord`(읽기: + id).
-- **runner 통합** (`runner.ts`):
-  - 호출 전 `injectDomainKnowledge` — `recentByProject`로 최근 지식을 도구 입력 `context.domainKnowledge`로 주입(`MANAGER_WIKI_INJECT_LIMIT`).
-  - 게이트 통과 후 `storeDomainKnowledge` — 결과의 `knowledge[]`(문자열 또는 `{content, category}`)를 sourceAgent=도구명으로 `insertMany`.
-  - `saveApprovedDecision` — 게이트 approve+saveToWiki 시 승인 결정 요약(PO가 편집한 `wikiSummary` 우선, 없으면 자동 summary)을 sourceAgent=`approval-gate`·category=`decision`으로 저장(지식성 단계 한정).
-  - 위키 주입/저장은 모두 비차단(repo·projectId 없거나 실패 시 작업 계속).
-- **HTTP 라우트**: `GET /projects/:projectId/knowledge`(limit·q·source·category 필터, **비인증·읽기**), `PATCH /:id`(content·category 갱신), `DELETE /:id`. **쓰기(PATCH/DELETE)는 `authHook` 설정 시 서비스 JWT 필요**(#213 defense-in-depth; `SERVICE_JWT_SECRET` 미설정 시 개방·하위호환). PATCH/DELETE는 project_id 가드(repo)로 타 프로젝트 행 변조 차단.
-
-## 세션 이벤트소싱 + 트랜잭셔널 아웃박스 (P0)
-
-dual-write 제거 + 크래시 후 복원의 토대(senario M4/M5/M7). `EVENT_SOURCED_SESSION`(기본 false) flag로 가역. off/no-`DATABASE_URL`이면 기존 인메모리+fire-and-forget 경로 100% 보존.
-
-- **스키마(`006_events_outbox.sql`)**: `manager_events`(append-only 진실원천 — event_id·session_id·event_type·payload·correlation_id·causation_id·idempotency_key·actor(nullable, #6/#7 가역)·occurred_at) + `manager_outbox`(event_id FK·stream·message·published_at). 코드 규약으로 events INSERT만(UPDATE/DELETE 없음).
-- **`db/event-store.ts` `EventStore`**: `appendSessionEvent(input, stream)` — **단일 tx**로 events+outbox INSERT(M5, dual-write 0). 봉투(#239 `makeEnvelope`)로 correlation(=sessionId)·causation(=직전 eventId)·idempotency 채움(M7). `replaySessions()` — 전 이벤트 seq순 fold → 세션별 `{state, lastEventId, count}`.
-- **`streams/outbox-relay.ts` `OutboxRelay`**: `setInterval`(`MANAGER_OUTBOX_POLL_MS`, 기본 500ms) 폴러 — 미발행 outbox(**평문 `SELECT ... WHERE published_at IS NULL ORDER BY id LIMIT`** + **재진입 가드 `polling` 불리언**으로 느린 발행에 틱이 겹쳐도 단일 릴레이 내 이중 발행 차단)를 `StreamProducer.publishRaw`로 `manager:events:{sessionId}`에 발행 후 `published_at` 설정. **at-least-once**(멱등 소비·DLQ·**다중 릴레이 동시 클레임용 `FOR UPDATE SKIP LOCKED`는 P1 후속 — 현재 단일 인스턴스 전제·tx 밖 SKIP LOCKED는 락 즉시 해제로 무효이므로 미사용**). 실패 시 pending 유지·`attempts++`.
-- **`SessionStore` 컴포지션**: optional `eventStore`. 전이 메서드(create/resolveInfo/abort/delete) **async화** — event-sourced면 `appendEvent` 후 Map(투영) 갱신. `waitForInfo`는 resolver를 await 전 동기 설치(동기 패턴 보존). `restoreSession`으로 replay 결과 주입. 영속 대상=`state`·존재만; AbortController·infoResolve는 휘발 런타임(replay 시 새로 생성).
-- **배선(`server.ts`)**: `EVENT_SOURCED_SESSION` + `DATABASE_URL`이면 `EventStore` 생성 → 시작 시 `replaySessions()` 복원. **`OutboxRelay`는 아웃박스를 쓰는 어떤 flag(`EVENT_SOURCED_SESSION`·`TASK_MANAGER_ENABLED`·`MANAGER_ORACLE_DOR`·`MANAGER_ORACLE_DRAFT`·`MANAGER_DECOMPOSE_ENABLED`)라도 켜지면 가동**(아웃박스→Redis 발행은 이벤트소싱과 독립 — 미기동 시 wp.dispatched·oracle.approved·decomposition.emitted 행이 잔류해 디스패치/재디스패치/소비 불발). `closeAll`에서 relay stop.
-- **게이트 연동**: `escalateGate`가 async `abort`를 await(중단 이벤트 기록 후 GateAbortError). narrowing은 abort 분기 `return this.escalateGate(...)`로 보존.
-- **수용기준**: ①상태+이벤트 원자성(append 단일 tx·롤백) ②강제종료 후 replay 복원 ③correlation/causation — 실 pg 통합 테스트(`test/event-sourcing.integration.test.ts`, skip-if-no-DB)로 실증.
-
-## Task Graph 영속 (P1d-3)
-
-P1d Task Manager의 영속 토대. `EVENT_SOURCED_SESSION`과 무관하게 `runMigrations`가 항상 적용(빈 표는 무해), 소비·디스패치 배선은 후속(P1d-2/4).
-
-- **스키마(`007_task_graphs.sql`)**: `task_graphs`(workflow_id PK·graph_dag JSONB={workPackages}·event_id nullable·version — **가변 프로젝션**, 재분해 시 upsert version++) + `wp_state_log`(seq BIGSERIAL·workflow_id·wp_id·from_state·to_state·event_id·reason·occurred_at — **append-only 전이 로그**, 코드 규약 INSERT만).
-- **`db/task-graph.repo.ts` `TaskGraphRepo`**: `upsertGraph`(ON CONFLICT version++)·`getGraph`(graph_dag.workPackages를 WorkPackageSchema로 재검증)·`appendTransition`(INSERT only)·`latestStates`(DISTINCT ON wp_id seq DESC)·`transitions`(seq ASC). graph_dag는 노드 소스(WorkPackage[])만 저장 — 인접 그래프는 소비자가 `buildTaskGraph`로 파생. pg BIGSERIAL/BIGINT은 문자열 반환이라 `Number()` 변환.
-
-## Task Graph 소비 (P1d-2)
-
-`decomposition.emitted`(PM이 emit한 WP DAG)를 **결정론적으로** 소비. 생산자(PM 분해=P2)·구독 생명주기 미도착이라 **런타임 미배선**(소비 코어+테스트만, server.ts 무수정).
-
-- **`streams/decomposition-consumer.ts`**: `handleDecompositionEmitted(msg, {repo, publish, ...})` 순수 핸들러 — `buildTaskGraph`(#253)로 빌드 → **구조오류(중복id·dangling)·사이클(detectCycle)이면** `decomposition.inconsistent` 발행 + 영속 안 함(LLM 수선 없음 — 사양 §6 결정론 경계, 수선은 PM/P2 책임) → **정상이면** `TaskGraphRepo.upsertGraph`(#255). `DecompositionConsumer`는 BaseConsumer 서브클래스(dedup ON·전송 글루).
-- **스트림(잠정)**: 입력 `manager:decomposition:{workflowId}`(group `manager-taskgraph-consumers`), inconsistent 출력 `manager:events:{workflowId}`. P2 배선 시 확정.
-
-## Task Graph 디스패치 (P1d-4)
-
-영속 그래프에서 **ready 노드를 결정론적으로 디스패치**한다(`readyNodes`→`wp.dispatched`·step-N·상태전이 로깅). 생산자·트리거 미도착이라 **런타임 미배선**(코어+테스트만, server.ts 무수정). PO 결정: DRAFTED→DISPATCHED·step-N=topo 인덱스·트랜잭셔널 아웃박스(M5).
-
-- **`streams/dispatch.ts`**: `planDispatch(graph, {alreadyDispatched, readiness?})` **순수** 플래너 — `readyNodes`(DoR) ∩ `!alreadyDispatched`, `topoSort.order` 인덱스로 step-N 부여(상태명 비의존). `handleDispatch(workflowId, {repo, store, readiness?})` 오케스트레이션 — `getGraph`→`latestStates`로 `alreadyDispatched`(toState==='DISPATCHED') 파생→`planDispatch`→항목별 원자 `recordDispatch`. 그래프 없음=noop. handleDecompositionEmitted 대칭.
-- **`db/dispatch.repo.ts` `DispatchStore.recordDispatch`**: **단일 tx**로 `manager_events`(wp.dispatched 진실원천)+`wp_state_log`(DRAFTED→DISPATCHED 전이)+`manager_outbox`(M5)를 INSERT. `manager_outbox.event_id`→`manager_events` FK(006)를 한 tx로 충족. ROLLBACK 가드(연결 손상 시 원본 오류 보존). 기존 `OutboxRelay`가 `manager:events:{wf}`로 at-least-once 발행. EventStore.appendSessionEvent와 동일 메커니즘.
-- **`streams/dispatch-constants.ts`**: `DRAFTED_STATE`·`DISPATCHED_STATE`·`WP_DISPATCHED_EVENT`·`DISPATCH_ACTOR` 단일출처(플래너·repo 공유, contract-drift 회피).
-- **멱등·복원력**: 이미 DISPATCHED인 WP는 `alreadyDispatched`로 제외(per-WP tx라 부분 실패도 latestStates로 resumable). P1d-4 §8 한계(멱등키 위치 의존·동시성 dedup)는 **P1d-5a에서 해소**(아래 WP Lease).
-
-## WP Lease (P1d-5)
-
-디스패치된 WP에 **가시성 타임아웃 lease**를 부여하고, 만료 시 reclaim(재할당 attempt++)→상한 초과 시 escalate한다. **미배선 코어**(sweep 타이머·wp.completed 흐름·server.ts 배선은 후속). PR 분할: **5a**(lease 획득 on dispatch + §8 하드닝) / **5b**(reclaim·escalate sweep). 설계 스펙 [2026-06-08-p1d5-lease-escalation-design.md](../../docs/superpowers/specs/2026-06-08-p1d5-lease-escalation-design.md).
-
-- **migration 008 `wp_leases`**: `(workflow_id, wp_id)` PK(가변 프로젝션·1행/WP)·`attempt`·`owner`(nullable)·`status`(active/released/escalated)·`expires_at`·`step_n`·`event_id`. **PK가 §8 #2 동시 dispatch dedup 게이트**.
-- **`recordDispatch`(5a)**: 같은 tx에 **`wp_leases` INSERT ON CONFLICT (wf,wp) DO NOTHING**(0행=이미 lease → ROLLBACK+`{status:'deduped'}`) + `appendWpEvent`(공통 헬퍼: manager_events+wp_state_log+outbox). **§8 #1 해소**: 멱등키를 `{wf}:wp-${wpId}:${attempt}:${eventType}`로 **WP+event_type 고정**(재분해 무관·attempt별·생명주기 이벤트 분리 — `appendWpEvent`가 event_type 덧붙임), step-N은 payload 표시용. `expires_at=occurredAt+visibilityMs`(`DEFAULT_VISIBILITY_MS` 5분).
-- **`handleDispatch`(5a)**: `visibilityMs` 전달·`deduped`는 dispatched 제외·`skipped` 집계.
-- **`db/lease.repo.ts` `LeaseStore`(5b)**: `expiredActiveLeases`(status='active' AND expires_at<now)·`getLease`·원자 `recordReclaim`(lease UPDATE attempt++·새 만료 + wp.dispatched(attempt next) 단일 tx)·`recordEscalation`(status='escalated' + wp.escalated·ESCALATED 전이). `appendWpEvent`(5a) 재사용. **동시 sweep 직렬화**: reclaim=`AND attempt=$expected` **CAS**(reclaim은 status를 active로 유지하므로 status 가드만으론 이중 reclaim 미차단), escalate=status 단방향 전이. escalate는 lease.event_id 미갱신(dispatch provenance 보존). **하드닝 `renewLease`(하트비트)**: 실행 중 lease 가시성 연장(`expires_at=now+visibilityMs`·`status='active' AND attempt` CAS) — reclaim(attempt++)·escalate·release된 stale lease는 0행(stale 워커가 남의 lease 연장 차단). 가시성 연장만이라 events/outbox 미적재(진실원천 전이는 reclaim/escalate/complete 소유).
-- **`streams/lease.ts`(5b)**: `planReclaim(expired, {maxAttempts})` **순수**(nextAttempt<maxAttempts→reclaim / 아니면 escalate)·`handleLeaseSweep(now, {store, maxAttempts?, visibilityMs?})`(expiredActiveLeases→planReclaim→항목별 recordReclaim/Escalation, outcome reclaimed/escalated/skipped). 실제 sweep 타이머 구동은 후속(server.ts 배선). `DEFAULT_MAX_ATTEMPTS=3`·`DEFAULT_VISIBILITY_MS=5분`(env `MANAGER_LEASE_MAX_ATTEMPTS`·`MANAGER_LEASE_VISIBILITY_MS` 오버라이드, 배선 시).
-
-## WP 완료 흐름 (P1d-6)
-
-WP 완료 시 lease release + 완료 전이(DISPATCHED→DONE) + **후행 unblock 재디스패치**로 디스패치 루프(dispatch→lease→complete→re-dispatch)를 닫는다. 미배선 코어(실제 완료 신호·server.ts 배선 후속). PO 결정: DISPATCHED→DONE·lease released·active lease만 완료·handleDispatch 재사용.
-
-- **`LeaseStore.recordCompletion`**: lease `status='released'`(WHERE status='active' 가드·active lease만 완료·동시 완료 직렬화) + `wp.completed`(DISPATCHED→DONE) 단일 tx(`transition` 재사용). lease.event_id 미갱신(provenance).
-- **`streams/completion.ts` `handleCompletion(workflowId, wpId, {leaseStore, dispatch})`**: getLease(비active→skip)→recordCompletion(skip이면 재디스패치 안 함)→`handleDispatch` 재디스패치. outcome `{status, dispatched, eventId?}`.
-- **`handleDispatch` 수정(P1d-6)**: DoR done 판정을 정적 graph_dag status가 아니라 **`latestStates`의 to_state='DONE'에서 파생**(완료가 후행 실제 unblock). `alreadyDispatched`=DISPATCHED∪ESCALATED(escalated 재디스패치 금지). 주입 isDone은 **합성**(DONE 항상 done 보존). **회귀 0**(DONE 없는 기존 경로 동작 불변).
-- ✅ **§8 해소(하드닝)**: WP 생명주기 이벤트(dispatched/completed/escalated)가 같은 (wpId,attempt) 멱등키를 공유하던 것을 `appendWpEvent`가 **event_type을 키에 덧붙여 분리**(키-기반 dedup 소비자가 같은 attempt의 후속 생명주기 이벤트를 유실하던 잠복 결함 봉합 — 예: wp.completed가 wp.dispatched 뒤로 skip). eventId는 randomUUID라 event_id 공유(lease provenance)는 불변. recordCompletion stale-attempt(TOCTOU)는 provenance만·active 가드로 무해.
-
-## Task Manager Supervisor 런타임 배선 (P1d-7)
-
-P1d-1~6의 핵심 핸들러를 `Supervisor`로 묶어 server.ts에 **flag(`TASK_MANAGER_ENABLED`, 기본 false·가역) 뒤로 배선**한다. 생산자(P2 분해·워커 완료 신호) 미도착이라 빈 스트림 구독이지만 동작 준비 완료(lease sweep은 즉시 유효). off면 핸들러만 존재(미배선·회귀 0). 설계 스펙 [2026-06-08-p1d7-supervisor-design.md](../../docs/superpowers/specs/2026-06-08-p1d7-supervisor-design.md).
-
-- **`streams/supervisor.ts`**: `Supervisor`(생명주기 코디네이터 — decomposition 소비·completion 소비·lease sweep을 start/stop, 주입 컴포넌트라 테스트 용이; start는 consumer.start reject를 `.catch` 관측)·`createSupervisor(makeRedis, deps, config)`(실 컴포넌트 조립 — **소비자별 전용 Redis 연결** makeRedis 2회로 xreadgroup BLOCK 직렬화 회피)·`shouldWireSupervisor(enabled, hasPool)`(순수 게이트 wire/warn/skip)·`buildCompletionHandler`·`CompletionSignalSchema`(잠정).
-- **`streams/lease-visibility.ts`(G8 lease auto-tune)**: `resolveLeaseVisibilityMs(cfg)` 순수 함수 — 활성 검증 채널 기반 가시성 바닥값 계산→`effective=max(configured,floor)`(올리기만). server.ts가 채널별 하한 경고 4개 대신 이걸로 자동 상향(bump 로그). false reclaim 방지·heartbeat renewLease와 이중 방어.
-- **G9 프리미엄 프로필 아크 E2E(품질 주장 근거)**: autonomous 프로필이 build→WP→verify→완료 아크를 폐합함을 증명. `test/premium-profile-e2e.integration.test.ts`(Slice A·in-process·소비자 우회·제로 flake·기존 turborepo pg 잡)가 아크 **로직**을, `test/premium-profile-wiring.integration.test.ts`(Slice C·`createSupervisor` 실 조립·decomposition.emitted 시드·바운드 폴링·teardown disconnect)가 실 Redis 소비자 **배선**을 증명(전용 `manager-redis-integration` CI 잡·REDIS_URL 게이트로 turborepo 잡에선 skip). 역사적 "미배선" 리스크 봉인.
-- **`streams/lease-sweeper.ts`**: `LeaseSweeper`(setInterval→`handleLeaseSweep`, 재진입 가드·never-throw, OutboxRelay 패턴).
-- **`streams/decomposition-consumer.ts`**: `buildDecompositionConsumerHandler`(영속→영속 성공 시 afterPersisted 훅)·`DecompositionConsumer` afterPersisted 인자 추가(additive·P1d-2 회귀 0). Supervisor가 afterPersisted=디스패치 주입.
-- **`streams/redis.client.ts`**: `createRedisClient`(비공유 전용 연결)는 `dedicated` Set에 등록 → `closeRedisClients`가 Map+Set 모두 quit(누수 방지).
-- **스트림(잠정)**: 입력 `manager:decomposition:main`·`manager:completions:main`(shared 단일·workflowId는 봉투). P2 배선 시 확정.
-- **데이터 흐름**: decomposition→영속→디스패치(wp.dispatched+lease) / 30s sweep→만료 reclaim/escalate / completion→lease release·DONE·후행 재디스패치. 발행은 OutboxRelay 경유.
-
-## Oracle DoR 게이트 (P3-1)
-
-P2-3 분해로 영속된 WP가 `oracleRef=null`이라 `readyNodes=∅`·디스패치 0인 블로커를, **사람이 승인한 Oracle을 DoR 게이트에 반영**해 `ready→dispatched`를 처음으로 연다. `MANAGER_ORACLE_DOR`(기본 false) flag 뒤로 가역 — off면 기본 술어(`oracleRef!=null`)·회귀 0. 설계 스펙 [2026-06-09-p3-1-oracle-dor-gate-design.md](../../docs/superpowers/specs/2026-06-09-p3-1-oracle-dor-gate-design.md).
-
-- **migration 009 `oracles`**: `oracle_id` PK·`workflow_id`·`story_id`·`version`·`status`(pending/approved/superseded)·`scenarios` JSONB·`coverage` JSONB(`{acceptance_criterion: [scenario_id]}`)·`approved_at`·`approved_by` — **가변 프로젝션**(진실원천은 manager_events `oracle.approved`). `idx_oracles_workflow_status`로 조회.
-- **`db/oracle.types.ts`**: `OracleSchema`·`OracleScenarioSchema`(zod·기본값)·상수(`ORACLE_APPROVED_EVENT='oracle.approved'`·`ORACLE_STREAM='manager:oracle:main'`·`SCENARIO_APPROVED='human_approved'` 등)·`coveredCriteria(scenarios, coverage)`(§8: ≥1 human_approved 시나리오가 덮는 AC 집합→`ApprovedOracleView` 변환용).
-- **`db/oracle.repo.ts` `OracleRepo`**: `approve(oracleId, approvedBy)` — **단일 tx**로 oracles UPDATE(status=approved, `status<>approved` 가드·0행이면 null) + `manager_events`(oracle.approved 진실원천) + `manager_outbox`(M5) INSERT 후 COMMIT(`DispatchStore.recordDispatch` 패턴·safeRollback). 멱등키 `{wf}:oracle.approved:{oracleId}:{version}`. `approvedByWorkflow`(satisfied-set 입력 `ApprovedOracleView[]`)·`upsert`(ON CONFLICT version++)·`listByWorkflow`.
-- **`handleDispatch` 오라클 주입**: `DispatchDeps.oracleStore` 주입 시 디스패치마다 `approvedByWorkflow`로 approved 오라클 조회→`oracleSatisfiedSet`(shared 순수 코어)으로 satisfied-set 산출→`readiness.oracleSatisfied = (wp) => set.has(wp.id)` 주입(기본 술어 대체, **pull** 모델). 미주입(flag off)이면 정적 readiness 또는 기본 술어 — 회귀 0.
-- **`streams/oracle-consumer.ts`**: `OracleApprovedSchema`(envelope+type+payload)·`buildOracleApprovedHandler(dispatch)` — `oracle.approved` 소비 시 `handleDispatch(envelope.workflowId, dispatch)`로 **재디스패치**(satisfied-set이 새 승인 반영). completion 핸들러 대칭.
-- **Supervisor 배선**: `SupervisorComponents.oracleConsumer`(optional)·`SupervisorDeps.oracleStore`(optional). `createSupervisor`가 `oracleStore` 주입 시에만 dispatch deps에 합류 + `BaseConsumer`(group `manager-oracle-consumers`·prefix `manager:oracle`)로 oracleConsumer 조건부 생성→start/stop 배선. 미주입이면 throw 안 함(flag off).
-- **`api/oracle.route.ts`**: `POST /workflows/:workflowId/oracles`(upsert·201)·`PATCH /oracles/:oracleId/approve`(approvedBy 필수→400, 미존재/이미 approved→404, 성공→200 `{ok, eventId}`)·`GET /workflows/:workflowId/oracles`(status 필터·repo 없으면 빈 목록). 쓰기는 `authHook` 설정 시 서비스 JWT 보호.
-- **`server.ts` 배선**: `MANAGER_ORACLE_DOR`+`pool`이면 `createSupervisor`에 `oracleStore: new OracleRepo(pool)` 합류 + `oracleRoute`에 `oracleRepo` 주입 + **`OutboxRelay` 기동 조건에 포함**(`oracle.approved` 아웃박스→Redis 발행 필수 — 없으면 재디스패치 불발). flag off면 미배선.
-
-## Oracle 초안 생성 (P3-2)
-
-P3-1이 연 디스패치 게이트의 **사람 병목**(오라클 백지 작성)을 흡수한다. 분해가 산출한 각 Story에 PM(LLM)이 Given-When-Then 시나리오 **초안**을 생성해 `pending` 오라클로 영속하고, 사람은 PATCH approve 한 번으로 초안을 `human_approved`로 전이해 DoR을 충족시킨다. `MANAGER_ORACLE_DRAFT`(기본 false) flag 뒤로 가역 — off면 `oracleDrafts=[]`·스테이지 미호출·회귀 0. 설계 스펙 [2026-06-09-p3-2-oracle-draft-generation-design.md](../../docs/superpowers/specs/2026-06-09-p3-2-oracle-draft-generation-design.md). **새 migration 없음**(given/when/thenSteps는 `oracles.scenarios` JSONB 내부).
-
-- **draft 스테이지(`decompose/stages/draft-oracles.ts`)**: `draftOracles(stories, deps)` — story별 `runStage`(LLM) 1회로 그 story의 `acceptanceCriteria`를 덮는 GWT 시나리오 초안 + coverage 생성. **커버리지 보장**: LLM 미커버 AC마다 stub 시나리오(`{id, title:AC, thenSteps:[AC], status:'drafted'}`) 합성, LLM 실패면 AC별 stub fallback. story당 LLM 시나리오 ≤ `MAX_SCENARIOS_PER_STORY`(8)로 절단(payload 10MiB 방어, blocker#7). scenario id=`{storyId}-sc{n}`(결정론). **oracleId는 producer가 부여하지 않음**(consumer가 파생, blocker#3·D1·D2).
-- **스키마(additive)**: `OracleScenarioSchema`에 `given`/`when`/`thenSteps` 추가(Gherkin 'Then'은 속성명 `then`이 객체를 thenable로 만들어 `thenSteps`로 명명 — SonarCloud no-thenable; 전부 기본값→P3-1 회귀 0; satisfied-set은 status+coverage만 소비, GWT는 사람 검토용). `OracleDraftSchema`(`{storyId, scenarios, coverage}`·oracleId 없음). `DecompositionEmittedSchema` payload에 `oracleDrafts: z.array(OracleDraftSchema).default([])` — z.infer 출력 타입에 항상 존재하므로 **기존 타입드 픽스처에 `oracleDrafts:[]` 채워 컴파일 유지**(blocker#9).
-- **파이프라인·발행**: `runDecomposition(intent, deps, repairMax, draftEnabled=false)`가 `draftEnabled`면 `draftOracles` 호출 → `DecomposeResult`(ok)에 `oracleDrafts` 추가(off면 `[]`). producer `emitWorkPackages`는 **ok 경로만** `result.oracleDrafts` 전달 — inconsistent·기술 fallback 경로는 `[]`(blocker#5: degraded·그 WP는 수동 오라클 대기). flag는 `ProduceDeps.draftOracles?`(server.ts가 `config.MANAGER_ORACLE_DRAFT` 주입).
-- **소비·영속(`streams/decomposition-consumer.ts`)**: `handleDecompositionEmitted`가 TaskGraph upsert 성공 후 `deps.oracleStore`가 있고 `oracleDrafts` 비어있지 않으면 각 draft를 `oracleStore.upsertDraft({workflowId, storyId, scenarios, coverage})`로 영속(oracleId는 repo가 `oracleIdFor`로 파생·단일출처). 미주입/빈 배열이면 skip(비차단·회귀 0). `buildDecompositionConsumerHandler`·`DecompositionConsumer` 생성자에 oracleStore 인자 additive.
-- **`OracleRepo.upsertDraft`(신규·멱등, blocker#6)**: `oracleId=oracleIdFor(wf,storyId)`로 `INSERT ... VALUES (...,1,'pending',...) ON CONFLICT (oracle_id) DO UPDATE SET scenarios=EXCLUDED..., status='pending' WHERE oracles.status='pending'`. **version 불변**(재시도/재분해 시 pending 초안만 멱등 덮어쓰기·version 인플레 방지). approved/superseded는 WHERE로 보존(승인 오라클을 초안이 덮지 않음). 기존 `upsert`(API용·version++)는 유지.
-- **`OracleRepo.approve` 수정(루프 닫기·blocker#8)**: 같은 tx에서 ①`SELECT ... FOR UPDATE` ②`status!=='pending'`(미존재·approved·superseded)이면 rollback·null(superseded 재승인 차단) ③JS에서 `drafted`→`human_approved` 일괄 전이(rejected/human_approved 불변·drafted 없으면 no-op→P3-1 회귀 0) ④`UPDATE oracles(status=approved)` ⑤`manager_events`(oracle.approved) ⑥`manager_outbox`. scenarios 파싱은 `OracleScenarioSchema.array().parse`(불량 레거시 JSON은 throw→롤백). 멱등키·아웃박스 스트림은 P3-1 그대로.
-- **oracleStore 분리 배선**: `server.ts`는 `pool && (MANAGER_ORACLE_DOR || MANAGER_ORACLE_DRAFT)`이면 `OracleRepo`를 한 번 만들어 Supervisor(consumer upsert·satisfied-set)와 `oracleRoute`에 공유 → **DRAFT만 켜도 consumer upsert 동작**(blocker#1·B2 타입은 `OracleStore & DecompositionDeps['oracleStore']`). `createSupervisor`는 `SupervisorConfig.oracleDor`(=`MANAGER_ORACLE_DOR`)로 satisfied-set 주입·oracleConsumer 배선을 게이트(`shouldWireOracleConsumer` 순수 함수·D4) — DRAFT만 켜면 초안은 영속되나 DoR 게이트는 비활성. **OutboxRelay 기동 조건에 `MANAGER_ORACLE_DRAFT` 추가**(D3: DRAFT-only approve가 만든 oracle.approved 아웃박스 잔류 방지).
-- **⚠️ DRAFT 영속 전제(D5)**: 초안이 **영속되려면** decomposition consumer(=Supervisor)가 돌아야 하므로 `MANAGER_ORACLE_DRAFT`는 `TASK_MANAGER_ENABLED`+`DATABASE_URL`을 실질 전제로 한다. DRAFT만 켜고 TASK_MANAGER off면 초안이 emit돼도 소비자 부재로 영속되지 않는다(config.ts 주석에 명시).
-- **DB-level 통합 테스트(`test/oracle-loop.integration.test.ts`, skip-if-no-DB·blocker#10)**: `upsertDraft(drafted)` → `approve`(전이) → `approvedByWorkflow` → `oracleSatisfiedSet`이 그 WP를 satisfied로 산출 — 영속→승인→DoR 충족 루프를 실 Postgres로 실증.
-
-## Oracle invariant 초안 생성 (F5)
-
-P3-2가 scenarios 초안만 생성하고 P4 property 채널(`MANAGER_WP_PROPERTY`)이 소비할 **invariants를 생성·승인할 경로가 없어** property 채널이 구조적으로 휴면이던 단층을 닫는다. 분해가 산출한 각 Story에 PM(LLM)이 **도메인 불변식(invariants) 초안**을 생성해 `OracleDraft.invariants`에 부착→`pending` 오라클로 영속하고, 사람 승인 한 번이 scenarios와 동형으로 invariant를 `human_approved`로 전이해 property 채널을 활성화한다. P3-2 scenarios 경로를 정확히 미러. `MANAGER_ORACLE_INVARIANTS`(기본 false·전제 `MANAGER_ORACLE_DRAFT`) off면 `invariants=[]`·스테이지 미호출·회귀 0. **golden_refs 초안 생성은 범위 외**(golden은 실제 실행 출력의 사인오프 베이스라인이라 LLM이 fabricate 불가·N7 — record-and-freeze 슬라이스로 분리). 설계 스펙 [2026-06-23-f5-invariant-draft-generation-design.md](../../docs/superpowers/specs/2026-06-23-f5-invariant-draft-generation-design.md). **새 migration 없음**(invariants는 migration 010 §4 컬럼).
-
-- **draft 스테이지(`decompose/stages/draft-invariants.ts`)**: `draftInvariants(stories, deps): Map<storyId, OracleInvariant[]>` — story별 `runStage`(LLM) 1회로 도메인 불변식(`{statement, domain, property}`) 초안 생성. **stub 강제 안 함**(scenarios와 달리 AC 커버리지 의무 없음) — LLM이 진짜 불변식을 못 찾으면 빈 배열(property 채널 graceful skip·정직한 휴면). 빈 statement 드롭(저품질 가드)·`MAX_INVARIANTS_PER_STORY`(6)로 절단. invariant id=`{storyId}-inv{n}`(결정론)·`status:'drafted'`. LLM 실패면 `runStage` fallback(빈)·never-throw(분해 비차단).
-- **스키마(additive)**: `OracleDraftSchema`에 `invariants: z.array(OracleInvariantSchema).default([])` 추가(P3-2 회귀 0·draftOracles는 `invariants:[]` 설정으로 타입 정합). `OracleDraftSchema`는 `DecompositionEmittedSchema.payload.oracleDrafts`가 이미 운반(스키마 무변경).
-- **파이프라인·발행**: `runDecomposition(intent, deps, repairMax, draftEnabled, invariantsEnabled=false)`가 `invariantsEnabled`(draftEnabled 전제)면 `draftInvariants`를 호출해 oracleDrafts에 story별 머지. producer `ProduceDeps.draftInvariants?`(server.ts가 `config.MANAGER_ORACLE_INVARIANTS` 주입). off면 머지 skip(`invariants=[]`).
-- **소비·영속(`streams/decomposition-consumer.ts`)**: upsertDraft 호출에 `invariants: d.invariants` 추가(oracleStore 포트 타입에 `invariants: OracleInvariant[]` 추가).
-- **`OracleRepo.upsertDraft`**: INSERT 컬럼에 `invariants` 추가·ON CONFLICT SET `invariants=EXCLUDED.invariants`(status='pending' WHERE 가드 유지·승인 보존). input `invariants?`(미전달 시 `[]`).
-- **`OracleRepo.approve` 확장**: FOR UPDATE SELECT에 `invariants` 추가·scenarios 전이 직후 invariant도 `drafted→human_approved` 동형 전이(rejected/human_approved 불변·빈 no-op·bad JSON throw→ROLLBACK fail-closed)·UPDATE에 `invariants=$5` 추가. ⚠️ **의도적 동작 변경**: 이전 P4 property 슬라이스는 approve가 invariant를 미전이했고(사람이 직접 `POST /oracles` human_approved 시드) `test/oracle-invariants.integration.test.ts`가 그 구 계약을 인코딩했으므로 **새 계약(upsertDraft drafted→approve 전이→`approvedInvariantsForStory` 반환)으로 재작성**.
-- **배선(`config.ts`·`server.ts`)**: `MANAGER_ORACLE_INVARIANTS` flag·decompose ProduceDeps에 `draftInvariants` 주입·오진 경고 2종(`MANAGER_ORACLE_DRAFT` off→no-op·`MANAGER_WP_PROPERTY` off→생성·승인되나 검증 미소비 휴면).
-
-## 실행 워커 (P4-1)
-
-P1d Task Manager의 디스패치 루프(dispatch→lease→complete→re-dispatch)는 **완료 신호를 발행하는 주체가 없어** 닫히지 않았다. P4-1은 dispatch된 WP를 `owningRole` 에이전트로 **자율 호출**하고 성공 시 `wp.completion`을 발행해 기존 완료 소비자(P1d-6)가 lease release·DONE 전이·후행 재디스패치를 돌리게 함으로써 루프를 **처음으로 end-to-end로 닫는다**(Phase 4a 골격). `MANAGER_TASK_WORKER`(기본 false) flag 뒤로 가역 — off면 dispatch/reclaim이 신호를 발행하지 않고 WorkerConsumer도 미배선이라 **회귀 0**. 설계 스펙 [2026-06-09-p4-1-execution-worker-design.md](../../docs/superpowers/specs/2026-06-09-p4-1-execution-worker-design.md). **새 migration 없음**(wp.dispatch_signal·wp.completion은 Redis 트리거 신호, 기존 전이 테이블 재사용).
-
-- **트리거 신호 계약(`streams/dispatch-signal.ts`)**: `WpDispatchSignalSchema`(envelope+`type:'wp.dispatch_signal'`+payload `{wpId, attempt}`)·`publishDispatchSignal(publish, wf, wpId, attempt, now?)`·`DISPATCH_SIGNAL_STREAM='manager:dispatched:main'`. **멱등키를 (wf,wpId,attempt)에 고정** — stepId에 wpId 포함(`wp.dispatch_signal:${wpId}`)이라 같은 wf·attempt의 여러 WP가 키 충돌하지 않음. dispatch(attempt=0)·reclaim(attempt++)이 공유(contract-drift 회피). best-effort 발행(outbox 미경유 — lease 타임아웃이 신뢰성 백스톱).
-- **실행 워커 코어(`streams/worker.ts`)**: `handleWpDispatchSignal(msg, deps)` — `getGraph`로 WP 해석→`resolveAgentTool(owningRole)`→`deps.handlers[tool]` 자율 `execute(input, workflowId)`→성공 시 `wp.completion`을 `manager:completions:main`에 발행. outcome `completed`/`skipped(wp_not_found|unknown_role|no_handler)`/`failed(agent_error)`. **실패·미해석은 신호 미발행 후 return** — 새 실패 이벤트를 만들지 않고 lease 타임아웃 reclaim에 위임(결정 2/5). `buildWorkerInput(wp)`는 AC를 intent에 담고 답변자 스키마 필수 필드 합집합(intent·context·priority·projectPath·target·severity·artifacts)을 채워 어느 에이전트로 가도 safeParse 통과(Zod가 잉여 키 strip·검증 trivial은 Phase 4b 실 검증으로 대체). `shouldWireWorker(taskWorker, hasHandlers)`(순수·D4)는 둘 다 있어야 배선. `WorkerConsumer extends BaseConsumer`(group `manager-worker-consumers`·prefix `manager:dispatched`·dedup ON)는 `start('main')`로 `manager:dispatched:main` 구독.
-- **dispatch/reclaim 신호 발행**: `DispatchDeps.publish?`(P4-1) 주입 시 `handleDispatch`의 recorded 분기에서 `publishDispatchSignal(publish, wf, wpId, 0)` 발행(deduped는 무발행). `SweepDeps.publish?`+`LeaseSweeperDeps.publish?` 주입 시 reclaim 분기에서 `publishDispatchSignal(publish, wf, wpId, nextAttempt)` 발행(escalate는 무발행). 미주입(flag off)이면 무발행 — 회귀 0.
-- **스트림 단일출처(드리프트 0)**: 트리거 스트림 `manager:dispatched:main`(WorkerConsumer prefix+channel). 완료 스트림 `manager:completions:main`=`supervisor.ts COMPLETION_PREFIX('manager:completions')`+`DEFAULT_CHANNEL('main')`. `createSupervisor`가 worker의 `completionStream`을 `${COMPLETION_PREFIX}:${DEFAULT_CHANNEL}`로 주입해 워커 완료 발행 스트림과 기존 완료 소비자 구독 스트림을 단일 출처로 일치.
-- **Supervisor·server.ts 배선**: `SupervisorConfig.taskWorker`(=`MANAGER_TASK_WORKER`)·`SupervisorDeps.handlers?`(tool명→AgentExecutor). `createSupervisor`가 `workerActive=shouldWireWorker(taskWorker, handlers!==undefined)`면 dispatch·leaseSweeper deps에 `publish` 합류 + `WorkerConsumer`를 전용 Redis 연결(makeRedis 1회 더)로 조건부 생성→start/stop 배선. `server.ts`는 `MANAGER_TASK_WORKER`면 `registry.get`으로 답변 가능 5종(`develop_code`·`design_ui`·`run_tests`·`build_project`·`security_audit` — watcher 제외) 핸들러 맵을 구성해 `handlers`로 주입(`ToolHandler.execute(input, sessionId)`가 `AgentExecutor` 구조 만족). flag off면 handlers 미주입·taskWorker=false → 미배선.
-- **DB-level 통합 테스트(`test/execution-worker.integration.test.ts`, skip-if-no-DB)**: dispatch_signal→`handleWpDispatchSignal`(mock 에이전트 성공)→wp.completion capture→`handleCompletion`→DONE 전이를 실 Postgres로 실증(루프 닫힘 검증) + userContext 영속→워커 주입 라운드트립(P4a-2).
-
-## 워크스페이스 컨텍스트 주입 (P4a-2)
-
-P4-1의 핵심 한계(§6 재리뷰 NEW-2 — `buildWorkerInput`이 placeholder `projectPath:'.'`라 실 에이전트가 `fs.realpath` 검증에서 거부)를 해소한다. 분해 시점의 `UserContext`를 그래프에 영속하고 워커가 에이전트 호출에 주입해 **실 에이전트 성공 완료가 성립**한다. 설계 스펙 [2026-06-10-p4a-2-workspace-context-injection-design.md](../../docs/superpowers/specs/2026-06-10-p4a-2-workspace-context-injection-design.md). **새 migration·flag 없음**(graph_dag JSONB additive·기존 flag 게이트 보존).
-
-- **계약(additive optional)**: `decompose_request.payload.userContext`(`AbsoluteUserContextSchema` — userId·projectId·workspaceRoot·githubRepo?, **workspaceRoot 절대경로 강제** refine — 상대경로는 manager cwd mkdir→에이전트 cwd 해석으로 developer false-success를 만들므로 Zod 단계 거부) → `decomposition.emitted.payload.userContext`(위반 시 invalid_schema DLQ) → `task_graphs.graph_dag = {workPackages, userContext?}`.
-- **스레딩**: sessions.route → `handleDecomposeRequest(..., userContext?, ensureWs)`(trigger try 안에서 `ensureWorkspace` — task_request 경로 대칭·실패 시에도 finally cleanup) → `produceDecomposition(..., userContext?)`(ok·기술 fallback 경로 포함, inconsistent 경로 제외) → `handleDecompositionEmitted`가 `upsertGraph`에 전달. **실패 무음 금지(M8)**: trigger catch가 모든 실패(워크스페이스 검증·발행)를 `type:'error'`로 요청자에게 발행 후 rethrow — 미발행 시 세션이 응답 없이 해체돼 무한 대기하던 결함 해소(에러 발행 실패는 원 오류 보존).
-- **영속·조회(`TaskGraphRepo`)**: `PersistGraphInput.userContext?`(null/undefined면 키 생략)·`StoredGraph.userContext: UserContext | null`. `getGraph`는 **safeParse tolerant**(AbsoluteUserContextSchema) — 레거시 행은 무로그 null, 키가 있는데 실패(손상·상대경로)면 **warn 로그 후 null**(escalate 폭주 원인 추적·디스패치 경로 보호·워커는 placeholder 폴백 우아한 강등). workPackages는 기존대로 strict.
-- **워커 주입(`worker.ts`)**: `AgentExecutor.execute(input, sessionId, userContext?)`(3번째 옵셔널 — `RedisAgentHandler.execute` 시그니처와 일치·2-인자 구현도 구조적 할당 가능). `buildWorkerInput(wp, userContext?)`가 `projectPath = userContext?.workspaceRoot ?? '.'` — builder/tester `validatePath`는 `fs.realpath(projectPath)`를 **에이전트 cwd 기준**으로 해석하므로 절대경로가 cwd 무관 통과(NEW-2의 실체). **intent는 4000자 클램프**(planner/designer `.max(4000)` 정합 — 초과 시 DLQ→타임아웃 방지·AC 전체는 plan에 무손실 보존). `handleWpDispatchSignal`이 `stored.userContext`를 입력·execute 양쪽에 전달 → RedisAgentHandler가 `payload.userContext`로 spread → 에이전트 `resolveWorkspaceRoot(payload.userContext, config.workspaceRoot)` 소비.
-- **한계(후속)**: 재분해가 userContext 없이 오면 graph_dag 교체로 유실(가변 프로젝션 의미·트리거 UX가 항상 채우는 것으로 해소 예정). 모노레포 서브프로젝트 라우팅은 범위 밖. ~~검증 trivial~~ → **P4b-1 검증 게이트로 해소**(아래).
-
-## 검증 게이트 (P4b-1)
-
-P4-1 워커의 trivial 완료 판정(무예외=성공)을 **실행 ground truth 기반 fail-closed 검증**으로 교체한다(senario N1 — "테스트 통과"는 실제 실행 결과로만 성립). tester가 `success:false`를 반환해도 무예외면 DONE이 되던 false-pass 구멍을 봉합한다. `MANAGER_WP_VERIFY`(기본 false) flag 뒤로 가역 — off면 워커 동작 P4a-2와 바이트 단위 동일·회귀 0. 설계 스펙 [2026-06-10-p4b-1-verification-gate-design.md](../../docs/superpowers/specs/2026-06-10-p4b-1-verification-gate-design.md). **새 migration·테이블 없음**(이벤트는 Redis 스트림·재시도는 기존 lease 기계 재사용).
-
-- **`streams/verify.ts` 순수 코어**: `judgePrimaryResult(tool, result)` — **결과-근거 판정**(run_tests `success && failed===0 && passed>0`·build_project `success`; 판정 전용 minimal Zod·**기본값 없음** — 필드 부재=파싱 실패=fail. `passed`도 required — **P4b-3 vacuous-pass 봉합**: RedisAgentHandler outputSchema가 `passed`를 0으로 default해도 `passed<=0`이면 fail-closed(0-test가 `failed:0`으로 통과하던 빈 껍데기 스위트 차단·N8 선행). `planVerificationChecks(tool)` — **파생 체크 플랜**(develop_code → `['build_project','run_tests']` fail-fast 순서; run_tests/build_project WP는 자기 결과가 이미 ground truth라 이중 실행 회피·design_ui/security_audit는 실행 가능 ground truth 부재(4d) → 빈 플랜). `verifyWp(tool, wp, result, deps)` — ①→② 오케스트레이션, **never-throw**(핸들러 부재·throw·파싱 실패·**workspaceRoot 미영속** 전부 fail verdict — 불확실=실패. '.' 폴백 검증은 에이전트 cwd⊂WORKSPACE_ROOT 배포에서 에이전트 자신을 검증하는 false PASS라 실행 전 차단). `verifySessionId(wf,wpId,attempt)` — 파생 체크 전용 **격리 세션 키**(RedisAgentHandler 응답 매칭이 무상관(스트림 위치+type)이라 워크플로 공유 세션은 타임아웃 좀비 응답이 다음 attempt 판정으로 오귀속(N1 false-pass) — 사설 응답 스트림으로 구조 차단).
-- **파생 체크 실행**: 워커 `handlers` 맵(server.ts 5종)을 재사용해 `buildWorkerInput(wp, userContext)` 입력·격리 세션으로 builder/tester를 같은 워크스페이스에 실 재호출 — 판정은 LLM 선언이 아니라 실 spawn 실행 결과 필드(N1). ⚠️자동 감지 명령은 산출물(package.json scripts·Makefile)에서 파생 — 구현자가 게이트 명령을 통제하는 N6 한계(4b-2에서 명령 권위를 사람 오라클로 이전).
-- **워커 통합(`worker.ts`)**: `WorkerDeps.verifyEnabled?`(기본 false)·repo에 `latestStates` 추가. verifyEnabled면 **실행 전 스테일 신호 가드**(`latestStates`가 DONE/ESCALATED → `skipped:stale_signal` — 검증이 WP당 처리 시간을 최대 3×120s=360s로 늘려 기본 가시성 300s 초과 시 false reclaim 신호가 DONE WP를 재실행·워크스페이스 재변형하는 것을 차단). execute 성공 후 verdict fail이면 **완료 미발행** + `wp.verification.failed` 관측 이벤트(`defaultInconsistentStream` 단일출처·reason 500자 클램프·**best-effort** try/catch — 부재한 completion이 load-bearing 신호·스트림 소비자 미배선이라 사람 도달 신호는 ESCALATED) 후 outcome `verification_failed`. → lease 만료 → reclaim attempt++ → 상한 초과 ESCALATED(**기존 P1d-5 백스톱이 N5 바운드 재시도·사람 에스컬레이션 담당** — 새 재시도 메커니즘 없음).
-- **배선**: `SupervisorConfig.wpVerify?`(optional additive) → `buildWorkerConsumerDeps(deps, config)` **순수 헬퍼**(D4 — 스레딩 누락이 무음 fail-open 퇴행이 되지 않도록 행동 단언)로 WorkerConsumer deps 조립. server.ts가 `config.MANAGER_WP_VERIFY` 전달 + 오진 방지 경고 2종(전제 `MANAGER_TASK_WORKER` 미충족·`MANAGER_LEASE_VISIBILITY_MS<360s` 가시성 하한).
-- **한계(후속)**: 빈 스위트 vacuous pass(0-test가 `failed:0` 통과)는 **P4b-3에서 `passed>0` floor로 봉합**(아래) — 단 전체 mutation-score(θ_risk) N8은 후속. 검증 실패 사유가 reclaim 재실행 입력에 미반영(비정보 재시도 — 4c informed rework). lease 가시성 경합은 **하드닝 하트비트(`LeaseStore.renewLease`)로 완화** — 워커가 실행 중 주기적(가시성/3·최대 5단계 검증 동안)으로 가시성 연장해 false reclaim 차단(`startLeaseHeartbeat`·finally stop·never-throw·0행 경고·leaseStore+visibilityMs 미주입 시 비활성 회귀 0). completion attempt CAS 미적용은 의도적(active 단방향 가드로 충분). primary 실행의 RPC 무상관은 후속. 상세는 설계 스펙 §7.
-
-## Oracle conformance 검증 (P4b-2)
-
-P4b-1 검증 게이트의 N6 한계(게이트 통과가 구현자의 `package.json scripts`에서 파생된 명령에만 의존 — 작성자가 검증 명령을 통제)를 봉합한다. develop_code WP 검증에 **사람 승인 오라클 GWT 시나리오를 실행 ground truth로 소비**하는 conformance 채널을 P4b-1 파생 체크 위에 additive hard-AND로 추가: 게이트가 구현자와 독립된, 사람이 승인한 동작에 묶인 검증 테스트의 실 실행 결과에 의존한다(N1·N6). `MANAGER_WP_CONFORMANCE`(기본 false) flag 뒤로 가역 — off면 P4b-1 검증과 바이트 동일·회귀 0. 전제: `MANAGER_TASK_WORKER`+`MANAGER_WP_VERIFY`+OracleRepo. 설계 스펙 [2026-06-10-p4b-2-oracle-conformance-design.md](../../docs/superpowers/specs/2026-06-10-p4b-2-oracle-conformance-design.md). **새 migration·테이블·핸들러 계약 무수정**(run_tests `testFiles?`·develop_code `artifacts[]` 기존 존재).
-
-- **`db/oracle.repo.ts` `approvedOracleForStory(wf, storyId)`**(additive): 해당 story의 approved 오라클(최신 version)에서 `human_approved` 시나리오 + coverage 반환. 승인 행 없음·human_approved 0개면 `null`(→ conformance skip·회귀 0). `OracleScenarioSchema.array().parse`로 재검증(불량 레거시 JSON throw→상위 fail-closed). `approvedByWorkflow`(satisfied-set용)와 별개.
-- **`streams/conformance.ts`(신규·순수)**: `CONFORMANCE_DIR='.xzawed/conformance'`·`buildConformanceAuthorPlan(wp, scenarios)`(승인 GWT를 번호 매겨 나열 + "실행 가능한 테스트를 `<DIR>/<wpId>.*`에 작성·**구현 파일 수정 금지**·시나리오 단언만 인코딩" 지시·4000자 클램프)·`selectConformanceTestFiles(artifacts, wpId)`(설계 §4 두 불변식: ①좌측 prefix 앵커 `<DIR>/<wpId>.`로 인접 wpId(wp-7 vs wp-70)·깊은 경로(node_modules 등) 오지정 차단 ②테스트 확장자 필터(`.test.`·`.spec.`·`_test.`·`test_`·`.py`)로 비테스트 산출물(.md·.txt·.json) 제외 — "테스트 미작성=fail-closed" 가드 유지·구분자 정규화·결정론).
-- **`streams/verify.ts`**: `VerifyDeps`에 `oracleStore?`(`ConformanceOracleStore`)·`conformanceEnabled?` 추가(둘 다 optional·기본 미동작). `runConformanceCheck(wp, deps)`(**never-throw**·fail-closed): 미주입/미활성/oracle null → skip(`{ok:true}`); workspaceRoot 부재·author throw·author 테스트 미생성·run throw·run 결과 fail → fail. `execConformanceStep`이 buildInput·execute를 try 안에서 수행해 모든 throw를 fail verdict로 변환. author=독립 develop_code 호출(`conf-author` 격리 세션·plan=승인 GWT), run=Tester(`conf-run` 격리 세션·author가 만든 `testFiles`만)·`judgePrimaryResult('run_tests', ...)` 재사용. `verifyWp`는 ①②(P4b-1) 후 `tool==='develop_code'`이면 `runConformanceCheck` 호출. `verifySessionId`에 4번째 옵셔널 `suffix` 추가(P4b-1 호출 바이트 동일).
-- **워커 통합(`worker.ts`)**: `WorkerDeps.oracleStore?`·`conformanceEnabled?` 추가 → verifyEnabled 경로의 `verifyWp` deps에 합류. conformance 실패도 P4b-1 그대로 완료 미발행 → lease 백스톱 reclaim→escalate(새 재시도 메커니즘 0).
-- **배선(`supervisor.ts`·`server.ts`)**: `SupervisorConfig.wpConformance?`·`buildWorkerConsumerDeps`가 `conformanceEnabled = config.wpConformance && deps.oracleStore != null`(검증 우회 무음 방지·행동 단언)·oracleStore를 verify deps에 합류. server.ts는 `oracleStore` 생성 조건에 `MANAGER_WP_CONFORMANCE` 추가(`pool && (DOR||DRAFT||CONFORMANCE)`)·`wpConformance` 전달·오진 방지 경고 **3종**(conformance on인데 ①`MANAGER_WP_VERIFY` off(verifyWp 미경유 무음 no-op) ②oracleStore 부재(항상 skip) ③`MANAGER_LEASE_VISIBILITY_MS<600s`(WP당 호출 최대 5단계)).
-- **한계(후속·정직 문서화)**: vacuous conformance(0-test가 `failed:0`으로 통과)는 **P4b-3 `passed>0` floor로 봉합**(아래) — 약한 스위트(테스트는 돌지만 결함 미포착)는 전체 mutation-score N8 후속. author Developer는 구현자와 같은 모델군(신규 컨텍스트·사람 승인 단언으로 *경계*만)·"구현 수정 금지"는 프롬프트 지시일 뿐(읽기전용 워크스페이스 마운트는 후속). 평문 GWT 해석(구조화 step_defs 미도입)·advisory/impact 채널·security(STRIDE)·designer 검증은 후속(4b-3/4d). **invariants/golden_refs는 P4b-3에서 스키마 추가**(migration 010·additive·default []·현재 검증 미소비 — impact 채널이 golden_refs를 differential 베이스라인으로 소비 예정·property 채널이 invariants 소비 예정).
-
-## 검증 vacuous-pass 봉합 (P4b-3 착수)
-
-P4b-1/P4b-2 검증 채널의 false-pass 구멍 중 가장 노출이 큰 **빈 스위트 vacuous pass**(0-test가 `failed:0`으로 통과)를 봉합한다. Tester가 이미 반환하는 실행 통과 카운트(`passed`)를 verify.ts 판정이 버리던 것을 살려, **실행·통과한 테스트가 0이면 게이트를 열지 않는다**(fail-closed·senario N8 선행). primary run_tests WP·develop_code 파생 체크·conformance 실행 세 경로를 `judgePrimaryResult` 한 곳에서 균일하게 봉합 — P4b-2가 4b-3로 미룬 "vacuous conformance"도 함께 해소. 설계 사양 [VERIFICATION_ADVERSARIAL_STRATEGY.md](../../docs/senario/VERIFICATION_ADVERSARIAL_STRATEGY.md) §3(N8)·§4(mutation score=1차 선행 지표). **새 flag·migration 없음**(기존 `MANAGER_WP_VERIFY` 게이트 안에서 동작·off면 회귀 0).
-
-- **`streams/verify.ts` `judgePrimaryResult('run_tests')`**: 판정 전용 `TesterResultSchema`에 `passed: z.number()`를 **required**로 추가(파일의 "기본값 비의존·부재=fail" 철학 일관). 기존 `!success || failed>0` 체크 뒤에 **`passed<=0` → fail**(reason 'vacuous pass') 추가. 순서상 success/failed 위반이 먼저 발화하므로 부분 실패는 그대로 실패, "all green인데 실행 0건"만 vacuous로 차단.
-- **세 경로 균일 봉합**: ①tester WP 자기 결과 ②develop_code 파생 `run_tests`(전체 스위트 — 테스트 존재 시 `passed>0`) ③conformance `conf-run`(author가 빈/비실행 테스트를 쓰면 `passed:0`→fail). 프로덕션 안전: run_tests 핸들러 `outputSchema`가 `passed`를 항상 채움(default 0)이라 실 통과 런은 `passed>0`로 통과.
-- **정직한 한계**: `parseTestCounts`가 출력 포맷을 인식 못 하는 프레임워크는 `passed:0`→fail(불확실=실패의 **의도된 fail-closed**, N1/N8 — 인식 포맷 확장은 후속). **약한 스위트**(테스트는 돌지만 mutant 미포착)는 이 floor가 못 잡음 — 전체 mutation-score(θ_risk) 게이트는 P4b-3 후속 슬라이스(advisory/impact 채널과 함께).
-
-## impact 채널 (P4 N8) — golden differential
-
-검증 3채널(spec §9)의 셋째 렌즈 **impact**의 첫 슬라이스 = **golden differential**. develop_code WP 산출물이 **사람이 사인오프한 golden 기준 출력에서 벗어났는지**(behavioral drift)를 실행으로 검증한다 — drift면 **blocking**(완료 미발행 → lease 백스톱). 미소비로 남아 있던 oracle `golden_refs`(migration 010)를 처음 소비하고 **N7(골든 자동 갱신 금지·사람 승인만)** 가드를 활성화한다. `MANAGER_WP_IMPACT`(기본 false) flag — off면 conformance까지와 동일·회귀 0. 전제: `MANAGER_TASK_WORKER`+`MANAGER_WP_VERIFY`+OracleRepo(`MANAGER_ORACLE_DOR`||`MANAGER_ORACLE_DRAFT`). 설계 스펙 [2026-06-12-p4-impact-golden-differential-design.md](../../docs/superpowers/specs/2026-06-12-p4-impact-golden-differential-design.md). **새 migration 없음**(golden_refs는 010·읽기만).
-
-- **author→run 재사용(N1)**: P4b-2 conformance의 author→run 골격을 제네릭 `runAuthoredCheck<T>`(verify.ts)로 추출해 conformance·impact가 공유(CPD 0). impact는 `.xzawed/impact/`에 differential 테스트(impl을 inputFixture로 실행→normalizers 적용→normalizedOutput과 동등 단언)를 독립 develop_code(`impact-author` 격리 세션·구현 수정 금지)가 작성→Tester(`impact-run`)가 실행→`judgePrimaryResult('run_tests')`(passed>0 floor 포함). `executeAuthoredTest` 추출로 인지복잡도 ≤15(S3776).
-- **`db/oracle.repo.ts` `approvedGoldensForStory`**: 승인 oracle(최신 version)의 `golden_refs` 반환(승인 행 없음·golden 0개면 null→skip). `approvedOracleForStory` 패턴.
-- **`streams/conformance.ts`**: `selectConformanceTestFiles`를 `selectAuthoredTestFiles(artifacts, dir, wpId)`로 일반화(conformance는 CONFORMANCE_DIR 위임·API 보존)·`IMPACT_DIR='.xzawed/impact'`·`buildGoldenDiffAuthorPlan(wp, goldens)`·`ImpactOracleStore` 포트·**P4 property**: `PROPERTY_DIR='.xzawed/property'`·`buildInvariantAuthorPlan`·`InvariantOracleStore` 포트.
-- **`streams/verify.ts`**: `runAuthoredCheck<T>`(가드)+`executeAuthoredTest`(author→run)+`runConformanceCheck`/`runImpactCheck`/`runPropertyCheck` 래퍼. `verifyWp`가 develop_code에서 conformance→impact→property **데이터 주도 채널 루프 hard-AND**(`runDerivedChecks`/`runChannelChecks` 헬퍼 추출·S3776↓). never-throw fail-closed.
-- **N7 구조적 보장**: impact 채널은 golden을 **읽기만** 한다(생성·UPDATE·INSERT 0). **Slice 1로 N7 강제**: `approvedGoldensForStory`가 `frozenBy != null`(사람 사인오프) golden만 반환 — 미freeze golden은 ground-truth 아니므로 베이스라인 제외(아래 `## golden freeze 사인오프`). drift는 항상 blocking(의도된 변경이면 사람이 새 golden freeze).
-- **배선**: `SupervisorConfig.wpImpact`·`buildWorkerConsumerDeps` `impactEnabled = wpImpact && oracleStore != null`(행동 단언). server.ts oracleStore 생성 조건에 `MANAGER_WP_IMPACT` 추가·오진 경고 2종.
-- **한계(후속)**: golden **자동 캡처**는 미구현(Developer 에이전트 result 스키마 확장·교차서비스라 Slice 2) — golden 초안은 사람 `POST /oracles` 시드 후 Slice 1 freeze 사인오프로 활성. affected-story 회귀+결합도-냄새→advisory 라우팅은 후속.
-
-## golden freeze 사인오프 (Slice 1)
-
-impact 채널이 소비할 golden을 **사람이 C1 결정 대기함에서 freeze(사인오프)**하는 경로를 만들고, impact가 **frozen golden만** 소비하도록 N7을 강제한다. 그전엔 `approvedGoldensForStory`가 frozen 여부 무관하게 golden을 반환하는 **잠재 N7 구멍**이 있었고, golden을 freeze할 코드도 없었다(`golden_diff` DecisionRequest type은 enum에만·생산자·소비자 0). `MANAGER_GOLDEN_SIGNOFF`(기본 false·전제 `MANAGER_WP_IMPACT`+`MANAGER_DECISION_ROUTING`+`DATABASE_URL`+워커 스택) off→생산자·소비자 비배선·회귀 0. 설계 스펙 [2026-06-24-golden-freeze-signoff-design.md](../../docs/superpowers/specs/2026-06-24-golden-freeze-signoff-design.md). **shared 변경 0·migration 0**(`OracleGolden.frozenBy`/`frozenAt` 기존 필드·`golden_diff` 기존 type enum)**·자동 캡처는 Slice 2**(Developer result 스키마 확장·교차서비스).
-
-- **freeze 모델**: `OracleGolden.frozenBy`(nullable·기존)=null(draft)→설정(frozen·사람 사인오프). `frozenAt` 동반 설정. 별도 status 컬럼 불필요.
-- **N7 게이팅(`db/oracle.repo.ts`)**: `approvedGoldensForStory`가 `frozenBy != null` golden만 반환(미freeze는 ground-truth 아님). 무조건 적용(impact flag-gated·프로덕션 golden 0이라 실회귀 0).
-- **freeze repo**: `freezeGoldensByWorkflow(workflowId, frozenBy)` — approved 오라클 전부에서 unfrozen golden을 `frozenBy/frozenAt` 전이(read-modify-write·변경 있는 오라클만 UPDATE·멱등·P2r-4 패턴·이벤트 0·비부인은 human_decisions가 담당)·`unfrozenGoldenCount(workflowId)`(트리거 가드+브리프 표시 겸용)·`freezeUnfrozen` 순수코어(oracle.types.ts).
-- **브리프(`streams/golden-brief.ts`)**: `buildGoldenBrief({workflowId, projectId, goldenCount})`→표준 `DecisionRequestInput`(requestId `{wf}:golden` 멱등·type `golden_diff`·options `['approve','reject']`)·C3 oracle-brief 미러(C1 카드 그대로).
-- **생산자(`streams/worker.ts`)**: `maybeRequestGoldenSignoff(tool, workflowId, userContext, deps)`(maybeProduceAdvisory 미러·best-effort never-throw·**에이전트 호출 0**) — develop_code verdict.ok 후 `unfrozenGoldenCount>0`이면 `golden_diff` DecisionRequest 발행. `WorkerDeps.goldenSignoffEnabled?`·`decisionStore?` additive.
-- **소비자(`streams/decision-consumer.ts`)**: approve 분기에 `golden_diff && oracleStore?.freezeGoldensByWorkflow → freezeGoldensByWorkflow(req.workflowId, decidedBy)`(JWT 비부인). 기존 risk/oracle approve 분기 byte-identical.
-- **배선(`supervisor.ts`·`config.ts`·`server.ts`)**: `shouldWireGoldenSignoff(goldenSignoff, hasOracleStore, hasDecisionStore)` 순수 게이트·worker deps에 `goldenSignoffEnabled`+`decisionStore` 주입·decision-consumer oracleStore 조건을 `(oracleDecisionActive || goldenSignoffActive)`로 확장·OutboxRelay/oracleStore/decisionStore 조건+전제 경고.
-- **N7 정직성(POST 시드 하드닝)**: `POST /oracles`는 `status=pending` 강제와 동형으로 incoming golden `frozenBy→null`·`frozenAt→''`도 강제(`api/oracle.route.ts`) — frozen은 오직 `golden_diff` 사인오프 경로로만. 서비스토큰 시드로 pre-frozen golden 주입 차단·`frozenBy!=null`이 사인오프를 진정으로 함의.
-- **흐름**: 사람 `POST /oracles`(→pending·골든 frozenBy=null 강제)+`PATCH approve`(→approved)→develop_code verdict.ok→`maybeRequestGoldenSignoff`→`golden_diff` 발행→C1 surface→사람 approve→`freezeGoldensByWorkflow`→`approvedGoldensForStory`(frozen)→impact 활성.
-- **한계(후속·Slice 2)**: ⚠️**단발-사인오프 per-workflow**(requestId flat `{wf}:golden`·첫 사인오프 RESOLVED 후 새 unfrozen golden은 영구 freeze 불가 — Slice 2 반복 시드 전 `{wf}:golden:{집합 해시}` 버전화 필요)·golden_diff expiresAt 없음(C3 parity·B1 미참여)·`freezeGoldensByWorkflow` RMW 비원자(P2r-4 parity·단일-writer 저위험)·**자동 캡처**(실 실행 출력→golden 초안·Developer result 스키마 확장 교차서비스)·per-story/per-golden 개별 freeze·golden 버전 supersede.
-
-## property 채널 (P4) — invariants (conformance 렌즈)
-
-검증 3채널(spec §9) 중 **conformance 렌즈의 property 기법** 슬라이스. develop_code WP 산출물이 **사람이 승인한 불변식(invariants)**을 만족하는지 boundary+명시 속성 단언 테스트로 실행 검증한다 — 위반이면 **blocking**(완료 미발행 → lease 백스톱). 미소비로 남아 있던 oracle `invariants`(migration 010 §4)를 처음 소비한다. `MANAGER_WP_PROPERTY`(기본 false) flag — off면 impact까지와 바이트 동일·회귀 0. 전제: `MANAGER_TASK_WORKER`+`MANAGER_WP_VERIFY`+OracleRepo(`MANAGER_ORACLE_DOR`||`MANAGER_ORACLE_DRAFT`). 설계 스펙 [2026-06-12-p4-property-invariants-conformance-design.md](../../docs/superpowers/specs/2026-06-12-p4-property-invariants-conformance-design.md). **새 migration 없음**(invariants는 010·읽기만).
-
-- **author→run 재사용(N1·CPD0)**: conformance·impact의 제네릭 `runAuthoredCheck<T>` 골격 공유. property는 `.xzawed/property/`에 **boundary+명시 속성 단언** 테스트(결정론·무작위 0 — 임계값 ±ε 경계+대표 입력 단언)를 독립 develop_code(`prop-author` 격리 세션·구현 수정 금지)가 작성→Tester(`prop-run`)가 실행→`judgePrimaryResult('run_tests')`(passed>0 floor). `verifyWp`는 develop_code에서 **데이터 주도 채널 리스트** `[conformance, impact, property]`를 단락-순회 hard-AND(`runDerivedChecks`/`runChannelChecks` 추출로 S3776↓·채널 추가 시 리스트 1줄).
-- **`db/oracle.repo.ts` `approvedInvariantsForStory`**: 승인 oracle(최신 version)의 `human_approved` invariants 반환(N6 — drafted/rejected 미계수·읽기만 N7). 승인 행 없음·0개면 null→skip. **F5로 입력원 활성**: `draftInvariants` 스테이지가 invariant 초안을 생성하고 `approve()`가 scenarios와 동형으로 invariant draft를 `human_approved`로 전이(위 `## Oracle invariant 초안 생성 (F5)`) — 사람이 백지 작성 대신 승인 한 번으로 충족.
-- **`streams/conformance.ts`**: `PROPERTY_DIR='.xzawed/property'`·`propertyStem`·`InvariantOracleStore` 포트·`buildInvariantAuthorPlan`(boundary+명시 단언 plan·4000 클램프). `selectAuthoredTestFiles` 재사용.
-- **`streams/verify.ts`**: `runPropertyCheck`(runAuthoredCheck 래퍼·`propertyEnabled`)+verifyWp 데이터 주도 루프. never-throw fail-closed.
-- **배선**: `SupervisorConfig.wpProperty`·`buildWorkerConsumerDeps` `propertyEnabled = wpProperty && oracleStore != null`(행동 단언). server.ts oracleStore 생성 조건에 `MANAGER_WP_PROPERTY` 추가·오진 경고 2종. property는 읽기전용이라 OutboxRelay 조건 미포함.
-- **한계(후속)**: property-based **fuzz**(fast-check·risk-proportional iters)·metamorphic 관계·invariant **draft 생성기**(P3-2 유사)·mutation θ_risk(N8 완전판).
-
-## mutation θ_risk 게이트 (P4 N8 강화)
-
-검증 correctness 게이트의 둘째 이빨(spec §9 `correctness = all(blocking) AND mscore≥θ(risk)`). 이미 착륙한 `passed>0` floor는 N8의 degenerate 선행이고, 진짜 N8 = mutation_score ≥ θ_risk. develop_code WP의 스위트가 **주입 결함(mutant)을 실제로 잡는지**를 검증한다 — 미만이면 **blocking**. `MANAGER_WP_MUTATION`(기본 false) flag — off면 property까지와 바이트 동일·회귀 0. 전제: `MANAGER_TASK_WORKER`+`MANAGER_WP_VERIFY`. 설계 스펙 [2026-06-12-p4-mutation-theta-risk-design.md](../../docs/superpowers/specs/2026-06-12-p4-mutation-theta-risk-design.md). **새 migration·oracle 없음**.
-
-- **자가단언 하니스(N1 실행-근거)**: live impl in-place mutate는 revert 프리미티브 부재로 불가 → 독립 develop_code(`mut-author`)가 `.xzawed/mutation/<wpId>.*`에 **자가단언 mutation 하니스**를 작성. 런타임에 impl을 ≤`maxMutants`회 mutate(복사본/in-memory)→WP 기존 테스트 재실행→`killed/total` 집계→`mutation_score<θ`면 테스트 자체를 fail. Tester(`mut-run`)가 실행→`judgePrimaryResult`가 그대로 게이트(통과=score≥θ). K-fold 비용은 단일 Tester 런 내부(에이전트 호출 author+run 2회).
-- **oracle 미소비·CPD0**: `runAuthoredCheck<T>` 부적합(oracle baseline 없음) → `runMutationCheck`가 자체 guard(enabled·risk-tier·workspaceRoot·handlers) 후 기존 `executeAuthoredTest` 직접 재사용. `runChannelChecks` 리스트에 append(`[conformance, impact, property, mutation]`·develop_code 한정·hard-AND).
-- **HIGH-gate + 단일 θ**: `wp.risk`(LOW/MEDIUM/HIGH·기본 MEDIUM·이미 verifyWp 도달)를 `meetsMinRisk`로 게이팅. `MANAGER_MUTATION_MIN_RISK`(기본 HIGH·env 조정)·`MANAGER_MUTATION_THETA`(기본 0.6)·`MANAGER_MUTATION_MAX_MUTANTS`(기본 10). P2r 대기 불필요(미배선/미populate). 기본 HIGH라 현재 dormant(테스트 시 env로 MEDIUM 하향).
-- **배선**: `SupervisorConfig.wpMutation`·`buildWorkerConsumerDeps` `mutationEnabled = config.wpMutation === true`(oracle 미소비라 store 절 없음). server.ts oracleStore 조건 **미수정**·경고 2종(WP_VERIFY off·lease-visibility<600s).
-- **한계(후속)**: per-tier θ(P2r populate+캘리브레이션)·실 mutation 도구(Stryker/mutmut)·하니스 품질 메타검증·mutation_results 영속.
-
-## security 채널 (P4 4d)
-
-검증 correctness 게이트의 **다섯째 차단 채널**(spec §9 보안 렌즈). develop_code WP 산출물에 **결정론 SAST(정적 분석 + npm audit)를 직접 실행**해 취약점이 있으면 차단한다 — author→run 우회 없이 `security_audit` 에이전트를 1회 호출하므로 즉시 작동(휴면 아님). `MANAGER_WP_SECURITY`(기본 false) flag — off면 mutation까지와 바이트 동일·회귀 0. 전제: `MANAGER_TASK_WORKER`+`MANAGER_WP_VERIFY`. **oracle 미소비**. 설계 스펙 [2026-06-13-p4-security-sast-channel-design.md](../../docs/superpowers/specs/2026-06-13-p4-security-sast-channel-design.md). **새 migration 없음**.
-
-- **`streams/verify.ts` `runSecurityCheck`**: enabled·workspaceRoot·`security_audit` 핸들러 가드 후 산출물(상대경로만·`..` 제외 선필터)을 `severity:'low'`로 감사 실행→`SecurityResultSchema` 파싱→**`source∈{static,deps}` ∧ `severity≥floor`** findings가 있으면 fail(차단). `runChannelChecks` 리스트에 append(`[conformance, impact, property, mutation, security]`·develop_code 한정·hard-AND). never-throw fail-closed.
-- **결정론 SAST만 차단(N6)**: `SECURITY_SOURCES={static, deps}`만 게이트로 소비 — **LLM(`source:'llm'`) findings는 제외**(비결정론 차단 게이트 금지). floor는 `MANAGER_WP_SECURITY_MIN_SEVERITY`(기본 high·불량값 high 폴백·`meetsMinSeverity`).
-- **source 단일출처**: xzawedSecurity `SecurityIssue.source`(static/deps/llm) — 세 분석기가 태그(static→static·deps→deps·claude→llm). `tools/security-audit.ts` outputSchema에 `source` 통과(RedisAgentHandler strip 방지). manager는 미러 인터페이스만 둠(서비스 간 직접 import 금지).
-- **배선**: `SupervisorConfig.wpSecurity`/`securityMinSeverity`·`buildWorkerConsumerDeps` `securityEnabled = config.wpSecurity === true`(oracle 미소비라 store 절 없음). server.ts oracleStore 조건 **미수정**·경고 2종(WP_VERIFY off·lease-visibility<360s).
-- **한계(후속)**: deps 분석기는 npm audit 실패 시 빈 결과(fail-open 잠복)·static 규칙 5종으로 좁음·STRIDE 위협 모델 author→run·Tester 적대 측면(4d 잔여)·design_ui/security_audit WP 자기검증은 후속.
-
-## advisory 채널 (P4 N3)
-
-검증 3채널(spec §9) 중 **advisory(optimization 렌즈) 채널**의 첫 슬라이스. correctness(차단) 게이트와 **분리된 비차단 큐**로 "더 나은 점" 제안을 영속한다 — **advisory는 절대 게이트를 막지 않는다(N3)**. `MANAGER_WP_ADVISORY`(기본 false) flag 뒤로 가역 — off면 워커 동작 P4b와 바이트 동일·회귀 0. 전제: `MANAGER_TASK_WORKER`+`MANAGER_WP_VERIFY`+`DATABASE_URL`. 설계 스펙 [2026-06-12-p4-advisory-channel-design.md](../../docs/superpowers/specs/2026-06-12-p4-advisory-channel-design.md). **migration 013**(advisory_findings 조회용 투영·additive·빈 표 회귀 0).
-
-- **N3 구조적 분리(접근 A)**: `verify.ts`(차단 게이트)는 advisory를 **전혀 모른다**(import/호출 0). 워커가 `verifyWp`의 `verdict.ok` 후 `develop_code` WP에 한해 `produceAdvisory`를 호출 — 게이트가 advisory를 볼 수 없으니 막을 수도 없다. `handleWpDispatchSignal`은 `runVerifyGate`/`maybeProduceAdvisory` 헬퍼 추출로 인지복잡도 ≤15(S3776).
-- **`streams/advisory.ts` `produceAdvisory`(best-effort never-throw)**: WP 계약 + 완료 산출물 요약을 `runStage`(decompose seam 재사용)로 optimization-lens LLM 1회 → 순위 매긴 findings JSON 파싱(불량 출력→fail-soft 빈 목록·`MAX_ADVISORY_FINDINGS=8` 절단) → `AdvisoryRepo.recordFindings`. 어떤 실패(LLM throw·파싱·DB throw)도 삼켜 완료 결정에 영향 0(N3). advisory는 비차단·정보성이라 LLM 판정 허용(N1/N6는 차단 게이트만 구속).
-- **`db/advisory.repo.ts` `AdvisoryRepo.recordFindings`**: advisory_findings + manager_events(`wp.advisory.found`) + manager_outbox를 **단일 tx**(트랜잭셔널 아웃박스 M5/M7·RiskClassificationRepo 패턴)로 적재. 멱등 `(wf,wpId,attempt,rank)` ON CONFLICT DO NOTHING(M6). 빈 findings면 no-op. `findingsByWorkflow`(조회용·후속 API/UI). 발행 스트림 `manager:advisory:main`(도메인별 :main 패턴·현재 소비자 없음).
-- **`db/advisory.types.ts`**: `AdvisoryFindingSchema`(rank·title·rationale·severity:'advisory'·sourceLens:'optimization' const = N3 타입 표식)·`AdvisoryFindingsResultSchema`(LLM 출력 파싱)·상수 단일출처.
-- **배선(`supervisor.ts`·`server.ts`)**: `SupervisorConfig.wpAdvisory`·`buildWorkerConsumerDeps`가 `advisoryEnabled = wpAdvisory && advisoryStore != null`(검증 우회 무음 방지·행동 단언)·LLM seam(claude/model/timeoutMs) 스레딩. server.ts는 `pool && MANAGER_WP_ADVISORY`이면 `AdvisoryRepo` 생성·주입 + OutboxRelay 기동 조건 추가 + 오진 경고 2종(WP_VERIFY off·pool 부재).
-- **한계(후속)**: impact 채널 결합도-냄새→advisory 라우팅·깊은 적대 생성(property/fuzz)·advisory 조회 API·UI·budget/provider 서킷 보호(decompose와 동일 갭)·mutation θ_risk(N8).
-
-## G1 §13 서킷 decompose/advisory 배선
-
-budget/provider 서킷이 러너 tool-loop(`ClaudeRunner.run`)만 보호하던 것을 **decompose 다단계 LLM(`runDecomposition` 7 스테이지: epics→slice→deliverables→repair→roles→infer-edges→draft-oracles)·advisory(`produceAdvisory`)** 경로로 확장한다. `StageDeps.circuit?`+`runStage(deps,spec,circuit=deps.circuit)`+공유 `buildStageCircuit(workflowId, breakers)` 헬퍼(risk/decompose/advisory 공유·CPD 0)로 스테이지 시그니처 변경 0. `produceDecomposition`(workflowId 보유)·`produceAdvisory`(workflowId 파라미터)가 circuit 구성→StageDeps에 실어 `runStage`가 픽업. **러너·risk·decompose·advisory가 같은 breaker 인스턴스 공유→워크플로(sessionId) 비용 통합 누적**(G1 핵심). circuit open/예산 초과→스테이지 `fallback()` graceful degrade. **신규 flag 0**(기존 `MANAGER_BUDGET_PER_WORKFLOW_USD`/`MANAGER_BUDGET_DAILY_USD`/`MANAGER_PROVIDER_CIRCUIT` 게이트)·migration 0·breaker 미구성 시 circuit undefined→무보호(오늘과 동일·회귀 0).
-
-## P5-3a 강등 모드 FSM 추적 (observe-only · `MANAGER_DEGRADED_MODE`)
-
-OPERATIONS_DECISIONS §1 NORMAL/DEGRADED/SAFE 운영 모드를 신호 구동 FSM으로 추적한다(관측 전용). shared 순수 코어 `resilience/operational-mode.ts`(`desiredMode`/`nextMode`·악화 즉시 점프·호전 히스테리시스 1단계/윈도·플래핑 방지)를 `streams/mode-controller.ts` `ModeController`(`IntervalSweeper` 상속·never-throw)가 주기 tick으로 구동 — 신호원 `providerCircuit.snapshot().state==='open'`(→DEGRADED)·`budget.dailyTripped()`(→SAFE), 전이 시 구조적 `app.log.warn`(M8 비-무음)·`getMode()` 노출. **enforcement는 P5-3b(`MANAGER_DEGRADED_ENFORCE`)가 담당**(아래). `MANAGER_DEGRADED_MODE` flag(전제 budget/provider 서킷 중 하나 이상)·`MANAGER_MODE_SWEEP_MS`(5000)·`MANAGER_MODE_STABILITY_WINDOW_MS`(60000)·migration 0·이벤트 0·off→회귀 0.
-
-## P5-3b 강등 enforcement — SAFE 디스패치 보류 + 복구 재개 (`MANAGER_DEGRADED_ENFORCE`)
-
-P5-3a가 노출한 observe-only `getMode()`를 **처음으로 실제 게이팅에 연결**한다. 운영 모드가 **SAFE**면 신규 디스패치를 보류(held)하고, SAFE 이탈 전이 시 보류된 워크플로를 재디스패치한다. **DEGRADED는 디스패치 무영향**(DEGRADED HIGH-risk 사인오프 N2는 별도 후속 슬라이스). `MANAGER_DEGRADED_ENFORCE`(기본 false·전제 `MANAGER_DEGRADED_MODE`+`TASK_MANAGER_ENABLED`) off→P5-3a observe-only와 바이트 동일(회귀 0). 설계 스펙 [2026-06-22-p5-3b-degraded-enforcement-design.md](../../docs/superpowers/specs/2026-06-22-p5-3b-degraded-enforcement-design.md). **shared 변경 0**(`OperationalMode` 기존 export 재사용)·**migration 0·이벤트 스트림 0**.
-
-- **SAFE 게이트(`streams/dispatch.ts`)**: `DispatchDeps.getMode?`/`onHeld?` additive. `handleDispatch`가 `getGraph` 후(missing-graph는 기존대로 noop) `getMode()==='SAFE'`면 `onHeld(workflowId)` 기록 + `{ status: 'held', ... }` 반환 — recordDispatch·publishDispatchSignal 미실행·WP는 DRAFTED 유지(전이 0). `DispatchOutcome.status`에 `'held'` 추가. **단일 chokepoint**: decomposition afterPersisted·completion 재디스패치·oracle.approved 재디스패치 세 경로가 공유하는 `dispatch` 객체라 한 곳 주입으로 전 디스패치 경로 커버. getMode 미주입(enforce off)→기존 분기 바이트 동일.
-- **SAFE 이탈 감지(`streams/mode-controller.ts`)**: `ModeControllerDeps.onRecover?` additive. `tick`이 전이 시 `from === 'SAFE'`(SAFE→DEGRADED|NORMAL)이면 `onTransition` 후 `onRecover()` 호출(모드 갱신은 콜백 전·never-throw IntervalSweeper 흡수). `shouldEnforceDegraded(enforce, modeEnabled)` 순수 게이트(`enforce && modeEnabled`).
-- **복구 재개(`streams/supervisor.ts`)**: `SupervisorDeps.getMode?` 주입 시 `buildDispatchGate(base, getMode)`(순수·테스트 가능 추출 — getMode↔held-set↔resumeDispatch 글루 단일 단위)가 dispatch에 `getMode`+`onHeld`(in-memory `held` set add) 합류 + `resumeDispatch` 산출. `Supervisor.resumeDispatch()`가 `drainHeld(held, wf => handleDispatch(wf, dispatch))` — 드레인(`[...held]; held.clear()`)-후-처리·**per-item never-throw**(한 워크플로 실패가 나머지 비차단)·드레인 중 재보류는 다음 resume 대상(over-approximation 안전). getMode 미주입이면 `{ dispatch: base }`·resumeDispatch undefined(회귀 0).
-- **배선(`config.ts`·`server.ts`)**: `MANAGER_DEGRADED_ENFORCE` flag. `enforceDegraded = shouldEnforceDegraded(ENFORCE, MODE)`. `ModeController`에 `onRecover: () => void supervisor?.resumeDispatch().catch(...)` 조건부 주입(`let supervisor` forward 캡처)·`SupervisorDeps.getMode: () => modeController.getMode()` 조건부 주입·`modeController.start()`를 supervisor 생성 **이후로 이동**(첫 tick이 할당된 supervisor 참조). 오진 경고 2종(ENFORCE인데 MODE off·TASK_MANAGER off).
-- **resume 라이브니스**: SAFE=`budgetDailyTripped` 유일 신호 → budget 일 카운터는 UTC 일 롤오버 시 리셋(`dailyTripped()`의 `rolloverIfNeeded`) → SAFE 해소 → onRecover → resume(영구 데드락 없음). ⚠️ held-set은 **in-memory**(재시작 시 소실 — 기존 "startup 재디스패치 없음" 한계와 동일·후속).
-- **한계(후속)**: ~~DEGRADED HIGH-risk 사인오프(N2)~~(→아래 N2)·reclaim/fix_reverify 경로 게이팅(SAFE 중에도 budget 서킷이 fail-closed 백스톱)·재시작 held 복원/startup 재디스패치 sweep·즉시 tick(게이트 지연 ≤ `MANAGER_MODE_SWEEP_MS`·budget 서킷 즉시 백스톱).
-
-## N2 강등 enforcement — DEGRADED HIGH-risk 디스패치 사인오프 (`MANAGER_DEGRADED_SIGNOFF`)
-
-P5-3 enforcement의 **둘째 동작**. 운영 모드가 **DEGRADED**일 때 **HIGH-risk WP**는 자동 디스패치하지 않고 사람 사인오프(accept_known/reject)를 받는다(per-WP·risk-conditional). provider 장애 중 HIGH-risk WP가 디스패치→실패→reclaim 사이클을 낭비하던 것을 즉시 사람 결정으로 라우팅하는 거버넌스 게이트. `MANAGER_DEGRADED_SIGNOFF`(기본 false·전제 `MANAGER_DEGRADED_ENFORCE`(getMode 원천)+`MANAGER_DECISION_ROUTING`+`DATABASE_URL`) off→P5-3b와 바이트 동일(회귀 0). 설계 스펙 [2026-06-22-n2-degraded-highrisk-signoff-design.md](../../docs/superpowers/specs/2026-06-22-n2-degraded-highrisk-signoff-design.md). **shared 변경 0·migration 0**(`degraded_dispatch`는 type TEXT enum 확장·C5 선례)**·이벤트 스트림 0**(manager:decision:main 재사용).
-
-- **게이트(`streams/dispatch.ts`)**: `DispatchDeps.isHighRiskDispatchApproved?`/`onDegradedHighRisk?` additive. `handleDispatch` 디스패치 루프에서 `degradedSignoffActive`(둘 다 주입) && `getMode()==='DEGRADED'` && `wpById.get(wpId)?.risk==='HIGH'`이면 `isHighRiskDispatchApproved` 조회 → 미승인이면 `onDegradedHighRisk({workflowId, wpId, stepN, projectId})` + `continue`(보류·recordDispatch 미실행·WP DRAFTED 유지). SAFE early-return(P5-3b)은 루프 위라 DEGRADED는 NORMAL/DEGRADED 경로에서만 per-WP 평가. 콜백 미주입(flag off)→게이트 무관(회귀 0).
-- **사인오프 브리프(`streams/degraded-signoff-brief.ts`)**: `buildDegradedDispatchBrief(info)`(requestId `{wf}:degraded:{wpId}` 결정론 멱등·type `degraded_dispatch`·wpId·options `['accept_known','reject']`·**표준 DecisionContext**라 C1 카드 그대로)·`makeDegradedDispatchBrief(store, opts?)`(expiresAtFrom TTL + createRequest·makeSignoffBrief 미러).
-- **내구 승인 조회(`db/decision.repo.ts`)**: `hasApprovedDegradedDispatch(wf, wpId)` — `sign_offs ⋈ human_decisions ⋈ decision_requests`(`type='degraded_dispatch'`∧`wp_id`∧`scope='degraded_dispatch'`). `hasApprovedReleaseSignoff`(P5-2b) 패턴 + wp_id·type 필터(다른 WP·`scope='release'` 격리).
-- **승인 폐루프(`streams/decision-consumer.ts`)**: `accept_known` 분기가 `req.type`로 분기 — `degraded_release`(P5-2a·scope='release'·redispatch 미호출)와 `degraded_dispatch`(scope='degraded_dispatch'·`recordSignOff`(비부인 M9)+`deps.redispatch?.(wf)`). `DecisionRoutingDeps.redispatch?` additive. redispatch=`handleDispatch` 재실행(승인 WP만 `hasApprovedDegradedDispatch=true`로 통과·다른 미승인 HIGH-risk는 멱등 재보류). `reject`=no-op(보류 유지). never-throw.
-- **배선(`config.ts`·`supervisor.ts`·`server.ts`)**: `shouldWireDegradedSignoff(degradedSignoff, hasDecisionStore)` 순수 게이트. `createSupervisor`가 `degradedSignoffActive`면 `baseDispatch`에 `isHighRiskDispatchApproved`/`onDegradedHighRisk` 합류(`buildDispatchGate`가 `...base`로 보존)·`decisionConsumer`에 `redispatch=(wf)=>handleDispatch(wf,dispatch)`(Promise<void> 래퍼)·signoffStore 조건을 `(releaseSignoff||degradedSignoff)`로 확장. server.ts: decisionStore/OutboxRelay 조건에 `MANAGER_DEGRADED_SIGNOFF` 추가·config 전달·전제 경고. **로컬 pg 통합 2/2 PASS**(held→accept_known→signoff→redispatch→DISPATCHED 폐루프 실증).
-- **한계(후속)**: reject 능동 처리(escalate/saga)·DEGRADED 추가 신호원·사인오프 만료/철회·HIGH 외 등급 게이팅·**mode-recovery auto-resume 없음**(held WP는 사람 사인오프로만 재디스패치·자동 복구 미지원·만료는 B1 TTL/재에스컬에 의존).
-
-## C3 오라클 승인 UI — oracle_approval DecisionRequest 생산자 (`MANAGER_ORACLE_DECISION`)
-
-P3-2가 story별 GWT 오라클 초안을 자동 생성(pending)하나 **사람이 승인할 UI가 없었다** — 오라클 승인은 `PATCH /oracles/:id/approve`(서비스 토큰·client-supplied `approvedBy`·비부인 없음)뿐이고 `oracle_approval` DecisionRequest 타입은 enum에만 있고 **생산자가 0개**라, DoR/conformance/impact/property 검증 체인 전체가 **사람이 UI로 못 하는 승인**에 묶여 있었다. C3는 오라클 승인을 **C1 결정 대기함에 surface**한다(C5 리스크 승인 #318과 동일 백엔드 패턴·**Orchestrator/UI 변경 0**). `MANAGER_ORACLE_DECISION`(기본 false·전제 `MANAGER_ORACLE_DRAFT`+`MANAGER_DECISION_ROUTING`+`DATABASE_URL`) off→생산자·소비자 비배선(회귀 0). 설계 스펙 [2026-06-23-c3-oracle-approval-ui-design.md](../../docs/superpowers/specs/2026-06-23-c3-oracle-approval-ui-design.md). **shared 변경 0·migration 0**(`oracle_approval`은 기존 enum 멤버)**·이벤트 스트림 0**(manager:decision:main·manager:oracle:main 재사용).
-
-- **브리프(`streams/oracle-brief.ts`)**: `buildOracleBrief({workflowId, projectId, storyCount})` → 표준 `DecisionRequestInput`(requestId `{wf}:oracle` 결정론 멱등·type `oracle_approval`·`severity:'blocking'`·options `['approve','reject']`·`impact`/`evidenceRefs` `[]` 필수). risk-brief 미러라 C1 카드가 그대로 렌더.
-- **생산자(`streams/decomposition-consumer.ts`)**: `DecompositionDeps.decisionStore?` additive. `handleDecompositionEmitted`가 oracle draft upsert 루프 **직후** `oracleStore && decisionStore && oracleDrafts.length>0`이면 `decisionStore.createRequest(buildOracleBrief({…, projectId: userContext?.projectId ?? null, storyCount: oracleDrafts.length}))`. **best-effort never-throw**(브리프 발행 실패가 영속/분해 비차단). `decisionStore` 미주입(flag off)→미발행(회귀 0). `createRequest` ON CONFLICT DO NOTHING이라 재분해 멱등(원 요청 보존).
-- **배치 승인(`db/oracle.repo.ts`)**: `approvePendingByWorkflow(workflowId, approvedBy)` → `listByWorkflow(wf, ORACLE_PENDING)` 순회하며 기존 `approve(oracleId, approvedBy)`(각 단일 tx·`drafted→human_approved`+`oracle.approved`) 호출·성공 카운트. per-workflow(승인 한 번이 그 workflow 오라클 전부 전이).
-- **소비자(`streams/decision-consumer.ts`)**: `DecisionRoutingDeps.oracleStore?` additive. approve 분기를 type 분기로 확장 — `if (choice==='approve' && decidedBy) { req=getRequest; if(risk_classification && riskStore) riskStore.approve; else if(oracle_approval && oracleStore) oracleStore.approvePendingByWorkflow(req.workflowId, decidedBy) }`. **기존 risk 경로 byte-identical**(early-return 제거가 approve 블록이 try 말미라 무해)·never-throw 불변.
-- **배선(`config.ts`·`supervisor.ts`·`server.ts`)**: `shouldWireOracleDecision(oracleDecision, hasOracleStore, hasDecisionStore)` 순수 게이트. `createSupervisor`가 `oracleDecisionActive`면 DecompositionConsumer 7th arg에 `decisionStore` 주입(생산자)·DecisionRecordedConsumer deps에 `oracleStore` 주입(approve·`as unknown as` 캐스트로 broad SupervisorDeps.oracleStore→`{approvePendingByWorkflow}` 협소화). server.ts: decisionStore/OutboxRelay 조건에 `MANAGER_ORACLE_DECISION` 추가·config 전달·전제 경고.
-- **흐름**: decompose→draft upsert × N→`createRequest(oracle_approval)`→C1 surface→사람 approve→`approvePendingByWorkflow`→`drafted→human_approved`+`oracle.approved` × N→재디스패치(P3-1)→`oracleSatisfiedSet`→DoR 충족.
-- **한계(후속)**: per-story 개별 승인·GWT 시나리오 상세 리뷰 UI·reject 능동 재생성(reject=no-op·보류 유지·만료는 B1 TTL). **dispatch-unlock 전체 폐합은 `MANAGER_ORACLE_DOR`도 필요**(재디스패치는 DOR 계층 책임·C3는 승인까지·P3-1 분리).
-
-## 릴리스 게이트 코어 (P5-1)
-
-P4 검증 채널의 per-WP 결과를 promote 직전 워크플로 단위로 **hard-AND 집계**(M1 — 단 한 WP이라도 증거 없거나 차단되면 전체 워크플로 CLOSED)한다. **fail-closed-on-absence**: 증거가 없거나 채널이 skip된 WP는 un-proven으로 간주 → CLOSED(design_ui 빈-plan 트랩 구조적 차단). `MANAGER_RELEASE_GATE`(기본 false) flag 뒤로 가역 — off면 완료 흐름 P1d-6와 바이트 동일·회귀 0. 전제: `TASK_MANAGER_ENABLED`+`MANAGER_WP_VERIFY`+`DATABASE_URL`. **migration 014**(wp_verification_results·release_gates·additive·빈 표 회귀 0).
-
-- **P5-1a — 검증 증거 영속(`verify.ts` `recordOutcome` 콜백)**: 워커가 `verifyWp` 완료 후 `recordOutcome`(옵션 콜백)을 호출 → `wp_verification_results`(wf/wpId/attempt/channel별 outcome·증거·타임스탬프) 트랜잭셔널 아웃박스(M5/M7) 영속. 각 채널(conformance·impact·property·mutation·security)의 pass/fail verdict와 근거가 이 표로 누적.
-- **P5-1b — 집계 게이트(`evaluateReleaseGate` 순수 함수)**: `completion.ts`가 all-WP-done 전이 시 `ReleaseGateRepo.fetchEvidence(wf)`로 WP별 채널 증거를 조회 → 순수 `evaluateReleaseGate(evidence, requiredChannels)`가 proven 인코딩(evidence 존재 AND skip 0 AND 모든 채널 pass)을 WP 단위 hard-AND → `release_gates`(wf/verdict/snapshot JSONB) 영속 + `gate.passed`(모든 WP proven) 또는 `gate.blocked`(하나라도 CLOSED) 이벤트를 manager_events+아웃박스에 발행.
-- **`db/release-gate.repo.ts` `ReleaseGateRepo`**: `recordOutcome`·`fetchEvidence`·`upsertGate`를 단일 tx 아웃박스(M5/M7·AdvisoryRepo 패턴). 멱등 `(wf,wpId,attempt,channel)` ON CONFLICT DO NOTHING(M6). `gate.passed`/`gate.blocked` 이벤트로 OutboxRelay가 `manager:release:main`으로 발행.
-- **배선**: `SupervisorConfig.releaseGate`·`buildWorkerConsumerDeps`가 `releaseGateStore` 주입·행동 단언. server.ts는 `pool && MANAGER_RELEASE_GATE`이면 `ReleaseGateRepo` 생성·OutboxRelay 기동 조건 추가 + 오진 경고 2종(WP_VERIFY off·pool 부재).
-- **후속(범위 밖)**: `gate.passed` 이벤트 소비 → deploy 게이팅·N2 강등 FSM(강등 시 saga 보상)·canary/롤백·워크플로 FSM 전이.
-
-## P6 의사결정 영속 (M9·#288)
-
-post-#286 감사가 지목한 **최심 공통 토대**. 사람 결정(결함 브리프·강등 사인오프·게이트 override·오라클/골든 승인·SAFE 재개)을 **event-sourced·불변·비부인**으로 영속한다(HUMAN_DECISION_PERSISTENCE.md §2-6). 기존 승인 게이트는 휘발 세션 상태(`info_response`)일 뿐 authority/비부인이 없었고 M9는 0 구현이었다. **미배선**(소비자·API·UI는 후속 P6 슬라이스) — additive·회귀 0(migration 011 빈 표). **새 flag 없음**.
-
-- **migration 011 `decision_requests`/`human_decisions`/`sign_offs`**: 요청은 가변 프로젝션(상태머신 `PENDING→RESOLVED|EXPIRED|SUPERSEDED`), 결정·사인오프는 **append-only 불변**(코드 규약 INSERT만·부인방지 M9). 진실원천 manager_events(decision.* / signoff.*).
-- **`db/decision.types.ts`**: §3 Zod 스키마(7 type·6 choice·6 routedTo·DecisionContext) + 생명주기 이벤트·스트림(`manager:decision:main`)·actor 단일출처.
-- **`db/decision.repo.ts` `DecisionRepo`**: `createRequest`·`recordDecision`(→RESOLVED)·`recordSignOff`·`expireRequest`·`supersedeRequest`를 프로젝션 + manager_events + manager_outbox **단일 tx**(M5·OracleRepo.approve 패턴). `causation_id=request_id`(M7)·`actor=decided_by/approver`(M9). 전 쓰기 ON CONFLICT DO NOTHING 멱등(M6). 상태머신 가드(비-PENDING 결정·만료 거부). `EXPIRED`는 자동 통과 아님 — `decision.expired` 이벤트로 에스컬레이션(M8). 조회 `getRequest`·`pendingByWorkflow`·`decisionsForRequest`.
-- **DB 통합 테스트**(`test/decision.integration.test.ts`, skip-if-no-DB): 요청→결정→사인오프 루프·이벤트 3건 순서·멱등·EXPIRED 거부 + **P6 sweep escalation→defect_brief 영속**.
-- **결함 브리프 배선(P6·M9 첫 런타임 소비, `MANAGER_DECISION_BRIEF` flag)**: `streams/decision-brief.ts` `buildDefectBrief`(순수·escalation→`defect_brief` DecisionRequest 입력·§15 location/expected-vs-actual/options(§4 choice)·requestId `{wf}:{wpId}:{attempt}` 결정론 멱등) + `makeEscalationBrief`(DecisionRepo.createRequest 핸들러). `handleLeaseSweep`에 `onEscalated`(best-effort·throw 가드) 추가 — lease 상한 초과 escalate 성공 시 호출(reclaimOne/escalateOne 헬퍼 추출로 S3776 인지복잡도↓). `createSupervisor`가 `decisionBrief`+`decisionStore` 둘 다면 LeaseSweeper에 `makeEscalationBrief` 주입(briefStore 게이트). server.ts가 `MANAGER_DECISION_BRIEF`+pool 시 `DecisionRepo` 주입(전제 `TASK_MANAGER_ENABLED`+`DATABASE_URL`). **발행만 되고 사라지던 escalation을 사람 도달 핸드오프로 폐합(M8)** — verification.failed(비종단)·decomposition.inconsistent·UI 카드는 후속. off면 회귀 0.
-- **P4 4c 결함 국소화(귀속 인식 에스컬레이션)**: `streams/decision-brief.ts`의 `localizeFault(info)`가 escalate(impl 계층 K회 소진)를 §11 결정론 귀속(`faultTier:'impl_exhausted'`·`counters{impl:attempt+1, task:0, plan:0}`·**LLM 0·N6**)으로 라벨하고, `buildDefectBrief`가 `context.attribution`을 채움 + 귀속 인식 §15 형태(`expectedVsActual`은 구현 + Task/기획 리뷰 언급·non-empty `impact`/`evidenceRefs`)로 강화한다(`options`·`requestId` 불변). `db/decision.types.ts`에 `FaultTierSchema`(`z.enum(['impl_exhausted'])`)·`FaultAttributionSchema`(shared `AttributionCountersSchema` 재사용 — §7 계약 카운터 단일출처·드리프트 0)·`FaultAttribution`·`DecisionContextSchema.attribution`(optional·additive·backward-compat) 추가. ⚠️ 진동 누적·graph_dag 영속·task/plan 계층 승급·재진입(spec_fix→재분해)은 **P6 라우팅 후속**(out of scope). lease 흐름·flag(`MANAGER_DECISION_BRIEF` 유지)·migration 무변경.
-- **P6 사람 결정 라우팅(§11 되먹임·fix_reverify 폐루프, `MANAGER_DECISION_ROUTING` flag)**: `defect_brief`에 대한 사람 `fix_reverify` 결정을 구현 계층으로 되먹여 ESCALATED 종단을 폐쇄한다. `streams/decision-consumer.ts`의 `DecisionRecordedConsumer`(BaseConsumer·dedup ON·느슨한 `DecisionEventSchema`로 비-recorded `decision.*`는 DLQ 미발생)·`buildDecisionRecordedHandler`가 `decision.recorded`(`manager:decision:main`)를 소비해 `choice==='fix_reverify'`면 `getRequest`→`LeaseStore.reopenLease`(escalated→active·attempt **advance**(cur+1 — attempt 0 리셋은 워커 24h dedup의 dispatch_signal 멱등키와 충돌하므로 회피·N5 사람 1회 재시도)·실 step_n·causationId(=requestId) M7)→`publishDispatchSignal`(advance된 attempt)로 워커 재실행. 다른/미지 choice는 no-op(폐루프 미차단)·never-throw(결정은 이미 영속). `api/decision.route.ts` `POST /projects/:projectId/decisions/:requestId/decision`(**#303 C0에서 워크플로→프로젝트 스코프 리팩터**·`CHOICE_TO_ROUTED` 4 choice→routedTo·body `decidedBy`(오라클 route `approvedBy` 대칭·서비스-JWT 경계, 사람 신원은 상위 Orchestrator)·**`projectId` IDOR 404 fail-close 게이트**·repo 없으면 503·미-pending 409·아래 C0 섹션). 배선: `supervisor.ts`가 `DecisionRecordedConsumer` 조건부 배선(`decisionRouting`+`decisionStore`)·server.ts는 **authHook 있을 때만** 라우트 등록(`shouldWireDecisionRoute(routing, hasPool, hasAuth)` 순수 게이트 — 무인증 권한 엔드포인트 금지)·`decisionStore`는 BRIEF 또는 ROUTING이면 생성·OutboxRelay 기동 조건에 ROUTING 추가. 전제: `MANAGER_DECISION_BRIEF`(라우팅할 브리프 생성)+`DATABASE_URL`. off면 회귀 0. ⚠️ spec_fix(재분해)·reject(saga)·accept_known은 매핑·로깅만(실동작은 P2/P5·후속)·EXPIRED sweep·UI 카드는 후속. **D10(#333): `buildDefectBrief`가 defect_brief `options`를 핸들 가능 choice(`['fix_reverify']`)로 트림 — decision-consumer가 능동 처리하는 것만 노출(거짓 affordance 제거)·`context.options`는 순수 렌더 데이터라 백엔드 무브랜치·`decision.route`는 5 choice 계속 수용(API 락아웃 0).**
-
-## C0 결정 프로젝트 스코프 (#303)
-
-P6 결정 영속/라우팅(#288/#291/#298/#299)이 만든 `defect_brief` DecisionRequest에 **프로젝트 스코프**를 부여해, 후행 PR-B(Orchestrator 결정 UI)가 프로젝트별 pending 조회 + IDOR-하드닝된 제출을 프록시할 백엔드 토대를 만든다. **신규 flag 없음**(`MANAGER_DECISION_BRIEF`/`MANAGER_DECISION_ROUTING` 재사용)·전부 additive·flag off면 바이트 회귀 0. 설계 스펙 [2026-06-20-c0c1-decision-ui-design.md](../../docs/superpowers/specs/2026-06-20-c0c1-decision-ui-design.md) §6.
-
-- **migration 015 `decision_requests.project_id`**: `ALTER TABLE ... ADD COLUMN IF NOT EXISTS project_id TEXT` + `(project_id, status)` 인덱스(rerun-safe). legacy 행 NULL(백필 없음 — `pendingByProject`가 NULL 제외·workflow로는 여전히 조회 가능). `DecisionRequestSchema.projectId: z.string().nullable().default(null)`(requestId 정체성 불변 N4 — projectId는 식별자 아님).
-- **생성 시점 저장(`streams/lease.ts`)**: 좁은 `GraphQueryPort{getGraph(wf)→{userContext:{projectId}|null}|null}`(TaskGraphRepo 구조적 충족)을 `SweepDeps.graphStore?`로 주입. `escalateOne`이 `onEscalated` 직전 `resolveProjectId`(미주입·미존재·throw → null·**never-throw N3**: lease escalation 비차단)로 projectId를 조회해 `EscalationInfo`에 합류 → `buildDefectBrief`가 `DecisionRequestInput.projectId`로 전파 → `createRequest`가 project_id INSERT. `lease-sweeper.ts`→`supervisor.ts`가 `briefStore` 활성 시에만 `graphStore: deps.repo` 배선(off면 회귀 0).
-- **조회·제출(`db/decision.repo.ts`·`api/decision.route.ts`)**: `pendingByProject(projectId)`(인덱스 `WHERE project_id=$1 AND status='PENDING'`). 라우트를 워크플로→**프로젝트 스코프 리팩터**: `GET /projects/:projectId/decisions/pending`(open·`{items}`·repo 없으면 `{items:[]}`) + `POST /projects/:projectId/decisions/:requestId/decision`(`existing.projectId!==projectId` → **404 IDOR fail-close**·존재 오라클 회피·workflowId는 요청 행에서 파생·`authHook` preHandler·503/400/409 유지). `decisionRoute` 등록 게이트(`shouldWireDecisionRoute`) 불변·#299 `DecisionRecordedConsumer`는 이벤트 소비라 라우트 변경 영향 0.
-- **한계(PR-B 후속)**: 제출자 신원 권위 바인드(JWT `decidedBy`)·DecisionsPanel UI·프록시는 Orchestrator PR-B. Task Manager flag-off라 실 결정 생성 0(데모/테스트는 seed). legacy 그래프(userContext 부재) escalation은 projectId NULL → 프로젝트 패널 미표시(graceful degradation).
-
-## P5-2a 릴리스 게이트 사인오프 (gate.blocked → 사인오프 · #308)
-
-P5-1(#302)이 발행하나 **소비자가 없던** `gate.blocked`(고아 스트림 `manager:release:main`)를 **사람 사인오프 DecisionRequest로 라우팅**해, C1 결정 대기함(#306)이 그 사인오프를 surface하게 한다. 사람 `accept_known`이 휴면하던 `DecisionRepo.recordSignOff`를 처음 호출(**비부인 사인오프 M9**). `MANAGER_RELEASE_SIGNOFF`(기본 false) flag·off면 회귀 0. 전제: `MANAGER_RELEASE_GATE`+`MANAGER_DECISION_ROUTING`+`DATABASE_URL`. 설계 스펙 [2026-06-20-p5-2a-gate-blocked-signoff-design.md](../../docs/superpowers/specs/2026-06-20-p5-2a-gate-blocked-signoff-design.md). **새 migration 없음**(`degraded_release`는 기존 type enum).
-
-- **`streams/signoff-brief.ts`**(순수): `buildSignoffBrief(info, projectId?)` — `gate.blocked` 페이로드(`{workflowId, gateVersion, blockingReasons, perWp}`)를 **표준 DecisionContext**로 매핑(`location`·`expectedVsActual`·`impact=blockingReasons`·`evidenceRefs=미증명 WP ids`·`options=['accept_known','reject']`)·requestId `{wf}:gate:{gateVersion}` 결정론 멱등·**C0 buildDefectBrief와 동일 계약이라 C1 카드가 그대로 렌더(Orchestrator 변경 0)**. `makeSignoffBrief(store, graphStore?)`가 C0 `GraphQueryPort`로 projectId 스레딩(never-throw N3).
-- **`streams/release-consumer.ts`**: `ReleaseSignoffConsumer`(BaseConsumer·dedup·group `manager-release-consumers`·prefix `manager:release`)가 `gate.blocked`를 소비→`makeSignoffBrief`(`gate.passed`는 무시·P5-2b)·never-throw. `DecisionRecordedConsumer` 패턴 미러.
-- **`streams/decision-consumer.ts` 확장**: `buildDecisionRecordedHandler`가 `accept_known`+`req.type==='degraded_release'`+`signoffStore`면 `recordSignOff({signoffId:'{decisionId}:signoff', decisionId, scope:'release', approver:decidedBy, risk:'HIGH'})`. `routedTo='gate_override'`는 이미 `HumanDecision`에 영속(#299 `CHOICE_TO_ROUTED`). `fix_reverify` 경로 바이트 보존(회귀 0).
-- **배선**: `supervisor.ts`가 `releaseSignoff && decisionRouting && decisionStore && releaseStore`면 `ReleaseSignoffConsumer` 배선(**fail-closed** — accept_known을 소비할 decisionRouting 없으면 사인오프 요청 미생성) + `DecisionRecordedConsumer` deps에 `signoffStore` 합류. server.ts가 `MANAGER_RELEASE_SIGNOFF` 전달·OutboxRelay 조건 추가·오진 경고. DB 통합 테스트(gate.blocked→DecisionRequest→accept_known→SignOff 루프).
-- **P5-2b 배포 게이팅(완료·#310)**: `scope='release'` 사인오프 레코드를 `hasApprovedReleaseSignoff`가 deploy 게이트 우회 근거로 소비(아래 P5-2b 섹션). degraded_release의 reject/fix_reverify/spec_fix는 설계상 no-op(reject=block 유지·saga는 P5-4·후속).
-
-## P5-2b 배포 게이팅 (릴리스 게이트/사인오프 → deploy 하드 전제 · #310)
-
-P5-1(#302)이 판정하나 **deploy를 막지 못하던** 릴리스 게이트를 `deploy_project`의 하드 전제로 연결해 **릴리스 게이트 → 사람 사인오프(P5-2a) → 배포** 폐루프를 닫는다. `deploy_project`는 대화형 LLM tool-loop 도구라 task-graph(workflowId) 게이트와 단층이 있어, `projectId → workflowId → release_gates` 역방향 조회로 연결한다. **fail-open-on-absence**(P5-1의 fail-closed와 반대 — deploy는 게이트 미생성이 정상 경로): 게이트는 **존재하고 blocked일 때만** 차단. `MANAGER_DEPLOY_GATE`(기본 false) flag·off면 회귀 0. 전제: `MANAGER_RELEASE_GATE`+`DATABASE_URL`. 설계 스펙 [2026-06-20-p5-2b-deploy-gating-design.md](../../docs/superpowers/specs/2026-06-20-p5-2b-deploy-gating-design.md). **새 migration 없음·이벤트 발행 0(읽기 전용·OutboxRelay 미추가)·Orchestrator/C1 변경 0**.
-
-- **`tools/deploy-gate.ts`**(단일 파일·CPD0): `evaluateDeployGate`(**순수 4분기**: gate null→허용·passed→허용·blocked+사인오프→허용·blocked+미사인오프→차단(reason에 workflowId))·`DeployGatePort`·`PROJECTLESS_SENTINEL='default'`·`ReleaseDeployGate implements DeployGatePort`(구현체 2케이스: `!projectId||==='default'`→허용 가드[조회 안 함]·try/catch **never-throw N3**[게이트·사인오프 조회 실패 모두 fail-open]·`blocked`일 때만 `hasApprovedReleaseSignoff` 조회).
-- **`db/release-gate.repo.ts` `latestGateByProject(projectId)`**(읽기 신규): `release_gates ⋈ task_graphs`(workflow_id)·`graph_dag->'userContext'->>'projectId'` 필터·`ORDER BY created_at DESC, id DESC LIMIT 1`·**미지 status→null**(fail-open). userContext 없는 레거시 행은 JSONB NULL로 자동 탈락.
-- **`db/decision.repo.ts` `hasApprovedReleaseSignoff(workflowId)`**(읽기 신규): `sign_offs ⋈ human_decisions ⋈ decision_requests`·`scope='release'`·**게이트가 반환한 동일 workflowId로만** 조회(다른 workflow 사인오프 교차 적용 차단). 사인오프=append-only·비부인 M9이라 존재=사람이 degraded 수용.
-- **`tools/deploy-project.ts`**: `execute` **진입부**(GitHub 작업 전)에서 `this.gate?.checkDeploy(userContext?.projectId)` → `!allowed`면 `throw`(runner가 `is_error`로 변환). 생성자·팩토리 `gate?` 3인자 additive(기존 2인자 호출 회귀 0)·`_userContext`→`userContext` 소비.
-- **배선(`config.ts`·`server.ts`)**: `MANAGER_DEPLOY_GATE` flag. `deployGate = pool && DEPLOY_GATE && RELEASE_GATE ? new ReleaseDeployGate(releaseStore ?? new ReleaseGateRepo(pool), decisionStore ?? new DecisionRepo(pool)) : undefined`(deploy_project 등록을 store 생성 이후로 이동·**정확히 1회 등록**)·전제 경고 2종(RELEASE_GATE off·pool 부재).
-- **한계(후속)**: 다중 workflow 정밀도(최신 게이트 기준)·catch가 사인오프 조회 실패 포함(DB 장애 시 fail-open)·TOCTOU·자율 파이프라인 배포 부재(현재 deploy는 LLM 루프 전담·`WORKER_TOOL_NAMES` 미포함=단일 chokepoint). N2 강등 FSM·saga/canary는 P5-3/P5-4.
-
-## P2r-2 리스크 분류 영속 (#288 후속)
-
-P2r-1 결정론 코어(#286·shared `risk/`)가 산출한 `RiskClassification` 아티팩트를 영속하고 **사람 승인으로 라우팅을 확정**한다(WIKI_AGENT_RISK_CLASSIFICATION.md §3-4·N6: 승인된 분류만 라우팅 확정). **미배선**(P2r-3 생산자·P2r-4 라우팅 소비는 후속) — additive·회귀 0(migration 012 빈 표). **새 flag 없음**. migration 011(M9)과 번호 분리.
-
-- **migration 012 `risk_classifications`**: 가변 프로젝션·`workflow_id` PK(한 워크플로당 한 분류·재채점 시 version++). 진실원천 manager_events(risk.approved).
-- **`db/risk-classification.types.ts`**: manager-side 이벤트(`risk.approved`)·스트림(`manager:risk:main`)·상태 상수(아티팩트 스키마는 shared).
-- **`db/risk-classification.repo.ts` `RiskClassificationRepo`**: `upsert`(분류 영속·ON CONFLICT version++·status=pending 리셋·승인 클리어 — **재채점=재승인** N6)·`approve`(SELECT FOR UPDATE→아티팩트 audit.approvedBy/At 갱신+status=approved+risk.approved 이벤트를 단일 tx·OracleRepo 패턴)·`approvedForWorkflow`(**승인된 분류만** 반환 — 라우팅 확정 N6·P2r-4 소비)·`getByWorkflow`.
-- **DB 통합 테스트**(`test/risk-classification.integration.test.ts`, skip-if-no-DB): scoreClassification→영속(pending)→승인→approvedForWorkflow·재채점 pending 리셋.
-
-## P2r-3 리스크 분류 LLM 생산자 (#314)
-
-P2r 체인의 **첫 살아있는 생산자**. post-#312 재감사가 지목한 **D2 루트블로커**(코어·영속만 있고 `scoreClassification` 런타임 호출자 0) 해소. `decompose_request` 처리 시 프로젝트 intent를 리스크 차원으로 조사·claim 추출해 순수 코어로 `RiskClassification`을 조립하고 **pending으로 영속**한다. **범위=생산자만**(N6: 미승인 분류는 라우팅/게이트 무변경 — 사람 승인·wp.risk write-back·mutation θ게이트 발화는 P2r-4 후속). `MANAGER_RISK_CLASSIFY`(기본 false) flag·off면 회귀 0. 전제: `MANAGER_DECOMPOSE_ENABLED`(handleDecomposeRequest 도달)+`DATABASE_URL`(repo). 설계 스펙 [2026-06-21-p2r-3-risk-classifier-producer-design.md](../../docs/superpowers/specs/2026-06-21-p2r-3-risk-classifier-producer-design.md). **새 migration 없음**(`012` 재사용·이벤트 0 — `upsert`는 pending 행만이라 OutboxRelay 미변경).
-
-- **`decompose/stages/risk-investigate.ts`(신규)**: 조사 `StageSpec`(단일 LLM·4차원 claim+citation) + **`verifyCitations`(순수·결정론 "인용 해소 검증")**: 무인용 claim 폐기·`support=max(0,min(trunc(support),citations.length))` 클램프(LLM의 support 인플레 차단)·support 0 폐기·citation trim/dedupe·차원당 `MAX_CLAIMS_PER_DIMENSION`(8) cap·`normalizeFrameworks`(trim/dedupe/cap 8).
-- **`decompose/risk-producer.ts`(신규) `produceRiskClassification`**: best-effort·**never-throw** 오케스트레이션 — projectId(userContext) 부재·repo 부재·**0 근거 claim**이면 skip(**vacuous LOW 영속 금지**)·LLM/서킷/repo throw도 흡수해 `{classified:false}` 반환(decompose 절대 비차단). 검증된 claim→`scoreClassification`→`RiskClassificationRepo.upsert(pending)`.
-- **`decompose/stages/run-stage.ts` circuit-aware 확장**: `runStage`에 optional `circuit?: StageCircuit`(budget/provider) 추가 — 미주입이면 기존 6 decompose 스테이지 바이트 동일(회귀 0). 주입 시 호출 전 `provider.before()`+`budget.check(wf)`(throw→fallback)·성공 시 `onSuccess`+`record(usage)`·provider 실패 시 `onFailure`. **서킷은 risk 스테이지만**(G1 decompose 전체 보호는 후속).
-- **`decompose/trigger.ts`**: `handleDecomposeRequest`에 7번째 `riskClassify?` 추가·`produceDecomposition` 후 **`.catch(()=>undefined)` 구조 격리**로 best-effort 호출(리스크 reject가 분해 task_complete·M8·cleanup을 절대 깨지 않음 — 거부 내성 테스트로 실증).
-- **shared `callClaudeTextWithUsage`**: budget 서킷 `record`가 `usage`를 받도록 텍스트+usage 노출(`callClaudeText`는 위임·회귀 0).
-- **배선(`server.ts`·`sessions.route.ts`·`config.ts`)**: `MANAGER_RISK_CLASSIFY`+pool 시 `RiskClassificationRepo`+riskClassify deps 구성 — **러너와 동일 budget/provider breaker 인스턴스 공유**(누적 회계 정합·budget key workflowId=sessionId)·`isProviderFailure`(runner export) 재사용·`decompose`와 동일하게 두 진입점 스레딩·오진 경고 2종(pool 부재·DECOMPOSE off no-op).
-- **DB 통합 테스트**(`test/risk-classification-producer.integration.test.ts`, skip-if-no-DB·`wf-rcp-` prefix): produce→upsert→`getByWorkflow` pending 라운드트립.
-- ⚠️ **플랫폼 의존 테스트 함정**(#314 후속 봉합): userContext를 넘기는 trigger 테스트는 **mock `ensureWs`(8번째 인자)를 반드시 주입**해야 한다 — 누락 시 실제 `ensureWorkspace`가 `mkdir(workspaceRoot)`를 시도해 Linux CI에서 `EACCES`(로컬 Windows는 통과).
-
-## P2r-4 리스크 승인 라우팅 + wp.risk write-back (#316)
-
-P2r-3(#314)이 만든 pending 리스크 분류를 **사람 승인으로 소비**해 `wp.risk`에 반영함으로써, post-#312 재감사가 지목한 **mutation θ게이트 구조적 사망**(wp.risk 영구 default MEDIUM → `meetsMinRisk(wp.risk,'HIGH')` 절대 미발화) 단층을 닫는다. **백엔드 키스톤만**(C5 UI·디스패치 게이팅·D5 모델 라우팅은 후속). `MANAGER_RISK_ROUTING`(기본 false) flag·off면 회귀 0. 전제: `TASK_MANAGER_ENABLED`(Supervisor·graph)+`DATABASE_URL`(repo)·실효성엔 `MANAGER_RISK_CLASSIFY`(승인 대상 생성). 설계 스펙 [2026-06-21-p2r-4-risk-routing-writeback-design.md](../../docs/superpowers/specs/2026-06-21-p2r-4-risk-routing-writeback-design.md). **새 migration 없음**(`012`/`007` 재사용).
-
-- **핵심 통찰**: mutation은 HIGH-gated이고 HIGH 분류는 항상 `humanGate.required=true`(코어 §4) → **사람 승인이 유일한 발화 경로**(자동승인은 LOW/MED만 처리·mutation skip).
-- **`db/task-graph.repo.ts` `updateWpRisks(wf, risk)`**: read-modify-write — `getGraph`로 WP[] 읽기→각 `{...wp, risk}`→`UPDATE task_graphs SET graph_dag`. **version 불변**(재분해 아님·upsertGraph 아님)·**WP id 불변**(content-hash가 risk 제외·N4)·userContext 보존·그래프 없음 no-op(`{updated:0}`). WP 상태(DRAFTED/DISPATCHED/DONE)는 별도 append-only `wp_state_log`라 write-back이 디스패치/완료와 graph_dag 경합 없음(lost-update window 부재).
-- **`streams/risk-consumer.ts`(신규)**: `RiskApprovedSchema`+`buildRiskApprovedHandler({graphStore})`(oracle-consumer 미러·BaseConsumer dedup·group `manager-risk-consumers`·prefix `manager:risk`) — `risk.approved` → `updateWpRisks(payload.workflowId, payload.risk)`. **재디스패치 없음**(risk는 readiness 무변·oracle.approved와 대비). `RISK_PREFIX`/`RISK_GROUP` 상수(risk-classification.types.ts).
-- **`api/risk.route.ts`(신규)**: `PATCH /workflows/:workflowId/risk-classification/approve`(body `approvedBy`) → `RiskClassificationRepo.approve`(기존·risk.approved 발행) → 200 `{ok,eventId}`/404/400/503. oracle.route 미러. ⚠️ **의도적 oracle-tier 인증 포스처**: decision/admin처럼 미인증 시 미등록하지 않고 oracleRoute처럼 항상 등록(authHook 쓰기 보호) — 승인은 pending 분류를 **이미 산출된 risk로 확정**할 뿐이라 write-back이 검증 강도를 '올리기만'(게이트 미저하)·사람 비부인은 상위 Orchestrator C5에서 확립.
-- **배선(`supervisor.ts`·`server.ts`·`config.ts`)**: `SupervisorConfig.riskRouting`·`shouldWireRiskConsumer(riskRouting, hasGraphStore)` 순수 게이트·riskConsumer 조건부 배선(write-back 대상=`deps.repo`=TaskGraphRepo). **양쪽 silent-no-op seam 필수 배선**: ①`createSupervisor` config에 `riskRouting: config.MANAGER_RISK_ROUTING`(없으면 소비자 미배선) ②`OutboxRelay` 기동 조건에 `MANAGER_RISK_ROUTING`(없으면 risk.approved 아웃박스→소비자 발행 불발·write-back 무음 미발생). `riskStore`는 `MANAGER_RISK_CLASSIFY||MANAGER_RISK_ROUTING`로 P2r-3 생산자와 공유.
-- **E2E DB 통합**(`test/risk-routing.integration.test.ts`, skip-if-no-DB·`wf-rr-` prefix·**CI pg 실행 PASS**): classify(HIGH)→upsert(pending)→upsertGraph(WP risk MEDIUM)→approve→`buildRiskApprovedHandler` 소비→`getGraph` WP risk=HIGH·**`meetsMinRisk` MEDIUM(false)→HIGH(true) 전이 실증**(mutation 게이트 활성).
-- **한계(후속)**: C5 리스크 승인 UI·디스패치 게이팅(INTAKE→DECOMPOSING)·**D5 모델 라우팅 소비**(risk.approved.modelRouting 미소비)·P7 per-WP 재채점·재분해 시 risk 보존(E10).
-
-## C5 리스크 승인 UI (#318)
-
-P2r-4(#316)의 백엔드 키스톤 위에 **사람 승인 경로를 C1 결정 대기함에 surface**한다. 신규 UI 없이 기존 `DecisionsPanel`·`decisions.route.ts`·`DecisionRecordedConsumer`를 재사용(P5-2a signoff-brief 패턴 반복).
-
-- **`streams/risk-decision-producer.ts`(신규)**: `RiskDecisionProducer` — `humanGate.required=true` 리스크 분류 생성 시 `buildRiskBrief`로 표준 `DecisionContext` 매핑(P5-2a `buildSignoffBrief` 미러)→`DecisionRepo.createRequest`(requestId=`{workflowId}:risk:{version}`·멱등·type=`risk_classification`)·아웃박스 단일 tx. `MANAGER_RISK_DECISION` flag 내 배선·`MANAGER_RISK_CLASSIFY` 생산자 뒤 조건부 실행.
-- **`decision-consumer.ts` approve 분기 확장**: `decision.recorded` + choice=`approve` + type=`risk_classification` → `RiskClassificationRepo.approve(req.workflowId, decidedBy)`(기존·risk.approved 발행)·decidedBy=인증 JWT subject(**실 비부인**·M9). 분기 추가만(소비자 재배선 없음).
-- **`buildRiskBrief`(`decisions/risk-brief.ts`)**: `RiskClassification`→`DecisionContext`(location=workflowId·expectedVsActual=분류 요약·impact=risk 등급·choice 목록). 표준 DecisionContext 계약 준수로 **Orchestrator C1 카드 변경 0**.
-- **배선**: `shouldWireRiskDecision(config)` 순수 게이트(전제 `MANAGER_RISK_CLASSIFY+MANAGER_DECISION_ROUTING+DATABASE_URL`)·생산자/소비자 동시 활성화 대칭(`MANAGER_RISK_DECISION` 단일 flag). **migration 0**(기존 `decisions` 테이블 재사용·type 컬럼 값 확장만).
-- **`MANAGER_RISK_DECISION` flag**(기본 false·전제 `MANAGER_RISK_CLASSIFY+MANAGER_DECISION_ROUTING+DATABASE_URL`): off면 humanGate.required도 DecisionRequest 미발행·회귀 0.
-- **DB 통합**: `test/risk-decision.integration.test.ts`(skip-if-no-DB·`wf-rd-` prefix) — classify(HIGH·humanGate.required)→brief 발행→pending 조회→approve→`RiskClassificationRepo.getByWorkflow` approved 확인.
-- **Orchestrator**: `DecisionsPanel` `context.options` 구동 렌더 리팩터(type별 DEFAULT_CHOICES 폴백 제거·per-decision options 렌더)→`risk_classification` choice 카드 표시·stale "기록만" 블랭킷 라벨 부채 해소. i18n `choice_approve`/`choice_hint` 추가·`choice_noop_hint` 제거(#318). **Tier0(#333): 결정 카드 상단 type 배지(`decisions.type_*` 4종·defect/risk/release/dispatch 시각 구별)·defect_brief 옵션을 fix_reverify로 트림(D10).**
-
-## B1 결정 EXPIRED sweep (expiresAt 부여 + 만료 sweep · #312)
-
-사람 판단이 필요한 `DecisionRequest`(defect_brief·degraded_release)가 응답 없이 **PENDING에 영구 정체**하던 결정 생명주기의 반쪽(EXPIRED 도달 불가)을 닫는다. 생성 시 `expiresAt`(TTL) 부여 + 주기 sweep이 만료 PENDING을 `EXPIRED`로 전이하며 `decision.expired` 에스컬레이션을 발행한다(senario M8 — EXPIRED는 자동 통과가 아니라 비-무음 신호). `MANAGER_DECISION_EXPIRY`(기본 false) flag·off면 회귀 0. 전제: `TASK_MANAGER_ENABLED`+`DATABASE_URL`(DecisionSweeper는 `createSupervisor` 안에서만 구성). **migration 016**(인덱스만·additive).
-
-- **배경(절반만 구현)**: `createRequest`는 이미 `expiresAt`을 영속하나 브리프 핸들러가 값을 안 넘겨 항상 null·`expireRequest`(PENDING→EXPIRED·`decision.expired` 발행)는 존재하나 호출 주체 없음·만료 조회/sweep/인덱스 부재 → B1이 셋을 채워 닫는다.
-- **생성 시 expiresAt(`streams/decision-brief.ts`·`signoff-brief.ts`)**: `expiresAtFrom(now, ttlMs)` 순수 헬퍼(ttlMs≤0→undefined)·`DecisionRequestInput.expiresAt?` additive·`makeEscalationBrief`/`makeSignoffBrief` `opts.ttlMs` 병합(`...(expiresAt && {expiresAt})` 키 부재 스프레드). **순수 빌더(`buildDefectBrief`/`buildSignoffBrief`)는 시계 무관 유지**(requestId 정체성 불변 N4).
-- **`DecisionRepo.expiredPendingRequests(now, limit)`**: `status='PENDING' AND expires_at IS NOT NULL AND expires_at < to_timestamp($1/1000.0) ORDER BY expires_at ASC LIMIT`(strictly-before·UTC·**미지/레거시 null 제외·소급 만료 0**). ⚠️ `rowToRequest`가 pg의 TIMESTAMPTZ Date를 ISO 정규화(`instanceof Date`)—B1 이전엔 expires_at 항상 null이라 미발현하던 `getRequest` ZodError 잠복결함 봉합.
-- **`streams/interval-sweeper.ts`·`decision-sweeper.ts`**: 공유 `IntervalSweeper` 추상 베이스(타이머·재진입 가드·never-throw — `LeaseSweeper`·`DecisionSweeper`가 상속, 중복 제거)·`handleDecisionSweep(now, deps)`(외부 쿼리+항목별 **never-throw**·batchLimit 100)→`expireRequest`(PENDING-only 가드로 경합/중복 sweep 멱등).
-- **배선**: `SupervisorConfig.decisionExpiry/decisionSweepMs/decisionTtlMs`(ms)·`SupervisorDeps.decisionStore` 인터섹션에 `expiredPendingRequests`/`expireRequest` 추가·`createSupervisor`가 `decisionExpiry && decisionStore`면 `DecisionSweeper` 구성+briefOpts(TTL) 두 핸들러 스레딩·`Supervisor.start/stop`. server.ts: `MANAGER_DECISION_EXPIRY`(flag)·`MANAGER_DECISION_TTL_HOURS`(시간→ms `*3_600_000`)·`MANAGER_DECISION_SWEEP_MS`(ms)·decisionStore 조건+OutboxRelay 조건에 EXPIRY 추가·전제 경고 2종(!pool·!TASK_MANAGER_ENABLED).
-- **소비자(B1 폐루프·#322)**: `decision.expired` 소비측은 아래 `## B1 만료 결정 소비자` 섹션이 닫는다(바운드 재에스컬레이션) — 생산측(#312)+소비측(#322)로 결정 생명주기 완성.
-
-## B1 만료 결정 소비자 (decision.expired 폐루프 · 바운드 재에스컬레이션)
-
-#312가 만료 sweep(생산측·`DecisionSweeper`)으로 `decision.expired`를 `manager:decision:main`에 발행하나 **소비자가 없어** 만료된 blocking 결정이 통지 없이 소멸하던(M8 위반) 종단을 닫는다. `MANAGER_DECISION_EXPIRY`(생산자와 동일 flag) 재사용·off면 회귀 0·migration 0.
-
-- **`streams/decision-expiry-consumer.ts`**: `DecisionExpiredConsumer`(BaseConsumer·dedup ON·**별도 그룹 `manager-decision-expiry-consumers`** — 기존 `buildDecisionRecordedHandler` 확장 시 EXPIRY-on/ROUTING-off에서 fix_reverify reopenLease가 누설되므로 격리·P5-2a `ReleaseSignoffConsumer` 선례)·`DecisionEventSchema`/`DecisionEventMessage` import 재사용(DRY).
-- **`buildDecisionExpiredHandler`(never-throw)**: `decision.expired`만 처리(그 외 return)·blocking severity만 재에스컬(advisory 드롭)·`getRequest` null이면 return. depth = requestId 접미사 `:reesc{n}` 결정론 파싱(`parseReescDepth`/`stripReescSuffix`/`nextReescId` — 체인을 원본 base에 고정·멱등키 안정). depth < `maxReescalations`면 `createRequest`로 `{base}:reesc{depth+1}` 새 PENDING 재생성(원본 wpId/projectId/type/correlationId/language/severity 복사·`context.impact`에 재에스컬 표식·`expiresAt=now+decisionTtlMs` → 다음 sweep 대상이자 C1 `pendingByProject` 재노출). depth >= 상한이면 구조적 warn 로그(EXPIRED 종단·새 orphan 이벤트 0).
-- **배선**: `supervisor.ts`가 `decisionExpiry && decisionStore`이면 `DecisionExpiredConsumer` 배선(start/stop)·`SupervisorConfig.decisionReescalateMax`·server.ts가 `MANAGER_DECISION_REESCALATE_MAX` 전달. `createRequest` ON CONFLICT 멱등(M6) + BaseConsumer dedup 이중 멱등. OutboxRelay는 이미 EXPIRY 조건 포함(재에스컬 decision.requested 발행).
-- **`MANAGER_DECISION_REESCALATE_MAX`**(기본 1): 재에스컬 상한. 전제: `MANAGER_DECISION_EXPIRY`(+`TASK_MANAGER_ENABLED`·`DATABASE_URL`).
-
-## AgentQuery 교차질의
-
-에이전트가 작업 중 다른 에이전트에게 질의할 수 있다. 하위 에이전트가 `AgentQueryError`(to·question·kind: `active_request` | `cross_check`)를 throw하면 runner가 처리한다.
-
-- `resolveAgentTool(err.to)`(`tools/agent-tool-map.ts`, **답변 가능 6개 에이전트명→도구명 매핑**)로 대상 도구를 찾아 `buildAgentQueryPayload(err)`로 실행.
-- **`buildAgentQueryPayload`(runner.ts)**: 질의 모드는 `query`·`context`만 읽지만(`collaboration.ts`가 `runMain` 미호출), 답변자 `ManagerTo{Agent}MessageSchema`는 요청 모드 필수 필드를 갖는다. 전 답변자(planner·designer·tester·builder·security·developer) 스키마 **필수 필드 합집합**(`context`·`intent`·`priority`·`projectPath`·`target`·`severity`·`artifacts`)을 placeholder로 채워 어느 답변자로 라우팅돼도 `safeParse` 실패(→ invalid_schema DLQ → 120초 타임아웃)를 막는다. Zod object는 미정의 키를 strip하므로 무해. `intent`는 planner/designer `.min(1).max(4000)` 제약에 맞춰 4000자 클램프 + 빈 질문 폴백.
-- **watcher는 교차질의 대상에서 제외**(`AGENT_TO_TOOL`에 미포함): Claude 미사용·답변 불가이고, 라우팅 시 watch_changes 스키마 검증 실패(triggers 필수)로 타임아웃·실제 파일 감시 부작용이 나므로 `resolveAgentTool('watcher')`=undefined → 즉시 `is_error` 거부.
-- 대상 응답을 `clarificationContext`(JSON)로 넘겨 `reExecuteWithContext`로 질의한 에이전트를 재실행.
-- 미지·답변 불가 대상·질의 실패 시 `is_error` tool_result로 폴백(루프 계속).
+| 승인 게이트 파싱 실패·미지 응답 | **fail-closed** — 자동 승인 금지, 사람에게 재요청 |
+| 검증 게이트 (증거 없음·판정 불가) | **fail-closed** — 완료 미발행 |
+| 빈 테스트 스위트 | **fail-closed** — `passed>0` 미만이면 통과로 치지 않는다 |
+| 릴리스 게이트 (증거 부재·skip) | **fail-closed** — CLOSED |
+| 오라클 승인 tx 중 bad JSON | **fail-closed** — ROLLBACK |
+| **배포 게이트 (게이트 부재·조회 오류)** | **fail-open — 허용한다.** `MANAGER_DEPLOY_GATE_STRICT`를 켜야 차단으로 바뀐다 |
+| advisory 채널 | **비차단** — 구조적으로 verdict 경로에 유입되지 않는다 |
+| 리스크·오라클·골든 미승인 | **skip** — 미승인 산출물은 라우팅도 게이트도 바꾸지 않는다 |
+
+무음 통과·무음 소멸·무음 drop은 금지다. 처리할 수 없는 메시지는 조용히 ack하지 말고 error를 발행하거나 사람에게 올린다.
+
+## 함정
+
+- **`MANAGER_WP_MUTATION`만 켜면 영원히 skip된다.** mutation은 `wp.risk ≥ HIGH`일 때만 발화하는데 `wp.risk`는 리스크 분류→승인→라우팅 체인이 HIGH로 write-back해야 올라간다. 그 체인 없이 켜면 기본 MEDIUM이라 항상 건너뛴다(기동 시 경고). 체인을 켜거나 `MANAGER_MUTATION_MIN_RISK`를 낮춰야 실발화한다.
+- **lease 가시성은 자동 상향된다.** 활성 검증 채널이 요구하는 바닥값보다 설정값이 낮으면 기동 시 올린다(올리기만, 낮추지 않음). 채널을 여럿 켜면 WP당 에이전트 호출이 9단계까지 가므로 수동 상향은 불필요하지만 값이 바뀌었다는 로그는 확인한다.
+- **Gherkin `then`은 thenable 함정**이다. 필드명이 `then`이면 Promise로 오인되어 await가 삼킨다 → `thenSteps`를 쓴다.
+- **오라클 초안은 소비자 없이는 영속되지 않는다.** 초안 생성만 켜고 Supervisor(`TASK_MANAGER_ENABLED`+`DATABASE_URL`)를 끄면 emit은 되는데 저장이 안 된다.
+- **`tsconfig.json`이 테스트 파일을 exclude한다.** 타입으로 호출부를 강제하는 장치는 `src/` 프로덕션 코드에만 성립하고 테스트 호출부는 검사되지 않는다.
+- **userContext를 넘기는 trigger 테스트는 `ensureWs` mock을 반드시 주입**한다. 빠뜨리면 실제 `mkdir(workspaceRoot)`가 돌아 Linux CI에서 `EACCES`로 죽는다(로컬 Windows는 통과한다).
+- **held-set은 in-memory다.** SAFE 모드에서 보류된 디스패치는 재시작 시 소실된다.
+- **마이그레이션 러너에 버전 추적이 없다.** 매 기동마다 전량 재실행되므로 모든 마이그레이션이 멱등이어야 한다(`__tests__/migrate-idempotent.test.ts`가 정적으로 가드). Orchestrator는 `schema_migrations`로 1회만 적용하는 반대 모델이다.
+- **트랜잭션 밖 `FOR UPDATE SKIP LOCKED`는 무효**다. 잠금이 즉시 풀려 동시성 보호가 사라진다.
+- **소비자 그룹이 스트림을 공유하면 멱등 키에 그룹 성분을 넣어야 한다.** 없으면 한 그룹의 마커가 다른 그룹의 핸들러를 굶긴다.
+
+## 테넌트 태깅 — 격리가 아니다
+
+10개 테이블 행에 `tenant_id`를 **기록만** 한다. **읽기 술어가 0줄이므로 테넌트 간 데이터는 분리되지 않는다.** 격리는 후속 슬라이스다.
+
+`upsert` 의미론을 쓰는 3개 테이블은 `COALESCE`로 기존 태그를 보존한다. **`oracles`는 writer 둘 중 하나만 태깅된다** — 사람이 `POST /oracles`로 시드하는 경로는 Manager에 인증 사용자가 없어 태그 소스 자체가 없고 영구 NULL이다. 읽기 격리를 얹기 전에 이 경로의 태그 소스를 먼저 확보해야 하며, 그러지 않으면 오라클 조회가 조용히 null을 반환해 conformance·impact·property 채널이 skip된다.
 
 ## 환경 변수
 
-```env
-ANTHROPIC_API_KEY=sk-...
-CLAUDE_MODEL=claude-sonnet-4-6
-REDIS_URL=redis://localhost:6379
-PORT=3001
-MODE=local              # local(기본)|remote. ⚠️ G3: MODE=remote(프로덕션)면 SERVICE_JWT_SECRET 필수 — 없으면 기동 거부(무인증 knowledge/oracle/risk mutation 개방 차단). MODE=local은 무변경(#406 경고 유지)
-GITHUB_TOKEN=            # 선택: 설정 시 github_ops 핸들러 활성화
-SERVICE_JWT_SECRET=      # 선택: 설정 시 JWT 인증 활성화 (32자 이상 필수). ⚠️ MODE=remote·PAIS_PROFILE=autonomous면 필수(하드페일)
-DATABASE_URL=            # 선택: DB 연결 문자열
-MANAGER_GATE_FAILSAFE=   # 선택: 기본 true. 'false'면 승인 게이트 레거시 fail-open 복원
-MANAGER_MAX_GATE_REASKS= # 선택: needs_human 재요청 최대 횟수(기본 3), 초과 시 세션 중단
-EVENT_SOURCED_SESSION=   # 선택: 기본 false. true면 Postgres 이벤트소싱 진실원천 사용(DATABASE_URL 필요)
-MANAGER_OUTBOX_POLL_MS=  # 선택: 아웃박스 릴레이 폴링 주기 ms(기본 500)
-PAIS_PROFILE=            # 선택(G1·프리미엄 one-switch). 설정 시 config.ts resolveProfileEnv가 parse 전에 그 프로필의 검증된 플래그 기본값을 env에 병합(개별 env override 우선). autonomous → TASK_MANAGER_ENABLED·MANAGER_DECOMPOSE_ENABLED·MANAGER_TASK_WORKER·MANAGER_WP_VERIFY=true + MANAGER_LEASE_VISIBILITY_MS=600000 + 비용 캡(MANAGER_BUDGET_PER_WORKFLOW_USD=5·DAILY=50). ⚠️ SERVICE_JWT_SECRET(≥32)·DATABASE_URL 필수(superRefine 하드요구·없으면 기동 거부). 미지 프로필→throw. 고급 verify 채널·decision/oracle/risk 체인은 opt-in(사람 시드 오라클/golden 필요·기본 on이면 skip/차단). off→회귀 0
-TASK_MANAGER_ENABLED=    # 선택: 기본 false. true+DATABASE_URL이면 Task Manager Supervisor 배선(P1d-7)
-MANAGER_LEASE_SWEEP_MS=  # 선택: lease 만료 sweep 주기 ms(기본 30000)
-MANAGER_LEASE_VISIBILITY_MS= # 선택: lease 가시성 타임아웃 ms(기본 300000). ⚠️**G8 auto-tune**: 활성 검증 채널이 요구하는 바닥값(verify/security 360s·conformance/impact/property/mutation 600s)보다 낮으면 기동 시 `resolveLeaseVisibilityMs`가 자동 상향(effective=max(configured,floor)·올리기만·낮추진 않음·bump 시 경고 로그). 이전 채널별 하한 경고 4개를 대체 — 운영자 수동 상향 불필요(false reclaim 방지·heartbeat renewLease와 이중 방어)
-MANAGER_LEASE_MAX_ATTEMPTS=  # 선택: 최대 디스패치 시도, 초과 시 escalate(기본 3)
-MANAGER_DECOMPOSE_ENABLED=   # 선택: 기본 false. true면 decompose_request 4단계 LLM 분해 생산자 배선(P2-3a)
-CLAUDE_TIMEOUT_MS=           # 선택: 단계 LLM 호출 타임아웃 ms(기본 120000). P2-3a 분해 파이프라인 등에서 사용
-MANAGER_DECOMPOSE_REPAIR_MAX=   # 선택: P4 repair 루프 최대 반복(기본 2). 소진 시 decomposition.inconsistent 에스컬레이션
-MANAGER_ORACLE_DOR=             # 선택: 기본 false. true+DATABASE_URL이면 디스패치 시 approved 오라클로 satisfied-set 주입 + oracle.approved 소비자 배선 + oracle API 등록(P3-1)
-MANAGER_ORACLE_DRAFT=           # 선택: 기본 false. true면 decompose ok 경로가 draft 스테이지 실행 + producer가 oracleDrafts emit + consumer upsertDraft(P3-2). ⚠️초안 영속은 TASK_MANAGER_ENABLED+DATABASE_URL 전제(소비자 부재 시 미영속)
-MANAGER_ORACLE_INVARIANTS=      # 선택: 기본 false(F5). true면 decompose draft 경로가 draftInvariants 스테이지 실행 → story별 도메인 invariant 초안 생성 → OracleDraft.invariants 부착 → upsertDraft 영속 → approve 전이 → property 채널(MANAGER_WP_PROPERTY) 활성. 전제: MANAGER_ORACLE_DRAFT(초안 파이프라인)·실효성엔 MANAGER_WP_PROPERTY. golden은 범위 외(LLM fabricate 불가·N7). off면 invariants []·회귀 0
-MANAGER_TASK_WORKER=            # 선택: 기본 false. true면 dispatch/reclaim이 wp.dispatch_signal 발행 + WorkerConsumer 배선 → dispatch된 WP를 owningRole 에이전트로 자율 실행 후 wp.completion 발행(P4-1). 전제: TASK_MANAGER_ENABLED+DATABASE_URL(Supervisor·getGraph)
-MANAGER_WP_VERIFY=              # 선택: 기본 false. true면 워커가 완료 발행 전 실행 ground truth 검증을 fail-closed로 수행(결과-근거 판정 + develop_code 파생 빌드·테스트 재실행). 실패 시 완료 미발행 → lease 백스톱 reclaim→escalate(P4b-1). 전제: MANAGER_TASK_WORKER
-MANAGER_WP_CONFORMANCE=         # 선택: 기본 false. true면 develop_code WP 검증에 사람 승인 오라클 GWT 시나리오를 실행 ground truth로 소비하는 conformance 채널 추가 — 독립 develop_code 호출이 승인 시나리오로 테스트 작성 → Tester 실행 → 결과 판정(N1/N6). 실패 시 완료 미발행 → lease 백스톱(P4b-2). 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY + OracleRepo(MANAGER_ORACLE_DOR||MANAGER_ORACLE_DRAFT). ⚠️ WP당 에이전트 호출 최대 5단계 → MANAGER_LEASE_VISIBILITY_MS 600s 이상 권장
-MANAGER_DECISION_BRIEF=         # 선택: 기본 false. true면 lease 상한 초과 escalation을 defect_brief DecisionRequest로 영속(사람 도달 핸드오프·M8/M9). 전제: TASK_MANAGER_ENABLED+DATABASE_URL(Supervisor·LeaseSweeper·DecisionRepo). off면 escalation 시 브리프 미생성(회귀 0)
-MANAGER_DECISION_ROUTING=       # 선택: 기본 false. true면 사람 결정(decision.recorded) 소비자 배선 + 결정 제출 라우트(POST /projects/:id/decisions/:requestId/decision·C0 #303 프로젝트 스코프·projectId IDOR 404) 등록(authHook 있을 때만) → fix_reverify가 escalated WP를 재진입(reopenLease attempt advance→dispatch_signal). 다른 choice는 매핑·로깅(후속). 전제: MANAGER_DECISION_BRIEF(브리프 생성)+DATABASE_URL. off면 회귀 0
-MANAGER_DECISION_EXPIRY=        # 선택: 기본 false(B1·#312). true면 결정 요청에 생성 시 expiresAt(TTL) 부여 + DecisionSweeper가 만료 PENDING을 EXPIRED 전이·decision.expired 발행(M8 비-무음). 전제: TASK_MANAGER_ENABLED+DATABASE_URL(Supervisor 배선). off면 expiresAt 미설정·sweep 미배선(회귀 0). 레거시 null 행 제외(소급 만료 0)
-MANAGER_DECISION_TTL_HOURS=     # 선택: 기본 72(B1·#312). 결정 TTL(시간). server가 *3_600_000(ms)로 변환해 주입. 사람 대면이라 충분한 시간
-MANAGER_DECISION_SWEEP_MS=      # 선택: 기본 60000(B1·#312). 결정 만료 sweep 주기 ms(이미 ms·무변환). 만료는 시간 단위라 분 단위 충분
-MANAGER_WP_IMPACT=             # 선택: 기본 false. true면 develop_code WP 검증에 사람 사인오프 golden_refs를 실행 ground truth로 소비하는 golden-differential 채널 추가(독립 develop_code가 differential 테스트 작성→Tester 실행→drift면 blocking·N8). golden 읽기만(N7). 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY + OracleRepo(MANAGER_ORACLE_DOR||MANAGER_ORACLE_DRAFT). ⚠️ conformance+impact 동시 시 WP당 호출 최대 7단계 → MANAGER_LEASE_VISIBILITY_MS 상향 권장
-MANAGER_WP_PROPERTY=           # 선택: 기본 false. true면 develop_code WP 검증에 사람 승인 invariants를 boundary+명시 속성 단언 테스트로 컴파일해 실행 ground truth로 소비(독립 develop_code가 작성→Tester 실행→위반이면 blocking·conformance 렌즈). invariants 읽기전용(N7). 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY + OracleRepo(MANAGER_ORACLE_DOR||MANAGER_ORACLE_DRAFT). ⚠️ conformance+impact+property 동시 시 WP당 호출 최대 ~9단계 → MANAGER_LEASE_VISIBILITY_MS 상향 권장
-MANAGER_WP_MUTATION=           # 선택: 기본 false. true면 HIGH-risk develop_code WP 검증에 자가단언 mutation 하니스로 mutation_score≥θ를 요구(N8 강화·미만이면 blocking). oracle 미소비. 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY. ⚠️ 스위트 K회 재실행 → MANAGER_LEASE_VISIBILITY_MS 상향 강력 권장. ⚠️**G7 무음 no-op 주의**: mutation은 wp.risk≥MANAGER_MUTATION_MIN_RISK(기본 HIGH)일 때만 발화하는데 wp.risk는 risk 분류→승인→라우팅 체인(MANAGER_RISK_CLASSIFY+MANAGER_RISK_ROUTING)이 HIGH로 write-back해야 올라간다. 그 체인 없이 MANAGER_WP_MUTATION만 켜면 wp.risk가 기본 MEDIUM<HIGH라 **항상 skip**(server.ts 기동 경고). risk 체인을 켜거나 MANAGER_MUTATION_MIN_RISK를 MEDIUM/LOW로 낮춰야 실발화
-MANAGER_MUTATION_THETA=        # 선택: 기본 0.6. mutation 통과 floor(killed/total ≥ θ). 캘리브레이션 잠정값
-MANAGER_MUTATION_MIN_RISK=     # 선택: 기본 HIGH. 이 risk 등급 이상 WP만 mutation 실행(비용 bound). 불량값은 HIGH 폴백
-MANAGER_MUTATION_MAX_MUTANTS=  # 선택: 기본 10. 하니스가 생성할 최대 mutant 수(비용 캡)
-MANAGER_WP_SECURITY=           # 선택: 기본 false. true면 develop_code WP 검증에 결정론 SAST(static+npm audit)를 산출물에 실행해 source∈{static,deps} ∧ severity≥floor면 차단(LLM findings 제외·N6). 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY. oracle 미소비. ⚠️ WP당 에이전트 호출 1회 추가 → MANAGER_LEASE_VISIBILITY_MS 상향 권장
-MANAGER_WP_SECURITY_MIN_SEVERITY= # 선택: 기본 high. security 채널이 차단하는 최소 심각도 floor(low/medium/high/critical). 불량값은 high 폴백
-MANAGER_WP_ADVISORY=            # 선택: 기본 false. true면 develop_code WP의 verdict.ok 후 비차단 optimization 제안(advisory)을 advisory_findings 투영 + manager_events(wp.advisory.found)로 영속(N3 — 절대 게이트 미차단·best-effort never-throw). 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY(verdict.ok 경로) + DATABASE_URL(AdvisoryRepo). off면 워커 동작 P4b와 동일(회귀 0)
-MANAGER_RELEASE_GATE=          # 선택: 기본 false. true면 all-WP-done 시 WP별 검증 증거(wp_verification_results)를 hard-AND 집계해 gate.passed/blocked 발행(M1). 증거 부재·채널 skip=CLOSED(fail-closed-on-absence). 전제: TASK_MANAGER_ENABLED + MANAGER_WP_VERIFY + DATABASE_URL
-MANAGER_RELEASE_SIGNOFF=       # 선택: 기본 false(P5-2a). true면 gate.blocked를 degraded_release DecisionRequest로 라우팅(ReleaseSignoffConsumer→buildSignoffBrief 표준 DecisionContext 매핑·C1 UI surface·Orchestrator 변경 0) + accept_known→recordSignOff(비부인 사인오프 M9·approver=decidedBy). 전제: MANAGER_RELEASE_GATE+MANAGER_DECISION_ROUTING+DATABASE_URL(fail-closed). off면 회귀 0
-MANAGER_DEPLOY_GATE=          # 선택: 기본 false(P5-2b). true면 deploy_project 실행 직전 프로젝트 최신 릴리스 게이트를 조회(projectId→workflowId 역방향)해 blocked이고 승인 release 사인오프 없으면 배포 차단. fail-open-on-absence(게이트 부재·'default' sentinel·조회 오류→허용·never-throw N3). 전제: MANAGER_RELEASE_GATE+DATABASE_URL. off면 회귀 0(읽기 전용·이벤트 0)
-MANAGER_DEPLOY_GATE_STRICT=   # 선택: 기본 false(G6). true면 deploy-gate의 fail-open 3분기(게이트 부재·projectless('default')·조회 오류)를 **차단(fail-closed)**으로 — 프리미엄 "차단=차단"(규제/고신뢰 SKU). passed·blocked+사인오프는 불변. never-throw 유지(차단은 verdict). 전제: MANAGER_DEPLOY_GATE. off면 현행 fail-open 바이트 동일(회귀 0)
-MANAGER_BUDGET_PER_WORKFLOW_USD= # 선택: 기본 0(비활성). §13 budget 서킷 — 워크플로(세션)당 USD 비용 상한. >0이면 러너가 호출 전 누적 비용 검사(초과 시 fail-closed throw→error 발행)·호출 후 usage→USD 누적
-MANAGER_BUDGET_DAILY_USD=        # 선택: 기본 0(비활성). §13 budget 서킷 — 일(UTC) 전체 USD 비용 상한. PER_WORKFLOW와 독립·둘 중 하나라도 >0이면 가동. 인메모리(재시작 시 일 카운터 소실·캘리브레이션 비차단)
-MANAGER_PROVIDER_CIRCUIT=       # 선택: 기본 false. §13 provider 서킷 — true면 러너가 provider(Anthropic) 지속 장애(429/5xx/529·연결/타임아웃) 추적, 연속 실패 임계 도달 시 회로 open→cooldown 동안 fail-fast(낭비 호출 차단). 강등 신호(P6)
-MANAGER_PROVIDER_CIRCUIT_THRESHOLD=  # 선택: 연속 실패 임계(기본 5). 도달 시 회로 open
-MANAGER_PROVIDER_CIRCUIT_COOLDOWN_MS= # 선택: open 유지 시간 ms(기본 30000). 경과 후 half_open으로 1회 probe
-MANAGER_BULKHEAD_GLOBAL=        # 선택: 기본 0(무제한). §13 벌크헤드 — 전역 동시 에이전트 RPC 캡. >0이면 7개 RedisAgentHandler에 공유 주입
-MANAGER_BULKHEAD_PER_AGENT=     # 선택: 기본 0(무제한). §13 벌크헤드 — 에이전트 종류(agentName)별 동시 RPC 캡. 캡 도달 시 큐잉(백프레셔·드롭 없음)
-MANAGER_DEGRADED_MODE=          # 선택: 기본 false(P5-3a). true면 운영 강등 모드 추적기(ModeController) 가동 — provider 서킷 open→DEGRADED·budget 일 상한 트립→SAFE 신호를 모드로 집계·전이 로그(관측). enforcement는 MANAGER_DEGRADED_ENFORCE(P5-3b). 전제: budget/provider 서킷 중 하나 이상
-MANAGER_MODE_SWEEP_MS=          # 선택: 기본 5000. 강등 모드 신호 폴링 주기 ms
-MANAGER_MODE_STABILITY_WINDOW_MS= # 선택: 기본 60000. 상향 복귀 히스테리시스 윈도 ms(플래핑 방지·신호 해소 후 이 시간 경과해야 1단계 복귀)
-MANAGER_DEGRADED_ENFORCE=      # 선택: 기본 false(P5-3b). true면 운영 모드 SAFE에서 handleDispatch가 신규 디스패치 보류(held)·SAFE 이탈 시 Supervisor.resumeDispatch로 held-set 드레인 재디스패치. DEGRADED는 디스패치 무영향(N2 사인오프 별도). 전제: MANAGER_DEGRADED_MODE(모드 추적)+TASK_MANAGER_ENABLED(Supervisor). off→P5-3a observe-only 바이트 동일(회귀 0)
-MANAGER_DEGRADED_SIGNOFF=      # 선택: 기본 false(N2). true면 운영 모드 DEGRADED에서 HIGH-risk WP를 보류하고 degraded_dispatch DecisionRequest로 사람 사인오프를 요구. accept_known→recordSignOff(scope=degraded_dispatch·비부인)+redispatch→승인 WP만 통과(hasApprovedDegradedDispatch 내구 조회). reject=no-op(보류 유지). 전제: MANAGER_DEGRADED_ENFORCE(getMode)+MANAGER_DECISION_ROUTING+DATABASE_URL. off→P5-3b 바이트 동일(회귀 0)
-MANAGER_RISK_CLASSIFY=          # 선택: 기본 false. true면 decompose_request 시 프로젝트 리스크 분류 생성·pending 영속(P2r-3·N6 미승인). 전제: MANAGER_DECOMPOSE_ENABLED+DATABASE_URL
-MANAGER_RISK_ROUTING=           # 선택: 기본 false. true면 risk.approved 소비자(→wp.risk write-back) + 승인 라우트 배선(P2r-4). 전제: TASK_MANAGER_ENABLED+DATABASE_URL
-MANAGER_RISK_DECISION=          # 선택: 기본 false. true면 humanGate.required 리스크 분류를 risk_classification DecisionRequest로 발행 + decision-consumer approve→RiskClassificationRepo.approve(C5). 전제: MANAGER_RISK_CLASSIFY+MANAGER_DECISION_ROUTING+DATABASE_URL
-MANAGER_ORACLE_DECISION=        # 선택: 기본 false(C3). true면 분해가 draft 오라클 영속 시 per-workflow oracle_approval DecisionRequest 발행(C1 surface) + decision-consumer approve→OracleRepo.approvePendingByWorkflow(그 workflow pending 오라클 전부 human_approved). dispatch-unlock 전체 폐합은 MANAGER_ORACLE_DOR도 필요. 전제: MANAGER_ORACLE_DRAFT+MANAGER_DECISION_ROUTING+DATABASE_URL. off→회귀 0
-MANAGER_GOLDEN_SIGNOFF=         # 선택: 기본 false(Slice 1). true면 develop_code verdict.ok 후 미freeze golden 있으면 golden_diff DecisionRequest 발행(워커 hook·에이전트 호출 0·C1 surface) + decision-consumer approve→OracleRepo.freezeGoldensByWorkflow(그 workflow golden 전부 frozen). impact는 frozen golden만 소비(N7·approvedGoldensForStory frozenBy!=null 필터). golden 초안은 사람 POST /oracles 시드(자동 캡처는 Slice 2). 전제: MANAGER_WP_IMPACT+MANAGER_DECISION_ROUTING+MANAGER_TASK_WORKER+DATABASE_URL. off→회귀 0
-MANAGER_MODEL_ROUTING=          # 선택: 기본 false. true면 워커가 디스패치 시 승인 modelRouting을 조회해 에이전트 모델 라우팅(off→CLAUDE_MODEL 폴백·D5). 전제: MANAGER_TASK_WORKER+DATABASE_URL+승인 분류
-MANAGER_MODEL_OPUS=             # 선택: 기본 claude-opus-4-8. modelRouting의 opus tier→이 concrete id
-MANAGER_MODEL_SONNET=           # 선택: 기본 claude-sonnet-4-6. modelRouting의 sonnet tier→이 concrete id
-MANAGER_DECISION_REESCALATE_MAX= # 선택: 기본 1. decision.expired 소비 시 만료 blocking 결정을 새 PENDING(base:reesc{n+1})으로 바운드 재에스컬레이션(C1 재노출)하는 최대 횟수. 소진 시 구조적 warn 로그 종단(EXPIRED 유지). MANAGER_DECISION_EXPIRY 전제
+**`packages/server/src/config.ts`가 진실원천이다.** 64개 키의 이름·타입·기본값·전제 체인이 전부 거기 있고, 전제는 각 키 위 주석에 적혀 있다. 이 문서는 목록을 복사하지 않는다 — 복사본은 반드시 어긋난다.
+
+읽는 법:
+
+```bash
+grep -n "전제" packages/server/src/config.ts   # 플래그 간 의존 체인
 ```
 
-## 보안 구현 패턴
+기동 시 하드페일하는 것만 여기 적는다.
 
-공통 보안 패턴: [docs/development/security-patterns.md](../../docs/development/security-patterns.md)
+- `MODE=remote`면 `SERVICE_JWT_SECRET`(32자 이상) **필수**. 없으면 기동 거부 — 무인증 mutation 개방을 막는다
+- `PAIS_PROFILE=autonomous`면 `SERVICE_JWT_SECRET`·`DATABASE_URL` **필수**(하드페일). 미지 프로필은 throw
+- `PAIS_PROFILE`은 parse 전에 검증된 플래그 묶음을 env에 병합한다. 개별 env가 우선한다
 
-- **Redis 메시지 검증**: `consumer.ts`는 `OrchestratorToManagerMessageSchema.safeParse()` 로 모든 수신 메시지 검증. 실패 시 xack 후 skip
-- **sessionId 검증**: `sessions.route.ts`에서 `z.string().uuid()` 검증 — UUID 형식 외 요청은 400 반환
-- **무음 drop 금지(M8)**: `sessions.route.ts` `startManagedSession`의 메시지 핸들러는 미처리 `msg.type`(방어적 else)·`decompose_request` 비활성(`MANAGER_DECOMPOSE_ENABLED` off)을 무음 auto-ack drop하지 않고 요청자에게 `error`를 발행한 뒤 `cleanupSession`으로 세션을 정리한다(이전엔 if/else-if ladder 미일치로 무음 drop → 요청자 무한 대기·consumer 누수). 정상 종료·decompose 완료·에러 분기가 `cleanupSession`/`publishError` 헬퍼를 공유
-- **인바운드 소비자 DLQ 격리(G2·#335)**: 내부 소비자(decision/decomposition/release/oracle/risk/worker)는 `BaseConsumer`로 DLQ를 갖지만 손으로 짠 **인바운드(정문) 3개 소비자**(`streams/consumer.ts` `StreamConsumer`·`watcher-event-consumer.ts`·`session-gateway.ts`)는 `parse→ack` 루프라 poison/handler-throw를 무음 ack-drop했다. 각 실패 지점에서 shared `routeToDlq(this.bus, …)`로 `{stream}:dlq` 격리: **JSON/스키마 무효→`invalid_schema`(attempts=0)·핸들러 throw→`handler_failed`(attempts=1·재시도 없음**(인바운드 비멱등·장기))·구조적 결함(data 없음)·non-file_changed·non-uuid sessionId는 **ack-skip 보존**·ack는 `finally`. **무조건**(신규 flag 0·BaseConsumer 무조건 DLQ와 일관)·`never-throw`(routeToDlq 자체 삼킴)·기존 `POST /api/admin/dlq/redrive`로 재처리(인바운드는 SETNX 멱등 마커 미설정→redrive 마커 선삭제는 무해 no-op). DLQ 쓰기 경로는 `dlq.ts routeToDlq` **단일출처**(BaseConsumer+3 소비자 공유·CPD0).
-- **JWT 인증**: `SERVICE_JWT_SECRET` 설정 시 JWT 인증 활성화 — 32자 미만이면 `superRefine`으로 시작 거부 (`config.ts`). `verifyServiceToken`은 `@fastify/jwt` 에러 코드별로 응답 메시지 분기: `FST_JWT_NO_AUTHORIZATION_IN_HEADER` → 401 `Missing token`, `FST_JWT_AUTHORIZATION_TOKEN_EXPIRED` → 401 `Token expired`, 그 외 → 401 `Invalid token`
-- **github-ops 경로 검증**: `commitAndPush`의 `files[].path`는 `validateCommitPath()`로 검증 — `..`, 제어문자, `.github/workflows/` 경로 차단
-- **Claude tool-use 검증**: `runner.ts`의 `block.input`은 각 핸들러의 `inputSchema`로 디스패치 전 선검증 (완료 — `validate-tool-input.ts`, #219). 검증 실패 시 디스패치 없이 `is_error` tool_result 반환
-- **AbortController 재사용** (`session.store.ts`): `abort()` 후 즉시 `new AbortController()` 교체 — `AbortSignal`은 단방향이므로 재사용 불가
-- **무한루프 방지** (`runner.ts`): 빈 `toolResults` 배열 가드 + `stop_reason`이 `end_turn`/`tool_use` 외면 `throw` — `max_tokens` 등 예상치 못한 종료 시 즉시 실패
-- **noUncheckedIndexedAccess 호환 필드 접근** (`streams/consumer.ts`): `string[]` 인덱싱 결과는 `string | undefined` — `fields[idx]!` 단언 대신 명시적 `if (rawStr === undefined) return null` 가드 사용 (S4325)
+## 참고
 
-## 시스템 위치
-
-```
-사용자 → Electron 앱 → xzawedOrchestrator (3000) → [Redis] → xzawedManager (3001)
-                                                                    ↓ ToolHandler
-                                          Planner / Developer / Designer / Tester / Builder / Watcher / Security
-```
-
-관련 프로젝트: 현재 저장소 루트 — 전체 9개 서비스 모두 구현 완료
+- 저장소 공통 규칙·보안 원칙·PR 워크플로 → [루트 CLAUDE.md](../CLAUDE.md)
+- 무엇이 기본 실행되고 무엇이 플래그 뒤인지 → [`docs/LIVE_VS_FLAGGED.md`](../docs/LIVE_VS_FLAGGED.md)
