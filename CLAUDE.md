@@ -36,13 +36,15 @@ cd packages/server && pnpm dev                        # tsx watch
 cd packages/server && pnpm test <파일>
 ```
 
-나머지 서비스는 단일 패키지다.
+에이전트 7종(Planner·Developer·Designer·Tester·Builder·Watcher·Security)은 단일 패키지다.
 
 ```bash
 cd xzawedPlanner && pnpm install && pnpm dev          # tsx watch
 pnpm build                                            # tsc → dist/
 pnpm test <파일>
 ```
+
+예외 둘. **`xzawedShared`에는 `dev` 스크립트가 없다**(라이브러리 — `build`·`test`만). **`xzawedLauncher`는 pnpm 워크스페이스**라 `dev`가 `pnpm --filter @xzawed/launcher-app dev`(electron-vite)이고 `build`는 shared→app 2단계 필터 체인이다.
 
 **독립 서비스는 `xzawedShared`를 먼저 빌드해야 한다.** `@xzawed/agent-streams`를 `file:../xzawedShared`로 참조하는데, `file:` 의존은 install 시점에 `node_modules`로 **복사**된다. shared를 재빌드해도 그 복사본은 다음 install까지 stale로 남는다(CI·Docker는 매번 fresh install이라 무관).
 
@@ -94,11 +96,11 @@ Watcher는 Claude API를 쓰지 않아 API 키가 불필요하다. 서비스별 
 
 상세와 근거는 [docs/development/security-patterns.md](docs/development/security-patterns.md).
 
-- 명령 실행은 `spawn(bin, args, {shell:false})`. `shell:true` 금지. Redis 페이로드의 커맨드는 allowlist 검증
-- `package.json` scripts 값을 신뢰하지 않는다 — 의존성 기반 하드코딩 명령만 쓴다
-- Redis 수신 메시지는 전부 Zod `safeParse` 후 처리. 실패 시 `xack` 후 skip(프로세스 중단 금지)
-- `handler(msg)`는 `try/finally`로 감싸 `xack`을 보장한다(PEL 누수 방지)
-- LLM 생성 경로는 절대경로 금지, `workspaceRoot` 기준 상대경로로 강제. `validateWorkspaceRoot`로 파일시스템 루트 거부
+- **프로덕션 `src/`의 명령 실행은 `spawn(bin, args, {shell:false})`.** 10개 spawn 지점 전부 준수한다. 빌드 래퍼(`packages/app/scripts/dev.js`)와 훅(`.claude/hooks/branch-check.mjs`)은 `shell:true`를 쓰는데, LLM 입력이 닿지 않는 개발 도구라 예외다 — **`src/`에 들이지 않는다**
+- Redis 페이로드의 커맨드 필드는 allowlist 검증. `package.json` scripts 값을 신뢰하지 않는다 — 의존성 기반 하드코딩 명령만 쓴다
+- **주 소비자(shared `BaseConsumer`, Orchestrator·Manager `StreamConsumer`)는 Zod `safeParse` 후 처리**하고 실패 시 DLQ 격리 또는 `xack` 후 skip한다(프로세스 중단 금지). 단 `SessionDispatcher`·`WatcherEventConsumer`는 `JSON.parse` + 필드 duck-typing이라 Zod를 거치지 않는다 — 새 인바운드 경로를 만들 때는 duck-typing을 답습하지 말고 스키마를 붙인다
+- **`xack`은 어떤 경로로든 보장된다.** `StreamConsumer`는 `handler(msg)`를 `try/finally`로 감싸고, `BaseConsumer`는 배치를 `finally`로 감싸며 `handleMessage`를 never-throw로 유지한다(PEL 누수 방지)
+- LLM 생성 경로는 절대경로 금지, `workspaceRoot` 기준 상대경로로 강제. `validateWorkspaceRoot`가 파일시스템 루트를 거부하는데 **기동 시 호출하는 것은 에이전트 7종뿐**이다 — Manager는 `ensureWorkspace`에서, Orchestrator는 자체 `assertNotFilesystemRoot`로 각각 다른 지점에서 막는다
 - `fetch`·`shell.openExternal` URL은 파싱 후 프로토콜·접두사 검증(SSRF·open redirect)
 - Electron: 민감 자격증명을 렌더러에 노출 금지, MCP `args`의 위험 플래그 차단
 - Dockerfile: runner 스테이지에 `USER node`, 모든 `pnpm install`에 `--ignore-scripts`
