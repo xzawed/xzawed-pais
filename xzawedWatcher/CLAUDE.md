@@ -7,21 +7,6 @@ xzawedManager로부터 감시 요청을 받아 chokidar로 파일 변경을 감�
 
 **Claude API 미사용** — 순수 파일 시스템 이벤트 처리만 수행. `ANTHROPIC_API_KEY` 불필요. Claude를 쓰지 않으므로 에이전트 협업(AgentQuery 답변·교차질의)·도메인 지식 emit 대상에서 제외된다(`createCollaborativeHandler` 미적용).
 
-**현재 상태: 구현 완료 (51/51 테스트 통과)**
-
-## 핵심 명령어
-
-```bash
-# xzawedShared 먼저 빌드 필수
-cd ../xzawedShared && pnpm install && pnpm build && cd ../xzawedWatcher
-
-pnpm install       # 의존성 설치
-pnpm dev           # tsx watch 개발 모드
-pnpm test          # Vitest 전체 테스트
-pnpm test <파일>   # 단일 파일 테스트
-pnpm build         # TypeScript 컴파일 → dist/
-```
-
 ## 디렉토리 구조
 
 ```
@@ -73,12 +58,12 @@ interface FileEvent { path: string; event: 'add' | 'change' | 'unlink'; timestam
 
 ## 환경 변수
 
+`src/config.ts`의 Zod 스키마가 진실원천이다. 공통 변수(`ANTHROPIC_API_KEY`·`CLAUDE_MODEL`·`REDIS_URL`·`PORT`·`MODE`·`WORKSPACE_ROOT`)와 그 의미는 [루트 CLAUDE.md](../CLAUDE.md)에 있다.
+
+이 서비스 고유 변수만 적는다.
+
 | 변수 | 필수 | 기본값 | 설명 |
 |---|---|---|---|
-| `REDIS_URL` | 선택 | `redis://localhost:6379` | Redis 연결 URL |
-| `PORT` | 선택 | `3007` | HTTP 서버 포트 |
-| `MODE` | 선택 | `local` | 실행 모드 |
-| `WORKSPACE_ROOT` | 필수 | — | 허용 경로 상한선 (절대경로, 파일시스템 루트 불가) |
 | `MAX_WATCHERS` | 선택 | `10` | 동시 감시 세션 최대 수 |
 | `DEBOUNCE_MS` | 선택 | `300` | 파일 이벤트 디바운스 (ms) |
 

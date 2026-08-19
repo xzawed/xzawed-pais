@@ -5,18 +5,6 @@
 xzawedPlanner는 xzawed 멀티 에이전트 시스템의 **계획 에이전트**다.
 xzawedManager로부터 작업 지시(intent)를 받아 실행 가능한 단계별 계획(`Step[]`)으로 분해하고 반환한다.
 
-**현재 상태: 구현 완료 (48/48 테스트 통과)**
-
-## 핵심 명령어
-
-```bash
-pnpm install       # 의존성 설치
-pnpm dev           # tsx watch 개발 모드
-pnpm test          # Vitest 전체 테스트
-pnpm test <파일>   # 단일 파일 테스트
-pnpm build         # TypeScript 컴파일 → dist/
-```
-
 ## 디렉토리 구조
 
 ```
@@ -78,14 +66,7 @@ interface Step {
 
 ## 환경 변수
 
-| 변수 | 필수 | 기본값 | 설명 |
-|---|---|---|---|
-| `ANTHROPIC_API_KEY` | 필수 | — | Anthropic API 인증 키 |
-| `CLAUDE_MODEL` | 선택 | `claude-sonnet-4-6` | Claude 모델 |
-| `REDIS_URL` | 선택 | `redis://localhost:6379` | Redis 연결 URL |
-| `PORT` | 선택 | `3002` | HTTP 서버 포트 |
-| `MODE` | 선택 | `local` | 실행 모드 |
-| `WORKSPACE_ROOT` | 필수 | — | validateWorkspaceRoot() 검증 용. Docker: `/workspace` |
+`src/config.ts`의 Zod 스키마가 진실원천이다. 공통 변수(`ANTHROPIC_API_KEY`·`CLAUDE_MODEL`·`REDIS_URL`·`PORT`·`MODE`·`WORKSPACE_ROOT`)와 그 의미는 [루트 CLAUDE.md](../CLAUDE.md)에 있다.
 
 ## 구현 참고사항
 
