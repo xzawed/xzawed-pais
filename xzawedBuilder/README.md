@@ -39,6 +39,6 @@ pnpm dev
 
 ## 문서
 
-- [아키텍처](docs/architecture.md)
-- [설계 스펙](docs/superpowers/specs/2026-05-15-xzawedbuilder-design.md)
-- [Claude 가이드](CLAUDE.md)
+- [Claude 가이드](CLAUDE.md) — 구조·계약·함정
+- [서비스 문서](../docs/services/builder.md)
+- [실행](../docs/operations/running.md)
