@@ -106,6 +106,8 @@ cd packages/app && pnpm dev
 
 기본 `gateMode`는 `'manual'`이다 — 모든 게이트 단계에서 사람 승인 카드가 뜬다.
 
+**입력창의 모드 토글은 기본이 Chat이다.** Chat은 대화형 질의응답이고, 자율 태스크그래프로 가는 것은 Build뿐이다. 다만 **Build를 눌러도 `ORCHESTRATOR_DECOMPOSE_ENABLED`가 꺼져 있으면 조용히 일반 chat으로 떨어진다** — `shouldDecompose(mode, decomposeEnabled)`가 `mode === 'build' && decomposeEnabled`이고 후자의 기본값이 `false`다. "Build를 눌렀는데 일반 답변만 온다"의 원인이 이것이고, 켜는 방법은 아래 자율 스택이다.
+
 ## 설정 계약
 
 각 서비스 `src/config.ts`의 Zod 스키마가 진실원천이다. 여기엔 **기동을 거부하는 조건**만 적는다.
