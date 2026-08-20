@@ -26,7 +26,7 @@
 
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org)
-[![Docs](https://img.shields.io/badge/docs-최신-blue)](./docs/index.md)
+[![Docs](https://img.shields.io/badge/docs-최신-blue)](../docs/README.md)
 
 </div>
 
@@ -60,7 +60,7 @@ cd packages/server && pnpm dev
 # → http://localhost:3000 에서 실행됩니다
 ```
 
-첫 세션을 5분 안에 만들려면 → [📖 퀵스타트 가이드](docs/quickstart.md)
+첫 세션을 5분 안에 만들려면 → [📖 실행 가이드](../docs/operations/running.md)
 
 ---
 
@@ -165,16 +165,14 @@ xzawedOrchestrator/
 
 | 문서 | 설명 |
 |------|------|
-| [📖 퀵스타트](docs/quickstart.md) | 5분 안에 서버 실행 |
-| [🔧 설치 가이드](docs/guides/installation.md) | 환경 설정 및 설치 |
-| [⚙️ 설정 완전 가이드](docs/guides/configuration.md) | 모든 설정 옵션 |
-| [🏗️ 아키텍처 개요](docs/concepts/architecture.md) | 시스템 구조 설명 |
-| [🤖 Claude 실행기](docs/concepts/claude-runners.md) | 3가지 실행 모드 |
-| [📮 Redis Streams](docs/concepts/redis-streams.md) | 비동기 메시징 설계 |
-| [🌐 REST API 레퍼런스](docs/reference/rest-api.md) | API 엔드포인트 |
-| [🔌 MCP 도구 레퍼런스](docs/reference/mcp-tools.md) | MCP 통합 |
-| [🔑 환경변수 목록](docs/reference/environment-variables.md) | 모든 환경변수 |
-| [📋 문서 홈](docs/index.md) | 전체 문서 네비게이션 |
+| [📖 실행](../docs/operations/running.md) | 로컬·Docker·원격. 모든 명령을 실행해서 확인했다 |
+| [🔑 설정 계약](../docs/operations/running.md#설정-계약) | 환경변수와 기동을 거부하는 조건 |
+| [🌐 첫 요청](../docs/operations/running.md#첫-요청) | health · 세션 · 메시지 · **WebSocket**(REST만으로는 답이 오지 않는다) |
+| [🏗️ 플랫폼 개요](../CLAUDE.md) | 서비스 표와 저장소 공통 규칙 |
+| [🤖 이 서비스](CLAUDE.md) | 패키지 지도·계약·함정·실패 의미론 |
+| [📮 Redis 스트림 봉투](../docs/spec/redis-envelope.md) | 서비스 간 메시지 계약과 DLQ 의미론 |
+| [🔌 Electron IPC](../docs/spec/electron-ipc.md) | 렌더러 ↔ main 채널 |
+| [📋 문서 홈](../docs/README.md) | 전체 문서 인덱스 |
 
 ---
 

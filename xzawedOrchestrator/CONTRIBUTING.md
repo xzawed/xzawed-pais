@@ -186,6 +186,6 @@ Closes #123
 
 ## 관련 문서
 
-- [아키텍처 개요](docs/concepts/architecture.md)
-- [REST API 레퍼런스](docs/reference/rest-api.md)
-- [환경변수 목록](docs/reference/environment-variables.md)
+- [플랫폼 개요](../CLAUDE.md) · [이 서비스](CLAUDE.md)
+- [실행 — 첫 요청](../docs/operations/running.md#첫-요청)
+- [실행 — 설정 계약](../docs/operations/running.md#설정-계약)

@@ -26,7 +26,7 @@
 
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://conventionalcommits.org)
-[![Docs](https://img.shields.io/badge/docs-latest-blue)](./docs/index.md)
+[![Docs](https://img.shields.io/badge/docs-latest-blue)](../docs/README.md)
 
 </div>
 
@@ -60,7 +60,7 @@ cd packages/server && pnpm dev
 # → Running at http://localhost:3000
 ```
 
-Create your first session in under 5 minutes → [📖 Quickstart Guide](docs/quickstart.md)
+Create your first session in under 5 minutes → [📖 Running Guide](../docs/operations/running.md)
 
 ---
 
@@ -165,16 +165,14 @@ xzawedOrchestrator/
 
 | Document | Description |
 |----------|-------------|
-| [📖 Quickstart](docs/quickstart.md) | Run the server in 5 minutes |
-| [🔧 Installation Guide](docs/guides/installation.md) | Environment setup |
-| [⚙️ Configuration Guide](docs/guides/configuration.md) | All configuration options |
-| [🏗️ Architecture Overview](docs/concepts/architecture.md) | System structure |
-| [🤖 Claude Runners](docs/concepts/claude-runners.md) | 3 execution modes explained |
-| [📮 Redis Streams](docs/concepts/redis-streams.md) | Async messaging design |
-| [🌐 REST API Reference](docs/reference/rest-api.md) | API endpoints |
-| [🔌 MCP Tools Reference](docs/reference/mcp-tools.md) | MCP integration |
-| [🔑 Environment Variables](docs/reference/environment-variables.md) | All env vars |
-| [📋 Docs Home](docs/index.md) | Full documentation navigation |
+| [📖 Running](../docs/operations/running.md) | Local, Docker, and remote — every command verified by running it |
+| [🔑 Configuration Contract](../docs/operations/running.md#설정-계약) | Env vars and the conditions that refuse startup |
+| [🌐 First Request](../docs/operations/running.md#첫-요청) | health · session · message · **WebSocket** (REST alone returns no answer) |
+| [🏗️ Platform Overview](../CLAUDE.md) | Service table and repository-wide rules |
+| [🤖 This Service](CLAUDE.md) | Package map, contracts, gotchas, failure semantics |
+| [📮 Redis Envelope](../docs/spec/redis-envelope.md) | Cross-service message contract and DLQ semantics |
+| [🔌 Electron IPC](../docs/spec/electron-ipc.md) | Renderer ↔ main channels |
+| [📋 Docs Home](../docs/README.md) | Full documentation index |
 
 ---
 
