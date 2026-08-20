@@ -53,4 +53,4 @@ chore(deps): upgrade vitest 2→3
 
 ## Full guide
 
-For detailed setup instructions, architecture principles, and code review criteria, see [`docs/internal/contributing.md`](./docs/internal/contributing.md).
+For detailed setup instructions, architecture principles, and code review criteria, see [`docs/development/contributing.md`](./docs/development/contributing.md).

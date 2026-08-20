@@ -218,7 +218,8 @@ docker compose up redis planner developer security
 
 | 문서 | 설명 |
 |------|------|
-| [docs/specs/](./docs/specs/) | 각 서비스 설계 스펙 |
+| [docs/operations/running.md](./docs/operations/running.md) | 로컬·Docker·원격 실행과 설정 계약 |
+| [docs/spec/](./docs/spec/) | 서비스 경계 계약 (Redis 봉투·에이전트 RPC·Electron IPC) |
 | [docs/services/](./docs/services/) | 서비스별 상세 문서 |
 
 ---

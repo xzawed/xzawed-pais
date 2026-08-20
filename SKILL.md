@@ -347,7 +347,7 @@ xreadgroup: vi.fn().mockImplementation(() =>
 )
 ```
 
-**참고**: [docs/development/testing-patterns.md](testing-patterns.md) · [ADR-002](adr/002-ci-stability-patterns.md)
+**참고**: [docs/development/testing-patterns.md](docs/development/testing-patterns.md) · [ADR-002](docs/development/adr/002-ci-stability-patterns.md)
 
 ---
 
