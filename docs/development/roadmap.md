@@ -12,8 +12,6 @@
 
 9개 에이전트 서비스 전체 초기 구현. Redis Streams 기반 비동기 통신, Docker 인프라, CI/CD 파이프라인 구축.
 
-관련 문서: `docs/archive/specs/`, `docs/archive/plans/`
-
 ---
 
 ### GitHub · MCP · Plugin 통합 (PR ~#70 구간)
@@ -21,8 +19,8 @@
 xzawedOrchestrator Electron 앱에 GitHub OAuth 연동, MCP 서버 관리, Plugin 관리 패널 추가.  
 xzawedManager에 `github-ops` ToolHandler(Octokit 기반) 구현.
 
-설계 스펙: [2026-05-17-github-mcp-plugin-integration-design.md](../superpowers/specs/2026-05-17-github-mcp-plugin-integration-design.md)  
-구현 계획: [2026-05-17-github-mcp-plugin-integration.md](../superpowers/plans/2026-05-17-github-mcp-plugin-integration.md)
+설계 스펙: `2026-05-17-github-mcp-plugin-integration-design.md`  
+구현 계획: `2026-05-17-github-mcp-plugin-integration.md`
 
 ---
 
@@ -30,7 +28,7 @@ xzawedManager에 `github-ops` ToolHandler(Octokit 기반) 구현.
 
 xzawedManager JWT 에러 코드 분기 완성. xzawedOrchestrator `intent-structurer.ts` 신규 생성, `TaskStore` 태스크 생명주기 구현, `/sessions/:id/tasks` 엔드포인트 추가. 원격 실행기(`HTTPRemoteRunner`, `SSHRemoteRunner`) 구현.
 
-구현 계획: [2026-05-17-issues-10-11-12-13.md](../superpowers/plans/2026-05-17-issues-10-11-12-13.md)
+구현 계획: `2026-05-17-issues-10-11-12-13.md`
 
 ---
 
@@ -39,8 +37,8 @@ xzawedManager JWT 에러 코드 분기 완성. xzawedOrchestrator `intent-struct
 xzawedOrchestrator Electron 앱을 IDE 하이브리드 4패널 레이아웃으로 전면 재설계.  
 ActivityBar + Sidebar + ChatView + RightPanel. Tailwind CSS v4, shadcn/ui, Framer Motion, Shiki 코드 하이라이팅, ⌘K Command Palette.
 
-설계 스펙: [2026-05-18-xzawedpais-ui-redesign-design.md](../superpowers/specs/2026-05-18-xzawedpais-ui-redesign-design.md)  
-구현 계획: [2026-05-18-xzawedpais-ui-redesign.md](../superpowers/plans/2026-05-18-xzawedpais-ui-redesign.md)
+설계 스펙: `2026-05-18-xzawedpais-ui-redesign-design.md`  
+구현 계획: `2026-05-18-xzawedpais-ui-redesign.md`
 
 ---
 
@@ -48,7 +46,7 @@ ActivityBar + Sidebar + ChatView + RightPanel. Tailwind CSS v4, shadcn/ui, Frame
 
 비개발자를 위한 독립 Electron 데스크탑 런처. Docker Compose 자동 관리, Claude 인증 마법사, 시스템 트레이 모니터링, GitHub Releases 자동 업데이트.
 
-설계 스펙: [2026-05-19-xzawed-launcher-design.md](../superpowers/specs/2026-05-19-xzawed-launcher-design.md)  
+설계 스펙: `2026-05-19-xzawed-launcher-design.md`  
 서비스 문서: [docs/services/launcher.md](../services/launcher.md)
 
 ---
@@ -58,7 +56,7 @@ ActivityBar + Sidebar + ChatView + RightPanel. Tailwind CSS v4, shadcn/ui, Frame
 외부 서비스(로컬 디렉토리 또는 GitHub 리포)를 등록하고 프로젝트별 워크스페이스 경로를 관리한다.  
 Orchestrator Projects API, WorkspaceService, ProjectContextBar UI, `register_project`/`switch_project` 대화 도구.
 
-설계 스펙: [2026-05-24-project-registry-design.md](../superpowers/specs/2026-05-24-project-registry-design.md)
+설계 스펙: `2026-05-24-project-registry-design.md`
 
 ---
 
@@ -67,7 +65,7 @@ Orchestrator Projects API, WorkspaceService, ProjectContextBar UI, `register_pro
 SKILL.md 계층 도입, Claude Code Hook 자동화 설정, `docs/` 디렉터리 구조 재편.  
 `docs/concepts/`, `docs/services/`, `docs/reference/`, `docs/development/`, `docs/guides/` 체계 확립.
 
-설계 스펙: [2026-05-25-skill-hooks-docs-design.md](../superpowers/specs/2026-05-25-skill-hooks-docs-design.md)
+설계 스펙: `2026-05-25-skill-hooks-docs-design.md`
 
 ---
 
@@ -159,12 +157,6 @@ post-#286 전면 감사 + post-#312 재감사(7도메인 라이브 대조·적�
 잠재적 개선 영역:
 - xzawedLauncher GitHub Actions 릴리스 파이프라인 (`launcher-release.yml`, `docker-publish.yml`)
 - GHCR Docker 이미지 배포 자동화
-
----
-
-## 아카이브
-
-구현 완료된 초기 설계 스펙과 계획: [docs/archive/](../archive/README.md)
 
 ---
 
