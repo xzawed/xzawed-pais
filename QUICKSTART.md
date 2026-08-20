@@ -198,6 +198,6 @@ docker compose up --build --force-recreate
 
 ## 다음 단계
 
-- 전체 API 사용법: [`docs/reference/rest-api.md`](docs/reference/rest-api.md)
-- 시스템 구조 이해: [`docs/concepts/`](docs/concepts/)
+- 전체 실행 방법: [`docs/operations/running.md`](docs/operations/running.md)
+- 시스템 구조 이해: [`CLAUDE.md`](CLAUDE.md) · 경계 계약 [`docs/spec/`](docs/spec/)
 - 기여 방법: [`CONTRIBUTING.md`](CONTRIBUTING.md)

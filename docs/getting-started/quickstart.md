@@ -167,13 +167,13 @@ ws.onmessage = (event) => {
 {"type":"done"}
 ```
 
-WebSocket 이벤트 타입 전체 목록은 [WebSocket 레퍼런스](../reference/websocket.md)를 참고한다.
+WebSocket으로 응답을 받는 흐름은 [실행 — 첫 요청](../operations/running.md#첫-요청)을 참고한다.
 
 ---
 
 ## 다음 단계
 
-- [설정 가이드](../guides/configuration.md) — 모든 환경 변수 설명과 시나리오별 예제
-- [플랫폼 개요](../concepts/overview.md) — 에이전트 계층 구조와 동작 원리
-- [REST API 레퍼런스](../reference/rest-api.md) — 전체 API 엔드포인트
-- [Claude 실행 모드](../concepts/claude-runners.md) — `api` / `cli` / `remote` 비교
+- [실행](../operations/running.md) — 로컬·Docker·원격 실행과 설정 계약
+- [플랫폼 개요](../../CLAUDE.md) — 서비스 구성과 저장소 공통 규칙
+- [첫 요청](../operations/running.md#첫-요청) — health · 세션 생성 · 메시지 · WebSocket
+- [Orchestrator CLAUDE.md](../../xzawedOrchestrator/CLAUDE.md) — `api` / `cli` / `remote` 실행 모드

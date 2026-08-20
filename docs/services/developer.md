@@ -146,5 +146,5 @@ pnpm build       # TypeScript 컴파일 → dist/
 ## Related
 
 - [xzawedManager](manager.md)
-- [Redis Streams](../concepts/redis-streams.md)
-- [환경변수 레퍼런스](../reference/environment-variables.md)
+- [Redis 스트림 봉투](../spec/redis-envelope.md)
+- [실행 — 설정 계약](../operations/running.md#설정-계약)

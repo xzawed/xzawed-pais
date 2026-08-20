@@ -178,6 +178,6 @@ Closes #123
 ## 관련 문서
 
 - [플랫폼 개요](../../CLAUDE.md)
-- [Redis Streams 구조](../concepts/redis-streams.md)
+- [Redis 스트림 봉투](../spec/redis-envelope.md)
 - [서비스별 문서](../services/)
-- [환경변수 목록](../reference/environment-variables.md)
+- [설정 계약](../operations/running.md#설정-계약)
