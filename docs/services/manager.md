@@ -335,6 +335,6 @@ pnpm build
 - [xzawedPlanner](planner.md)
 - [xzawedDeveloper](developer.md)
 - [xzawedDesigner](designer.md)
-- [Redis Streams](../concepts/redis-streams.md)
-- [환경변수 레퍼런스](../reference/environment-variables.md)
+- [Redis 스트림 봉투](../spec/redis-envelope.md)
+- [실행 — 설정 계약](../operations/running.md#설정-계약)
 - [설계 스펙](../archive/specs/2026-05-15-manager-design.md)

@@ -262,12 +262,9 @@ pnpm build
 
 ## 관련 프로젝트
 
-- [아키텍처 개요](../concepts/architecture.md)
-- [Claude 실행기](../concepts/claude-runners.md)
-- [Redis Streams](../concepts/redis-streams.md)
-- [세션 관리](../concepts/sessions.md)
-- [REST API 레퍼런스](../reference/rest-api.md)
-- [WebSocket 레퍼런스](../reference/websocket.md)
-- [MCP 도구 레퍼런스](../reference/mcp-tools.md)
-- [환경변수 레퍼런스](../reference/environment-variables.md)
+- [Orchestrator CLAUDE.md](../../xzawedOrchestrator/CLAUDE.md) — 패키지 지도·계약·함정·실패 의미론
+- [Redis 스트림 봉투](../spec/redis-envelope.md)
+- [Electron IPC](../spec/electron-ipc.md)
+- [실행 — 첫 요청](../operations/running.md#첫-요청)
+- [실행 — 설정 계약](../operations/running.md#설정-계약)
 - [xzawedManager](manager.md)

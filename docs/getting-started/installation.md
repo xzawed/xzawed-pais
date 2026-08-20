@@ -169,7 +169,7 @@ MODE=local
 
 나머지 에이전트 서비스도 각각의 `.env.example`을 복사하여 `ANTHROPIC_API_KEY`와 `REDIS_URL`을 설정한다. xzawedWatcher는 Claude API를 사용하지 않으므로 `ANTHROPIC_API_KEY`가 필요 없다.
 
-> 설정 옵션 전체 목록은 [환경 변수 레퍼런스](../reference/environment-variables.md)와 [설정 가이드](../guides/configuration.md)를 참고한다.
+> 설정 옵션과 기동 거부 조건은 [실행 — 설정 계약](../operations/running.md#설정-계약)을 참고한다.
 
 ---
 
@@ -234,5 +234,5 @@ nvm use 22
 ## 다음 단계
 
 - [퀵스타트](quickstart.md) — 서버를 시작하고 첫 메시지를 전송한다
-- [설정 가이드](../guides/configuration.md) — 모든 환경 변수와 시나리오별 설정 예제
-- [로컬 배포](../guides/local-deployment.md) — 개인 PC 환경 최적화
+- [실행](../operations/running.md) — 로컬·Docker·원격 실행과 설정 계약
+
