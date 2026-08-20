@@ -181,6 +181,6 @@ type ClaudeDetectStatus =
 
 ## 관련 문서
 
-- [설계 스펙](../superpowers/specs/2026-05-19-xzawed-launcher-design.md) — 전체 설계 상세
+- `2026-05-19-xzawed-launcher-design.md` — 전체 설계 상세
 - [서비스 목록](../README.md)
 - [Orchestrator](orchestrator.md) — 런처가 기동하는 핵심 서비스

@@ -53,7 +53,3 @@
 | [ADR](development/adr/README.md) | Architecture Decision Records |
 | [설계 스펙](superpowers/specs/) | 슬라이스별 설계 스펙 |
 | [로드맵](development/roadmap.md) | 구현 현황 |
-
-## 아카이브
-
-구현이 끝나 현재 기준에서 벗어난 초기 스펙·계획: [archive/](archive/README.md)
