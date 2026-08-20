@@ -216,6 +216,13 @@ export class DecisionRepo {
   /**
    * P5-2b: 해당 workflow에 scope='release' 사인오프가 존재하는지. sign_offs ⋈ human_decisions ⋈ decision_requests
    * 조인으로 워크플로 매칭. 존재 = 사람이 degraded 릴리스를 명시 수용(비부인 M9). deploy 게이트 우회 근거.
+   *
+   * `r.type='degraded_release'`를 명시한다 — 형제 메서드 hasApprovedDegradedDispatch와 같은 모양이다.
+   * 현재 `scope='release'`를 쓰는 생산자는 decision-consumer의 `req.type === 'degraded_release'` 분기
+   * 하나뿐이라 이 술어 없이도 결과가 같았다. 그 불변식을 가정이 아니라 쿼리가 강제하게 한다 —
+   * 두 번째 생산자가 생기는 순간 이 게이트가 조용히 느슨해지기 때문이다.
+   *
+   * ⚠️ 테넌트·프로젝트 스코프는 여전히 없다. 근거는 docs/LIVE_VS_FLAGGED.md 참조.
    */
   async hasApprovedReleaseSignoff(workflowId: string): Promise<boolean> {
     const { rows } = await this.pool.query<{ ok: number }>(
@@ -223,7 +230,7 @@ export class DecisionRepo {
          FROM sign_offs s
          JOIN human_decisions h ON h.decision_id = s.decision_id
          JOIN decision_requests r ON r.request_id = h.request_id
-        WHERE r.workflow_id = $1 AND s.scope = 'release'
+        WHERE r.workflow_id = $1 AND r.type = 'degraded_release' AND s.scope = 'release'
         LIMIT 1`,
       [workflowId],
     )

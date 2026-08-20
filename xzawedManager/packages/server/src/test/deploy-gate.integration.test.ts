@@ -76,11 +76,11 @@ describe.skipIf(!DB)('ReleaseGateRepo.latestGateByProject (통합)', () => {
 // 컬럼은 migration 011 검증 완료. NOT NULL(default 없음): decision_requests=request_id/type/workflow_id/correlation_id;
 // human_decisions=decision_id/request_id/decided_by/choice/correlation_id; sign_offs=signoff_id/decision_id/scope/approver.
 // 나머지(status/context/severity/language/risk·created_at/decided_at)는 default. occurred_at·updated_at 컬럼 없음.
-async function seedSignoff(pool: Pool, wf: string, reqId: string, scope: string): Promise<void> {
+async function seedSignoff(pool: Pool, wf: string, reqId: string, scope: string, type = 'degraded_release'): Promise<void> {
   await pool.query(
     `INSERT INTO decision_requests (request_id, type, workflow_id, correlation_id, status)
-     VALUES ($1, 'degraded_release', $2, $2, 'RESOLVED')`,
-    [reqId, wf],
+     VALUES ($1, $3, $2, $2, 'RESOLVED')`,
+    [reqId, wf, type],
   )
   await pool.query(
     `INSERT INTO human_decisions (decision_id, request_id, decided_by, choice, correlation_id)
@@ -120,5 +120,9 @@ describe.skipIf(!DB)('DecisionRepo.hasApprovedReleaseSignoff (통합)', () => {
   it('workflow 불일치 → false', async () => {
     await seedSignoff(pool, `${PFX}wf3`, `${PFX}req3`, 'release')
     expect(await repo.hasApprovedReleaseSignoff(`${PFX}wf-other`)).toBe(false)
+  })
+  it('type 불일치(degraded_release 아님) → false — scope가 release여도', async () => {
+    await seedSignoff(pool, `${PFX}wf4`, `${PFX}req4`, 'release', 'gate_override')
+    expect(await repo.hasApprovedReleaseSignoff(`${PFX}wf4`)).toBe(false)
   })
 })
