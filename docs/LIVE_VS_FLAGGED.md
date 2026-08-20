@@ -62,6 +62,10 @@
 |---|---|---|
 | `PATCH /oracles/:oracleId/approve` (`api/oracle.route.ts`) | `oracleId`뿐 | 프로젝트·워크플로 파라미터가 **라우트에 존재하지 않는다.** 대조할 스코프가 없어 소유권 검사를 넣을 자리도 없다 |
 | `PATCH /workflows/:workflowId/risk-classification/approve` (`api/risk.route.ts`) | `workflowId` | 호출자가 그 워크플로에 귀속되는지 확인하지 않고 `riskRepo.approve`로 직행한다 |
-| `DecisionRepo.hasApprovedReleaseSignoff(workflowId)` (`db/decision.repo.ts`) | `workflow_id` + `scope='release'` | **deploy 게이트 우회 근거**로 쓰인다(`tools/deploy-gate.ts`). 같은 파일의 `hasApprovedDegradedDispatch`는 `wp_id` 격리를 넣었는데 이쪽은 없다 |
+| `DecisionRepo.hasApprovedReleaseSignoff(workflowId)` (`db/decision.repo.ts`) | `workflow_id` + `type='degraded_release'` + `scope='release'` | **deploy 게이트 우회 근거**로 쓰인다(`tools/deploy-gate.ts`). `type` 술어는 보강했지만 **테넌트·프로젝트 스코프는 여전히 없다** |
 
-셋 다 **G11 Slice 4 태깅으로 고쳐지지 않는다** — 태깅은 쓰기에 `tenant_id`를 남길 뿐이고 이 라우트들은 읽기·판정 시점에 스코프를 대조하지 않는다. Slice 4b(읽기 술어)가 오기 전에 별도로 다뤄야 한다.
+셋 다 **G11 Slice 4 태깅으로 고쳐지지 않는다** — 태깅은 쓰기에 `tenant_id`를 남길 뿐이고 이 라우트들은 판정 시점에 스코프를 대조하지 않는다.
+
+**근본 원인은 빠진 술어가 아니라 호출자 신원의 부재다.** Manager의 유일한 인증 수단은 `auth/jwt.plugin.ts`의 `verifyServiceToken`이고, 그것은 `req.jwtVerify()`만 불러 **서비스 토큰임만 확인한다** — 사용자·조직 claim을 읽지 않는다. `ownership`·`assertProject*` 검색은 Manager `src` 전체에서 0건이다(Orchestrator에는 `auth/ownership.ts`의 `projectOwnershipPreHandler`가 있다). `oracles`에는 `workflow_id`·`tenant_id`가, `risk_classifications`에는 `project_id`까지 **이미 있다** — 즉 마이그레이션이 모자라서 못 고치는 게 아니라, 그 컬럼과 비교할 호출자 신원이 없어서 못 고친다.
+
+따라서 이 셋은 **사용자·조직을 실은 토큰이 Manager에 도달하는 슬라이스(Slice 4b 계열)에 묶여 있다.** 그 전에 라우트에 술어를 덧대면 보안 이득 없이 "닫혔다"는 착시만 남는다.

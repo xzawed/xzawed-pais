@@ -209,3 +209,40 @@ describe('DecisionRepo queries', () => {
     expect(params).toEqual(['req-1'])
   })
 })
+
+describe('DecisionRepo.hasApprovedReleaseSignoff', () => {
+  it('scope=release 외에 r.type=degraded_release도 술어에 넣는다(단일생산자 불변식 강제)', async () => {
+    const m = makeMockPool({ selectRows: [] })
+    await new DecisionRepo(m.pool).hasApprovedReleaseSignoff('wf1')
+    const call = callFor(m.query, /FROM sign_offs/i)
+    expect(call).toBeTruthy()
+    const sql = String(call![0])
+    expect(sql).toContain("r.type = 'degraded_release'")
+    expect(sql).toContain("s.scope = 'release'")
+    expect(sql).toContain('r.workflow_id = $1')
+    expect(call![1]).toEqual(['wf1'])
+  })
+
+  it('행이 없으면 false', async () => {
+    const m = makeMockPool()
+    m.query.mockImplementationOnce(() => Promise.resolve({ rows: [] }))
+    expect(await new DecisionRepo(m.pool).hasApprovedReleaseSignoff('wf1')).toBe(false)
+  })
+
+  it('행이 있으면 true', async () => {
+    const m = makeMockPool()
+    m.query.mockImplementationOnce(() => Promise.resolve({ rows: [{ ok: 1 }] }))
+    expect(await new DecisionRepo(m.pool).hasApprovedReleaseSignoff('wf1')).toBe(true)
+  })
+
+  it('형제 메서드 hasApprovedDegradedDispatch와 동일한 술어 모양', async () => {
+    const a = makeMockPool(); await new DecisionRepo(a.pool).hasApprovedReleaseSignoff('wf1')
+    const b = makeMockPool(); await new DecisionRepo(b.pool).hasApprovedDegradedDispatch('wf1', 'wp1')
+    const sqlA = String(callFor(a.query, /FROM sign_offs/i)![0])
+    const sqlB = String(callFor(b.query, /FROM sign_offs/i)![0])
+    for (const sql of [sqlA, sqlB]) {
+      expect(sql).toMatch(/r.type = '/)
+      expect(sql).toMatch(/s.scope = '/)
+    }
+  })
+})
