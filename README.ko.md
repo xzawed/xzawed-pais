@@ -103,57 +103,65 @@ orchestrator:to-manager:{sid}
 
 ### 전제조건
 
-- Node.js 20+
-- pnpm 9+
-- Redis (로컬 또는 `redis://localhost:6379`)
-- Anthropic API 키
+- Node.js **22+** · pnpm **10+** (`engines`가 둘 다 강제합니다)
+- Docker, 또는 `redis://localhost:6379`로 닿는 Redis
+- `ANTHROPIC_API_KEY`
 
 ### 설치
 
 ```bash
-# 저장소 클론
 git clone https://github.com/xzawed/xzawed-pais.git
 cd xzawed-pais
+```
 
-# 각 서비스 의존성 설치 (Turborepo 기반 서비스)
+저장소 루트에 `package.json`이 없어 서비스별로 설치합니다. **`xzawedShared`를 먼저 빌드해야 합니다** — 에이전트 7종이 `file:../xzawedShared`로 의존하는데 그 `dist/`는 git에 없어서, 신선한 클론에서는 빌드 전까지 기동되지 않습니다.
+
+```bash
+cd xzawedShared && pnpm install && pnpm build && cd ..
+
 cd xzawedOrchestrator && pnpm install && cd ..
-cd xzawedManager && pnpm install && cd ..
+cd xzawedManager      && pnpm install && cd ..
 
-# 독립 서비스 설치
-for svc in xzawedPlanner xzawedDeveloper xzawedDesigner xzawedTester xzawedBuilder xzawedWatcher xzawedSecurity; do
-  cd $svc && pnpm install && cd ..
+for svc in xzawedPlanner xzawedDeveloper xzawedDesigner \
+           xzawedTester xzawedBuilder xzawedWatcher xzawedSecurity; do
+  (cd "$svc" && pnpm install)
 done
 ```
 
 ### 환경 설정
 
-각 서비스 디렉토리에서 `.env.example`을 복사합니다:
+두 가지가 발목을 잡습니다.
 
-```bash
-# 공통 환경변수 (.env)
-ANTHROPIC_API_KEY=sk-ant-...
-CLAUDE_MODEL=claude-sonnet-4-6
-REDIS_URL=redis://localhost:6379
-PORT=<서비스별 포트>
-MODE=local
-```
+**`.env`는 에이전트 7종만 읽습니다.** 그쪽 `dev` 스크립트에만 `--env-file=.env`가 있습니다. Orchestrator·Manager에는 없고 저장소 어디도 `dotenv`를 쓰지 않아서, `xzawedManager/.env`에 값을 넣어도 `pnpm dev`에는 **아무 효과가 없습니다.** 그 둘은 셸에서 설정을 받습니다.
+
+**`docker compose`는 루트 `.env`의 `POSTGRES_PASSWORD`를 요구합니다.** 복사할 루트 `.env.example`이 없습니다. 없으면 `docker compose up redis planner`처럼 일부만 지정해도 보간 단계에서 죽습니다.
 
 ### 실행
 
-```bash
-# Turborepo 기반 서비스
-cd xzawedOrchestrator && pnpm build && cd packages/server && pnpm dev
-cd xzawedManager      && pnpm build && cd packages/server && pnpm dev
+가장 짧은 성공 경로는 [Docker](#-docker)입니다.
 
-# 독립 서비스 (각각 별도 터미널)
-cd xzawedPlanner   && pnpm dev
-cd xzawedDeveloper && pnpm dev
-cd xzawedDesigner  && pnpm dev
-cd xzawedTester    && pnpm dev
-cd xzawedBuilder   && pnpm dev
-cd xzawedWatcher   && pnpm dev
-cd xzawedSecurity  && pnpm dev
+소스에서 띄울 때는 이렇게 나뉩니다.
+
+```bash
+# 에이전트 — .env가 동작합니다
+cp xzawedPlanner/.env.example xzawedPlanner/.env    # 에이전트마다 반복
+cd xzawedPlanner && pnpm dev                        # 포트 3002
+
+# Orchestrator · Manager — 값을 셸에 싣습니다
+cd xzawedManager/packages/server
+ANTHROPIC_API_KEY=sk-ant-... REDIS_URL=redis://localhost:6379 pnpm dev
 ```
+
+**`POST /sessions/:id/messages`는 202만 반환합니다** — 답변은 WebSocket으로 흐릅니다. Electron 앱과 자율 프로필을 포함한 전체 절차는 **[docs/operations/running.md](docs/operations/running.md)**에 있습니다.
+
+### 테스트
+
+```bash
+cd xzawedManager/packages/server && pnpm test <파일>    # 단일 파일
+cd xzawedDeveloper && pnpm test -- --reporter=verbose   # 상세 출력
+```
+
+통합 테스트는 `DATABASE_URL` 없이 조용히 skip됩니다 — **skip 수를 확인하세요.** 로컬 그린이 CI 그린이 아닙니다.
 
 ---
 
@@ -178,21 +186,21 @@ cd xzawedSecurity  && pnpm dev
 
 ## 🐳 Docker
 
-전체 플랫폼(Redis + 9개 서비스)을 단일 명령으로 실행합니다:
-
 ```bash
-# 각 서비스 .env 파일 준비
-cp xzawedOrchestrator/.env.example xzawedOrchestrator/.env
-# ... (모든 서비스 반복)
+# 1. 서비스마다 자기 .env가 필요합니다 — 하나라도 없으면 즉시 중단됩니다
+for s in Orchestrator Manager Planner Developer Designer Tester Builder Watcher Security; do
+  cp "xzawed$s/.env.example" "xzawed$s/.env"
+done
 
-# 전체 빌드 및 실행
+# 2. 루트 .env — 없으면 compose가 보간에서 실패합니다
+echo 'POSTGRES_PASSWORD=원하는값' > .env
+
 docker compose up --build
-
-# 특정 서비스만 실행
-docker compose up redis planner developer security
 ```
 
-모든 서비스는 `workspace` 볼륨을 공유하며, Redis 헬스 체크 통과 후 서비스가 순차 시작됩니다.
+컨테이너 11개가 뜹니다 — `postgres`·`redis`와 9개 서비스. `workspace` 볼륨을 공유하고, Redis 헬스 체크 통과 후 의존 서비스가 시작됩니다.
+
+**이미지에는 브라우저 UI가 없습니다.** Orchestrator Dockerfile이 `packages/web`을 싣지 않으므로, curl + WebSocket 클라이언트를 쓰거나 Electron 앱을 소스에서 실행합니다.
 
 ---
 
