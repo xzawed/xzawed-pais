@@ -122,7 +122,7 @@ pnpm build && pnpm test                        # 해당 서비스
 pnpm audit --audit-level=moderate              # dev 포함. --prod만 보면 놓친다
 npx jscpd@3.5.10 --config .jscpd.json          # 0 clones 목표
 node scripts/check-i18n.js                     # ko/en/ja 일치
-node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200줄
+node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200줄·이력 마커 0
 ```
 
 훅은 `bash scripts/install-hooks.sh`로 설치한다(pre-commit tsc, pre-push CPD+audit). 별도로 `.claude/settings.json`이 Claude Code 훅 5개를 등록한다 — `post-edit`·`mock-guard`(PostToolUse), `grok-risk-signal`·`pre-commit`·`branch-check`(PreToolUse Bash).
