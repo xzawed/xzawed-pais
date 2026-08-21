@@ -56,7 +56,7 @@ E2E·테스트 공통 패턴은 [docs/development/testing-patterns.md](../docs/d
 
 **이 서비스에는 실패를 성공처럼 보이게 하는 지점이 있다.** 저장소 전반의 "무음 통과 금지" 원칙과 어긋나므로 알고 있어야 한다.
 
-- **`POST /sessions/:id/ui-actions`의 Redis 발행 실패는 202로 삼켜진다.** `catch`가 warn 로그만 남기고 `{status:'accepted'}`를 반환한다. **승인 게이트 결정과 명확화 응답이 이 경로로 나가므로, 사람이 승인을 눌렀는데 아무 일도 일어나지 않을 수 있다.** 클라이언트는 성공으로 본다
+- **`POST /sessions/:id/ui-actions`는 발행 실패 시 502를 반환한다 — fail-closed.** 이 라우트에서 발행은 유일한 액션이고 승인 게이트 결정·명확화 응답이 여기로 나가므로, 202로 삼키면 사람이 승인을 눌렀는데 아무 일도 안 일어나고 클라이언트는 성공으로 본다. `build` 경로와 같은 원칙이다
 - **읽기 프록시는 fail-open이다.** knowledge·decisions GET은 Manager가 죽으면 빈 목록을 반환한다. **결정 대기함에서 "대기 중인 결정 없음"과 "Manager 불통"이 UI상 구별되지 않는다**
 - **chat과 build 경로의 전달 실패 의미론이 반대다.** chat은 러너가 이미 스트리밍을 끝냈으므로 발행 실패를 삼키고 `done`을 보낸다(fail-open). build는 전달이 유일한 액션이라 실패 시 `error`를 표면화한다(fail-closed)
 - **`projectOwnershipPreHandler`는 반드시 `userAuthHook` 다음에 배치한다.** 앞에 두면 `req.authUser`가 없어 방어적으로 skip되고 **IDOR 게이트가 통째로 무력화된다**

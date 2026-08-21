@@ -546,7 +546,11 @@ export async function sessionsRoutes(
           payload: { answer: action },
         })
       } catch (publishErr: unknown) {
-        app.log.warn({ err: publishErr }, 'Redis publish failed for ui-action')
+        // 이 라우트에서 발행은 유일한 액션이다 — 승인 게이트 결정과 명확화 응답이 여기로 나간다.
+        // 실패를 202로 삼키면 사람이 '승인'을 눌렀는데 아무 일도 일어나지 않고 클라이언트는
+        // 성공으로 본다. build 경로와 같은 이유로 error를 표면화한다(무음 완료 위장 금지).
+        app.log.error({ err: publishErr, sessionId: req.params.id }, 'Redis publish failed for ui-action')
+        return reply.status(502).send({ error: t('error.processing_error', loc) })
       }
 
       return reply.status(202).send({ status: 'accepted' })

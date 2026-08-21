@@ -232,7 +232,10 @@ describe('sessions route integration', () => {
     ws.close()
   })
 
-  it('POST /sessions/:id/ui-actions returns 202 accepted for valid session and action', async () => {
+  it('POST /sessions/:id/ui-actions — 발행 실패는 502로 표면화한다(202로 삼키지 않는다)', async () => {
+    // 이 harness의 StreamProducer mock은 publish를 항상 reject한다. 예전에는 이 상태에서도
+    // 202 'accepted'가 나왔다 — 사람이 승인을 눌렀는데 아무 일도 일어나지 않고 클라이언트는
+    // 성공으로 보는 무음 유실이다. 승인 게이트 결정이 이 경로로 나가므로 fail-closed여야 한다.
     ;({ app, port } = await startServer(makeMockRunner([])))
     const { sessionId, ws } = await createConnectedSession(port)
 
@@ -241,9 +244,9 @@ describe('sessions route integration', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'submit_requirements', data: { service_type: 'ecommerce' } }),
     })
-    expect(res.status).toBe(202)
-    const body = (await res.json()) as { status: string }
-    expect(body.status).toBe('accepted')
+    expect(res.status).toBe(502)
+    const body = (await res.json()) as { error?: string }
+    expect(body.error).toBeTruthy()
     ws.close()
   })
 
