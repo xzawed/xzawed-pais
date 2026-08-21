@@ -47,7 +47,7 @@
 기능이 아니라 이미 있는 경로의 결함이다. 급하지 않지만 잊으면 안 되는 것들.
 
 - **멱등 dedup-then-crash 윈도** — 처리 전 마커를 세우므로, 클레임과 완료 사이에 크래시하면 재전달이 skip돼 무음 유실된다.
-- **Manager 인바운드 소비자에 바운드 재시도가 없다** — DLQ 격리는 있다(`StreamConsumer`·`SessionGatewayConsumer` 둘 다 `routeToDlq` 호출). 없는 것은 shared `BaseConsumer`의 `maxDeliveries` 재시도 루프라, 일시적 실패도 1회 만에 DLQ로 간다. 더불어 `session-gateway.ts`는 **`sessionId`가 UUID가 아니면 DLQ 없이 조용히 return**한다 — 이 한 갈래만 무음이다.
+- **Manager 인바운드 소비자에 바운드 재시도가 없다** — DLQ 격리는 있다(`StreamConsumer`·`SessionGatewayConsumer` 둘 다 `routeToDlq` 호출). 없는 것은 shared `BaseConsumer`의 `maxDeliveries` 재시도 루프라, **일시적 실패도 1회 만에 DLQ로 간다.**
 - **`OutboxRelay` max-attempts cap·DLQ 부재** — 영구 실패 행을 무한 재시도한다.
 - **causation leaf null 5곳 + 메트릭/SLO 0**.
 - **oracle-tier 쓰기 라우트의 소유권 공백** — 근거와 범위는 [LIVE_VS_FLAGGED.md](../LIVE_VS_FLAGGED.md)에 있다. 호출자 신원이 Manager에 도달하는 슬라이스에 묶여 있다.

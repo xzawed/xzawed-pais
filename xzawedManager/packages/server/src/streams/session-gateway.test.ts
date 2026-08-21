@@ -105,8 +105,22 @@ describe('SessionGatewayConsumer', () => {
     expect(mockRedis.xack).toHaveBeenCalled()
   })
 
-  it('non-uuid sessionId는 DLQ 없이 ack-skip(현재 동작 보존)', async () => {
+  it('non-uuid sessionId를 {stream}:dlq로 격리(invalid_schema)', async () => {
+    // 유일한 생산자가 UUID v4를 강제하므로 여기 도달 = 손상/주입. 무음 skip하지 않는다(M8).
     const mockRedis = makeRedis([[['orchestrator:to-manager:sessions', [['8-2', ['data', JSON.stringify({ sessionId: 'not-a-uuid' })]]]]]])
+    vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    const onSessionInit = vi.fn()
+    const g = new SessionGatewayConsumer('redis://localhost:6379', onSessionInit)
+    const p = g.start(); await new Promise(r => setTimeout(r, 50)); g.stop(); await p
+    expect(onSessionInit).not.toHaveBeenCalled()
+    expect(mockRedis.xadd.mock.calls[0]![0]).toBe('orchestrator:to-manager:sessions:dlq')
+    expect(mockRedis.xack).toHaveBeenCalled()
+  })
+
+  it('data 필드 부재는 DLQ 없이 ack-skip하되 로그를 남긴다', async () => {
+    // 페이로드가 없어 DLQ에 실을 것이 없다 — shared BaseConsumer와 같은 처리. 다만 무음은 아니다.
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const mockRedis = makeRedis([[['orchestrator:to-manager:sessions', [['8-3', ['other', 'x']]]]]])
     vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
     const onSessionInit = vi.fn()
     const g = new SessionGatewayConsumer('redis://localhost:6379', onSessionInit)
@@ -114,5 +128,7 @@ describe('SessionGatewayConsumer', () => {
     expect(onSessionInit).not.toHaveBeenCalled()
     expect(mockRedis.xadd).not.toHaveBeenCalled()
     expect(mockRedis.xack).toHaveBeenCalled()
+    expect(err).toHaveBeenCalledWith(expect.stringContaining('data 필드 없음'), '8-3')
+    err.mockRestore()
   })
 })
