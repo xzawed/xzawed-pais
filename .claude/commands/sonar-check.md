@@ -20,7 +20,7 @@ SonarCloud에 PR을 올리기 전에 로컬에서 품질 게이트 통과 가능
 
 ### [1/5] CPD (코드 중복) 로컬 검사
 
-프로젝트 루트 `d:/Source/xzawed-pais`에서 jscpd 실행:
+저장소 루트에서 jscpd 실행:
 
 ```
 npx jscpd@3.5.10 --config .jscpd.json
