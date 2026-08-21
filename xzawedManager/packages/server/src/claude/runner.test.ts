@@ -796,6 +796,99 @@ describe('ClaudeRunner', () => {
       expect(exec).toHaveBeenCalledTimes(1)
     })
 
+
+    describe('배포 사전 게이트 (A3 — 되돌릴 수 없는 외부 쓰기)', () => {
+      function registerDeploy(execute: ReturnType<typeof vi.fn>): void {
+        registry.register({ name: 'deploy_project', description: '', inputSchema: GATED_SCHEMA, execute } as never)
+      }
+      function deployThenEnd(): void {
+        createFn
+          .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('d1', 'deploy_project', {
+            owner: 'me', repo: 'app', branch: 'main', commitMessage: 'ship', projectPath: '/w/app',
+          })]))
+          .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+      }
+
+      it('승인 전에는 핸들러가 실행되지 않는다 — push가 승인보다 먼저 일어나면 안 된다', async () => {
+        const store = new SessionStore()
+        store.create('sess-1')
+        const exec = vi.fn().mockResolvedValue({ content: '배포됨' })
+        registerDeploy(exec)
+        deployThenEnd()
+
+        const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+        await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+        expect(exec).not.toHaveBeenCalled() // 카드가 떴는데 아직 아무것도 push되지 않았다
+        store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve' }))
+        await runP
+        expect(exec).toHaveBeenCalledTimes(1) // 승인 후 정확히 1회
+      })
+
+      it('abort면 핸들러가 한 번도 실행되지 않는다', async () => {
+        const store = new SessionStore()
+        store.create('sess-1')
+        const exec = vi.fn().mockResolvedValue({ content: '배포됨' })
+        registerDeploy(exec)
+        deployThenEnd()
+
+        const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+        await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+        store.resolveInfo('sess-1', JSON.stringify({ decision: 'abort' }))
+        await expect(runP).rejects.toThrow(/aborted/i)
+        expect(exec).not.toHaveBeenCalled()
+      })
+
+      it('revise는 재실행하지 않는다 — 재실행이 곧 승인 없는 재푸시이기 때문', async () => {
+        const store = new SessionStore()
+        store.create('sess-1')
+        const exec = vi.fn().mockResolvedValue({ content: '배포됨' })
+        registerDeploy(exec)
+        deployThenEnd()
+
+        const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+        await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+        store.resolveInfo('sess-1', JSON.stringify({ decision: 'revise', feedback: '브랜치 바꿔' }))
+        await runP
+        expect(exec).not.toHaveBeenCalled()
+        const results = createFn.mock.calls.flatMap((c: unknown[]) => {
+          const msgs = (c[0] as { messages?: { content?: unknown }[] })?.messages ?? []
+          return msgs.flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+        }) as { type?: string; is_error?: boolean; content?: string }[]
+        const denied = results.find((r) => r.type === 'tool_result' && r.is_error === true)
+        expect(denied?.content).toContain('브랜치 바꿔')
+      })
+
+      it('세션이 auto여도 사전 게이트를 거친다', async () => {
+        const store = new SessionStore()
+        store.create('sess-1')
+        store.setGateDefaultMode('sess-1', 'auto')
+        const exec = vi.fn().mockResolvedValue({ content: '배포됨' })
+        registerDeploy(exec)
+        deployThenEnd()
+
+        const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+        await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+        expect(exec).not.toHaveBeenCalled()
+        store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve' }))
+        await runP
+        expect(exec).toHaveBeenCalledTimes(1)
+      })
+
+      it('승인 카드에 무엇을 배포할지가 실린다', async () => {
+        const store = new SessionStore()
+        store.create('sess-1')
+        registerDeploy(vi.fn().mockResolvedValue({ content: 'x' }))
+        deployThenEnd()
+
+        const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+        await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+        expect(findApproval()).toMatchObject({ stage: 'deploy_project', mode: 'manual' })
+        expect(JSON.stringify(findApproval())).toContain('me/app@main')
+        store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve' }))
+        await runP
+      })
+    })
+
     it('auto override: 게이트 없이 즉시 통과한다(approval 미발행)', async () => {
       const store = new SessionStore()
       store.create('sess-1')

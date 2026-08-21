@@ -26,6 +26,34 @@ export function isGatedTool(toolName: string): boolean {
 }
 
 /**
+ * 실행 **전에** 승인받아야 하는 도구 — 되돌릴 수 없는 외부 쓰기.
+ *
+ * 사후 게이트는 통보이지 게이트가 아니다. `deploy_project`는 GitHub에 repo를 만들고
+ * commit을 올리고 ref를 옮긴다. 실행한 뒤에 물으면 abort를 눌러도 이미 원격에 올라가 있고,
+ * revise를 고르면 같은 핸들러가 다시 실행돼 승인 없이 push가 한 번 더 발생한다.
+ */
+export function requiresPreExecutionApproval(toolName: string): boolean {
+  return DEPLOY_TOOLS.has(toolName)
+}
+
+/** 실행 **후에** 산출물을 검토하는 도구 — 에이전트 디스패치 결과는 봐야 판단할 수 있다. */
+export function requiresPostExecutionApproval(toolName: string): boolean {
+  return GATED_TOOLS.has(toolName)
+}
+
+/** 실행 전 승인 카드에 실을 요약 — 결과가 아직 없으므로 무엇을 할 것인지를 적는다. */
+export function summarizeDeployIntent(input: unknown): string {
+  const o = (input ?? {}) as Record<string, unknown>
+  const s = (k: string): string => (typeof o[k] === 'string' ? (o[k] as string) : '?')
+  const target = `${s('owner')}/${s('repo')}@${s('branch')}`
+  const parts = [`대상: ${target}`, `커밋: ${s('commitMessage')}`, `소스: ${s('projectPath')}`]
+  if (o['createRepo'] === true) {
+    parts.push(o['makePrivate'] === true ? '저장소 없으면 생성(private)' : '저장소 없으면 생성(public)')
+  }
+  return parts.join(' · ')
+}
+
+/**
  * 지식성 단계 = 도메인 지식을 산출하는 에이전트(planner·designer·developer·security).
  * 게이트 승인 시 '위키에 저장'은 이 단계에서만 의미가 있다(run_tests·build 등 일시 산출물 제외).
  */
