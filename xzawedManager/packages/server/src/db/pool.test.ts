@@ -3,7 +3,7 @@ import type { Pool } from 'pg'
 import { readdir, readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
-import { runMigrations, applyMigration } from './pool.js'
+import { runMigrations, applyMigration, withDeadlockRetry } from './pool.js'
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), 'migrations')
 
@@ -103,5 +103,52 @@ describe('applyMigration — 데드락/직렬화 재시도', () => {
     const query = vi.fn().mockRejectedValue(pgError('40P01', 'deadlock detected'))
     await expect(applyMigration({ query }, 'sql', noSleep)).rejects.toThrow('deadlock detected')
     expect(query).toHaveBeenCalledTimes(5)
+  })
+})
+
+
+describe('withDeadlockRetry — 트랜잭션 전체 재시도', () => {
+  const noSleep = async (): Promise<void> => undefined
+  const pgErr = (code: string, msg = code): Error => Object.assign(new Error(msg), { code })
+
+  test('40P01이면 재시도해 성공한다', async () => {
+    const fn = vi.fn()
+      .mockRejectedValueOnce(pgErr('40P01', 'deadlock detected'))
+      .mockResolvedValueOnce('ok')
+    expect(await withDeadlockRetry(fn, noSleep)).toBe('ok')
+    expect(fn).toHaveBeenCalledTimes(2)
+  })
+
+  test('40001(직렬화 실패)도 재시도 대상', async () => {
+    const fn = vi.fn()
+      .mockRejectedValueOnce(pgErr('40001'))
+      .mockResolvedValueOnce(1)
+    expect(await withDeadlockRetry(fn, noSleep)).toBe(1)
+    expect(fn).toHaveBeenCalledTimes(2)
+  })
+
+  test('재시도 불가 코드는 즉시 전파하고 1회만 호출한다', async () => {
+    const fn = vi.fn().mockRejectedValue(pgErr('42P01', 'undefined table'))
+    await expect(withDeadlockRetry(fn, noSleep)).rejects.toThrow('undefined table')
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
+  test('code 없는 에러도 즉시 전파', async () => {
+    const fn = vi.fn().mockRejectedValue(new Error('boom'))
+    await expect(withDeadlockRetry(fn, noSleep)).rejects.toThrow('boom')
+    expect(fn).toHaveBeenCalledTimes(1)
+  })
+
+  test('상한(5회) 소진 후에는 포기하고 throw', async () => {
+    const fn = vi.fn().mockRejectedValue(pgErr('40P01', 'deadlock detected'))
+    await expect(withDeadlockRetry(fn, noSleep)).rejects.toThrow('deadlock detected')
+    expect(fn).toHaveBeenCalledTimes(5)
+  })
+
+  test('백오프는 시도회수에 비례한다(50·100·150·200ms)', async () => {
+    const waits: number[] = []
+    const fn = vi.fn().mockRejectedValue(pgErr('40P01'))
+    await expect(withDeadlockRetry(fn, async (ms) => { waits.push(ms) })).rejects.toThrow()
+    expect(waits).toEqual([50, 100, 150, 200])
   })
 })
