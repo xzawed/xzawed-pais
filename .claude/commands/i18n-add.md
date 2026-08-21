@@ -6,8 +6,8 @@ description: i18n 키를 ko/en/ja 앱·서버·UI 파일에 동시 추가하는 
 ## Context
 
 - 앱 locales 현황:
-  - ko/app.json: !`node --input-type=module --eval "import fs from 'fs'; const j=JSON.parse(fs.readFileSync('d:/Source/xzawed-pais/xzawedOrchestrator/packages/app/src/renderer/src/locales/ko/app.json','utf8')); console.log(JSON.stringify(Object.keys(j),null,2))"`
-- 서버 locales ko/server.json 키: !`node --input-type=module --eval "import fs from 'fs'; const j=JSON.parse(fs.readFileSync('d:/Source/xzawed-pais/xzawedOrchestrator/packages/server/src/locales/ko/server.json','utf8')); console.log(JSON.stringify(Object.keys(j),null,2))"`
+  - ko/app.json: !`node --input-type=module --eval "import fs from 'fs'; const j=JSON.parse(fs.readFileSync('xzawedOrchestrator/packages/app/src/renderer/src/locales/ko/app.json','utf8')); console.log(JSON.stringify(Object.keys(j),null,2))"`
+- 서버 locales ko/server.json 키: !`node --input-type=module --eval "import fs from 'fs'; const j=JSON.parse(fs.readFileSync('xzawedOrchestrator/packages/server/src/locales/ko/server.json','utf8')); console.log(JSON.stringify(Object.keys(j),null,2))"`
 
 ## Your task
 
@@ -30,24 +30,24 @@ namespace가 `app` 또는 `common`이면 앱 locales(3개 언어), `server`이�
 ### 파일 경로
 
 앱 locales:
-- `d:/Source/xzawed-pais/xzawedOrchestrator/packages/app/src/renderer/src/locales/ko/app.json`
-- `d:/Source/xzawed-pais/xzawedOrchestrator/packages/app/src/renderer/src/locales/en/app.json`
-- `d:/Source/xzawed-pais/xzawedOrchestrator/packages/app/src/renderer/src/locales/ja/app.json`
+- `xzawedOrchestrator/packages/app/src/renderer/src/locales/ko/app.json`
+- `xzawedOrchestrator/packages/app/src/renderer/src/locales/en/app.json`
+- `xzawedOrchestrator/packages/app/src/renderer/src/locales/ja/app.json`
 
 common locales:
-- `d:/Source/xzawed-pais/xzawedOrchestrator/packages/app/src/renderer/src/locales/ko/common.json`
-- `d:/Source/xzawed-pais/xzawedOrchestrator/packages/app/src/renderer/src/locales/en/common.json`
-- `d:/Source/xzawed-pais/xzawedOrchestrator/packages/app/src/renderer/src/locales/ja/common.json`
+- `xzawedOrchestrator/packages/app/src/renderer/src/locales/ko/common.json`
+- `xzawedOrchestrator/packages/app/src/renderer/src/locales/en/common.json`
+- `xzawedOrchestrator/packages/app/src/renderer/src/locales/ja/common.json`
 
 서버 locales:
-- `d:/Source/xzawed-pais/xzawedOrchestrator/packages/server/src/locales/ko/server.json`
-- `d:/Source/xzawed-pais/xzawedOrchestrator/packages/server/src/locales/en/server.json`
-- `d:/Source/xzawed-pais/xzawedOrchestrator/packages/server/src/locales/ja/server.json`
+- `xzawedOrchestrator/packages/server/src/locales/ko/server.json`
+- `xzawedOrchestrator/packages/server/src/locales/en/server.json`
+- `xzawedOrchestrator/packages/server/src/locales/ja/server.json`
 
 UI locales:
-- `d:/Source/xzawed-pais/xzawedOrchestrator/packages/ui/src/locales/ko/ui.json`
-- `d:/Source/xzawed-pais/xzawedOrchestrator/packages/ui/src/locales/en/ui.json`
-- `d:/Source/xzawed-pais/xzawedOrchestrator/packages/ui/src/locales/ja/ui.json`
+- `xzawedOrchestrator/packages/ui/src/locales/ko/ui.json`
+- `xzawedOrchestrator/packages/ui/src/locales/en/ui.json`
+- `xzawedOrchestrator/packages/ui/src/locales/ja/ui.json`
 
 ### 번역 생성 규칙
 

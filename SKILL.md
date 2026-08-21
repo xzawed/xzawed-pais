@@ -284,12 +284,17 @@ done
 각 서비스 환경변수 검증 (config.ts Zod 스키마 실행)
 
 ```bash
-# 각 서비스 디렉토리에서 — config.ts는 시작 시 자동 검증
-# 직접 검증만 하려면:
-cd <서비스> && node -e "import('./dist/config.js').then(m => m.loadConfig()).then(c => console.log('OK:', Object.keys(c)))"
+# config.ts의 Zod 스키마는 기동 시 자동 실행된다 — 서비스를 띄우는 것이 곧 검증이다.
+# 띄우지 않고 확인만 하려면 tsx로 소스를 직접 부른다(빌드 불필요).
+
+# 에이전트 7종 — config는 src/ 바로 아래
+cd xzawedPlanner && npx tsx -e "import('./src/config.ts').then(m => console.log('OK:', Object.keys(m.loadConfig()).length, 'keys'))"
+
+# Orchestrator · Manager — config는 packages/server 아래
+cd xzawedManager/packages/server && npx tsx -e "import('./src/config.ts').then(m => console.log('OK:', Object.keys(m.loadConfig()).length, 'keys'))"
 ```
 
-**주의**: `dist/` 빌드 후 실행 필요
+누락된 필수 env가 있으면 Zod가 어느 키인지 짚어 준다 — 그게 이 스킬의 출력이다.
 
 ---
 
@@ -361,7 +366,7 @@ pnpm audit --audit-level=moderate
 # 2. 취약한 패키지와 경로 파악 (Path 항목 확인)
 # 예: packages__app>electron-builder>..>tmp
 
-# 3. 루트 package.json에 override 추가
+# 3. 해당 서비스의 package.json에 override 추가 (저장소 루트에는 package.json이 없다)
 # "pnpm": { "overrides": { "취약한-패키지": ">=안전한-버전" } }
 
 # 4. lock 파일 업데이트

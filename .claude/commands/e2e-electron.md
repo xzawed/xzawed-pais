@@ -5,7 +5,7 @@ description: Electron E2E 스펙 작성 가이드 — 금지 패턴 자동 감�
 
 ## Context
 
-- E2E 스펙 디렉토리: !`ls d:/Source/xzawed-pais/xzawedOrchestrator/packages/app/e2e/specs/`
+- E2E 스펙 디렉토리: !`ls xzawedOrchestrator/packages/app/e2e/specs/`
 - 최근 변경된 E2E 파일: !`git diff --name-only origin/master...HEAD -- "xzawedOrchestrator/packages/app/e2e/**"`
 - POM 디렉토리: xzawedOrchestrator/packages/app/e2e/pages/
 
