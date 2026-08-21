@@ -889,6 +889,61 @@ describe('ClaudeRunner', () => {
       })
     })
 
+
+    describe('github_ops 쓰기 사전 게이트 (deploy 게이트 우회 봉쇄)', () => {
+      function registerGh(execute: ReturnType<typeof vi.fn>): void {
+        registry.register({ name: 'github_ops', description: '', inputSchema: GATED_SCHEMA, execute } as never)
+      }
+      function ghThenEnd(input: Record<string, unknown>): void {
+        createFn
+          .mockResolvedValueOnce(makeMessage('tool_use', [makeToolUseBlock('g1', 'github_ops', input)]))
+          .mockResolvedValueOnce(makeMessage('end_turn', [makeTextBlock('done')]))
+      }
+
+      it('commitAndPush는 승인 전에 실행되지 않는다 — deploy_project와 같은 일을 한다', async () => {
+        const store = new SessionStore()
+        store.create('sess-1')
+        const exec = vi.fn().mockResolvedValue({ content: 'pushed' })
+        registerGh(exec)
+        ghThenEnd({ action: 'commitAndPush', owner: 'me', repo: 'app', branch: 'main', files: [{ path: 'a' }] })
+
+        const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+        await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+        expect(exec).not.toHaveBeenCalled()
+        expect(JSON.stringify(findApproval())).toContain('commitAndPush')
+        store.resolveInfo('sess-1', JSON.stringify({ decision: 'approve' }))
+        await runP
+        expect(exec).toHaveBeenCalledTimes(1)
+      })
+
+      it('mergeBranch도 사전 게이트 대상', async () => {
+        const store = new SessionStore()
+        store.create('sess-1')
+        const exec = vi.fn().mockResolvedValue({ merged: true })
+        registerGh(exec)
+        ghThenEnd({ action: 'mergeBranch', owner: 'me', repo: 'app', head: 'dev', base: 'main' })
+
+        const runP = runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+        await waitFor(() => store.get('sess-1')?.state === 'waiting_info')
+        expect(exec).not.toHaveBeenCalled()
+        store.resolveInfo('sess-1', JSON.stringify({ decision: 'abort' }))
+        await expect(runP).rejects.toThrow(/aborted/i)
+        expect(exec).not.toHaveBeenCalled()
+      })
+
+      it('읽기 액션(listRepos)은 게이트하지 않는다 — 승인 카드 없이 즉시 실행', async () => {
+        const store = new SessionStore()
+        store.create('sess-1')
+        const exec = vi.fn().mockResolvedValue({ repos: [] })
+        registerGh(exec)
+        ghThenEnd({ action: 'listRepos' })
+
+        await runner.run({ ...baseRunOptions(), sessionStore: store as unknown as SessionStore })
+        expect(exec).toHaveBeenCalledTimes(1)
+        expect(findApproval()).toBeUndefined()
+      })
+    })
+
     it('auto override: 게이트 없이 즉시 통과한다(approval 미발행)', async () => {
       const store = new SessionStore()
       store.create('sess-1')

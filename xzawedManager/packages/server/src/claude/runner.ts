@@ -6,7 +6,7 @@ import type { UserContext } from '../types/user-context.js'
 import type { ManagerToOrchestratorMessage, UISpec, ComponentSpec } from '../types/streams.js'
 import { ClarificationNeededError, AgentQueryError, GateAbortError } from '../tools/errors.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
-import { requiresPreExecutionApproval, requiresPostExecutionApproval, effectiveMode, summarizeOutput, summarizeDeployIntent, parseDecision, isKnowledgeBearingStage, buildDemoSpec } from '../gates/approval-gate.js'
+import { requiresPreExecutionApproval, requiresPostExecutionApproval, effectiveMode, summarizeOutput, summarizeWriteIntent, parseDecision, isKnowledgeBearingStage, buildDemoSpec } from '../gates/approval-gate.js'
 import type { GateMode, GateDecision } from '../gates/approval-gate.js'
 import { validateToolInput } from './validate-tool-input.js'
 import type { KnowledgeRepo } from '../db/knowledge.repo.js'
@@ -287,7 +287,7 @@ export class ClaudeRunner {
 
     await this.publishStatus(producer, sessionId, `Starting ${block.name}...`)
     // A3: 되돌릴 수 없는 외부 쓰기는 실행 **전에** 승인받는다. 사후 게이트는 통보일 뿐이다.
-    if (requiresPreExecutionApproval(block.name)) {
+    if (requiresPreExecutionApproval(block.name, block.input)) {
       const denied = await this.applyPreExecutionGate(block, sessionId, producer, sessionStore)
       if (denied) return denied
     }
@@ -553,7 +553,7 @@ export class ClaudeRunner {
     producer: StreamProducer,
     sessionStore: SessionStore,
   ): Promise<Anthropic.ToolResultBlockParam | undefined> {
-    const summary = summarizeDeployIntent(block.input)
+    const summary = summarizeWriteIntent(block.name, block.input)
     let reasks = 0
     let notice = `'${block.name}'는 되돌릴 수 없는 외부 쓰기입니다. **실행 전** 승인이 필요합니다.`
     for (;;) {

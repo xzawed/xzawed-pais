@@ -26,14 +26,30 @@ export function isGatedTool(toolName: string): boolean {
 }
 
 /**
- * 실행 **전에** 승인받아야 하는 도구 — 되돌릴 수 없는 외부 쓰기.
+ * `github_ops`의 원격 쓰기 액션. 읽기(`listRepos`·`listBranches`)는 제외한다.
  *
- * 사후 게이트는 통보이지 게이트가 아니다. `deploy_project`는 GitHub에 repo를 만들고
- * commit을 올리고 ref를 옮긴다. 실행한 뒤에 물으면 abort를 눌러도 이미 원격에 올라가 있고,
- * revise를 고르면 같은 핸들러가 다시 실행돼 승인 없이 push가 한 번 더 발생한다.
+ * 이 도구는 `deploy_project`와 같은 일을 한다 — `commitAndPush`는 `updateRef`로 브랜치를
+ * 옮기고 `mergeBranch`는 `repos.merge`를 부르며 `createRepo`는 저장소를 만든다. 도구 이름이
+ * 다르다는 이유로 게이트를 비켜가면 A3는 우회 가능한 게이트가 된다.
  */
-export function requiresPreExecutionApproval(toolName: string): boolean {
-  return DEPLOY_TOOLS.has(toolName)
+export const GITHUB_WRITE_ACTIONS: ReadonlySet<string> = new Set([
+  'createRepo', 'createBranch', 'commitAndPush', 'createPR', 'createIssue', 'mergeBranch',
+])
+
+/**
+ * 실행 **전에** 승인받아야 하는 호출 — 되돌릴 수 없는 외부 쓰기.
+ *
+ * 사후 게이트는 통보이지 게이트가 아니다. 실행한 뒤에 물으면 abort를 눌러도 이미 원격에
+ * 올라가 있고, revise를 고르면 같은 핸들러가 다시 실행돼 승인 없이 한 번 더 쓴다.
+ *
+ * `github_ops`는 도구 단위가 아니라 **액션 단위**로 판정한다 — 목록 조회까지 승인 카드를
+ * 띄우면 게이트가 소음이 되고, 소음이 된 게이트는 사람이 무조건 승인하게 만든다.
+ */
+export function requiresPreExecutionApproval(toolName: string, input?: unknown): boolean {
+  if (DEPLOY_TOOLS.has(toolName)) return true
+  if (toolName !== 'github_ops') return false
+  const action = (input as { action?: unknown } | undefined)?.action
+  return typeof action === 'string' && GITHUB_WRITE_ACTIONS.has(action)
 }
 
 /** 실행 **후에** 산출물을 검토하는 도구 — 에이전트 디스패치 결과는 봐야 판단할 수 있다. */
@@ -42,11 +58,30 @@ export function requiresPostExecutionApproval(toolName: string): boolean {
 }
 
 /** 실행 전 승인 카드에 실을 요약 — 결과가 아직 없으므로 무엇을 할 것인지를 적는다. */
-export function summarizeDeployIntent(input: unknown): string {
+export function summarizeWriteIntent(toolName: string, input: unknown): string {
   const o = (input ?? {}) as Record<string, unknown>
   const s = (k: string): string => (typeof o[k] === 'string' ? (o[k] as string) : '?')
-  const target = `${s('owner')}/${s('repo')}@${s('branch')}`
-  const parts = [`대상: ${target}`, `커밋: ${s('commitMessage')}`, `소스: ${s('projectPath')}`]
+
+  if (toolName === 'github_ops') {
+    const action = s('action')
+    const target = `${s('owner')}/${s('repo') !== '?' ? s('repo') : s('repoName')}`
+    const parts = [`동작: ${action}`, `대상: ${target}`]
+    if (action === 'commitAndPush') {
+      const n = Array.isArray(o['files']) ? (o['files'] as unknown[]).length : 0
+      parts.push(`브랜치: ${s('branch')}`, `파일 ${n}개`, `커밋: ${s('message') !== '?' ? s('message') : s('title')}`)
+    }
+    if (action === 'mergeBranch') parts.push(`${s('head')} → ${s('base')}`)
+    if (action === 'createBranch') parts.push(`${s('fromBranch')} → ${s('branch')}`)
+    if (action === 'createPR') parts.push(`${s('head')} → ${s('base')}`, `제목: ${s('title')}`)
+    if (action === 'createRepo') parts.push(o['private'] === true ? 'private' : 'public')
+    return parts.join(' · ')
+  }
+
+  const parts = [
+    `대상: ${s('owner')}/${s('repo')}@${s('branch')}`,
+    `커밋: ${s('commitMessage')}`,
+    `소스: ${s('projectPath')}`,
+  ]
   if (o['createRepo'] === true) {
     parts.push(o['makePrivate'] === true ? '저장소 없으면 생성(private)' : '저장소 없으면 생성(public)')
   }
