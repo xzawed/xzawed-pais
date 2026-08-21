@@ -6,7 +6,7 @@ import type { UserContext } from '../types/user-context.js'
 import type { ManagerToOrchestratorMessage, UISpec, ComponentSpec } from '../types/streams.js'
 import { ClarificationNeededError, AgentQueryError, GateAbortError } from '../tools/errors.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
-import { isGatedTool, effectiveMode, summarizeOutput, parseDecision, isKnowledgeBearingStage, buildDemoSpec } from '../gates/approval-gate.js'
+import { requiresPreExecutionApproval, requiresPostExecutionApproval, effectiveMode, summarizeOutput, summarizeDeployIntent, parseDecision, isKnowledgeBearingStage, buildDemoSpec } from '../gates/approval-gate.js'
 import type { GateMode, GateDecision } from '../gates/approval-gate.js'
 import { validateToolInput } from './validate-tool-input.js'
 import type { KnowledgeRepo } from '../db/knowledge.repo.js'
@@ -286,6 +286,11 @@ export class ClaudeRunner {
     }
 
     await this.publishStatus(producer, sessionId, `Starting ${block.name}...`)
+    // A3: 되돌릴 수 없는 외부 쓰기는 실행 **전에** 승인받는다. 사후 게이트는 통보일 뿐이다.
+    if (requiresPreExecutionApproval(block.name)) {
+      const denied = await this.applyPreExecutionGate(block, sessionId, producer, sessionStore)
+      if (denied) return denied
+    }
     // 위키 주입: 호출 전 프로젝트 최근 지식을 context.domainKnowledge로 주입
     const input = await this.injectDomainKnowledge(block.input, userContext)
     // ClarificationNeededError는 catch하지 않고 processToolUseBlocks로 전파
@@ -310,8 +315,10 @@ export class ClaudeRunner {
   ): Promise<Anthropic.ToolResultBlockParam> {
     let result = rawResult
 
-    // 코드로 강제하는 승인 게이트 — 에이전트 디스패치 도구에만 적용
-    if (isGatedTool(block.name)) {
+    // 코드로 강제하는 승인 게이트 — 산출물 검토가 필요한 에이전트 디스패치 도구에만 적용.
+    // 배포 도구는 실행 전 게이트(applyPreExecutionGate)를 이미 거쳤다 — 여기서 또 물으면
+    // revise가 재실행=재푸시가 되므로 대상에서 뺀다.
+    if (requiresPostExecutionApproval(block.name)) {
       result = await this.applyApprovalGate(
         handler, block, result, sessionId, producer, sessionStore, userContext,
       )
@@ -527,6 +534,46 @@ export class ClaudeRunner {
       if (++revises > MAX_GATE_REVISES) return this.onReviseExhausted(result, block.name, sessionId, sessionStore)
       const augmented = { ...(block.input as Record<string, unknown>), clarificationContext: decision.feedback }
       result = await handler.execute(augmented, sessionId, userContext)
+    }
+  }
+
+
+  /**
+   * 되돌릴 수 없는 외부 쓰기를 **실행 전에** 게이트한다(A3).
+   *
+   * 승인(approve)만이 실행을 허용한다. abort는 아무것도 push되지 않은 상태에서 세션을 끊고,
+   * revise는 재실행이 곧 재푸시이므로 실행하지 않고 피드백을 Claude에 돌려준다 — Claude가
+   * 입력을 고쳐 다시 호출하면 이 게이트를 다시 통과해야 한다.
+   *
+   * 반환값이 있으면 실행하지 않고 그 tool_result를 그대로 쓴다. undefined면 실행을 진행한다.
+   */
+  private async applyPreExecutionGate(
+    block: Anthropic.ToolUseBlock,
+    sessionId: string,
+    producer: StreamProducer,
+    sessionStore: SessionStore,
+  ): Promise<Anthropic.ToolResultBlockParam | undefined> {
+    const summary = summarizeDeployIntent(block.input)
+    let reasks = 0
+    let notice = `'${block.name}'는 되돌릴 수 없는 외부 쓰기입니다. **실행 전** 승인이 필요합니다.`
+    for (;;) {
+      await this.publishApprovalRequest(block, undefined, summary, sessionId, producer, notice)
+      const decision = parseDecision(await sessionStore.waitForInfo(sessionId), this.failSafe)
+
+      if (decision.kind === 'approve') return undefined
+      if (decision.kind === 'abort') return this.escalateGate(sessionId, block.name, sessionStore)
+      if (decision.kind === 'needs_human') {
+        await this.assertReaskWithinCap(++reasks, block.name, sessionId, sessionStore)
+        notice = `직전 응답을 해석할 수 없습니다(${decision.reason}). '${block.name}' 실행 여부를 다시 선택하세요.`
+        continue
+      }
+      // revise — 실행하지 않는다. 재실행은 승인 없는 추가 push가 되기 때문이다.
+      return {
+        type: 'tool_result',
+        tool_use_id: block.id,
+        content: `배포가 승인되지 않았습니다(수정 요청). 피드백: ${decision.feedback}\n입력을 고쳐 다시 호출하면 승인 게이트를 다시 거칩니다.`,
+        is_error: true,
+      }
     }
   }
 
