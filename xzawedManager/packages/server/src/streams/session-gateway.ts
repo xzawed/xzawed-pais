@@ -54,7 +54,12 @@ export class SessionGatewayConsumer {
     try {
       const dataIdx = fields.indexOf('data')
       const rawStr = dataIdx === -1 ? undefined : fields[dataIdx + 1]
-      if (rawStr === undefined) return  // 구조적 skip
+      if (rawStr === undefined) {
+        // data 필드가 없으면 DLQ에 실을 페이로드 자체가 없다 — shared BaseConsumer와 같은
+        // 처리(로그 후 ack+skip)를 하되, 무음으로 사라지지는 않게 한다.
+        console.error("[SessionGateway] data 필드 없음 — ack 후 skip:", msgId)
+        return
+      }
       let parsed: { sessionId?: unknown }
       try {
         parsed = JSON.parse(rawStr) as { sessionId?: unknown }
@@ -63,7 +68,13 @@ export class SessionGatewayConsumer {
         return
       }
       const sid = z.string().uuid().safeParse(parsed.sessionId)
-      if (!sid.success) return  // 소프트 검증 skip(현재 동작 보존)
+      if (!sid.success) {
+        // 유일한 생산자(Orchestrator publishSessionGateway)가 UUID v4를 강제하고 위반 시
+        // throw하므로, 여기 도달했다는 것은 손상이나 주입이다. 바로 위 JSON 무효 분기와
+        // 같이 DLQ로 격리한다 — 페이로드가 있으므로 무음 skip할 이유가 없다(M8).
+        await routeToDlq(this.bus, GATEWAY_STREAM, rawStr, "invalid_schema", 0)
+        return
+      }
       try {
         await this.onSessionInit(sid.data)
       } catch (err) {
