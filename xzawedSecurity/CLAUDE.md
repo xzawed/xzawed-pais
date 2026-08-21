@@ -12,11 +12,12 @@ src/
 ├── index.ts              # 진입점: config 로드, Redis 연결, 모든 컴포넌트 초기화
 ├── config.ts             # 환경변수 검증 (Zod)
 ├── server.ts             # Fastify HTTP 서버 (/health, PORT=3008)
-├── security.ts           # 3개 분석기 Promise.all, calculateScore(), filterBySeverity()
+├── security.ts           # 분석기 3종 Promise.allSettled(전부 실패 시에만 throw), calculateScore(), filterBySeverity()
 ├── executor.ts           # validatePath() — WORKSPACE_ROOT 경로 검증
 ├── types.ts              # SecurityIssue, ManagerToSecurityMessageSchema
 ├── analyzers/
-│   ├── static.ts         # OWASP 패턴 5개 규칙으로 소스 파일 직접 스캔
+│   ├── static.ts         # 규칙 집계자 — 자체 규칙 + static-*.ts 모듈을 ALL_RULES로 합쳐 스캔
+│   ├── static-*.ts       # 카테고리별 규칙 모듈(crypto·config·injection·traversal·xss·access). 개수는 디렉토리가 정본
 │   └── deps.ts           # npm audit --json 실행 → SecurityIssue[] 변환
 ├── streams/
 │   ├── consumer.ts       # BaseConsumer 확장 — manager:to-security:{sessionId}

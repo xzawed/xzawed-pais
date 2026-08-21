@@ -154,6 +154,10 @@ packages/
 │   │   ├── sessions.route.ts      # 세션 / 메시지 / 작업 / UI 액션 라우트
 │   │   ├── auth.route.ts          # 사용자 인증 라우트 (rate limit 포함)
 │   │   ├── projects.route.ts      # 프로젝트 CRUD + GitHub PAT 관리
+│   │   ├── knowledge.route.ts     # 도메인 위키 Manager 프록시 (읽기 fail-open)
+│   │   ├── decisions.route.ts     # 결정 대기함 Manager 프록시
+│   │   ├── internal.route.ts      # 서비스 간 내부 라우트
+│   │   ├── rate-limit.ts          # 라우트별 rate limit 설정 (global:false)
 │   │   └── health.route.ts        # GET /health
 │   ├── auth/
 │   │   ├── user-auth.hook.ts      # Bearer 헤더 / WebSocket protocol 토큰 인증 훅
@@ -175,8 +179,6 @@ packages/
 │   ├── streams/
 │   │   ├── consumer.ts            # manager:to-orchestrator 스트림 구독
 │   │   ├── producer.ts            # orchestrator:to-manager 스트림 발행
-│   │   ├── session-gateway.ts     # SessionGateway consumer (Phase 1)
-│   │   ├── project-gateway.ts     # ProjectGateway consumer (Phase 1)
 │   │   └── redis.client.ts        # ioredis 클라이언트 싱글턴
 │   ├── sessions/
 │   │   ├── session.ts             # Session 타입 정의
