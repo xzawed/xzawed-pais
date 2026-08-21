@@ -58,7 +58,8 @@ cd packages/server && pnpm test <파일>
 | 지점 | 부재·오류 시 |
 |---|---|
 | 승인 게이트 파싱 실패·미지 응답 | **fail-closed** — 자동 승인 금지, `needs_human`으로 재요청. `MANAGER_GATE_FAILSAFE=false`가 레거시 fail-open 탈출구 |
-| **승인 게이트 시점** | `deploy_project`는 **실행 전**(`requiresPreExecutionApproval`), 나머지 디스패치 도구는 **실행 후**(`requiresPostExecutionApproval`). 배포는 되돌릴 수 없는 외부 쓰기라 사후에 물으면 게이트가 아니라 통보다 — `revise`도 재실행하지 않고 피드백만 돌려준다(재실행 = 승인 없는 재푸시) |
+| **승인 게이트 시점** | 되돌릴 수 없는 외부 쓰기는 **실행 전**(`requiresPreExecutionApproval`), 에이전트 디스패치 산출물은 **실행 후**(`requiresPostExecutionApproval`). 사후에 물으면 게이트가 아니라 통보다 — `revise`도 재실행하지 않고 피드백만 돌려준다(재실행 = 승인 없는 재푸시) |
+| **사전 게이트 대상** | `deploy_project` 전체 + `github_ops`의 **쓰기 액션만**(`GITHUB_WRITE_ACTIONS` — createRepo·createBranch·commitAndPush·createPR·createIssue·mergeBranch). 도구가 아니라 액션 단위다 — 목록 조회까지 카드를 띄우면 게이트가 소음이 되고, 소음이 된 게이트는 무조건 승인을 부른다 |
 | 검증 게이트 (증거 없음·판정 불가) | **fail-closed** — verdict 실패 시 `publishCompletion` 전에 반환 |
 | 빈 테스트 스위트 | **fail-closed** — `success && failed===0`이어도 `passed<=0`이면 vacuous로 차단 |
 | 릴리스 게이트 (증거 부재·skip) | **fail-closed** — `status:'blocked'` |

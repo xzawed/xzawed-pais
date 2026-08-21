@@ -4,6 +4,7 @@ import {
   summarizeOutput, parseDecision, GATED_TOOLS,
   isKnowledgeBearingStage, KNOWLEDGE_BEARING_STAGES,
   buildDemoSpec,
+  requiresPreExecutionApproval, requiresPostExecutionApproval, summarizeWriteIntent,
 } from './approval-gate.js'
 
 describe('isGatedTool', () => {
@@ -196,5 +197,63 @@ describe('buildDemoSpec', () => {
   it('알 수 없는 type은 mockup_viewer로 폴백한다', () => {
     const spec = buildDemoSpec('design_ui', { uiSpec: { type: 'weird' }, content: 'x' })
     expect(spec?.type).toBe('mockup_viewer')
+  })
+})
+
+describe('requiresPreExecutionApproval (되돌릴 수 없는 외부 쓰기)', () => {
+  it('deploy_project는 입력과 무관하게 항상 사전 승인 대상', () => {
+    expect(requiresPreExecutionApproval('deploy_project')).toBe(true)
+    expect(requiresPreExecutionApproval('deploy_project', {})).toBe(true)
+  })
+
+  it('github_ops는 쓰기 액션만 사전 승인 대상 — 도구가 아니라 액션 단위', () => {
+    for (const action of ['createRepo', 'createBranch', 'commitAndPush', 'createPR', 'createIssue', 'mergeBranch']) {
+      expect(requiresPreExecutionApproval('github_ops', { action })).toBe(true)
+    }
+  })
+
+  it('github_ops 읽기 액션은 게이트하지 않는다 — 소음이 된 게이트는 무조건 승인을 부른다', () => {
+    expect(requiresPreExecutionApproval('github_ops', { action: 'listRepos' })).toBe(false)
+    expect(requiresPreExecutionApproval('github_ops', { action: 'listBranches' })).toBe(false)
+  })
+
+  it('action이 없거나 문자열이 아니면 게이트하지 않는다(스키마가 먼저 거부한다)', () => {
+    expect(requiresPreExecutionApproval('github_ops')).toBe(false)
+    expect(requiresPreExecutionApproval('github_ops', {})).toBe(false)
+    expect(requiresPreExecutionApproval('github_ops', { action: 42 })).toBe(false)
+  })
+
+  it('에이전트 디스패치 도구는 사전이 아니라 사후 대상', () => {
+    expect(requiresPreExecutionApproval('plan_task')).toBe(false)
+    expect(requiresPostExecutionApproval('plan_task')).toBe(true)
+    expect(requiresPostExecutionApproval('deploy_project')).toBe(false)
+    expect(requiresPostExecutionApproval('github_ops')).toBe(false)
+  })
+})
+
+describe('summarizeWriteIntent (실행 전 카드에 실을 의도)', () => {
+  it('deploy_project는 대상·커밋·소스를 적는다', () => {
+    const s = summarizeWriteIntent('deploy_project', {
+      owner: 'me', repo: 'app', branch: 'main', commitMessage: 'ship', projectPath: '/w/app',
+    })
+    expect(s).toContain('me/app@main')
+    expect(s).toContain('ship')
+  })
+
+  it('github_ops commitAndPush는 브랜치와 파일 수를 적는다', () => {
+    const s = summarizeWriteIntent('github_ops', {
+      action: 'commitAndPush', owner: 'me', repo: 'app', branch: 'dev',
+      files: [{ path: 'a' }, { path: 'b' }],
+    })
+    expect(s).toContain('commitAndPush')
+    expect(s).toContain('me/app')
+    expect(s).toContain('파일 2개')
+  })
+
+  it('github_ops mergeBranch는 방향을 적는다', () => {
+    const s = summarizeWriteIntent('github_ops', {
+      action: 'mergeBranch', owner: 'me', repo: 'app', head: 'dev', base: 'main',
+    })
+    expect(s).toContain('dev → main')
   })
 })
