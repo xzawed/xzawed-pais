@@ -246,3 +246,44 @@ describe('DecisionRepo.hasApprovedReleaseSignoff', () => {
     }
   })
 })
+
+
+describe('DecisionRepo.recordDecision — 데드락 재시도', () => {
+  /** UPDATE decision_requests에서 n회 40P01을 터뜨리고 그 뒤는 정상 동작하는 pool. */
+  function deadlockingPool(times: number) {
+    let left = times
+    const pendingRow = { workflow_id: 'wf1', correlation_id: 'wf1', status: 'PENDING' }
+    const query = vi.fn().mockImplementation((sql: string) => {
+      if (/UPDATE decision_requests SET status/i.test(sql) && left > 0) {
+        left -= 1
+        return Promise.reject(Object.assign(new Error('deadlock detected'), { code: '40P01' }))
+      }
+      if (/FROM decision_requests/i.test(sql) && /FOR UPDATE/i.test(sql)) return Promise.resolve({ rows: [pendingRow] })
+      if (/INSERT INTO human_decisions/i.test(sql)) return Promise.resolve({ rows: [], rowCount: 1 })
+      return Promise.resolve({ rows: [], rowCount: 1 })
+    })
+    const connect = vi.fn().mockResolvedValue({ query, release: vi.fn() })
+    return { pool: { connect, query } as unknown as Pool, query, connect }
+  }
+  const DEC = { decisionId: 'd-1', requestId: 'req-1', decidedBy: 'po', choice: 'approve' as const }
+
+  it('40P01 1회 후 재시도해 성공한다 — connect가 2회(트랜잭션 전체 재실행)', async () => {
+    const m = deadlockingPool(1)
+    const res = await new DecisionRepo(m.pool).recordDecision(DEC)
+    expect(res).not.toBeNull()
+    expect(m.connect).toHaveBeenCalledTimes(2)
+    expect(verbs(m.query)).toContain('COMMIT')
+  })
+
+  it('재시도 전에 ROLLBACK으로 부분 상태를 버린다', async () => {
+    const m = deadlockingPool(1)
+    await new DecisionRepo(m.pool).recordDecision(DEC)
+    expect(verbs(m.query).filter((v) => v === 'ROLLBACK').length).toBe(1)
+  })
+
+  it('상한 소진 시 throw — 무한 재시도하지 않는다', async () => {
+    const m = deadlockingPool(99)
+    await expect(new DecisionRepo(m.pool).recordDecision(DEC)).rejects.toThrow('deadlock detected')
+    expect(m.connect).toHaveBeenCalledTimes(5)
+  })
+})

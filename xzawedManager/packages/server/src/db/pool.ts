@@ -32,6 +32,34 @@ interface MigrationClient {
 
 // 단일 마이그레이션 파일을 적용하되, 일시적 락 경합(데드락/직렬화 실패)이면 백오프 후 재시도한다.
 // sleep은 테스트 주입용(기본은 실 setTimeout).
+/**
+ * 데드락·직렬화 실패로 중단된 **트랜잭션 전체**를 백오프 후 재실행한다.
+ *
+ * 40P01은 pg가 트랜잭션을 이미 중단시킨 상태라 부분 커밋이 남지 않는다 — 즉 몸체를
+ * 처음부터 다시 돌려도 안전하다. 단, 감싸는 함수가 자체 멱등이어야 한다(BEGIN부터
+ * 재시작하고 외부 부수효과가 없어야 한다).
+ *
+ * 적용 기준은 "관측된 victim"이다. 추정으로 전파하지 않는다 — 띄우면 실패가
+ * 사라지는 게 아니라 느려지기만 하는 경로가 생길 수 있다.
+ */
+export async function withDeadlockRetry<T>(
+  fn: () => Promise<T>,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      const code = (err as { code?: unknown }).code
+      if (typeof code === 'string' && RETRYABLE_MIGRATION_CODES.has(code) && attempt < MAX_MIGRATION_ATTEMPTS) {
+        await sleep(50 * attempt)
+        continue
+      }
+      throw err
+    }
+  }
+}
+
 export async function applyMigration(
   client: MigrationClient,
   sql: string,
