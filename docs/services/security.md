@@ -79,11 +79,12 @@ src/
 ├── index.ts              # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner·Security 초기화
 ├── config.ts             # 환경변수 검증 (Zod)
 ├── server.ts             # Fastify HTTP 서버 (/health, PORT=3008)
-├── security.ts           # 3개 분석기 Promise.all, 점수 계산, 심각도 필터링
+├── security.ts           # 분석기 3종 Promise.allSettled, 점수 계산, 심각도 필터링
 ├── executor.ts           # validatePath() — WORKSPACE_ROOT 경로 검증
 ├── types.ts              # SecurityIssue, ManagerToSecurityMessageSchema 정의
 ├── analyzers/
-│   ├── static.ts         # OWASP 패턴 정적 분석 — 5개 규칙으로 소스 파일 직접 스캔
+│   ├── static.ts         # 규칙 집계자 — 자체 규칙 + static-*.ts 모듈을 ALL_RULES로 합쳐 스캔
+│   ├── static-*.ts       # 카테고리별 규칙 모듈(crypto·config·injection·traversal·xss·access). 개수는 디렉토리가 정본
 │   └── deps.ts           # npm audit --json 실행 → SecurityIssue[] 변환
 ├── streams/
 │   ├── consumer.ts       # BaseConsumer 확장 — manager:to-security:{sessionId} 구독
@@ -95,7 +96,7 @@ src/
 ### 데이터 흐름
 
 1. `consumer.ts` → `audit_request` 수신, Zod 스키마 검증
-2. `security.ts` → 3개 분석기 `Promise.all` 병렬 실행 (각 독립 실패 허용)
+2. `security.ts` → 분석기 3종(static·deps·LLM) `Promise.allSettled` 병렬 실행 — 전부 실패할 때만 throw
    - `static.ts`: 각 아티팩트에 `validatePath()` 적용 후 5개 OWASP 규칙 스캔
    - `deps.ts`: `validatePath(projectPath)` 후 `npm audit --json` 실행 및 파싱
    - `claude/runner.ts`: Anthropic API로 아티팩트 분석

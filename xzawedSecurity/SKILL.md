@@ -15,13 +15,22 @@ description: xzawedSecurity 개발·디버깅·운영 스킬
 ### add-static-rule
 새 정적 분석 규칙 추가
 
-**파일**: `src/analyzers/static.ts`의 RULES 배열
+**파일**: 카테고리별 모듈 `src/analyzers/static-<카테고리>.ts`.
+
+`static.ts`의 `RULES`는 초기 5개(S001~S005) 전용이고 **새 규칙은 거기 넣지 않는다** — `static.ts`는 각 모듈의 `<CATEGORY>_RULES`를 `ALL_RULES`로 합치는 집계자다. 기존 카테고리면 그 모듈 배열에 덧붙이고, 새 카테고리면 모듈을 만들어 `static.ts`의 import와 `ALL_RULES`에 추가한다.
+
+id는 전역 연속 번호다. 마지막 번호를 먼저 확인한다.
+
+```bash
+grep -ho "id: 'S[0-9]*'" src/analyzers/static*.ts | sort -u | tail -1
+```
 
 ```typescript
-const RULES: StaticRule[] = [
-  // 기존 5개 규칙
+// 예: src/analyzers/static-config.ts
+export const CONFIG_RULES: StaticRule[] = [
+  // ...기존 항목
   {
-    id: 'S006',
+    id: 'S023',
     pattern: /process\.env\.[A-Z_]+\s*=\s*/,
     severity: 'high',
     category: 'Configuration',
@@ -32,7 +41,7 @@ const RULES: StaticRule[] = [
 ]
 ```
 
-**검증**: `pnpm test src/analyzers/static.test.ts`
+**검증**: `pnpm test src/analyzers/static.test.ts`(집계 결과) + 해당 카테고리 모듈 테스트
 
 ---
 
