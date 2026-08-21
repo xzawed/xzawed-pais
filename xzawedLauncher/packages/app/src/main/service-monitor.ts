@@ -1,13 +1,37 @@
 import { BrowserWindow, ipcMain, safeStorage, app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import { randomBytes } from 'node:crypto'
 import { getServiceStatuses } from './docker-manager.js'
 import { getSetupConfig } from './setup-store.js'
+
+/**
+ * compose가 `${POSTGRES_PASSWORD:?}`로 요구하는 값. 없으면 컨테이너가 뜨기도 전에
+ * 보간 단계에서 죽는다.
+ *
+ * 최초 1회 생성해 userData에 보관한다 — postgres 볼륨이 재시작을 넘어 유지되므로
+ * 값이 바뀌면 기존 데이터에 인증이 깨진다. 저장소에 하드코딩하지 않는 이유이기도 하다.
+ * compose의 postgres는 포트를 노출하지 않아 이 값은 compose 네트워크 밖에서 쓰이지 않는다.
+ */
+export function getOrCreateDbPassword(): string {
+  const p = path.join(app.getPath('userData'), 'db-password')
+  try {
+    const existing = fs.readFileSync(p, 'utf-8').trim()
+    if (existing) return existing
+  } catch { /* 최초 실행 */ }
+  const pw = randomBytes(24).toString('base64url')
+  fs.mkdirSync(path.dirname(p), { recursive: true })
+  fs.writeFileSync(p, pw, { mode: 0o600 })
+  return pw
+}
 
 export function buildDockerEnv(): Record<string, string> {
   const cfg = getSetupConfig()
   if (!cfg) return {}
-  const env: Record<string, string> = { CLAUDE_MODE: cfg.claudeMode }
+  const env: Record<string, string> = {
+    CLAUDE_MODE: cfg.claudeMode,
+    POSTGRES_PASSWORD: getOrCreateDbPassword(),
+  }
   if (cfg.claudeMode !== 'cli') {
     try {
       const encPath = path.join(app.getPath('userData'), 'api-key.enc')

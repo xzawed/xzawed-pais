@@ -139,7 +139,9 @@ cd packages/app && pnpm dev
 
 인증 없이 열려 있는 엔드포인트는 `/health` 하나가 아니다 — `/auth/register`·`/auth/login`·`/auth/refresh`와 `GET /projects/:id/decisions/pending`도 열려 있다.
 
-`docker-compose.prod.yml`(GHCR 사전빌드 이미지, Launcher가 쓰는 파일)은 **현재 그대로는 뜨지 않는다.** 에이전트 7종에 `WORKSPACE_ROOT`가 한 곳도 없고(dev compose에는 7곳 다 있다) 그 값은 기동 필수다. orchestrator에는 `MANAGER_URL`이 없어 컨테이너가 자기 자신을 가리킨다. 파일은 `${POSTGRES_PASSWORD:?}`를 요구하는데 Launcher가 compose에 싣는 env는 `CLAUDE_MODE`와 `ANTHROPIC_API_KEY` 둘뿐이라, 호스트 셸에 그 값이 이미 있지 않으면 보간 단계에서 죽는다.
+`docker-compose.prod.yml`(GHCR 사전빌드 이미지)은 Launcher가 쓰는 파일이고, 저장소 루트와 `xzawedLauncher/packages/app/resources/`에 **사본 두 벌**이 있다(패키징 대상은 후자다). 둘은 orchestrator의 `CLAUDE_MODE` 기본값만 다르므로, 한쪽만 고치면 Launcher는 그대로 깨진 채 남는다.
+
+`POSTGRES_PASSWORD`는 Launcher가 최초 실행 시 생성해 `userData/db-password`에 보관하고 compose에 주입한다. **직접 `docker compose -f docker-compose.prod.yml`을 돌릴 때는 그 값을 손수 줘야 한다** — 파일이 `${POSTGRES_PASSWORD:?}`로 요구하고, 일부 서비스만 지정해도 보간은 파일 전체에 걸린다.
 
 ## 자율 스택
 
