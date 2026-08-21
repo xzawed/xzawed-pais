@@ -83,7 +83,7 @@ No service imports another directly. Every message crosses a stream boundary, gi
 | Category | Technology |
 |---|---|
 | Language | TypeScript 5 (strict mode) |
-| Package manager | pnpm 9 |
+| Package manager | pnpm 10 |
 | Monorepo build | Turborepo 2 (Orchestrator + Manager) |
 | HTTP server | Fastify 5 |
 | Messaging | ioredis — Redis Streams |
@@ -129,9 +129,8 @@ Each message carries a common envelope:
 
 ### Prerequisites
 
-- Node.js 20+
-- pnpm 9+ (`npm install -g pnpm`)
-- Redis running on `localhost:6379`
+- Node.js **22+** and pnpm **10+** (`engines` enforces both)
+- Docker, or a Redis reachable at `redis://localhost:6379`
 - `ANTHROPIC_API_KEY` from [console.anthropic.com](https://console.anthropic.com/)
 
 ### Install
@@ -141,85 +140,74 @@ git clone https://github.com/xzawed/xzawed-pais.git
 cd xzawed-pais
 ```
 
-Install each service individually (no root-level install):
+There is no root `package.json` — install per service. **Build `xzawedShared` first:** the seven agent services depend on it through `file:../xzawedShared` and its `dist/` is not in git, so a fresh clone cannot start them until it is built.
 
 ```bash
-# Turborepo services
-cd xzawedOrchestrator && pnpm install
-cd ../xzawedManager   && pnpm install
+cd xzawedShared && pnpm install && pnpm build && cd ..
 
-# Independent services
+cd xzawedOrchestrator && pnpm install && cd ..
+cd xzawedManager      && pnpm install && cd ..
+
 for svc in xzawedPlanner xzawedDeveloper xzawedDesigner \
            xzawedTester xzawedBuilder xzawedWatcher xzawedSecurity; do
-  (cd $svc && pnpm install)
+  (cd "$svc" && pnpm install)
 done
 ```
 
 ### Configure
 
-Copy `.env.example` to `.env` in every service directory and fill in your values:
+Two things bite here.
 
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-CLAUDE_MODEL=claude-sonnet-4-6
-REDIS_URL=redis://localhost:6379
-PORT=<service port>
-MODE=local
-```
+**`.env` is read by the seven agent services only.** Their `dev` script passes `--env-file=.env`. Orchestrator and Manager do not, and no service in this repo uses `dotenv` — so putting values in `xzawedManager/.env` has **no effect** when you run `pnpm dev`. Those two take their configuration from the shell.
+
+**`docker compose` needs a root `.env`** holding `POSTGRES_PASSWORD`, and there is no root `.env.example` to copy from. Without it, even `docker compose up redis planner` aborts during interpolation.
 
 ### Run
 
-**Turborepo services** (Orchestrator, Manager):
+The shortest working path is [Docker](#-docker).
+
+From source:
 
 ```bash
-cd xzawedOrchestrator && pnpm build && cd packages/server && pnpm dev
-cd xzawedManager      && pnpm build && cd packages/server && pnpm dev
+# Agents — .env works here
+cp xzawedPlanner/.env.example xzawedPlanner/.env    # repeat per agent
+cd xzawedPlanner && pnpm dev                        # port 3002
+
+# Orchestrator / Manager — put the values in the shell
+cd xzawedManager/packages/server
+ANTHROPIC_API_KEY=sk-ant-... REDIS_URL=redis://localhost:6379 pnpm dev
 ```
 
-**Independent services** (all others):
-
-```bash
-cd xzawedPlanner   && pnpm dev   # port 3002
-cd xzawedDeveloper && pnpm dev   # port 3003
-cd xzawedDesigner  && pnpm dev   # port 3004
-cd xzawedTester    && pnpm dev   # port 3005
-cd xzawedBuilder   && pnpm dev   # port 3006
-cd xzawedWatcher   && pnpm dev   # port 3007
-cd xzawedSecurity  && pnpm dev   # port 3008
-```
+**`POST /sessions/:id/messages` returns 202 and nothing else** — the reply streams over WebSocket. The full procedure, including the Electron app and the autonomous profile, is in **[docs/operations/running.md](docs/operations/running.md)**.
 
 ### Test
 
 ```bash
-# Any service
-cd <service-directory> && pnpm test
-
-# Turborepo services — single file
-cd xzawedManager/packages/server && pnpm test <file>
-
-# Independent services — verbose output
-cd xzawedDeveloper && pnpm test -- --reporter=verbose
+cd xzawedManager/packages/server && pnpm test <file>    # single file
+cd xzawedDeveloper && pnpm test -- --reporter=verbose   # verbose
 ```
+
+Integration tests skip silently without `DATABASE_URL` — check the skip count. A local green is not a CI green.
 
 ---
 
 ## 🐳 Docker
 
-Run the entire platform (Redis + all 9 services) with a single command:
-
 ```bash
-# Copy .env files for each service first
-cp xzawedOrchestrator/.env.example xzawedOrchestrator/.env
-# ... (repeat for each service)
+# 1. Every service needs its own .env — a missing file aborts the run
+for s in Orchestrator Manager Planner Developer Designer Tester Builder Watcher Security; do
+  cp "xzawed$s/.env.example" "xzawed$s/.env"
+done
 
-# Build and start everything
+# 2. Root .env — compose fails interpolation without it
+echo 'POSTGRES_PASSWORD=choose-one' > .env
+
 docker compose up --build
-
-# Start only specific services
-docker compose up redis planner developer security
 ```
 
-All services share a `workspace` volume for file I/O, and Redis is health-checked before any service starts.
+This starts 11 containers: `postgres`, `redis`, and the nine services. They share a `workspace` volume for file I/O, and Redis is health-checked before its dependents start.
+
+**There is no browser UI in the images.** The Orchestrator Dockerfile does not ship `packages/web`, so use curl plus a WebSocket client, or run the Electron app from source.
 
 ---
 

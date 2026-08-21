@@ -63,8 +63,7 @@ cd xzawed-pais
 
 ### 1단계 — 환경 설정 파일 만들기
 
-각 서비스 폴더에 `.env` 파일을 만들어야 합니다.  
-아래 명령을 터미널에서 한 줄씩 실행하세요.
+`.env` 파일 **10개**가 필요합니다 — 서비스 9개에 하나씩, 그리고 저장소 루트에 하나. **루트 것을 빠뜨리면 3단계가 시작도 못 하고 멈춥니다.**
 
 **Mac / Linux:**
 ```bash
@@ -72,6 +71,9 @@ for svc in xzawedOrchestrator xzawedManager xzawedPlanner xzawedDeveloper \
            xzawedDesigner xzawedTester xzawedBuilder xzawedWatcher xzawedSecurity; do
   cp $svc/.env.example $svc/.env
 done
+
+# 루트 .env — 데이터베이스 비밀번호. 값은 아무거나 정하면 됩니다.
+echo 'POSTGRES_PASSWORD=xzawed-local-db' > .env
 ```
 
 **Windows (PowerShell):**
@@ -80,7 +82,12 @@ foreach ($svc in @("xzawedOrchestrator","xzawedManager","xzawedPlanner","xzawedD
                     "xzawedDesigner","xzawedTester","xzawedBuilder","xzawedWatcher","xzawedSecurity")) {
   Copy-Item "$svc/.env.example" "$svc/.env"
 }
+
+# 루트 .env — 데이터베이스 비밀번호. 값은 아무거나 정하면 됩니다.
+Set-Content -Path ".env" -Value "POSTGRES_PASSWORD=xzawed-local-db"
 ```
+
+> ⚠️ 루트 `.env`는 복사할 예시 파일이 없어서 위처럼 직접 만들어야 합니다. 없으면 3단계에서 `POSTGRES_PASSWORD is required` 오류가 납니다.
 
 ---
 
@@ -179,9 +186,23 @@ pnpm test
 → Docker Desktop이 설치되지 않았거나 실행되지 않은 상태입니다.  
 Docker Desktop을 실행하고 초록색 아이콘이 뜨면 다시 시도하세요.
 
-### ❌ `Error: ANTHROPIC_API_KEY is missing`
-→ `.env` 파일에 API 키가 입력되지 않았습니다.  
-2단계로 돌아가 모든 서비스의 `.env` 파일을 확인하세요.
+### ❌ `POSTGRES_PASSWORD is required`
+
+→ 저장소 **루트**의 `.env`가 없습니다. 서비스 폴더 9개만 만들고 루트를 빠뜨린 경우입니다.
+
+```bash
+echo 'POSTGRES_PASSWORD=xzawed-local-db' > .env
+```
+
+일부 서비스만 지정해도(`docker compose up redis planner`) 같은 오류가 납니다 — compose는 실행할 서비스를 고르기 전에 파일 전체를 해석합니다.
+
+### ❌ `env file ... not found`
+
+→ 서비스 `.env` 하나가 빠졌습니다. 9개 전부 있어야 하며, 하나라도 없으면 그 서비스에서 즉시 중단됩니다. 1단계 명령을 다시 실행하세요.
+
+### ❌ `ANTHROPIC_API_KEY is required`
+
+→ `.env`에 API 키가 채워지지 않았습니다. 2단계로 돌아가 9개 파일을 확인하세요. `xzawedWatcher`는 Claude를 쓰지 않아 키가 필요 없지만 **파일은 있어야 합니다.**
 
 ### ❌ 포트가 이미 사용 중 (`port is already allocated`)
 → 3000~3008번 포트 중 이미 사용 중인 것이 있습니다.  
