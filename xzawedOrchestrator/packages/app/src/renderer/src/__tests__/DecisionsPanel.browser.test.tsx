@@ -41,17 +41,19 @@ describe('DecisionsPanel', () => {
     await waitFor(() => expect(screen.getByTestId('decisions-empty')).toBeInTheDocument())
   })
 
-  test('options 미제공 시 DEFAULT_CHOICES 폴백 렌더(레거시·malformed 경로)', async () => {
-    // BRIEF는 context.options가 없어 DEFAULT_CHOICES(4종) 폴백을 탄다 — options 컬럼 도입 전 레거시 행/
-    // malformed context의 우아한 강등 경로. 실 defect_brief는 options:['fix_reverify']를 싣는다(아래 테스트).
+  test('options 미제공 시 버튼을 하나도 그리지 않고 사실을 표시한다', async () => {
+    // 폴백 4종을 그리던 동작을 제거했다. 어떤 choice가 실제로 동작하는지는 요청 **타입마다 다르고**
+    // (decision-consumer는 defect_brief의 fix_reverify, degraded_*의 accept_known, risk/oracle의 approve만
+    // 능동 처리한다), 타입을 모르는 폴백은 반드시 일부가 무음 no-op이 되어 거짓 affordance가 된다.
+    // 정본은 생산자다 — 7개 브리프 빌더가 각자 핸들 가능한 choice만 싣는다(brief-options.test.ts가 고정).
     getPendingDecisions.mockResolvedValue([BRIEF])
     renderAt('p1')
     await waitFor(() => expect(screen.getByTestId('decisions-item')).toBeInTheDocument())
     expect(screen.getByTestId('decisions-item')).toHaveTextContent('WP wp-a (step 3)')
-    expect(screen.getByTestId('decision-submit-fix_reverify')).toBeInTheDocument()
-    expect(screen.getByTestId('decision-submit-spec_fix')).toBeInTheDocument()
-    expect(screen.getByTestId('decision-submit-accept_known')).toBeInTheDocument()
-    expect(screen.getByTestId('decision-submit-reject')).toBeInTheDocument()
+    expect(screen.getByTestId('decision-no-options')).toBeInTheDocument()
+    for (const c of ['fix_reverify', 'spec_fix', 'accept_known', 'reject']) {
+      expect(screen.queryByTestId(`decision-submit-${c}`)).not.toBeInTheDocument()
+    }
   })
 
   test('실 defect_brief(options=[fix_reverify])는 fix_reverify 버튼만 렌더(D10)', async () => {
@@ -65,7 +67,9 @@ describe('DecisionsPanel', () => {
   })
 
   test('fix_reverify 클릭 시 submitDecision(requestId, fix_reverify) 호출 + refetch', async () => {
-    getPendingDecisions.mockResolvedValueOnce([BRIEF]).mockResolvedValueOnce([])
+    // 실 defect_brief 형태 — buildDefectBrief가 options:['fix_reverify']를 싣는다.
+    const brief = { ...BRIEF, context: { ...BRIEF.context, options: ['fix_reverify'] } }
+    getPendingDecisions.mockResolvedValueOnce([brief]).mockResolvedValueOnce([])
     renderAt('p1')
     await waitFor(() => expect(screen.getByTestId('decision-submit-fix_reverify')).toBeInTheDocument())
     fireEvent.click(screen.getByTestId('decision-submit-fix_reverify'))

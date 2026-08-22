@@ -6,8 +6,17 @@ import { useAuthStore } from '@xzawed/ui'
 import { getPendingDecisions, submitDecision, type PendingDecision } from '../lib/api.js'
 import { useAppStore } from '../store/app.store.js'
 
-/** §4 사람 결정 default choice(context.options 미제공 시 fallback). */
-const DEFAULT_CHOICES = ['fix_reverify', 'spec_fix', 'accept_known', 'reject'] as const
+/**
+ * **폴백 choice 목록을 두지 않는다.**
+ *
+ * 어떤 choice가 실제로 동작하는지는 요청 **타입마다 다르다** — decision-consumer는
+ * defect_brief의 `fix_reverify`, degraded_*의 `accept_known`, risk/oracle의 `approve`만
+ * 능동 처리한다. 타입을 모르는 폴백은 반드시 일부가 무음 no-op이 되고, 그것이 곧
+ * 거짓 affordance다(예전 폴백은 `spec_fix`를 그렸는데 핸들러가 없다).
+ *
+ * 정본은 생산자다 — 7개 브리프 빌더가 각자 핸들 가능한 choice만 `context.options`에
+ * 담는다. 여기서는 그것을 그대로 그리고, 비어 있으면 **버튼 대신 사실을 표시한다.**
+ */
 
 /** 프로젝트의 pending 사람 결정(결함 브리프)을 표시하고 PO가 choice를 제출하는 패널. */
 export function DecisionsPanel(): React.JSX.Element {
@@ -116,7 +125,12 @@ export function DecisionsPanel(): React.JSX.Element {
                 </p>
               )}
               <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                {(d.context?.options?.length ? d.context.options : DEFAULT_CHOICES).map((choice) => (
+                {!d.context?.options?.length && (
+                  <p data-testid="decision-no-options" className="text-[10px] text-fg-ghost">
+                    {t('decisions.no_options')}
+                  </p>
+                )}
+                {(d.context?.options ?? []).map((choice) => (
                   <button
                     key={choice}
                     data-testid={`decision-submit-${choice}`}

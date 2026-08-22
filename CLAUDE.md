@@ -177,7 +177,7 @@ node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200�
 ## 인프라
 
 - **Docker**: `docker-compose.yml` — postgres + redis + 9개 앱 서비스(총 11개). 전 서비스 `context: .` + `dockerfile: <서비스>/Dockerfile`. 에이전트 7개에 `WORKSPACE_ROOT=/workspace`, orchestrator에 `MANAGER_URL` 주입. Shared·Launcher는 compose 서비스가 아니다
-- **CI**: `.github/workflows/ci.yml` — 잡 13개(turborepo·independent·launcher·shared-lib·redis-integration·manager-redis-integration·playwright-e2e·cpd·sonar-cpd-report·sonar·i18n-check·module-boundaries·all-checks-pass)
+- **CI**: `.github/workflows/ci.yml`이 잡 목록의 정본이다 — 여기 숫자를 복사하지 않는다(복사본은 반드시 어긋난다). `all-checks-pass`의 `needs`가 **필수 잡** 집합이고, PR 전용 잡은 push에서 `skipped`가 정상이라 허용된다
 - **Dependabot**: `.github/dependabot.yml` — npm 13개 디렉토리 + github-actions 1개
 
 ## 문서

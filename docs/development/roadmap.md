@@ -23,7 +23,7 @@
 | P3 | Oracle DoR 게이트 + 초안 생성 (`MANAGER_ORACLE_DOR`·`MANAGER_ORACLE_DRAFT`) | 부분 | step branch git 워크플로 · WP 상태머신 |
 | P4 | 실행 워커 + 검증 채널 5종(conformance·impact·property·mutation·security) + advisory 비차단 큐 (`MANAGER_TASK_WORKER`·`MANAGER_WP_*`) | 부분 | fuzz(fast-check) · per-tier θ 캘리브레이션 · 결함 국소화 잔여(진동 누적·graph_dag 영속·재진입·계층 승급) · Tester 적대 측면 · `design_ui`/`security_audit` WP 자기검증 |
 | P5 | fail-closed 릴리스 게이트 · 사인오프 · 배포 게이팅 · 강등 모드 FSM (`MANAGER_RELEASE_GATE`·`MANAGER_RELEASE_SIGNOFF`·`MANAGER_DEPLOY_GATE`·`MANAGER_DEGRADED_MODE`) | 부분 | 강등 enforcement · saga 보상 · canary/롤백 |
-| P6 | 의사결정 영속 · 결함 브리프 · 결정 라우팅 · 대기함 UI · 만료 재에스컬레이션 (`MANAGER_DECISION_*`) | 부분 | `spec_fix`/`reject`/`accept_known` 실동작 · `verification.failed`/`decomposition.inconsistent` 브리프 · 관측성/SLO |
+| P6 | 의사결정 영속 · 결함 브리프 · 결정 라우팅 · 대기함 UI · 만료 재에스컬레이션 (`MANAGER_DECISION_*`) | 부분 | `spec_fix`·`reject` 실동작(`accept_known`은 `degraded_*`에 한해 동작) · `verification.failed` 브리프 · 관측성/SLO |
 
 > **강등 모드는 코드가 아니라 스위치가 남았다.** `MANAGER_DEGRADED_MODE`가 NORMAL/DEGRADED/SAFE를 신호 구동 FSM으로 관측하고, 게이팅도 이미 `dispatch.ts`에 있다 — SAFE면 신규 디스패치 보류, DEGRADED + HIGH-risk면 사인오프 요구. 다만 `MANAGER_DEGRADED_ENFORCE`·`MANAGER_DEGRADED_SIGNOFF`가 **둘 다 기본 false**이고 off면 `getMode`가 주입되지 않아 스킵된다(회귀 0). 남은 것은 아래 1번이다.
 
@@ -35,10 +35,12 @@
 
 1. **강등 enforcement 활성화** — 게이팅 코드는 있으니 신호원과 운영성을 채운다. 추가 신호원(브로커·하트비트·이벤트스토어·보안사고), stuck-DEGRADED idle-probe, SAFE 재개 사인오프. 그다음 플래그를 켤 조건을 정한다.
 2. **모델 라우팅 확장 + 분해 정밀화** — designer·tester·security 에이전트의 모델 소비(각 ~2줄, `payload.model ?? config` 동일 패턴). WP `inputs`/`outputs` 채움(계약 체인·impact-DAG 입력), 재진입 머지, `near_term` 필터.
-3. **결정 라우팅 실동작** — `spec_fix`(재분해)·`reject`(saga 보상)·`accept_known`(게이트 override)을 실제로 동작시키고, `verification.failed`·`decomposition.inconsistent` 브리프로 확장한다.
+3. **결정 라우팅 실동작** — `spec_fix`(재분해)·`reject`(saga 보상)를 실제로 동작시키고 `verification.failed` 브리프를 추가한다. `accept_known`은 `degraded_release`·`degraded_dispatch`에서 이미 사인오프를 영속하고, `decomposition.inconsistent` 브리프도 이미 있다 — 남은 것은 그 둘을 뺀 나머지다.
 4. **saga 보상 · canary/롤백** — 강등/실패 시 보상 트랜잭션과 점진 배포. 1번에 의존한다.
 
-> ⚠️ **시퀀싱 함정.** P5 fail-closed 릴리스 게이트(hard-AND)는 P4 security 채널이 **먼저** 착륙해야 한다. security 채널이 `develop_code` WP에는 착륙했으므로 거기까지는 실 `security_pass`를 AND할 수 있다. 그러나 `design_ui`·`security_audit` WP는 여전히 자기검증이 없어 빈 plan으로 auto-pass한다 — 이 WP들의 게이트를 먼저 닫으면 **채널 skip이 fail-open을 fail-closed로 위장한다.** P4 잔여가 그 갭을 메운 뒤에 닫는다.
+> ⚠️ **시퀀싱 함정(정정됨).** 이전 판에는 "게이트를 먼저 닫으면 채널 skip이 fail-open을 fail-closed로 위장한다"고 적혀 있었으나 **방향이 반대다.** 릴리스 게이트는 증거 0행을 `unverifiable`로 **차단**한다(`streams/release-gate.ts`) — 먼저 닫으면 위장이 아니라 `design_ui`·`security_audit` 역할 워크플로의 **영구 차단**이다.
+>
+> 진짜 fail-open은 security 채널 안에 있다. 빈 `issues` 배열이 정상 파싱되어 `security: passed`가 영속되는데(`streams/verify.ts`), Security 에이전트는 배포 구성에서 구조적으로 빈 배열을 낸다 — `xzawedSecurity/src/executor.ts`가 workspaceRoot 재기준화 없이 realpath하고 runner `WORKDIR`과 `WORKSPACE_ROOT`가 다르다. **채널을 켜는 것이 끄는 것보다 덜 안전하다.** 실제 선행은 그 경로 결합 수정과 무실행 판정이다 — 상세는 [완성 실행계획](../superpowers/specs/2026-08-22-completion-plan-autonomous-factory.md).
 
 ---
 
