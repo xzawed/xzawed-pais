@@ -164,3 +164,63 @@ describe('LeaseStore.renewLease — 하트비트(가시성 연장·attempt CAS·
     expect(await new LeaseStore(m.pool, () => 1).renewLease('wf', 'wp', 0, 1000)).toBe(false)
   })
 })
+
+describe('LeaseStore.transition — 데드락 재시도', () => {
+  /** wp_state_log INSERT에서 n회 40P01을 터뜨리고 그 뒤는 정상 동작하는 pool. */
+  function deadlockingPool(times: number) {
+    let left = times
+    const query = vi.fn().mockImplementation((sql: string) => {
+      if (/INSERT INTO wp_state_log/i.test(sql)) {
+        if (left > 0) {
+          left -= 1
+          return Promise.reject(Object.assign(new Error('deadlock detected'), { code: '40P01' }))
+        }
+        return Promise.resolve({ rows: [{ seq: '42' }] })
+      }
+      if (/UPDATE wp_leases/i.test(sql)) {
+        return Promise.resolve({ rows: [{ wp_id: 'wp-1', tenant_id: null }], rowCount: 1 })
+      }
+      return Promise.resolve({ rows: [] })
+    })
+    const release = vi.fn()
+    const connect = vi.fn().mockResolvedValue({ query, release })
+    return { pool: { connect } as never, query, connect, release }
+  }
+
+  const COMPLETE = { workflowId: 'wf-1', wpId: 'wp-1', attempt: 0, stepN: 1 }
+  const verbs = (q: ReturnType<typeof vi.fn>) => q.mock.calls.map((c) => String(c[0]))
+
+  it('40P01 1회 후 재시도해 성공한다 — connect가 2회(트랜잭션 전체 재실행)', async () => {
+    const m = deadlockingPool(1)
+    const res = await new LeaseStore(m.pool).recordCompletion(COMPLETE)
+
+    expect(res.status).toBe('completed')
+    expect(m.connect).toHaveBeenCalledTimes(2)
+    expect(verbs(m.query)).toContain('COMMIT')
+  })
+
+  it('재시도 전에 ROLLBACK하고 연결을 반납한다 — 손상 연결 누수 금지', async () => {
+    const m = deadlockingPool(1)
+    await new LeaseStore(m.pool).recordCompletion(COMPLETE)
+
+    expect(verbs(m.query).filter((v) => v === 'ROLLBACK')).toHaveLength(1)
+    expect(m.release).toHaveBeenCalledTimes(2)
+  })
+
+  it('40P01이 상한을 넘으면 그대로 던진다 — 무한 재시도 금지', async () => {
+    const m = deadlockingPool(99)
+    await expect(new LeaseStore(m.pool).recordCompletion(COMPLETE)).rejects.toThrow('deadlock detected')
+  })
+
+  it('40P01이 아닌 오류는 재시도하지 않는다', async () => {
+    const query = vi.fn().mockImplementation((sql: string) => {
+      if (/UPDATE wp_leases/i.test(sql)) return Promise.resolve({ rows: [{ wp_id: 'wp-1', tenant_id: null }], rowCount: 1 })
+      if (/INSERT INTO wp_state_log/i.test(sql)) return Promise.reject(Object.assign(new Error('syntax error'), { code: '42601' }))
+      return Promise.resolve({ rows: [] })
+    })
+    const connect = vi.fn().mockResolvedValue({ query, release: vi.fn() })
+
+    await expect(new LeaseStore({ connect } as never).recordCompletion(COMPLETE)).rejects.toThrow('syntax error')
+    expect(connect).toHaveBeenCalledTimes(1)
+  })
+})

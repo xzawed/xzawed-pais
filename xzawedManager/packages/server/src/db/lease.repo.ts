@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg'
 import type { EventEnvelope } from '@xzawed/agent-streams'
 import { appendWpEvent, wpEnvelope } from './dispatch.repo.js'
+import { withDeadlockRetry } from './pool.js'
 import {
   LEASE_ACTIVE, LEASE_ESCALATED, LEASE_RELEASED, DISPATCHED_STATE, WP_DISPATCHED_EVENT,
   ESCALATED_STATE, WP_ESCALATED_EVENT, DONE_STATE, WP_COMPLETED_EVENT,
@@ -223,7 +224,26 @@ export class LeaseStore {
    * 혼동한 오류). 지금은 UPDATE 결과에서 읽은 태그를 그 호출의 wp_state_log INSERT에도 실어, 같은 WP의 모든
    * 생명주기 행(dispatched/reclaimed/escalated/completed)이 동일 tenant_id를 갖는다.
    */
+  /**
+   * 데드락(40P01) 재시도로 감싸있다. CI에서 관측된 victim이다 —
+   * `completion.integration.test.ts`가 `recordCompletion → transition → appendWpEvent`
+   * 경로에서 deadlock detected로 죽었고(master 런), 같은 커밋의 다른 런은 통과했다.
+   *
+   * 이 tx는 `wp_leases` 행을 UPDATE로 잡은 채 `wp_state_log`에 INSERT하므로, 동시에 도는
+   * 마이그레이션 DDL(CREATE INDEX = 테이블 ShareLock)과 락 순서가 엇갈릴 수 있다.
+   * 재정렬로는 피할 수 없는 종류라 저장소가 이미 쓰는 처방을 그대로 쓴다(decision.repo와 동형).
+   *
+   * 재시도가 안전한 이유: 40P01은 pg가 트랜잭션을 이미 중단시켜 부분 커밋이 없고, 몸체가
+   * connect+BEGIN부터 다시 시작하며 외부 부수효과가 없다. UPDATE는 status CAS라 그 사이
+   * 다른 sweep이 선점했으면 0행 → null(skip)이라는 올바른 답을 그대로 낸다.
+   */
   private async transition(
+    env: EventEnvelope, updateSql: string, updateParams: unknown[], append: AppendArgs,
+  ): Promise<{ eventId: string; seq: number } | null> {
+    return withDeadlockRetry(() => this.transitionOnce(env, updateSql, updateParams, append))
+  }
+
+  private async transitionOnce(
     env: EventEnvelope, updateSql: string, updateParams: unknown[], append: AppendArgs,
   ): Promise<{ eventId: string; seq: number } | null> {
     const client: PoolClient = await this.pool.connect()
