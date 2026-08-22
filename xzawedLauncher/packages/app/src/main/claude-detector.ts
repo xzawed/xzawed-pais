@@ -1,20 +1,7 @@
 import { spawn } from 'node:child_process'
 import { shell } from 'electron'
 import type { ClaudeDetectStatus } from '@xzawed/launcher-shared'
-
-function spawnAsync(bin: string, args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: string[] = []
-    const proc = spawn(bin, args, { shell: false })
-    proc.stdout.on('data', (d: Buffer) => chunks.push(d.toString()))
-    proc.stderr.on('data', (d: Buffer) => chunks.push(d.toString()))
-    proc.on('close', (code: number) => {
-      if (code === 0) resolve(chunks.join(''))
-      else reject(new Error(`exit ${code}`))
-    })
-    proc.on('error', reject)
-  })
-}
+import { spawnAsync } from './spawn-async.js'
 
 export async function checkClaude(): Promise<ClaudeDetectStatus> {
   try {

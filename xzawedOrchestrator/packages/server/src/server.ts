@@ -79,6 +79,13 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   const app = Fastify({ logger: config.mode !== 'local', trustProxy: true })
   const dbPool = await setupDatabase(app, config)
 
+  // jscpd:ignore-start
+  // replicated-block: fastify-error-envelope
+  // HTTP 오류 봉투는 두 서비스가 같은 모양이어야 하는 **계약**이다. 한쪽만 바꾸면
+  // 클라이언트가 서비스마다 다른 오류 형태를 받는다.
+  // Manager와 Orchestrator는 공유 라이브러리를 갖지 않으므로(Orchestrator Dockerfile이
+  // xzawedShared를 복사조차 하지 않는다) 복제가 유일한 선택이다. 대신
+  // scripts/check-replicated-blocks.js 가 두 사본의 동일성을 CI에서 강제한다.
   app.setErrorHandler<FastifyError>((err, req, reply) => {
     app.log.error({ err, url: req.url }, 'Unhandled error')
     const statusCode = err.statusCode ?? 500
@@ -88,6 +95,7 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     const errorField = (err as unknown as { error?: string }).error ?? err.message
     return reply.status(statusCode).send({ error: errorField })
   })
+  // jscpd:ignore-end
 
   app.addHook('preHandler', async (request) => {
     const header = request.headers['accept-language']

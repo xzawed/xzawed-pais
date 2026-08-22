@@ -3,22 +3,10 @@ import path from 'node:path'
 import { app, shell } from 'electron'
 import type { DockerInstallStatus, ServiceName, ServiceState, ServiceStatus } from '@xzawed/launcher-shared'
 import { SERVICE_NAMES } from '@xzawed/launcher-shared'
+import { spawnAsync } from './spawn-async.js'
 
 const COMPOSE_FILE = path.join(process.resourcesPath ?? app.getAppPath(), 'docker-compose.prod.yml')
 
-function spawnAsync(bin: string, args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: string[] = []
-    const proc = spawn(bin, args, { shell: false })
-    proc.stdout.on('data', (d: Buffer) => chunks.push(d.toString()))
-    proc.stderr.on('data', (d: Buffer) => chunks.push(d.toString()))
-    proc.on('close', (code: number) => {
-      if (code === 0) resolve(chunks.join(''))
-      else reject(new Error(`exit ${code}: ${chunks.join('')}`))
-    })
-    proc.on('error', reject)
-  })
-}
 
 export async function checkDocker(): Promise<DockerInstallStatus> {
   try {
