@@ -62,9 +62,14 @@ export function makeSessionStarter(
     const cleanupSession = async (): Promise<void> => {
       opts.watcherEventConsumer?.unwatchSession(sessionId)
       consumer.stop()
-      await opts.sessionStore.delete(sessionId)
       opts.activeConsumers.delete(sessionId)
-      opts.registry?.releaseAll(sessionId)
+      // releaseAll을 finally에 둔다 — 앞의 await가 throw하면 에이전트 쪽 세션 소비자에
+      // 종료가 통지되지 않아 그 소비자와 전용 Redis 연결이 프로세스 수명 내내 남는다.
+      try {
+        await opts.sessionStore.delete(sessionId)
+      } finally {
+        await opts.registry?.releaseAll(sessionId)
+      }
     }
     // 요청자에게 error 메시지 발행(무음 drop 금지·M8).
     const publishError = async (content: string): Promise<void> => {
@@ -140,11 +145,15 @@ export function makeSessionStarter(
         })
       } else if (msg.type === 'abort') {
         opts.watcherEventConsumer?.unwatchSession(sessionId)
-        await opts.sessionStore.abort(sessionId)
+        // stop을 먼저 — sessionStore.abort가 throw해도 소비자가 남지 않게 한다.
         consumer.stop()
         opts.activeConsumers.delete(sessionId)
-        await opts.sessionStore.delete(sessionId)
-        opts.registry?.releaseAll(sessionId)
+        try {
+          await opts.sessionStore.abort(sessionId)
+          await opts.sessionStore.delete(sessionId)
+        } finally {
+          await opts.registry?.releaseAll(sessionId)
+        }
       } else {
         // M8(무음 통과 금지·방어): 스키마는 통과했으나 처리 분기가 없는 타입. 닫힌 union이라 정상 경로엔
         // 미도달하지만, 향후 union 확장 시 무음 drop·세션 누수를 막는다(에러 발행 + 정리).
@@ -155,9 +164,9 @@ export function makeSessionStarter(
       }
     }).catch(async (err: unknown) => {
       opts.log.error({ err, sessionId }, 'StreamConsumer error')
-      opts.watcherEventConsumer?.unwatchSession(sessionId)
-      await opts.sessionStore.delete(sessionId)
-      opts.activeConsumers.delete(sessionId)
+      // 정리 복제를 두지 않는다 — 이 분기에만 releaseAll이 빠져 있어
+      // 소비 루프가 죽은 세션은 에이전트 쪽 소비자가 영구히 남았다.
+      await cleanupSession()
     })
   }
 }

@@ -33,7 +33,7 @@ bash ../scripts/sync-shared.sh   # 빌드 + 7개 서비스 복사본 일괄 갱�
 
 CI·Docker는 매번 fresh install이라 이 함정이 없다. **로컬에서만 재현되는 종류의 혼란**이므로, 신규 export를 추가한 뒤 소비자에서 "그런 이름 없다"는 오류를 만나면 이걸 먼저 의심한다.
 
-Manager도 이 패키지를 쓰지만 경로가 다르고(`file:../../../xzawedShared`) `sync-shared.sh`의 순회 대상이 **아니다**.
+Manager도 이 패키지를 쓰지만 경로가 다르고(`file:../../../xzawedShared`) `sync-shared.sh`의 순회 대상이 **아니다**. shared를 고친 뒤 Manager에서 새 export를 쓰려면 `cd xzawedManager && pnpm install`을 별도로 돌리고, 스크립트 실행만으로 통과를 주장하지 말고 복사본을 실제로 대조한다.
 
 ## 모듈 지도
 
@@ -44,7 +44,7 @@ Manager도 이 패키지를 쓰지만 경로가 다르고(`file:../../../xzawedS
 | `streams/base-consumer.ts` | 소비 골격. 바운드 재시도 → DLQ 격리, 멱등 소비 dedup. 전송은 EventBus에 위임 |
 | `streams/dlq.ts` | DLQ 계약 단일출처(`dlqStreamKey`·`idemKey`·`DlqMessageSchema`) + 운영 도구 `redriveDlq` |
 | `streams/event-bus.ts` | 전송 추상화. `RedisEventBus` 구현과 발행·소비 포트 타입 |
-| `streams/session-dispatcher.ts` | 세션 게이트웨이 스트림에서 세션별 소비자를 띄우는 디스패처 |
+| `streams/session-dispatcher.ts` | 세션 게이트웨이 스트림에서 세션별 소비자를 띄우고 **내리는** 디스패처. 개통·종료 계약(`GatewayStartSchema`·`GatewayEndSchema`)의 정본 |
 | `streams/collaboration.ts` | 에이전트 handle 골격(`runCollaborativeHandle`·`createCollaborativeHandler`)과 `CollabMessage` 봉투 타입 |
 | `workspace-guard.ts` | `validateWorkspaceRoot`(파일시스템 루트 거부)·`resolveWorkspaceRoot` |
 | `types/agent-query.ts` | 교차질의 계약. `collaborationPayloadFields`가 답변자 스키마의 공통 필드 |
@@ -81,6 +81,8 @@ Manager도 이 패키지를 쓰지만 경로가 다르고(`file:../../../xzawedS
 
 - **`handleMessage`는 절대 throw하지 않는다.** 배치 비차단과 PEL 누수 0을 위한 의도된 계약이므로, 여기에 throw를 기대하는 로직을 얹으면 조용히 무시된다.
 - **재시도는 `onMessage`를 처음부터 재실행한다.** 핸들러가 멱등하지 않으면 파일 쓰기·빌드·테스트 실행이 중복된다.
+- **`stop()`은 즉시 멈추지 않는다.** 정지 요청일 뿐이고 루프 탈출까지는 유휴 시 최대 1초(`blockMs`), 백오프 대기 중이면 최대 30초, `onMessage` 처리 중이면 무제한(핸들러 타임아웃이 없다)이 걸린다. "정지시켰다"와 "정지됐다"를 같은 것으로 다루면 안 된다.
+- **`close()`는 멱등이고 되돌릴 수 없다.** 디스패처의 종료 처리와 `handleSessionEntry`의 finally가 둘 다 부를 수 있어 이중 `quit()`을 가드로 막는다. 한 번 정지된 소비자는 `start()`를 다시 불러도 루프에 진입하지 않는다 — 세션마다 새 인스턴스를 만드는 구조라 재사용 재기동은 없다.
 - **멱등 소비 dedup 실패는 fail-open이다.** 멱등 저장소가 죽으면 중복 처리가 통과한다. 반대로 처리 중 크래시는 마커가 남아 재전달이 skip되므로 미완성 작업이 유실될 수 있다.
 
 ## 함정

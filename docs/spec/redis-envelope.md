@@ -11,10 +11,17 @@
 | Manager → 에이전트 | `tools/redis-agent-handler.ts` | 각 `src/streams/consumer.ts`(BaseConsumer) | `manager:to-{agent}:{sessionId}` · `{agent}-consumers` |
 | 에이전트 → Manager | 각 `src/streams/producer.ts` | `tools/redis-agent-handler.ts` | `{agent}:to-manager:{sessionId}` · **그룹 없음(비그룹 `xread`)** |
 | Watcher → Manager | `src/streams/producer.ts` | `streams/watcher-event-consumer.ts` | `watcher:to-manager:{sessionId}` · `manager-watcher-consumers` |
-| 세션 개통 | 위 발신자들 | `xzawedShared/src/streams/session-dispatcher.ts` | `{출발}:to-{목적}:sessions` |
+| 세션 개통·종료 | Manager `tools/redis-agent-handler.ts` | `xzawedShared/src/streams/session-dispatcher.ts` | `manager:to-{agent}:sessions` · `{agent}-session-dispatcher` |
+| 세션 개통 | Orchestrator `streams/producer.ts` | Manager `streams/session-gateway.ts` | `orchestrator:to-manager:sessions` · `manager-gateway` |
 | DLQ | `xzawedShared/src/streams/dlq.ts` | 운영 도구(`xrange` 드레인) | `{stream}:dlq` · **그룹 없음** |
 
 ## 계약
+
+**게이트웨이 스트림은 봉투 5필드를 쓰지 않는다** — 별개 계약이다. 정본은 shared `GatewayStartSchema`·`GatewayEndSchema`이고 Manager가 발행측에서 같은 스키마를 만족시킨다.
+
+- 개통 — `{ sessionId, timestamp? }`
+- 종료 — `{ event: 'end', endSessionId, timestamp? }`. **`sessionId` 키를 쓰지 않는다.** 구 디스패처는 `typeof parsed.sessionId === 'string'`만 보고 세션을 띄우므로, 그 키가 실리면 종료 통지가 종료된 세션의 소비자를 부활시킨다. 키 이름을 가른 것이 전방호환 장치다
+- 수신측이 둘로 갈린다. `manager-gateway`(Manager)는 `event`를 읽지 않고 개통만 처리하며 `sessionId`를 uuid로 강제하고 실패를 DLQ로 격리한다. `{agent}-session-dispatcher`(shared)는 Zod로 두 형태를 판별하고 미지 엔트리를 로그 후 skip한다(DLQ 없음)
 
 **봉투 5필드** — `sessionId` · `messageId` · `timestamp` · `type` · `payload`. 값은 전 방향 일치하나 **제약이 갈린다.**
 
@@ -32,6 +39,7 @@
 
 ## 불변식
 
+- **세션 종료 통지 실패는 삼켜진다 — fail-open.** `releaseSession`은 never-throw다. 발행이 실패하면 그 에이전트의 세션 소비자와 전용 Redis 연결이 남지만 세션 정리 자체는 계속된다
 - **구조적 결함은 DLQ에 남지 않는다 — fail-open.** `data` 필드 없음·값 없음·크기 상한 초과는 `console.error` 후 ack+skip이다. DLQ를 뒤져도 나오지 않는다
 - **JSON·스키마 무효는 재시도 없이 즉시 DLQ — fail-closed.** `invalid_schema`
 - **핸들러 throw는 바운드 백오프 후 DLQ — fail-closed.** `handler_failed`. 재시도는 `onMessage`를 처음부터 재실행하므로 핸들러가 멱등하지 않으면 부수효과가 중복된다

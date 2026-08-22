@@ -32,6 +32,10 @@ function parseIdemTtlSec(raw: string | undefined): number {
 
 export class BaseConsumer<TMessage> {
   private running = false
+  /** 정지 "요청"과 정지 "완료"의 분리. running 하나로는 start()의 초기화 await 구간에서 stop이 유실된다. */
+  private stopRequested = false
+  /** close 멱등 가드. 이중 quit()의 동작에 의존하지 않고 2회 호출 자체를 없앤다. */
+  private closed = false
   private readonly idemEnabled: boolean
   private readonly idemTtlSec: number
   private readonly dedupKeyFn: (msg: TMessage) => string | null
@@ -60,11 +64,17 @@ export class BaseConsumer<TMessage> {
 
   async start(sessionId: string): Promise<void> {
     if (this.running) throw new Error('BaseConsumer is already running')
+    // stopRequested를 리셋하지 않는다 — 한 번 정지된 소비자는 정지 상태를 유지한다.
+    // 세션마다 새 인스턴스를 만드는 구조이므로 재사용 재기동은 없고, 리셋하면
+    // start() 직전에 도착한 stop()이 유실된다.
     const stream = `${this.streamPrefix}:${sessionId}`
     await this.ensureGroup(stream)
+    // ensureGroup 대기 중 도착한 stop()을 잃지 않는다 — 바로 아래에서 running=true로 덮어쓰기 때문이다.
+    if (this.stopRequested) return
 
     this.running = true
     await this.claimPendingMessages(stream)
+    if (this.stopRequested) return
 
     let retryDelay = INITIAL_RETRY_DELAY_MS
 
@@ -89,8 +99,10 @@ export class BaseConsumer<TMessage> {
       if (messages.length > 0) {
         await this.processMessages(stream, messages)
       }
-    } catch {
-      // XAUTOCLAIM 미지원 Redis 버전이거나 스트림이 없는 경우 무시
+    } catch (err) {
+      // XAUTOCLAIM 미지원 Redis 버전이거나 스트림이 없는 경우. 무음으로 두면 재획득 실패와
+      // "재획득할 것이 없음"을 구분할 수 없다(M8). stop→start 사이클이 상시화되며 라이브가 된 경로다.
+      console.error('[Consumer] XAUTOCLAIM 실패 — pending 재획득 없이 계속:', err)
     }
   }
 
@@ -229,11 +241,16 @@ export class BaseConsumer<TMessage> {
   }
 
   stop(): void {
+    this.stopRequested = true
     this.running = false
   }
 
+  /** 멱등 — 디스패처의 end 처리와 handleSessionEntry의 finally가 둘 다 부를 수 있다. */
   async close(): Promise<void> {
+    this.stopRequested = true
     this.running = false
+    if (this.closed) return
+    this.closed = true
     if (this.ownsRedis) {
       await this.redis.quit()
     }

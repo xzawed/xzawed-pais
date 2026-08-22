@@ -88,6 +88,7 @@ Phase 3(PR #122)에서 추가된 per-session 동적 consumer 팩토리.
 interface ConsumerLike {
   start(sessionId: string): Promise<void>
   stop(): void
+  close?(): Promise<void>   // 세션 종료 시 전용 Redis 연결 등 자원 회수
 }
 ```
 

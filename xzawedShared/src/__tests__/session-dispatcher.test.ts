@@ -248,3 +248,158 @@ describe('SessionDispatcher', () => {
     expect(factory).not.toHaveBeenCalled()
   })
 })
+
+describe('SessionDispatcher — 세션 단위 종료 (5-B)', () => {
+  const SID = '550e8400-e29b-41d4-a716-446655440000'
+  const startEntry = (id = '1-0', sessionId = SID): [string, string[]] =>
+    [id, ['data', JSON.stringify({ sessionId, timestamp: 1 })]]
+  const endEntry = (id = '2-0', sessionId = SID): [string, string[]] =>
+    [id, ['data', JSON.stringify({ event: 'end', endSessionId: sessionId, timestamp: 2 })]]
+
+  /** start()가 stop() 전까지 resolve되지 않는 실제 BaseConsumer 동작을 흉내낸다. */
+  function makeConsumer() {
+    let resolveStart!: () => void
+    const stop = vi.fn().mockImplementation(() => { resolveStart?.() })
+    const close = vi.fn().mockResolvedValue(undefined)
+    const start = vi.fn().mockReturnValue(new Promise<void>(r => { resolveStart = r }))
+    return { start, stop, close, resolveStart: () => resolveStart?.() }
+  }
+
+  function run(batches: unknown[][], factory: (sid: string) => never) {
+    const gatewayRedis = makeGatewayRedis(batches)
+    const dispatcher = new SessionDispatcher(
+      gatewayRedis, 'manager:to-planner:sessions', 'planner-session-dispatcher', factory,
+    )
+    return { gatewayRedis, dispatcher }
+  }
+
+  it('T1 — end 엔트리가 그 세션 소비자만 stop·close 한다', async () => {
+    const c = makeConsumer()
+    const factory = vi.fn().mockReturnValue(c)
+    const { dispatcher } = run(
+      [[['manager:to-planner:sessions', [startEntry()]]], [['manager:to-planner:sessions', [endEntry()]]]],
+      factory as never,
+    )
+
+    const p = dispatcher.start()
+    await new Promise(r => setTimeout(r, 60))
+    dispatcher.stop()
+    await p
+
+    expect(c.stop).toHaveBeenCalled()
+    // close는 end 경로와 finally 양쪽에서 불릴 수 있다 — 멱등이므로 호출 자체를 확인한다.
+    expect(c.close).toHaveBeenCalled()
+  })
+
+  it('T2 — end 직후 같은 sessionId의 start가 새 소비자를 만든다 (tombstone 금지)', async () => {
+    const consumers = [makeConsumer(), makeConsumer()]
+    let i = 0
+    const factory = vi.fn().mockImplementation(() => consumers[i++]!)
+    const { dispatcher } = run(
+      [[['manager:to-planner:sessions', [startEntry('1-0'), endEntry('2-0'), startEntry('3-0')]]]],
+      factory as never,
+    )
+
+    const p = dispatcher.start()
+    await new Promise(r => setTimeout(r, 60))
+    dispatcher.stop()
+    await p
+
+    expect(factory).toHaveBeenCalledTimes(2)
+  })
+
+  it('T3 — 옛 소비자의 뒤늦은 start() resolve가 새 소비자를 Map에서 지우지 않는다', async () => {
+    // 실제 경쟁을 만든다: 옛 소비자는 stop()을 받아도 곧바로 루프를 빠져나오지 못한다
+    // (블로킹 read 진행 중이거나 핸들러 처리 중). 그 사이 재개통이 일어나고,
+    // 그 뒤에야 옛 start()가 resolve되어 finally가 뒤늦게 돈다.
+    let resolveOld!: () => void
+    const oldConsumer = {
+      start: vi.fn().mockReturnValue(new Promise<void>(r => { resolveOld = r })),
+      stop: vi.fn(),                 // ← resolve하지 않는다
+      close: vi.fn().mockResolvedValue(undefined),
+    }
+    const newConsumer = makeConsumer()
+    const created: unknown[] = []
+    const factory = vi.fn().mockImplementation(() => {
+      const c = created.length === 0 ? oldConsumer : newConsumer
+      created.push(c)
+      return c
+    })
+
+    const { dispatcher } = run(
+      [
+        [['manager:to-planner:sessions', [startEntry('1-0'), endEntry('2-0'), startEntry('3-0')]]],
+      ],
+      factory as never,
+    )
+
+    const p = dispatcher.start()
+    await new Promise(r => setTimeout(r, 60))
+    expect(factory).toHaveBeenCalledTimes(2)   // 재개통이 실제로 일어났다
+
+    resolveOld()                                // 이제서야 옛 start()가 resolve → finally
+    await new Promise(r => setTimeout(r, 40))
+
+    // 옛 finally가 identity 확인 없이 지웠다면 새 소비자가 Map에서 사라져
+    // 이후 end가 unknown session no-op이 된다.
+    dispatcher.stop()
+    await p
+    expect(newConsumer.stop).toHaveBeenCalled()
+  })
+
+  it('T4 — start() 조기 reject 시에도 finally가 close()로 자원을 회수한다', async () => {
+    const close = vi.fn().mockResolvedValue(undefined)
+    const factory = vi.fn().mockReturnValue({
+      start: vi.fn().mockRejectedValue(new Error('NOGROUP No such consumer group')),
+      stop: vi.fn(),
+      close,
+    })
+    const { dispatcher } = run(
+      [[['manager:to-planner:sessions', [startEntry()]]]],
+      factory as never,
+    )
+
+    const p = dispatcher.start()
+    await new Promise(r => setTimeout(r, 60))
+    dispatcher.stop()
+    await p
+
+    expect(close).toHaveBeenCalledTimes(1)
+  })
+
+  it('알 수 없는 게이트웨이 엔트리는 무음으로 사라지지 않는다 (M8)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const factory = vi.fn().mockReturnValue(makeConsumer())
+    const { dispatcher } = run(
+      [[['manager:to-planner:sessions', [['1-0', ['data', JSON.stringify({ nope: 1 })]]]]]],
+      factory as never,
+    )
+
+    const p = dispatcher.start()
+    await new Promise(r => setTimeout(r, 60))
+    dispatcher.stop()
+    await p
+
+    expect(factory).not.toHaveBeenCalled()
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('미지 게이트웨이 엔트리'))
+    spy.mockRestore()
+  })
+
+  it('소유하지 않은 세션의 end는 경고를 남기고 no-op이다', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const factory = vi.fn().mockReturnValue(makeConsumer())
+    const { dispatcher } = run(
+      [[['manager:to-planner:sessions', [endEntry('1-0')]]]],
+      factory as never,
+    )
+
+    const p = dispatcher.start()
+    await new Promise(r => setTimeout(r, 60))
+    dispatcher.stop()
+    await p
+
+    expect(factory).not.toHaveBeenCalled()
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining('end for unknown session'))
+    spy.mockRestore()
+  })
+})

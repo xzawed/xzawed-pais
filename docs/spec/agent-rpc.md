@@ -8,6 +8,7 @@ Manager가 7개 에이전트를 호출하는 경계. **양쪽이 구조적으로
 |---|---|---|---|
 | 요청 | `tools/redis-agent-handler.ts` `publishRequest` | 각 `src/streams/consumer.ts`(BaseConsumer) | `manager:to-{agent}:{sessionId}` |
 | 세션 개통 | `tools/redis-agent-handler.ts` `notifyGateway` | `xzawedShared/src/streams/session-dispatcher.ts` | `manager:to-{agent}:sessions` |
+| 세션 종료 | `tools/redis-agent-handler.ts` `endGateway` | 같음 | 같음. 세션 소비자와 전용 Redis 연결을 회수시킨다 |
 | 응답 | 각 `src/streams/producer.ts` | `tools/redis-agent-handler.ts` `handleMessage` | `{agent}:to-manager:{sessionId}` · **그룹 없음, tip 선취 후 폴링** |
 | 파일 이벤트 | `xzawedWatcher/src/watcher.ts` | `streams/watcher-event-consumer.ts` | `watcher:to-manager:{sessionId}` |
 | 자율 워커 | `streams/worker.ts` `buildWorkerInput` | 위 요청 스트림과 동일 | LLM을 우회해 같은 핸들러를 직접 호출 |
