@@ -186,3 +186,30 @@ describe('ClaudeRunner.answerQuery', () => {
     expect(answer).toBe('개발 관점 답변: 가능합니다')
   })
 })
+
+describe('ClaudeRunner.parseChanges — 루트 지시 경로 선봉쇄 (N-1)', () => {
+  const runner = new ClaudeRunner('k', 'm')
+  const wrap = (p: string) =>
+    JSON.stringify({ changes: [{ operation: 'delete', path: p }], summary: '', content: '' })
+
+  for (const p of ['.', '', './', '..', '../x', 'a/..']) {
+    it(`${JSON.stringify(p)} 를 changes에서 제외한다`, () => {
+      expect(runner.parseChanges(wrap(p))).toHaveLength(0)
+    })
+  }
+
+  it('정상 상대경로는 그대로 통과시킨다 — 과잉 차단 금지', () => {
+    const out = runner.parseChanges(
+      JSON.stringify({ changes: [{ operation: 'create', path: 'src/a.ts', content: 'x' }], summary: '', content: '' }),
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0]!.path).toBe('src/a.ts')
+  })
+
+  it('점으로 시작하는 정상 파일명은 차단하지 않는다', () => {
+    const out = runner.parseChanges(
+      JSON.stringify({ changes: [{ operation: 'create', path: '.env.example', content: 'x' }], summary: '', content: '' }),
+    )
+    expect(out).toHaveLength(1)
+  })
+})

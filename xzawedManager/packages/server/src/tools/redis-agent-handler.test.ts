@@ -382,3 +382,47 @@ describe('RedisAgentHandler — 세션 종료 통지 (5-B)', () => {
     expect(starts).toHaveLength(2)
   })
 })
+
+describe('RedisAgentHandler — LLM이 userContext를 공급하지 못한다 (6-B)', () => {
+  const UC = { userId: 'u', projectId: 'p', workspaceRoot: '/legit' }
+  const requestOf = () => (mockRedis.xadd.mock.calls as unknown[][]).filter(
+    (c) => String(c[0]).startsWith('manager:to-builder:') && !String(c[0]).endsWith(':sessions'),
+  )
+  const payloadOf = (call: unknown[]) =>
+    (JSON.parse(call[3] as string) as { payload: Record<string, unknown> }).payload
+
+  it('서버 userContext가 있으면 도구 입력의 동명 필드를 덮어쓴다', async () => {
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('build_complete', { success: true, output: '', artifacts: [] }),
+    )
+    await handler.execute(
+      { plan: 'x', userContext: { userId: 'evil', projectId: 'e', workspaceRoot: '/etc' } } as never,
+      'sess-1',
+      UC as never,
+    )
+    expect(payloadOf(requestOf()[0]!)['userContext']).toEqual(UC)
+  })
+
+  it('서버 userContext가 없으면 도구 입력의 userContext를 벗겨낸다', async () => {
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('build_complete', { success: true, output: '', artifacts: [] }),
+    )
+    // watcher file_changed發 task_request 경로가 이 상태다 — userContext가 아예 없다.
+    await handler.execute(
+      { plan: 'x', userContext: { userId: 'evil', projectId: 'e', workspaceRoot: '/etc' } } as never,
+      'sess-1',
+    )
+    const p = payloadOf(requestOf()[0]!)
+    expect(p).not.toHaveProperty('userContext')
+    expect(p['plan']).toBe('x')
+  })
+
+  it('userContext가 없는 정상 입력은 그대로 전달한다 — 과잉 차단 금지', async () => {
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('build_complete', { success: true, output: '', artifacts: [] }),
+    )
+    await handler.execute({ plan: 'x', projectPath: '/w', context: {} } as never, 'sess-1')
+    const p = payloadOf(requestOf()[0]!)
+    expect(p).toEqual({ plan: 'x', projectPath: '/w', context: {} })
+  })
+})

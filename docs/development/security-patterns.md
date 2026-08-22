@@ -4,6 +4,24 @@ xzawedPAIS 전 서비스 공통 보안 패턴. Orchestrator `CLAUDE.md`의 `## �
 
 ---
 
+## LLM 생성 경로 봉쇄
+
+LLM이 준 경로로 파일을 쓰는 곳은 Developer `fileio.ts`의 `validatePath` 하나다. 어휘 판정만으로는 두 가지가 새어 나간다.
+
+**워크스페이스 루트 자신.** `path.relative(root, root)`는 빈 문자열이라 `startsWith('..')`도 `isAbsolute`도 아니다. `.` · `''` · `./` · `a/..` · `src/..`가 전부 통과해 루트 자신을 반환하고, delete 분기가 `fs.rename(root, root + '.bak.N')`으로 워크스페이스 디렉터리를 통째로 부모에 옮긴다. **빈 상대경로를 "안전"으로 읽지 않는다.**
+
+**경로 중간의 심볼릭 링크.** 리프만 `realpath`하면 새 파일 생성 시 ENOENT라 어휘 경로로 폴백하는데, 그때 중간 디렉터리가 밖을 가리키는 링크여도 어휘 판정은 통과한다. **존재하는 최근접 조상**까지 realpath로 풀어 그 조상을 검사하고, 아직 없는 나머지만 이어 붙인다 — 미존재 구간은 링크일 수 없다.
+
+파생 경로(`.tmp.{ts}` · `.bak.{ts}`)와 정리 대상 디렉터리에도 같은 봉쇄를 건다. 단일 지점 실패가 곧 탈출이 되지 않게 하는 방어심층이다.
+
+TOCTOU는 남는다 — 검사와 쓰기 사이에 링크가 생기는 창은 없앨 수 없다. 쓰기 **후** 실경로를 재검증해 탐지만 한다.
+
+## userContext는 서버가 정한다
+
+`resolveWorkspaceRoot`가 `userContext?.workspaceRoot`를 설정값보다 **우선**한다. 그래서 `userContext`가 LLM 도구 입력에서 올 수 있으면 모델이 자기 워크스페이스를 고른다. 도구 `inputSchema`에 `additionalProperties: false`가 없고 이 경로에 Zod 검증도 없으므로, `RedisAgentHandler.publishRequest`가 도구 입력에서 `userContext`를 **벗겨낸 뒤** 서버 값을 붙인다.
+
+서버 `userContext`가 undefined인 경로가 실재한다 — Manager 자신이 watcher `file_changed`로 발행하는 `task_request`에는 `userContext`가 없다. 그 경로에서 도구 입력이 그대로 흘렀다.
+
 ## CLI 플래그 인젝션 방지
 
 `cli-runner.ts`: spawn args에 사용자 메시지 추가 전 `'--'` end-of-options 구분자 삽입.
