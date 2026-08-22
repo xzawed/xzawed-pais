@@ -129,3 +129,114 @@ describe('cleanupOldBakFiles', () => {
     expect(removed).toBe(0)
   })
 })
+
+describe('경로 봉쇄 — 워크스페이스 루트 자체 (N-1)', () => {
+  // path.relative(root, root) === '' 이라 startsWith('..')도 isAbsolute도 아니다.
+  // 옛 가드는 이 다섯을 전부 통과시키고 workspaceRoot 자신을 반환했다.
+  for (const candidate of ['.', '', './', 'a/..', 'src/..']) {
+    it(`${JSON.stringify(candidate)} 를 거부한다`, async () => {
+      await expect(validatePath(candidate, tmpDir)).rejects.toThrow('워크스페이스 루트 자체')
+    })
+  }
+
+  it('delete 연산이 워크스페이스 디렉터리를 부모로 옮기지 못한다', async () => {
+    await fs.mkdir(path.join(tmpDir, 'src'), { recursive: true })
+    await expect(
+      applyChange({ operation: 'delete', path: '.' }, tmpDir),
+    ).rejects.toThrow('워크스페이스 루트 자체')
+
+    // 워크스페이스가 제자리에 남아 있어야 한다.
+    const stat = await fs.stat(tmpDir)
+    expect(stat.isDirectory()).toBe(true)
+    expect(await fs.readdir(tmpDir)).toContain('src')
+  })
+
+  it('루트 바로 아래 파일은 여전히 허용한다 — 과잉 차단 금지', async () => {
+    await applyChange({ operation: 'create', path: 'a.txt', content: 'X' }, tmpDir)
+    expect(await fs.readFile(path.join(tmpDir, 'a.txt'), 'utf-8')).toBe('X')
+  })
+})
+
+describe('경로 봉쇄 — 중간 심볼릭 링크 (6-A)', () => {
+  let outside: string
+  let canSymlink = true
+
+  beforeEach(async () => {
+    outside = await fs.mkdtemp(path.join(os.tmpdir(), 'developer-outside-'))
+    try {
+      await fs.symlink(outside, path.join(tmpDir, 'link'), 'dir')
+    } catch {
+      // Windows에서 개발자 모드·관리자 권한이 없으면 심볼릭 링크를 만들 수 없다.
+      // 그 환경에서는 이 결함을 재현할 수 없으므로 검증을 건너뛴다(거짓 통과 금지).
+      canSymlink = false
+    }
+  })
+  afterEach(async () => {
+    await fs.rm(outside, { recursive: true, force: true })
+  })
+
+  it('링크 아래의 새 파일 경로를 거부한다 — realpath ENOENT 어휘 폴백 봉쇄', async () => {
+    if (!canSymlink) return
+    await expect(validatePath('link/new.txt', tmpDir)).rejects.toThrow('경로 거부')
+  })
+
+  it('링크 아래로 실제 쓰기가 나가지 않는다', async () => {
+    if (!canSymlink) return
+    await expect(
+      applyChange({ operation: 'create', path: 'link/new.txt', content: 'ESCAPED' }, tmpDir),
+    ).rejects.toThrow('경로 거부')
+    expect(await fs.readFile(path.join(outside, 'new.txt'), 'utf-8').catch(() => null)).toBeNull()
+  })
+
+  it('링크 아래 여러 단계 깊이도 거부한다', async () => {
+    if (!canSymlink) return
+    await expect(validatePath('link/a/b/c.txt', tmpDir)).rejects.toThrow('경로 거부')
+  })
+
+  it('링크 아래의 기존 파일도 거부한다 (기존 동작 유지)', async () => {
+    if (!canSymlink) return
+    await fs.writeFile(path.join(outside, 'existing.txt'), 'x')
+    await expect(validatePath('link/existing.txt', tmpDir)).rejects.toThrow('경로 거부')
+  })
+
+  it('워크스페이스 안을 가리키는 링크는 허용한다 — 과잉 차단 금지', async () => {
+    if (!canSymlink) return
+    await fs.mkdir(path.join(tmpDir, 'real'), { recursive: true })
+    try {
+      await fs.symlink(path.join(tmpDir, 'real'), path.join(tmpDir, 'inner'), 'dir')
+    } catch { return }
+    const v = await validatePath('inner/ok.txt', tmpDir)
+    expect(v).toBe(path.join(await fs.realpath(path.join(tmpDir, 'real')), 'ok.txt'))
+  })
+
+  it('cleanupOldBakFiles가 링크 밖 디렉터리를 대상으로 삼지 못한다', async () => {
+    if (!canSymlink) return
+    const victim = path.join(outside, 'old.bak.1')
+    await fs.writeFile(victim, 'BACKUP')
+    const old = new Date(Date.now() - 30 * 24 * 3600 * 1000)
+    await fs.utimes(victim, old, old)
+
+    await expect(
+      applyChange({ operation: 'create', path: 'link/x.txt', content: 'y' }, tmpDir),
+    ).rejects.toThrow('경로 거부')
+
+    expect(await fs.readFile(victim, 'utf-8')).toBe('BACKUP')
+  })
+})
+
+describe('경로 봉쇄 — 중첩 신규 디렉터리 (정상 경로 회귀)', () => {
+  it('깊은 신규 경로를 만든다', async () => {
+    await applyChange({ operation: 'create', path: 'a/b/c/d.txt', content: 'deep' }, tmpDir)
+    expect(await fs.readFile(path.join(tmpDir, 'a', 'b', 'c', 'd.txt'), 'utf-8')).toBe('deep')
+  })
+
+  it('워크스페이스가 아직 없어도 만든다', async () => {
+    const fresh = path.join(tmpDir, 'not-yet')
+    await applyChange({ operation: 'create', path: 'x/y.txt', content: 'Z' }, fresh)
+    expect(await fs.readFile(path.join(fresh, 'x', 'y.txt'), 'utf-8')).toBe('Z')
+  })
+
+  it('..로 워크스페이스를 벗어나는 신규 경로를 거부한다', async () => {
+    await expect(validatePath('../escape.txt', tmpDir)).rejects.toThrow('경로 거부')
+  })
+})

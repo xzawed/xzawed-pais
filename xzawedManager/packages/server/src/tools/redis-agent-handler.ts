@@ -87,9 +87,18 @@ export class RedisAgentHandler<TInput, TOutput>
     input: TInput,
     userContext?: UserContext,
   ): Promise<void> {
+    // userContext는 **서버가 정하는 값**이다. LLM 도구 입력에 실려 온 동명 필드를
+    // 그대로 흘리면 에이전트의 resolveWorkspaceRoot가 그 값을 설정보다 우선해
+    // 모델이 자기 워크스페이스를 고르게 된다. 도구 inputSchema에는
+    // additionalProperties:false가 없고 이 경로에 Zod 검증도 없으므로 여기서 벗겨낸다.
+    //
+    // userContext가 undefined인 경로가 실재한다 — Manager 자신이 watcher
+    // file_changed로 발행하는 task_request에는 userContext가 없다.
+    const { userContext: _injected, ...safeInput } = (input ?? {}) as Record<string, unknown>
+    void _injected
     const payload = userContext !== undefined
-      ? { ...(input as Record<string, unknown>), userContext }
-      : input
+      ? { ...safeInput, userContext }
+      : safeInput
     await this.bus.publish(requestStream, {
       sessionId,
       messageId: crypto.randomUUID(),

@@ -120,7 +120,15 @@ function isFileChange(item: unknown): item is FileChange {
     obj['operation'] === 'create' || obj['operation'] === 'modify' || obj['operation'] === 'delete'
   if (!validOp || typeof obj['path'] !== 'string') return false
   // Reject absolute paths at parse time — defense in depth
-  if (path.isAbsolute(obj['path'] as string)) return false
+  const rawPath = obj['path'] as string
+  if (path.isAbsolute(rawPath)) return false
+  // 워크스페이스 루트 자신을 가리키는 형태를 파싱 단계에서 거른다. 실제 봉쇄는
+  // validatePath가 담당하지만, 게이트 revise 재실행처럼 파서를 다시 타는 경로가 있어
+  // 두 곳 모두에 둔다. normalize('')는 '.'이므로 빈 문자열도 같이 걸린다.
+  // 후행 구분자 형태는 path.normalize('./')로 런타임에 구해 비교한다 — 플랫폼마다 다르고
+  // 소스에 리터럴 백슬래시를 두면 POSIX에서 무의미해진다.
+  const norm = path.normalize(rawPath)
+  if (norm === '.' || norm === path.normalize('./') || norm === '..' || norm.startsWith('..')) return false
   if ((obj['operation'] === 'create' || obj['operation'] === 'modify') &&
       typeof obj['content'] !== 'string') {
     return false

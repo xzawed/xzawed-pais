@@ -103,6 +103,8 @@ Watcher는 Claude API를 쓰지 않아 API 키가 불필요하다. 서비스별 
 - **주 소비자(shared `BaseConsumer`, Orchestrator·Manager `StreamConsumer`)는 Zod `safeParse` 후 처리**하고 실패 시 DLQ 격리 또는 `xack` 후 skip한다(프로세스 중단 금지). 단 `SessionDispatcher`·`WatcherEventConsumer`는 `JSON.parse` + 필드 duck-typing이라 Zod를 거치지 않는다 — 새 인바운드 경로를 만들 때는 duck-typing을 답습하지 말고 스키마를 붙인다
 - **`xack`은 어떤 경로로든 보장된다.** `StreamConsumer`는 `handler(msg)`를 `try/finally`로 감싸고, `BaseConsumer`는 배치를 `finally`로 감싸며 `handleMessage`를 never-throw로 유지한다(PEL 누수 방지)
 - LLM 생성 경로는 절대경로 금지, `workspaceRoot` 기준 상대경로로 강제. `validateWorkspaceRoot`가 파일시스템 루트를 거부하는데 **기동 시 호출하는 것은 에이전트 7종뿐**이다 — Manager는 `ensureWorkspace`에서, Orchestrator는 자체 `assertNotFilesystemRoot`로 각각 다른 지점에서 막는다
+- **상대경로라는 것만으로는 봉쇄가 아니다.** 빈 상대경로(`.`·`''`·`a/..`)는 루트 자신을 가리키고, 리프만 `realpath`하면 중간 심볼릭 링크가 새어 나간다. 판정은 존재하는 최근접 조상 기준으로 하고 파생 경로에도 같이 건다 — 상세는 [security-patterns](docs/development/security-patterns.md)
+- **`userContext`는 서버가 정하는 값이다.** `resolveWorkspaceRoot`가 이 값을 설정보다 우선하므로 LLM 도구 입력에 실려 오면 모델이 워크스페이스를 고르게 된다. `publishRequest`가 도구 입력에서 벗겨낸다
 - `fetch`·`shell.openExternal` URL은 파싱 후 프로토콜·접두사 검증(SSRF·open redirect)
 - Electron: 민감 자격증명을 렌더러에 노출 금지, MCP `args`의 위험 플래그 차단
 - Dockerfile: runner 스테이지에 `USER node`, 모든 `pnpm install`에 `--ignore-scripts`
