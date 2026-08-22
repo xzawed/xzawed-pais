@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { baseAgentSchema, baseAgentEnv } from '../config/agent-config.js'
+import { baseAgentSchema, baseAgentEnv, makeAgentConfig } from '../config/agent-config.js'
 
 /**
  * 에이전트 7종이 공유하는 설정 계약. 이 파일이 깨지면 일곱 서비스의 기동이 함께
@@ -119,5 +119,30 @@ describe('baseAgentSchema — 서비스별 변형', () => {
     expect(cfg).not.toHaveProperty('anthropicApiKey')
     expect(cfg).not.toHaveProperty('claudeModel')
     expect(cfg.workspaceRoot).toBe('/workspace')
+  })
+})
+
+describe('makeAgentConfig — 완성형 팩토리', () => {
+  it('loadConfig가 env를 파싱해 설정을 낸다', () => {
+    const { loadConfig } = makeAgentConfig(3003)
+    expect(loadConfig(FULL).port).toBe(4321)
+  })
+
+  it('PORT 미설정이면 defaultPort를 쓴다', () => {
+    const { loadConfig } = makeAgentConfig(3003)
+    const cfg = loadConfig({ ANTHROPIC_API_KEY: 'k', WORKSPACE_ROOT: '/w' })
+    expect(cfg.port).toBe(3003)
+  })
+
+  it('필수값이 없으면 던진다 — 기동을 거부시키는 것이 계약이다', () => {
+    const { loadConfig } = makeAgentConfig(3003)
+    expect(() => loadConfig({})).toThrow()
+  })
+
+  it('schema도 함께 노출해 서비스가 확장할 수 있다', () => {
+    const { schema } = makeAgentConfig(3006)
+    const extended = schema.extend({ buildTimeoutMs: schema.shape.port })
+    const cfg = extended.parse({ ...baseAgentEnv(FULL), buildTimeoutMs: '5000' })
+    expect(cfg.buildTimeoutMs).toBe(5000)
   })
 })

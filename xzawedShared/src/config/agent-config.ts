@@ -40,3 +40,22 @@ export function baseAgentEnv(
     workspaceRoot: env['WORKSPACE_ROOT'],
   }
 }
+
+/** 공통 필드만 쓰는 에이전트의 설정 타입. `makeAgentConfig`의 반환 타입과 짝이다. */
+export type AgentConfig = z.infer<ReturnType<typeof baseAgentSchema>>
+
+/**
+ * 공통 필드만 쓰는 에이전트를 위한 완성형 팩토리.
+ *
+ * 스키마와 loadConfig를 각 서비스가 따로 조립하면 그 조립 코드 자체가 다시
+ * 서비스마다 같은 모양으로 복제된다 — 포트 한 글자만 다른 파일 넷이 생긴다.
+ * 조립까지 여기서 끝내면 호출부는 두 줄이 된다.
+ */
+export function makeAgentConfig(defaultPort: number) {
+  const schema = baseAgentSchema(defaultPort)
+  return {
+    schema,
+    loadConfig: (env: Record<string, string | undefined> = process.env): AgentConfig =>
+      schema.parse(baseAgentEnv(env)),
+  }
+}
