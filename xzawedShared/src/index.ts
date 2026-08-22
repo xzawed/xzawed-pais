@@ -7,6 +7,7 @@ export type { EventBus, PublishOptions, StreamConsumerPort, RequestReplyPort, Ra
 export { validateWorkspaceRoot, resolveWorkspaceRoot } from './workspace-guard.js'
 export { SessionDispatcher } from './streams/session-dispatcher.js'
 export type { ConsumerLike } from './streams/session-dispatcher.js'
+export { GatewayStartSchema, GatewayEndSchema } from './streams/session-dispatcher.js'
 export { AgentQuery, AgentQuerySchema, parseAgentQuery, collaborationPayloadFields } from './types/agent-query.js'
 export type { AgentQueryKind, AgentQueryPayload } from './types/agent-query.js'
 export { answerViaClaude, callClaudeText, callClaudeTextWithUsage, extractClaudeText, stripJsonFences } from './claude/answer-query.js'

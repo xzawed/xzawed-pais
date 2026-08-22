@@ -870,3 +870,76 @@ describe('BaseConsumer', () => {
     })
   })
 })
+
+describe('BaseConsumer — 정지·종료 의미론 (5-B)', () => {
+  const yieldMacrotask = () => new Promise<void>((r) => setImmediate(r))
+
+  function makeConsumer(redis: ReturnType<typeof makeRedis>, onMessage = async () => {}) {
+    return new BaseConsumer<Message>(
+      redis as never, onMessage, 'test-consumers', 'test-1', 'test:stream',
+      MessageSchema, async () => {},
+    )
+  }
+
+  it('T5 — close()를 두 번 불러도 redis.quit()은 한 번만 호출된다', async () => {
+    const redis = makeRedis()
+    const consumer = makeConsumer(redis)
+
+    await consumer.close()
+    await consumer.close()
+
+    expect(redis.quit).toHaveBeenCalledTimes(1)
+  })
+
+  it('T6 — ensureGroup 대기 중 도착한 stop()이 유실되지 않는다', async () => {
+    let resolveGroup!: () => void
+    const redis = makeRedis({
+      xgroup: vi.fn().mockReturnValue(new Promise<void>((r) => { resolveGroup = r })),
+    })
+    const consumer = makeConsumer(redis)
+
+    const p = consumer.start('s1')
+    await yieldMacrotask()          // ensureGroup 대기 진입
+    consumer.stop()                 // 이 시점의 stop이 running=true에 덮여서는 안 된다
+    resolveGroup()
+    await p
+
+    expect(redis.xreadgroup).not.toHaveBeenCalled()
+    // ensureGroup 직후 가드가 없으면 running=true가 서고 pending 재획득까지 진행된다.
+    expect(redis.xautoclaim).not.toHaveBeenCalled()
+  })
+
+  it('stop() 이후 start()가 소비 루프에 진입하지 않는다', async () => {
+    const redis = makeRedis()
+    const consumer = makeConsumer(redis)
+
+    consumer.stop()
+    await consumer.start('s1')
+
+    expect(redis.xreadgroup).not.toHaveBeenCalled()
+  })
+
+  it('XAUTOCLAIM 실패를 무음으로 삼키지 않는다 (M8)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    // 블로킹 I/O mock은 macrotask를 양보해야 stop()이 관측된다 —
+    // 즉시 resolve는 마이크로태스크 루프가 macrotask 큐를 굶겨 OOM으로 죽는다.
+    const consumerRef: { current?: { stop: () => void } } = {}
+    const redis = makeRedis({
+      xautoclaim: vi.fn().mockRejectedValue(new Error('ERR unknown command')),
+      xreadgroup: vi.fn().mockImplementation(async () => {
+        await yieldMacrotask()
+        consumerRef.current?.stop()
+        return null
+      }),
+    })
+    const consumer = makeConsumer(redis)
+    consumerRef.current = consumer
+
+    await consumer.start('s1')
+
+    expect(spy).toHaveBeenCalledWith(
+      expect.stringContaining('XAUTOCLAIM 실패'), expect.anything(),
+    )
+    spy.mockRestore()
+  })
+})

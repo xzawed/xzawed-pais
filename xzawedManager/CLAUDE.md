@@ -83,6 +83,9 @@ cd packages/server && pnpm test <파일>
 - **마이그레이션 러너에 버전 추적이 없다.** 매 기동마다 전량 재실행되므로 모든 마이그레이션이 멱등이어야 한다(`__tests__/migrate-idempotent.test.ts`가 정적으로 가드). Orchestrator는 `schema_migrations`로 1회만 적용하는 반대 모델이다.
 - **트랜잭션 밖 `FOR UPDATE SKIP LOCKED`는 무효**다. 잠금이 즉시 풀려 동시성 보호가 사라진다.
 - **소비자 그룹이 스트림을 공유하면 멱등 키에 그룹 성분을 넣어야 한다.** 없으면 한 그룹의 마커가 다른 그룹의 핸들러를 굶긴다.
+- **세션 정리는 게이트웨이 경로에서만 의미가 있다.** `makeSessionStarter`를 부르는 곳이 둘인데 프로덕션 진입은 `server.ts`의 게이트웨이 starter 하나뿐이다. `sessions.route.ts`가 만드는 starter는 `POST /api/sessions/:sessionId/start` 전용이고 그 엔드포인트를 호출하는 코드가 저장소에 없다 — 테스트에서만 도달한다. 그래서 starter의 `registry`는 **필수이되 nullable**이다(선택으로 두면 누락이 무음 no-op이 되어 tsc가 못 잡는다).
+- **세션 종료는 에이전트에 통지해야 한다.** `registry.releaseAll` → `RedisAgentHandler.releaseSession` → 게이트웨이 `event:'end'`가 에이전트 쪽 세션 소비자와 그 전용 Redis 연결을 회수시키는 유일한 경로다. 이 체인 중 하나라도 끊기면 에이전트에 소비자가 무한 누적되고 1000개에서 신규 세션이 폐기된다.
+- **RPC 타임아웃은 `_notifiedSessions` memo를 푼다.** 에이전트만 재시작되면 그 소비자는 사라졌는데 Manager는 "이미 통지했다"고 기억한다. 타임아웃이 유일한 감지 신호라 거기서 memo를 풀어 다음 호출이 재통지하게 한다.
 
 ## 테넌트 태깅 — 격리가 아니다
 

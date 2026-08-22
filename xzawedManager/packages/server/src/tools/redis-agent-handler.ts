@@ -61,6 +61,22 @@ export class RedisAgentHandler<TInput, TOutput>
     }))
   }
 
+  /**
+   * 세션 종료 통지. `sessionId` 키를 **쓰지 않는다** — 구 SessionDispatcher는
+   * `typeof parsed.sessionId === 'string'`만 보고 세션을 띄우므로, 그 키가 실려 있으면
+   * 종료 통지가 종료된 세션의 소비자를 부활시킨다. 계약 정본은 shared의
+   * `GatewayEndSchema`이고 이 페이로드가 그것을 만족해야 한다.
+   */
+  private async endGateway(sessionId: string): Promise<void> {
+    const gatewayStream = `manager:to-${this.agentName}:sessions`
+    const id = await this.redis.xadd(gatewayStream, '*', 'data', JSON.stringify({
+      event: 'end',
+      endSessionId: sessionId,
+      timestamp: Date.now(),
+    }))
+    if (id === null) throw new Error('gateway end xadd returned null')
+  }
+
   private async getStreamTip(responseStream: string): Promise<string> {
     return this.bus.streamTip(responseStream)
   }
@@ -177,12 +193,33 @@ export class RedisAgentHandler<TInput, TOutput>
       if (output !== null) return output
     }
 
+    // 타임아웃은 "그 세션 소비자가 사라졌을 수 있다"는 유일한 신호다. memo를 풀어 다음
+    // RPC가 게이트웨이를 재통지하게 한다 — 에이전트 단독 재시작·종료 통지 유실의 공통 백스톱.
+    // 이것이 없으면 에이전트가 재시작된 순간 그 세션은 그 에이전트에 대해 영구히 죽는다.
+    this._notifiedSessions.delete(notifyKey)
     throw new Error(`${this.agentName} timed out after ${this.timeoutMs}ms`)
   }
 
-  releaseSession(sessionId: string): void {
+  /**
+   * 세션 종료. 게이트웨이에 종료를 알려 **에이전트 쪽 세션 소비자를 내린다** —
+   * 알리지 않으면 그 소비자와 전용 Redis 연결이 프로세스 수명 내내 남는다.
+   *
+   * never-throw다(저장소 관례). 발행이 실패하면 소비자가 안 내려가 자원만 새고,
+   * 세션 정리 자체는 계속 진행된다(fail-open).
+   *
+   * ①발행 → ②memo 삭제 **순서가 계약이다.** 뒤집으면 발행 대기 중 도착한 새 RPC가
+   * 재통지(start)를 먼저 실어 end가 그 뒤에 놓이고, 방금 연 소비자가 즉시 내려간다.
+   */
+  async releaseSession(sessionId: string): Promise<void> {
     const notifyKey = `${this.agentName}:${sessionId}`
-    this._notifiedSessions.delete(notifyKey)
+    if (!this._notifiedSessions.has(notifyKey)) return
+    try {
+      await this.endGateway(sessionId)
+    } catch (err) {
+      console.error(`[RedisAgentHandler] ${this.agentName} 세션 종료 통지 실패(무시):`, err)
+    } finally {
+      this._notifiedSessions.delete(notifyKey)
+    }
   }
 
   async close(): Promise<void> {

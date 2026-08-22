@@ -5,6 +5,7 @@ import { createServer } from './server.js'
 import { Producer } from './streams/producer.js'
 import { Consumer } from './streams/consumer.js'
 import { WatcherStore } from './watcher-store.js'
+import { withWatcherCleanup } from './session-consumer.js'
 import { Watcher } from './watcher.js'
 
 async function main() {
@@ -24,11 +25,12 @@ async function main() {
     gatewayRedis,
     'manager:to-watcher:sessions',
     'watcher-session-dispatcher',
-    (_sessionId: string) => {
+    (sessionId: string) => {
       const sessionRedis = new Redis(config.redisUrl, redisOptions)
       const producer = new Producer(sessionRedis)
       const watcher = new Watcher(producer, store, config)
-      return new Consumer(sessionRedis, (msg) => watcher.handle(msg))
+      const consumer = new Consumer(sessionRedis, (msg) => watcher.handle(msg))
+      return withWatcherCleanup(consumer, store, sessionId)
     },
   )
 
@@ -39,7 +41,7 @@ async function main() {
   dispatcher.start().catch(console.error)
 
   const cleanup = async () => {
-    dispatcher.stop()
+    await dispatcher.close()
     await store.stopAll()
     await server.close()
     await gatewayRedis.quit()

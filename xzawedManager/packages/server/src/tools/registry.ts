@@ -23,10 +23,14 @@ export class ToolRegistry {
     }))
   }
 
-  releaseAll(sessionId: string): void {
-    for (const handler of this.handlers.values()) {
-      handler.releaseSession?.(sessionId)
-    }
+  /**
+   * 한 핸들러의 실패가 나머지의 해제를 막지 않는다 — 직렬 for에서 3번째가 reject하면
+   * 4~7번째가 통째로 건너뛰어져 부분 정리가 된다. 형제 closeAll과 같은 포스처를 쓴다.
+   */
+  async releaseAll(sessionId: string): Promise<void> {
+    await Promise.allSettled(
+      Array.from(this.handlers.values()).map(async (h) => h.releaseSession?.(sessionId)),
+    )
   }
 
   async closeAll(): Promise<void> {

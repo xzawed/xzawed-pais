@@ -267,3 +267,118 @@ describe('RedisAgentHandler', () => {
     })
   })
 })
+
+describe('RedisAgentHandler — 세션 종료 통지 (5-B)', () => {
+  const gatewayOf = () => (mockRedis.xadd.mock.calls as unknown[][]).filter(
+    (c) => c[0] === 'manager:to-builder:sessions',
+  )
+  const payloadOf = (call: unknown[]) => JSON.parse(call[3] as string) as Record<string, unknown>
+
+  it('T7 — 통지 이력이 있을 때만 end를 발행한다', async () => {
+    // 통지한 적 없음 → 발행 0건
+    await handler.releaseSession('never-notified')
+    expect(gatewayOf()).toHaveLength(0)
+
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('build_complete', { success: true, output: '', artifacts: [] }),
+    )
+    await handler.execute({}, 'sess-1')
+    expect(gatewayOf()).toHaveLength(1)
+
+    await handler.releaseSession('sess-1')
+    const calls = gatewayOf()
+    expect(calls).toHaveLength(2)
+    expect(payloadOf(calls[1]!)).toEqual({
+      event: 'end', endSessionId: 'sess-1', timestamp: expect.any(Number),
+    })
+  })
+
+  it('end 페이로드에 sessionId 키가 없다 — 구 디스패처가 시작으로 오독하면 안 된다', async () => {
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('build_complete', { success: true, output: '', artifacts: [] }),
+    )
+    await handler.execute({}, 'sess-1')
+    await handler.releaseSession('sess-1')
+
+    const end = payloadOf(gatewayOf()[1]!)
+    expect(end).not.toHaveProperty('sessionId')
+  })
+
+  it('시작 통지에는 event 키가 없다 — 기존 형태를 바꾸지 않는다', async () => {
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('build_complete', { success: true, output: '', artifacts: [] }),
+    )
+    await handler.execute({}, 'sess-1')
+
+    const start = payloadOf(gatewayOf()[0]!)
+    expect(start).not.toHaveProperty('event')
+    expect(start['sessionId']).toBe('sess-1')
+  })
+
+  it('T8 — end 발행이 memo 삭제보다 먼저 일어난다', async () => {
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('build_complete', { success: true, output: '', artifacts: [] }),
+    )
+    await handler.execute({}, 'sess-1')
+
+    const order: string[] = []
+    mockRedis.xadd.mockImplementationOnce(async (...args: unknown[]) => {
+      order.push('end-published')
+      // 발행이 진행 중인 동안 재통지가 끼어들 수 있는지 관측한다.
+      const p = JSON.parse(args[3] as string) as { event?: string }
+      expect(p.event).toBe('end')
+      return '1-0'
+    })
+
+    await handler.releaseSession('sess-1')
+    order.push('memo-cleared')
+
+    // 발행 후 재통지가 가능해야 한다(memo가 실제로 비워졌다).
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('build_complete', { success: true, output: '', artifacts: [] }),
+    )
+    await handler.execute({}, 'sess-1')
+
+    expect(order).toEqual(['end-published', 'memo-cleared'])
+    expect(gatewayOf()).toHaveLength(3) // start · end · 재start
+  })
+
+  it('end 발행 실패는 삼키고 세션 정리를 계속한다 (never-throw)', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('build_complete', { success: true, output: '', artifacts: [] }),
+    )
+    await handler.execute({}, 'sess-1')
+
+    mockRedis.xadd.mockRejectedValueOnce(new Error('redis down'))
+    await expect(handler.releaseSession('sess-1')).resolves.toBeUndefined()
+    expect(spy).toHaveBeenCalled()
+
+    // 실패해도 memo는 비워진다 — 안 그러면 그 세션이 영구히 재통지 불가가 된다.
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('build_complete', { success: true, output: '', artifacts: [] }),
+    )
+    await handler.execute({}, 'sess-1')
+    expect(gatewayOf().filter((c) => !('event' in payloadOf(c)))).toHaveLength(2)
+    spy.mockRestore()
+  })
+
+  it('T9 — RPC 타임아웃 후 재호출이 게이트웨이를 재통지한다', async () => {
+    const fast = new RedisAgentHandler(
+      'redis://localhost:6379', 'builder', 'build_request', 'build_complete',
+      'build_project', 'Build the project',
+      { type: 'object', properties: {}, required: [] }, buildOutputSchema,
+      10, // timeoutMs — 9번째 인자
+    )
+    mockRedis.xread.mockResolvedValue(null) // 응답 없음 → 타임아웃
+
+    await expect(fast.execute({}, 'sess-timeout')).rejects.toThrow(/timed out/)
+    await expect(fast.execute({}, 'sess-timeout')).rejects.toThrow(/timed out/)
+
+    // 타임아웃이 memo를 풀지 않으면 두 번째 호출은 재통지하지 않아 1건에 머문다.
+    const starts = (mockRedis.xadd.mock.calls as unknown[][]).filter(
+      (c) => c[0] === 'manager:to-builder:sessions' && !('event' in payloadOf(c)),
+    )
+    expect(starts).toHaveLength(2)
+  })
+})

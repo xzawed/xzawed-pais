@@ -39,7 +39,7 @@ async function main() {
   dispatcher.start().catch(console.error)
 
   const cleanup = async () => {
-    dispatcher.stop()
+    await dispatcher.close()
     await server.close()
     await gatewayRedis.quit()
     process.exit(0)
