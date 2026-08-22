@@ -98,10 +98,8 @@ export const PROFILES: Record<string, Record<string, string>> = {
  */
 // jscpd:ignore-start
 // replicated-block: pais-profile-merge
-// PAIS_PROFILE 병합 의미론은 두 서비스가 **동일해야만** 프로필이 프로필로서 동작한다.
-// 한쪽만 "명시 env 우선"을 바꾸면 같은 프로필이 서비스마다 다르게 해석된다.
-// PROFILES 표는 서비스별로 다르고, 이 병합 함수만 공유 대상이다.
-// scripts/check-replicated-blocks.js 가 두 사본의 동일성을 CI에서 강제한다.
+// 병합 규칙이 Manager와 갈리면 같은 PAIS_PROFILE이 서비스마다 다르게 해석된다.
+// 사유와 강제 방법: scripts/check-replicated-blocks.js
 export function resolveProfileEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const profile = env['PAIS_PROFILE']
   if (profile === undefined || profile === '') return env

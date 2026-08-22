@@ -53,11 +53,7 @@ export type AgentConfig = z.infer<ReturnType<typeof baseAgentSchema>>
  */
 export function makeAgentConfig(defaultPort: number) {
   const schema = baseAgentSchema(defaultPort)
-  return {
-    schema,
-    loadConfig: (env: Record<string, string | undefined> = process.env): AgentConfig =>
-      schema.parse(baseAgentEnv(env)),
-  }
+  return { schema, loadConfig: loadAgentConfig(schema) }
 }
 
 /**
