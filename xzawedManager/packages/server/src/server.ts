@@ -702,6 +702,7 @@ export async function buildServer(
 
   const startManagedSession = makeSessionStarter({
     redisUrl: config.REDIS_URL, runner, producer, sessionStore, activeConsumers,
+    registry,
     watcherEventConsumer,
     ...(decompose && { decompose }),
     ...(riskClassify && { riskClassify }),
