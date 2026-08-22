@@ -199,8 +199,8 @@ importers:
         specifier: ^10.1.3
         version: 10.1.3
       '@fastify/websocket':
-        specifier: ^11.0.0
-        version: 11.2.0
+        specifier: ^11.3.0
+        version: 11.3.0
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(zod@3.25.76)
@@ -780,8 +780,8 @@ packages:
   '@fastify/static@10.1.3':
     resolution: {integrity: sha512-W6jqajYS974XjPjB5hQWoxPM8NKM4+p8YmQT6G5IbCa4uhdWSVadZUv75siy1wEA/3ty8RYdpBydfWeu9AqAqQ==}
 
-  '@fastify/websocket@11.2.0':
-    resolution: {integrity: sha512-3HrDPbAG1CzUCqnslgJxppvzaAZffieOVbLp1DAy1huCSynUWPifSvfdEDUR8HlJLp3sp1A36uOM2tJogADS8w==}
+  '@fastify/websocket@11.3.0':
+    resolution: {integrity: sha512-g89ag4BCcD9YP5wBZXixzoLnuf5j89p/sXFcfpCiv2pdEkYYukBEoK3heVzqsp0EAtszVDc2BBZG0KZqeAShIA==}
 
   '@floating-ui/core@1.7.5':
     resolution: {integrity: sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==}
@@ -4861,10 +4861,10 @@ snapshots:
       fastq: 1.20.1
       glob: 13.0.6
 
-  '@fastify/websocket@11.2.0':
+  '@fastify/websocket@11.3.0':
     dependencies:
       duplexify: 4.1.3
-      fastify-plugin: 5.1.0
+      fastify-plugin: 6.0.0
       ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
