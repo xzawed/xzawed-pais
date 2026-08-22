@@ -39,7 +39,10 @@ export interface SessionsRouteOptions {
 export function makeSessionStarter(
   opts: Pick<SessionsRouteOptions, 'redisUrl' | 'runner' | 'producer' | 'sessionStore'> & {
     activeConsumers: Map<string, StreamConsumer>
-    registry?: ToolRegistry
+    /** 세션 종료 시 registry.releaseAll 로 핸들러별 세션 상태를 해제한다.
+     *  **선택 인자로 두지 않는다** — 누락이 런타임 무음 no-op이 되어 tsc가 못 잡기 때문이다.
+     *  주입할 registry 가 없는 호출자는 undefined 를 **명시**해야 한다. */
+    registry: ToolRegistry | undefined
     watcherEventConsumer?: WatcherEventConsumer
     decompose?: ProduceDeps
     riskClassify?: RiskClassifyDeps
@@ -168,8 +171,7 @@ export async function sessionsRoute(
   const preHandler = opts.authHook ? [opts.authHook] : []
 
   const startManagedSession = makeSessionStarter({
-    redisUrl, runner, producer, sessionStore, activeConsumers,
-    ...(registry !== undefined && { registry }),
+    redisUrl, runner, producer, sessionStore, activeConsumers, registry,
     ...(opts.watcherEventConsumer !== undefined && { watcherEventConsumer: opts.watcherEventConsumer }),
     ...(opts.decompose !== undefined && { decompose: opts.decompose }),
     ...(opts.riskClassify !== undefined && { riskClassify: opts.riskClassify }),

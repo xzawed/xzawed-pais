@@ -261,3 +261,63 @@ describe('sessionsRoute — decompose_request 배선 (P4a-2)', () => {
     await app.close()
   })
 })
+
+describe('sessionsRoute — 세션 종료 시 registry 해제 (F5)', () => {
+  const SESSION_C = '550e8400-e29b-41d4-a716-446655440002'
+  const SESSION_D = '550e8400-e29b-41d4-a716-446655440003'
+
+  function captureHandlerConsumer() {
+    const capturedHandlers: MsgHandler[] = []
+    vi.mocked(StreamConsumer).mockImplementation(function () { return ({
+      start: vi.fn().mockImplementation(async (_sid: string, handler: MsgHandler) => {
+        capturedHandlers.push(handler)
+      }),
+      stop: vi.fn(),
+    }) as unknown as StreamConsumer })
+    return capturedHandlers
+  }
+
+  it('정상 완료 경로에서 registry.releaseAll이 호출된다', async () => {
+    const capturedHandlers = captureHandlerConsumer()
+    const releaseAll = vi.fn()
+    const sessionStore = new SessionStore()
+
+    const app = Fastify({ logger: false })
+    await app.register(sessionsRoute, {
+      redisUrl: 'redis://localhost:6379',
+      runner: { run: vi.fn().mockResolvedValue('done') } as never,
+      producer: { publish: vi.fn().mockResolvedValue(undefined) } as never,
+      sessionStore,
+      registry: { releaseAll } as never,
+    })
+
+    await app.inject({ method: 'POST', url: `/api/sessions/${SESSION_C}/start` })
+    await capturedHandlers[0]!(makeTaskRequest(SESSION_C))
+    await flushMicrotasks()
+
+    expect(releaseAll).toHaveBeenCalledWith(SESSION_C)
+    await app.close()
+  })
+
+  it('에러 경로에서도 registry.releaseAll이 호출된다', async () => {
+    const capturedHandlers = captureHandlerConsumer()
+    const releaseAll = vi.fn()
+    const sessionStore = new SessionStore()
+
+    const app = Fastify({ logger: false })
+    await app.register(sessionsRoute, {
+      redisUrl: 'redis://localhost:6379',
+      runner: { run: vi.fn().mockRejectedValue(new Error('boom')) } as never,
+      producer: { publish: vi.fn().mockResolvedValue(undefined) } as never,
+      sessionStore,
+      registry: { releaseAll } as never,
+    })
+
+    await app.inject({ method: 'POST', url: `/api/sessions/${SESSION_D}/start` })
+    await capturedHandlers[0]!(makeTaskRequest(SESSION_D))
+    await flushMicrotasks()
+
+    expect(releaseAll).toHaveBeenCalledWith(SESSION_D)
+    await app.close()
+  })
+})
