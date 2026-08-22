@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { baseAgentSchema, baseAgentEnv, makeAgentConfig } from '../config/agent-config.js'
+import { baseAgentSchema, baseAgentEnv, makeAgentConfig, loadAgentConfig } from '../config/agent-config.js'
 
 /**
  * 에이전트 7종이 공유하는 설정 계약. 이 파일이 깨지면 일곱 서비스의 기동이 함께
@@ -144,5 +144,38 @@ describe('makeAgentConfig — 완성형 팩토리', () => {
     const extended = schema.extend({ buildTimeoutMs: schema.shape.port })
     const cfg = extended.parse({ ...baseAgentEnv(FULL), buildTimeoutMs: '5000' })
     expect(cfg.buildTimeoutMs).toBe(5000)
+  })
+})
+
+describe('loadAgentConfig — 확장 스키마 로더', () => {
+  const Extended = baseAgentSchema(3005).extend({
+    testTimeoutMs: baseAgentSchema(1).shape.port,
+  })
+
+  it('공통 env와 추가 env를 합쳐 파싱한다', () => {
+    const load = loadAgentConfig(Extended, (e) => ({ testTimeoutMs: e['TEST_TIMEOUT_MS'] }))
+    const cfg = load({ ...FULL, TEST_TIMEOUT_MS: '9000' })
+    expect(cfg.testTimeoutMs).toBe(9000)
+    expect(cfg.workspaceRoot).toBe('/workspace')
+  })
+
+  it('추가 env 매퍼를 생략하면 공통 필드만 쓴다', () => {
+    const load = loadAgentConfig(baseAgentSchema(3002))
+    expect(load(FULL).port).toBe(4321)
+  })
+
+  it('omit한 스키마에도 쓸 수 있다 — Watcher 형태', () => {
+    const NoClaught = baseAgentSchema(3007)
+      .omit({ anthropicApiKey: true, claudeModel: true })
+      .extend({ maxWatchers: baseAgentSchema(1).shape.port })
+    const load = loadAgentConfig(NoClaught, (e) => ({ maxWatchers: e['MAX_WATCHERS'] }))
+    const cfg = load({ REDIS_URL: 'redis://r:6379', WORKSPACE_ROOT: '/w', MAX_WATCHERS: '5' })
+    expect(cfg.maxWatchers).toBe(5)
+    expect(cfg).not.toHaveProperty('anthropicApiKey')
+  })
+
+  it('스키마 위반은 그대로 던진다', () => {
+    const load = loadAgentConfig(baseAgentSchema(3002))
+    expect(() => load({})).toThrow()
   })
 })

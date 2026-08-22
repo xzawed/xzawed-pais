@@ -59,3 +59,18 @@ export function makeAgentConfig(defaultPort: number) {
       schema.parse(baseAgentEnv(env)),
   }
 }
+
+/**
+ * 서비스 고유 필드를 얹은 스키마용 로더.
+ *
+ * 스키마만 공통화하면 **loadConfig 조립부가 다시 복제된다** — Tester·Builder·Watcher가
+ * 아홉 줄을 공유하고 있었다(SonarCloud 신규 코드 중복이 이걸 잡았다). 조립까지 여기서
+ * 끝내면 호출부에 남는 것은 스키마 정의와 env 매핑뿐이다.
+ */
+export function loadAgentConfig<S extends z.ZodTypeAny>(
+  schema: S,
+  extraEnv: (env: Record<string, string | undefined>) => Record<string, unknown> = () => ({}),
+) {
+  return (env: Record<string, string | undefined> = process.env): z.infer<S> =>
+    schema.parse({ ...baseAgentEnv(env), ...extraEnv(env) }) as z.infer<S>
+}

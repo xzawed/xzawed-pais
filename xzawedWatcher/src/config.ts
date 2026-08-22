@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { baseAgentSchema, baseAgentEnv } from '@xzawed/agent-streams'
+import { baseAgentSchema, loadAgentConfig } from '@xzawed/agent-streams'
 
 // Watcher는 Claude API를 쓰지 않아 anthropicApiKey·claudeModel이 불필요하다.
 // 공통 스키마에서 그 둘을 빼는 것으로 그 사실을 코드에 남긴다.
@@ -11,11 +11,7 @@ const ConfigSchema = baseAgentSchema(3007)
   })
 
 export type Config = z.infer<typeof ConfigSchema>
-
-export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
-  return ConfigSchema.parse({
-    ...baseAgentEnv(env),
-    maxWatchers: env['MAX_WATCHERS'],
-    debounceMs: env['DEBOUNCE_MS'],
-  })
-}
+export const loadConfig = loadAgentConfig(ConfigSchema, (e) => ({
+  maxWatchers: e['MAX_WATCHERS'],
+  debounceMs: e['DEBOUNCE_MS'],
+}))
