@@ -165,6 +165,7 @@
     "choice_reject": "거부",
     "choice_approve": "승인",
     "choice_hint": "결정은 기록되며, 일부 항목은 즉시 적용됩니다.",
+    "no_options": "이 요청에는 처리 가능한 동작이 정의되지 않았습니다",
     "submit_failed": "결정 제출 실패",
     "submitted": "결정이 기록되었습니다"
   },

@@ -165,6 +165,7 @@
     "choice_reject": "Reject",
     "choice_approve": "Approve",
     "choice_hint": "Decisions are recorded; some take effect immediately.",
+    "no_options": "No actionable choices are defined for this request",
     "submit_failed": "Failed to submit decision",
     "submitted": "Decision recorded"
   },

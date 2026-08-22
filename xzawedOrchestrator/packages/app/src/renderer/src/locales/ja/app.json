@@ -165,6 +165,7 @@
     "choice_reject": "却下",
     "choice_approve": "承認",
     "choice_hint": "決定は記録され、一部は即時に適用されます。",
+    "no_options": "このリクエストには実行可能な選択肢が定義されていません",
     "submit_failed": "決定の送信に失敗しました",
     "submitted": "決定を記録しました"
   },

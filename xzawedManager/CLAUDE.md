@@ -64,11 +64,19 @@ cd packages/server && pnpm test <파일>
 | 빈 테스트 스위트 | **fail-closed** — `success && failed===0`이어도 `passed<=0`이면 vacuous로 차단 |
 | 릴리스 게이트 (증거 부재·skip) | **fail-closed** — `status:'blocked'` |
 | 오라클 승인 tx 중 bad JSON | **fail-closed** — ROLLBACK |
-| **배포 게이트 (게이트 부재·`'default'` sentinel·조회 오류)** | **fail-open — 허용한다.** `MANAGER_DEPLOY_GATE_STRICT`를 켜야 차단으로 바뀐다 |
+| **배포 게이트 (게이트 부재·`'default'` sentinel·조회 오류)** | **fail-open — 허용한다.** `MANAGER_DEPLOY_GATE_STRICT`를 켜야 차단으로 바뀐다. **기본값을 지금 뒤집지 않는다** — 아래 근거 |
 | advisory 채널 | **비차단** — 구조적으로 verdict 경로에 유입되지 않는다 |
 | 리스크·오라클·골든 미승인 | **skip** — 미승인 산출물은 라우팅도 게이트도 바꾸지 않는다 |
 
 무음 통과·무음 소멸·무음 drop은 금지다. 처리할 수 없는 메시지는 조용히 ack하지 말고 error를 발행하거나 사람에게 올린다.
+
+**`MANAGER_DEPLOY_GATE_STRICT` 기본값을 지금 뒤집지 않는 이유.** 셋이다.
+
+1. **기본 태세에서 무의미하다.** `MANAGER_DEPLOY_GATE` 자체가 기본 off라 게이트가 돌지 않는다. STRICT는 그 위에 얹히는 값이다.
+2. **지금 켜면 배포가 영구 차단된다.** 릴리스 게이트는 증거 0행을 `unverifiable`로 차단하는데(`streams/release-gate.ts`), `design_ui`·`security_audit` WP는 자기검증이 없어 증거를 한 행도 남기지 않는다. STRICT를 먼저 켜면 그 역할이 배정된 워크플로의 배포가 사인오프 외에는 뚫리지 않는다.
+3. **fail-open이 무방비가 아니다.** `deploy_project`는 `DEPLOY_TOOLS`라 **실행 전 사람 승인**이 강제되고 `effectiveMode`가 auto override를 무시한다. 게이트 판정이 없어도 사람이 카드를 보고 승인해야 배포가 나간다.
+
+**뒤집는 조건.** `design_ui`·`security_audit` WP 자기검증이 착륙해 릴리스 게이트가 그 워크플로에서 증거를 남기게 된 뒤다 — 릴리스 게이트 하드 닫기와 **같은 시점**에 함께 판단한다. 상세는 [완성 실행계획](../docs/superpowers/specs/2026-08-22-completion-plan-autonomous-factory.md).
 
 ## 함정
 
