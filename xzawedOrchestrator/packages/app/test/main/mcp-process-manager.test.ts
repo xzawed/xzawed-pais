@@ -17,9 +17,16 @@ vi.mock('node:fs', () => ({
   readFileSync: vi.fn(() => '[]'),
   mkdirSync: vi.fn(),
 }))
-vi.mock('electron', () => ({ app: { getPath: vi.fn(() => '/tmp/test') } })) // NOSONAR
+vi.mock('electron', () => ({ // NOSONAR
+  app: { getPath: vi.fn(() => '/tmp/test') },
+  safeStorage: {
+    isEncryptionAvailable: vi.fn(() => true),
+    encryptString: vi.fn((v: string) => Buffer.from('enc:' + v)),
+    decryptString: vi.fn((b: Buffer) => b.toString().replace(/^enc:/, '')),
+  },
+}))
 
-import { McpProcessManager } from '../../src/main/mcp-process-manager.js'
+import { McpProcessManager, buildChildEnv } from '../../src/main/mcp-process-manager.js'
 
 describe('McpProcessManager', () => {
   let manager: McpProcessManager
@@ -238,5 +245,81 @@ describe('McpProcessManager', () => {
     expect(mockKill).not.toHaveBeenCalledWith('SIGKILL')
 
     vi.useRealTimers()
+  })
+})
+
+describe('buildChildEnv (MCP 자식에 물려줄 환경)', () => {
+  const saved = { ...process.env }
+  afterEach(() => {
+    for (const k of Object.keys(process.env)) delete process.env[k]
+    Object.assign(process.env, saved)
+  })
+
+  it('허용 목록에 없는 부모 env는 물려주지 않는다 — 서드파티 MCP에 비밀이 새면 안 된다', () => {
+    process.env['ANTHROPIC_API_KEY'] = 'sk-ant-secret'
+    process.env['GITHUB_CLIENT_SECRET'] = 'ghs-secret'
+    process.env['AWS_SECRET_ACCESS_KEY'] = 'aws-secret'
+    const env = buildChildEnv({})
+    expect(env['ANTHROPIC_API_KEY']).toBeUndefined()
+    expect(env['GITHUB_CLIENT_SECRET']).toBeUndefined()
+    expect(env['AWS_SECRET_ACCESS_KEY']).toBeUndefined()
+  })
+
+  it('실행에 필요한 키는 물려준다', () => {
+    process.env['PATH'] = '/usr/bin'
+    process.env['HOME'] = '/home/u'
+    const env = buildChildEnv({})
+    expect(env['PATH']).toBe('/usr/bin')
+    expect(env['HOME']).toBe('/home/u')
+  })
+
+  it('config.env는 그대로 실린다 — 서버가 필요한 값은 사용자가 명시하는 통로다', () => {
+    const env = buildChildEnv({ SUPABASE_KEY: 'sb-123' })
+    expect(env['SUPABASE_KEY']).toBe('sb-123')
+  })
+
+  it('부모에 없는 키는 undefined로 채우지 않는다', () => {
+    delete process.env['NO_PROXY']
+    const env = buildChildEnv({})
+    expect('NO_PROXY' in env).toBe(false)
+  })
+
+  it('config.env가 undefined여도 동작한다', () => {
+    expect(() => buildChildEnv(undefined)).not.toThrow()
+  })
+})
+
+describe('mcp-servers.json env 봉인', () => {
+  it('저장 시 env 값이 평문으로 남지 않는다', async () => {
+    const fsMod = await import('node:fs')
+    const write = vi.mocked(fsMod.writeFileSync)
+    write.mockClear()
+    const m = new McpProcessManager()
+    await m.addServer({
+      id: 'x', name: 'supa', command: 'npx', args: ['@supabase/mcp-server-supabase'],
+      env: { SUPABASE_KEY: 'super-secret-value' }, autoStart: false,
+    } as never)
+    const written = String(write.mock.calls.at(-1)?.[1] ?? '')
+    expect(written).not.toContain('super-secret-value')
+    expect(written).toContain('enc:v1:')
+  })
+
+  it('읽을 때 봉인된 값을 되돌린다 — 기존 평문 값은 그대로 통과', async () => {
+    const fsMod = await import('node:fs')
+    const sealed = 'enc:v1:' + Buffer.from('enc:sealed-value').toString('base64')
+    vi.mocked(fsMod.existsSync).mockReturnValue(true)
+    vi.mocked(fsMod.readFileSync).mockReturnValue(JSON.stringify([{
+      id: 'x', name: 'n', command: 'npx', args: [],
+      env: { SEALED: sealed, LEGACY: 'plain-old' }, autoStart: false,
+    }]) as never)
+    try {
+      const m = new McpProcessManager()
+      const cfg = m.listServers().find((c) => c.id === 'x')
+      expect(cfg?.env['SEALED']).toBe('sealed-value')
+      expect(cfg?.env['LEGACY']).toBe('plain-old')
+    } finally {
+      vi.mocked(fsMod.existsSync).mockReturnValue(false)
+      vi.mocked(fsMod.readFileSync).mockReturnValue('[]' as never)
+    }
   })
 })

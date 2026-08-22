@@ -35,6 +35,9 @@ cd packages/app && pnpm test:e2e    # Playwright + Electron
 - **CLI 플래그 인젝션 차단** — `cli-runner.ts`가 마지막 사용자 메시지 **바로 앞에** `--` end-of-options 구분자를 넣는다(두 argv 분기 모두). 사용자 문자열이 플래그로 해석되는 것을 막는 지점이다. 단 `--system-prompt`·`--resume` 값은 `--` **앞**에 놓이므로, 그 자리에 외부 입력을 흘리면 이 방어가 적용되지 않는다(현재 세션 경로는 `systemPrompt`를 넘기지 않는다)
 - **OAuth CSRF** — `randomBytes(32)`로 state를 만들고 콜백에서 검증(`github-oauth-handler.ts`)
 - **MCP 프로세스** — command allowlist + 위험 args 차단(`mcp-process-manager.ts`)
+- **MCP 자식은 부모 환경을 물려받지 않는다.** `buildChildEnv`가 `INHERITED_ENV_KEYS`(PATH·HOME·프록시·로케일 등 실행에 필요한 것)만 추려 넘긴다. MCP 서버는 사용자가 추가하는 서드파티 프로세스라 `GITHUB_CLIENT_SECRET`·`ANTHROPIC_API_KEY`가 갈 이유가 없다. `BLOCKED_ENV_KEYS`는 사용자의 **덮어쓰기**만 막는다 — 상속을 막는 것은 이쪽이다
+- **`mcp-servers.json`의 `env` 값은 봉인해서 저장한다.** `enc:v1:` 접두사 + `safeStorage`. 스키마를 바꾸지 않으므로 기존 평문 값은 그대로 읽힌다. 복호화 실패(다른 머신·계정)는 그 값만 비우고 서버 항목은 남긴다 — 여기서 throw하면 MCP 목록 전체가 사라진다
+- **OS 암호화 저장소가 없으면 토큰이 평문으로 저장된다.** 파일명이 `.enc`여도 그렇다(키링 없는 Linux). 기능은 유지하되 최초 1회 `console.warn`으로 알린다 — 조용한 평문이 문제였지 평문 폴백 자체가 아니다
 - **GitHub 토큰은 렌더러에 내려가지 않는다.** main 프로세스에서만 접근하고, 렌더러는 메모리 스토어의 accessToken만 쓴다(디스크 재조회 금지)
 - **WebSocket 인증** — 헤더를 쓸 수 없으므로 `Sec-WebSocket-Protocol: bearer.<token>` 폴백을 쓴다
 - **토큰 복원 중 리다이렉트 보류** — `isRestoring` 가드가 없으면 앱 시작 시 성급하게 `/login`으로 튕긴다

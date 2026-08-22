@@ -13,8 +13,20 @@ function tokenFilePath(): string {
   return join(dir, 'github-token.enc')
 }
 
+/** 평문 폴백을 한 번은 크게 알린다 — 파일명이 `.enc`라 조용히 두면 암호화됐다고 믿게 된다. */
+let warnedPlaintextGithub = false
+
 export function storeToken(token: string): void {
-  const buf = safeStorage.isEncryptionAvailable()
+  const encryptionAvailable = safeStorage.isEncryptionAvailable()
+  if (!encryptionAvailable && !warnedPlaintextGithub) {
+    warnedPlaintextGithub = true
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[github-oauth] OS 암호화 저장소를 쓸 수 없어 GitHub 토큰을 평문(base64)으로 저장합니다. ' +
+      'base64는 인코딩이지 암호화가 아닙니다.',
+    )
+  }
+  const buf = encryptionAvailable
     ? safeStorage.encryptString(token)
     : Buffer.from(token)
   writeFileSync(tokenFilePath(), buf.toString('base64'), 'utf-8')

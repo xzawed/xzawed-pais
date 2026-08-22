@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { app } from 'electron'
+import { app, safeStorage } from 'electron'
 import { z } from 'zod'
 
 export interface McpServerConfig {
@@ -42,6 +42,86 @@ const BLOCKED_ARG_PATTERNS: Record<string, RegExp[]> = {
 const BLOCKED_ENV_KEYS = new Set([
   'PATH', 'NODE_PATH', 'PYTHONPATH', 'HOME', 'USERPROFILE', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
 ])
+
+/**
+ * MCP 자식 프로세스에 물려줄 부모 env 키 — 이 목록에 없는 것은 물려주지 않는다.
+ *
+ * 예전에는 `{ ...process.env, ...config.env }`로 부모 환경을 통째로 넘겼다. MCP 서버는
+ * 사용자가 추가하는 서드파티 프로세스이고, Electron main의 env에는 GITHUB_CLIENT_SECRET
+ * (github-oauth-handler가 여기서 읽는다)이나 실행 셸이 들고 있던 ANTHROPIC_API_KEY가 있을
+ * 수 있다. 그걸 넘길 이유가 없다.
+ *
+ * BLOCKED_ENV_KEYS가 사용자의 *덮어쓰기*만 막고 *상속*은 막지 못했다 — 가드가 한 방향만
+ * 보고 있었다. 여기 목록이 반대 방향을 맡는다.
+ *
+ * 서버가 다른 변수를 요구하면 사용자가 `env`에 명시한다 — 그게 설계된 통로다.
+ */
+const INHERITED_ENV_KEYS = [
+  'PATH', 'Path',                                        // Windows는 대소문자가 섞인다
+  'HOME', 'USERPROFILE',
+  'SystemRoot', 'windir', 'COMSPEC', 'PATHEXT',          // Windows 실행에 필요
+  'APPDATA', 'LOCALAPPDATA', 'ProgramData',
+  'TEMP', 'TMP', 'TMPDIR',
+  'LANG', 'LC_ALL', 'TZ',
+  'NODE_EXTRA_CA_CERTS',                                 // 사내 CA
+  'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY',
+  'http_proxy', 'https_proxy', 'no_proxy',
+]
+
+/** 부모 env에서 허용된 키만 추려 config.env를 덮어 쓴 자식 환경을 만든다. */
+export function buildChildEnv(configEnv: Record<string, string> | undefined): NodeJS.ProcessEnv {
+  const base: NodeJS.ProcessEnv = {}
+  for (const key of INHERITED_ENV_KEYS) {
+    const value = process.env[key]
+    if (value !== undefined) base[key] = value
+  }
+  return { ...base, ...(configEnv ?? {}) }
+}
+
+/**
+ * `mcp-servers.json`의 `env` 값 봉인.
+ *
+ * 이 맵에는 SUPABASE_KEY·GITHUB_PERSONAL_ACCESS_TOKEN 같은 것이 들어간다(패널 추천 목록이
+ * 그렇게 안내한다). 예전에는 평문 JSON으로 그대로 디스크에 남았다.
+ *
+ * 값 앞에 마커를 붙여 스키마(`z.record(z.string())`)를 바꾸지 않고 암호화한다 — 기존 설치의
+ * 평문 값은 마커가 없으므로 그대로 읽힌다(하위호환).
+ */
+const ENC_PREFIX = 'enc:v1:'
+let warnedPlaintextMcp = false
+
+function sealEnv(env: Record<string, string>): Record<string, string> {
+  if (!safeStorage.isEncryptionAvailable()) {
+    if (Object.keys(env).length > 0 && !warnedPlaintextMcp) {
+      warnedPlaintextMcp = true
+      // eslint-disable-next-line no-console
+      console.warn('[mcp] OS 암호화 저장소를 쓸 수 없어 MCP env를 평문으로 저장합니다.')
+    }
+    return env
+  }
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(env)) {
+    out[k] = v === '' ? v : ENC_PREFIX + safeStorage.encryptString(v).toString('base64')
+  }
+  return out
+}
+
+function openEnv(env: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(env)) {
+    if (!v.startsWith(ENC_PREFIX)) { out[k] = v; continue } // 기존 평문 설정
+    try {
+      out[k] = safeStorage.decryptString(Buffer.from(v.slice(ENC_PREFIX.length), 'base64'))
+    } catch {
+      // 다른 머신·다른 계정에서 만든 파일이면 복호화할 수 없다. 값을 버리고 서버는 남긴다 —
+      // 사용자가 다시 입력하면 된다. 여기서 throw하면 MCP 목록 전체가 사라진다.
+      // eslint-disable-next-line no-console
+      console.warn('[mcp] env 값을 복호화할 수 없어 비웁니다: ' + k)
+      out[k] = ''
+    }
+  }
+  return out
+}
 
 function validateMcpArgs(command: string, args: string[]): void {
   const blockedPatterns = BLOCKED_ARG_PATTERNS[command] ?? []
@@ -92,13 +172,14 @@ export class McpProcessManager {
         console.error('[McpProcessManager] Invalid config file, ignoring:', result.error.message)
         return []
       }
-      return result.data as McpServerConfig[]
+      return (result.data as McpServerConfig[]).map((c) => ({ ...c, env: openEnv(c.env) }))
     }
     catch { return [] }
   }
 
   private save(): void {
-    writeFileSync(this.configPath(), JSON.stringify(this.configs, null, 2), 'utf-8')
+    const shielded = this.configs.map((c) => ({ ...c, env: sealEnv(c.env) }))
+    writeFileSync(this.configPath(), JSON.stringify(shielded, null, 2), 'utf-8')
   }
 
   listServers(): McpServerConfig[] { return [...this.configs] }
@@ -133,7 +214,7 @@ export class McpProcessManager {
     validateMcpEnv(config.env)
 
     const proc = spawn(config.command, config.args, { // NOSONAR: command validated against ALLOWED_MCP_COMMANDS allowlist; args validated by validateMcpArgs(); shell:false prevents injection
-      env: { ...process.env, ...config.env },
+      env: buildChildEnv(config.env),
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: false,
     })
