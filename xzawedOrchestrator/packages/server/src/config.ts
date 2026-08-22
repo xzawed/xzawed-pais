@@ -96,6 +96,10 @@ export const PROFILES: Record<string, Record<string, string>> = {
  * PAIS_PROFILE이 설정돼 있으면 그 프로필 기본값을 env 복사본에 병합해 반환한다.
  * 미설정/빈 값→env 그대로(회귀 0)·미지 프로필→명확한 throw·개별 env가 프로필을 override.
  */
+// jscpd:ignore-start
+// replicated-block: pais-profile-merge
+// 병합 규칙이 Manager와 갈리면 같은 PAIS_PROFILE이 서비스마다 다르게 해석된다.
+// 사유와 강제 방법: scripts/check-replicated-blocks.js
 export function resolveProfileEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const profile = env['PAIS_PROFILE']
   if (profile === undefined || profile === '') return env
@@ -111,6 +115,7 @@ export function resolveProfileEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   }
   return merged
 }
+// jscpd:ignore-end
 
 export function loadConfig(): Config {
   const result = EnvSchema.safeParse(resolveProfileEnv(process.env))

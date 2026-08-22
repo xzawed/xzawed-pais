@@ -79,6 +79,10 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   const app = Fastify({ logger: config.mode !== 'local', trustProxy: true })
   const dbPool = await setupDatabase(app, config)
 
+  // jscpd:ignore-start
+  // replicated-block: fastify-error-envelope
+  // Manager와 오류 봉투 모양이 갈리면 클라이언트가 서비스마다 다른 형태를 받는다.
+  // 사유와 강제 방법: scripts/check-replicated-blocks.js
   app.setErrorHandler<FastifyError>((err, req, reply) => {
     app.log.error({ err, url: req.url }, 'Unhandled error')
     const statusCode = err.statusCode ?? 500
@@ -88,6 +92,7 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     const errorField = (err as unknown as { error?: string }).error ?? err.message
     return reply.status(statusCode).send({ error: errorField })
   })
+  // jscpd:ignore-end
 
   app.addHook('preHandler', async (request) => {
     const header = request.headers['accept-language']

@@ -33,7 +33,7 @@ bash ../scripts/sync-shared.sh   # 빌드 + 7개 서비스 복사본 일괄 갱�
 
 CI·Docker는 매번 fresh install이라 이 함정이 없다. **로컬에서만 재현되는 종류의 혼란**이므로, 신규 export를 추가한 뒤 소비자에서 "그런 이름 없다"는 오류를 만나면 이걸 먼저 의심한다.
 
-Manager도 이 패키지를 쓰지만 경로가 다르고(`file:../../../xzawedShared`) `sync-shared.sh`의 순회 대상이 **아니다**. shared를 고친 뒤 Manager에서 새 export를 쓰려면 `cd xzawedManager && pnpm install`을 별도로 돌리고, 스크립트 실행만으로 통과를 주장하지 말고 복사본을 실제로 대조한다.
+Manager는 경로가 다르지만(`file:../../../xzawedShared`) **같은 함정에 걸리므로 순회 대상에 포함돼 있다.** 예전엔 빠져 있었고, shared에 새 export를 추가한 뒤 Manager 통합 테스트가 통째로 `Cannot find module`로 죽는 것으로 실제로 물렸다. 스크립트 실행만으로 통과를 주장하지 말고 복사본을 실제로 대조한다.
 
 ## 모듈 지도
 

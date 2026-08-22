@@ -19,7 +19,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$SCRIPT_DIR")"
 
+# Manager 는 file:../../../xzawedShared 로 경로가 다르지만 **같은 stale 함정에 걸린다.**
+# 빠뜨리면 shared 에 새 export 를 추가한 뒤 Manager 통합 테스트가 통째로
+# "Cannot find module ..." 로 죽는다(실제로 겪었다). 순회 대상에 포함한다.
 SERVICES=(
+  xzawedManager
   xzawedPlanner
   xzawedDeveloper
   xzawedDesigner

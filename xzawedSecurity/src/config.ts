@@ -1,23 +1,4 @@
-import { z } from 'zod'
+import { makeAgentConfig, type AgentConfig } from '@xzawed/agent-streams'
 
-const ConfigSchema = z.object({
-  anthropicApiKey: z.string().min(1),
-  claudeModel: z.string().default('claude-sonnet-4-6'),
-  redisUrl: z.string().default('redis://localhost:6379'),
-  port: z.coerce.number().int().positive().default(3008),
-  mode: z.enum(['local', 'remote']).default('local'),
-  workspaceRoot: z.string().min(1),
-})
-
-export type Config = z.infer<typeof ConfigSchema>
-
-export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
-  return ConfigSchema.parse({
-    anthropicApiKey: env.ANTHROPIC_API_KEY,
-    claudeModel: env.CLAUDE_MODEL,
-    redisUrl: env.REDIS_URL,
-    port: env.PORT,
-    mode: env.MODE,
-    workspaceRoot: env.WORKSPACE_ROOT,
-  })
-}
+export type Config = AgentConfig
+export const { loadConfig } = makeAgentConfig(3008)

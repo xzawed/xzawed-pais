@@ -864,11 +864,16 @@ jobs:
       - name: Check service import boundaries (no cross-service imports)
         run: ./node_modules/.bin/depcruise --config .dependency-cruiser.cjs --no-progress --output-type err "xzawed*/src/**/*.{ts,tsx}" "xzawed*/packages/*/src/**/*.{ts,tsx}"
 
+      # 서비스끼리 import할 수 없어 복제할 수밖에 없는 계약 블록의 동일성을 강제한다.
+      # CPD 마커는 "이 중복을 허용한다"만 말할 뿐이라, 한쪽만 바뀌는 드리프트는 이 검사가 잡는다.
+      - name: Check replicated contract blocks stay identical
+        run: node scripts/check-replicated-blocks.js
+
   # ── Summary gate (required for branch protection) ─────────────────────────
   all-checks-pass:
     name: All checks pass
     runs-on: ubuntu-latest
-    needs: [turborepo, independent, redis-integration, manager-redis-integration, playwright-e2e, launcher, shared-lib, i18n-check, docs-check, module-boundaries, sonar]
+    needs: [turborepo, independent, redis-integration, manager-redis-integration, playwright-e2e, launcher, shared-lib, i18n-check, docs-check, module-boundaries, cpd, sonar]
     if: always()
     steps:
       - name: Check results
@@ -898,11 +903,7 @@ jobs:
           check i18n-check                "${{ needs.i18n-check.result }}"
           check docs-check                "${{ needs.docs-check.result }}"
           check module-boundaries         "${{ needs.module-boundaries.result }}"
-          # cpd 는 아직 필수가 아니다 — 실패 삼킴을 걷어내니 기존 클론 6건이 드러났고,
-          # 그중 5건은 교차 서비스라 저장소의 module-boundaries 규칙이 금지하는 공유를
-          # 해야만 사라진다(Manager↔Orchestrator 는 공유 라이브러리가 아예 없다).
-          # 그 아키텍처 결정 전에 필수로 올리면 무관한 작업이 전부 막힌다.
-          # 지금은 '보이지만 막지 않는' 상태이고, 승격은 클론 정리 슬라이스에서 한다.
+          check cpd                       "${{ needs.cpd.result }}"   skip-ok
           check sonar                     "${{ needs.sonar.result }}" skip-ok
           if [[ $fail -ne 0 ]]; then
             echo "필수 잡 중 실패가 있습니다"

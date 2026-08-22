@@ -49,7 +49,7 @@ pnpm test <파일>
 **독립 서비스는 `xzawedShared`를 먼저 빌드해야 한다.** `@xzawed/agent-streams`를 `file:../xzawedShared`로 참조하는데, `file:` 의존은 install 시점에 `node_modules`로 **복사**된다. shared를 재빌드해도 그 복사본은 다음 install까지 stale로 남는다(CI·Docker는 매번 fresh install이라 무관).
 
 ```bash
-bash scripts/sync-shared.sh   # shared 빌드 + 7개 서비스 복사본 일괄 갱신
+bash scripts/sync-shared.sh   # shared 빌드 + 소비자 8곳(Manager 포함) 복사본 일괄 갱신
 ```
 
 ## 공통 기술 스택
@@ -122,7 +122,8 @@ PR 전 필수 — [`/pr-ready`](.claude/commands/pr-ready.md) 스킬이 자동�
 ```bash
 pnpm build && pnpm test                        # 해당 서비스
 pnpm audit --audit-level=moderate              # dev 포함. --prod만 보면 놓친다
-npx jscpd@3.5.10 --config .jscpd.json          # 0 clones 목표
+npx jscpd@3.5.10 --config .jscpd.json <경로...>  # 0 clones. **경로를 반드시 준다**
+node scripts/check-replicated-blocks.js        # 복제 계약 블록 동일성
 node scripts/check-i18n.js                     # ko/en/ja 일치
 node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200줄·이력 마커 0
 ```
@@ -177,6 +178,7 @@ node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200�
 ## 인프라
 
 - **Docker**: `docker-compose.yml` — postgres + redis + 9개 앱 서비스(총 11개). 전 서비스 `context: .` + `dockerfile: <서비스>/Dockerfile`. 에이전트 7개에 `WORKSPACE_ROOT=/workspace`, orchestrator에 `MANAGER_URL` 주입. Shared·Launcher는 compose 서비스가 아니다
+- **CPD는 경로를 주지 않으면 0개 파일을 스캔한다**(로컬). 서비스별로 좁혀 돌리면 **교차 서비스 클론이 구조적으로 안 보인다** — 저장소 전체를 한 번에 넘겨야 CI와 같은 결과가 나온다. 서비스끼리 import할 수 없어 복제가 유일한 선택인 블록은 `jscpd:ignore-start` + `replicated-block: <id>` 마커로 표시하고, 동일성은 `scripts/check-replicated-blocks.js`가 강제한다
 - **CI**: `.github/workflows/ci.yml`이 잡 목록의 정본이다 — 여기 숫자를 복사하지 않는다(복사본은 반드시 어긋난다). `all-checks-pass`의 `needs`가 **필수 잡** 집합이고, PR 전용 잡은 push에서 `skipped`가 정상이라 허용된다
 - **Dependabot**: `.github/dependabot.yml` — npm 13개 디렉토리 + github-actions 1개
 

@@ -57,6 +57,9 @@ export async function buildServer(
 ): Promise<{ app: ReturnType<typeof Fastify>; closeAll: () => Promise<void> }> {
   const app = Fastify({ logger: config.MODE === 'local', trustProxy: true })
 
+  // jscpd:ignore-start
+  // replicated-block: fastify-error-envelope
+  // Orchestrator의 같은 블록과 바이트 동일해야 한다. 사유와 강제 방법: scripts/check-replicated-blocks.js
   app.setErrorHandler<FastifyError>((err, req, reply) => {
     app.log.error({ err, url: req.url }, 'Unhandled error')
     const statusCode = err.statusCode ?? 500
@@ -66,6 +69,7 @@ export async function buildServer(
     const errorField = (err as unknown as { error?: string }).error ?? err.message
     return reply.status(statusCode).send({ error: errorField })
   })
+  // jscpd:ignore-end
 
   if (config.SERVICE_JWT_SECRET) {
     await registerJwt(app, config.SERVICE_JWT_SECRET)

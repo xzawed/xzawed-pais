@@ -308,6 +308,9 @@ export const PROFILES: Record<string, Record<string, string>> = {
  * - 미지 프로필: 명확한 에러 throw.
  * - 개별 env가 이미 설정돼 있으면 프로필을 override(사용자 우선).
  */
+// jscpd:ignore-start
+// replicated-block: pais-profile-merge
+// Orchestrator의 같은 함수와 바이트 동일해야 한다. 사유와 강제 방법: scripts/check-replicated-blocks.js
 export function resolveProfileEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const profile = env['PAIS_PROFILE']
   if (profile === undefined || profile === '') return env
@@ -323,6 +326,7 @@ export function resolveProfileEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   }
   return merged
 }
+// jscpd:ignore-end
 
 export function loadConfig(): Config {
   return configSchema.parse(resolveProfileEnv(process.env))
