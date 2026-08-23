@@ -23,7 +23,7 @@ test('Round A — 전체 피처 순차 검증', async () => {
   console.log('✅ 모든 서비스 정상 확인')
 
   // 1. Electron 앱 실행
-  const { app, page } = await launchElectronApp(mainEntry)
+  const { app, page, cleanup } = await launchElectronApp(mainEntry)
 
   const ss = new ScreenshotHelper(ROUND_DIR)
   let results
@@ -31,6 +31,7 @@ test('Round A — 전체 피처 순차 검증', async () => {
     results = await runAllFeatures(page, ss)
   } finally {
     await app.close()
+    cleanup()   // 격리 userData 임시 디렉토리 회수
   }
 
   // 보고서 생성

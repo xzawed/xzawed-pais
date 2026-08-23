@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { ServerManager } from './server-manager.js'
 import { McpProcessManager } from './mcp-process-manager.js'
 import { PluginManager } from './plugin-manager.js'
+import { focusExistingWindow } from './window-focus.js'
 import {
   startOAuthFlow,
   getStoredToken,
@@ -224,25 +225,59 @@ ipcMain.handle('plugin:toggle',    (_e, id: string) => pluginManager.toggle(id))
 ipcMain.handle('plugin:uninstall', (_e, id: string) => pluginManager.uninstall(id))
 
 // ── Lifecycle ────────────────────────────────────────────────────────
-app.whenReady().then(async () => {
-  mcpManager = new McpProcessManager()
-  pluginManager = new PluginManager()
-  const settings = readSettings()
-  if (settings.mode === 'local') serverManager.start()
-  createWindow()
-  await mcpManager.startAutoStart()
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
-}).catch((err: unknown) => {
-  console.error('App initialization failed:', err)
-  app.quit()
-})
+// 단일 인스턴스 잠금.
+//
+// 두 번째 인스턴스는 창이 하나 더 뜨는 정도가 아니다. userData 의 JSON 세 개
+// (settings.json · mcp-servers.json · disabled-plugins.json)를 전부 '기동 시 전체 로드 →
+// 메모리 수정 → 전체 덮어쓰기'로 다루기 때문에, 두 인스턴스가 동시에 열려 있으면
+// 나중에 저장한 쪽이 상대의 변경을 통째로 지운다. 여기에 더해 autoStart MCP 자식이
+// 2벌 뜨고, MODE=local 이면 고정 포트 3000 으로 로컬 서버를 다시 spawn 한다 —
+// 두 번째 서버는 EADDRINUSE 로 죽지만 ServerManager 는 spawn 실패만 듣기 때문에
+// 아무도 그 사실을 모른다.
+//
+// `requestSingleInstanceLock()` 은 `whenReady()` **앞**에서 호출해야 한다. 창·서버 자식·
+// MCP 자식이 만들어지기 전에 승패가 갈려야 하기 때문이다.
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
 
-app.on('before-quit', () => {
-  serverManager.stop()
-  mcpManager?.stopAll()
-})
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
-})
+if (!gotSingleInstanceLock) {
+  // 진 인스턴스는 여기서 끝난다. 아래 어떤 핸들러도 등록하지 않는다.
+  // `before-quit` 을 이 블록 밖에 두면 진 인스턴스도 그 핸들러를 달게 되고, 훗날
+  // `ServerManager.stop()` 이 포트·PID 기반으로 바뀌는 순간 진 인스턴스가 이긴
+  // 인스턴스의 서버를 죽이는 경로가 열린다.
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!focusExistingWindow(mainWindow) && app.isReady()) {
+      // macOS 는 창을 모두 닫아도 앱이 살아 있다(window-all-closed 에서 quit 하지 않는다).
+      // 그 상태에서 재실행하면 되살릴 창이 없으므로 새로 만든다. `isReady()` 가드는
+      // 락 획득과 ready 사이에 두 번째 실행이 끼어드는 창을 막는다 — ready 전
+      // BrowserWindow 생성은 throw 한다.
+      createWindow()
+    }
+  })
+
+  app.whenReady().then(async () => {
+    mcpManager = new McpProcessManager()
+    pluginManager = new PluginManager()
+    const settings = readSettings()
+    if (settings.mode === 'local') serverManager.start()
+    createWindow()
+    await mcpManager.startAutoStart()
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  }).catch((err: unknown) => {
+    console.error('App initialization failed:', err)
+    app.quit()
+  })
+
+  app.on('before-quit', () => {
+    serverManager.stop()
+    // `?.` 는 락과 무관한 이유로 여전히 필요하다 — whenReady 의 catch 경로에서는
+    // mcpManager 가 대입되기 전에 quit 할 수 있다.
+    mcpManager?.stopAll()
+  })
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit()
+  })
+}

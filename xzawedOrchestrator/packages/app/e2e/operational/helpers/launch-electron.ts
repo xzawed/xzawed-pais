@@ -1,4 +1,5 @@
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright'
+import { isolatedUserData } from '../../isolated-user-data.js'
 
 export async function ensureSessionActive(page: Page): Promise<void> {
   const hasInput = await page.locator('[data-testid="message-input"]').isVisible({ timeout: 2_000 }).catch(() => false)
@@ -13,13 +14,14 @@ export async function ensureSessionActive(page: Page): Promise<void> {
 export async function launchElectronApp(
   mainEntry: string,
   serverUrl?: string,
-): Promise<{ app: ElectronApplication; page: Page }> {
+): Promise<{ app: ElectronApplication; page: Page; cleanup: () => void }> {
   const env = { ...process.env } as Record<string, string>
   // ELECTRON_RUN_AS_NODE=1 causes electron.exe to run as plain Node.js,
   // rejecting Chromium flags like --remote-debugging-port=0 that Playwright needs.
   delete env['ELECTRON_RUN_AS_NODE']
+  const isolated = isolatedUserData(mainEntry)
   const app = await electron.launch({
-    args: [mainEntry],
+    args: isolated.args,
     env: {
       ...env,
       NODE_ENV: 'test',
@@ -28,5 +30,5 @@ export async function launchElectronApp(
   })
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
-  return { app, page }
+  return { app, page, cleanup: isolated.cleanup }
 }

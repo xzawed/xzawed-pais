@@ -50,6 +50,8 @@ cd packages/app && pnpm test:e2e    # Playwright + Electron
 
 E2E·테스트 공통 패턴은 [docs/development/testing-patterns.md](../docs/development/testing-patterns.md)에 있다. 여기엔 이 서비스에서만 나오는 것만 둔다.
 
+- **앱은 단일 인스턴스다. 락은 `whenReady()` 앞에서 판정된다.** 두 번째 인스턴스는 창이 하나 더 뜨는 정도가 아니라 userData 의 JSON 세 개(`settings.json`·`mcp-servers.json`·`disabled-plugins.json`)를 전부 '전체 로드 → 메모리 수정 → 전체 덮어쓰기'로 다루므로 나중에 저장한 쪽이 상대의 변경을 통째로 지운다. 락을 못 얻은 인스턴스는 **어떤 핸들러도 등록하지 않고** 종료한다 — `before-quit` 을 락 블록 밖에 두면 진 인스턴스가 이긴 인스턴스의 서버를 죽이는 경로가 열린다. 분기는 `single-instance.test.ts`, 창 복원은 `window-focus.ts`+테스트가 고정한다
+- **E2E 는 전용 userData 디렉토리로 띄운다.** 락이 userData 경로 단위라, 격리하지 않으면 개발자가 앱을 열어 둔 채 `pnpm test:e2e` 를 돌릴 때 **모든 launch 가 즉시 quit** 되어 `firstWindow()` 가 타임아웃한다(CI 는 컨테이너라 무사하다 — 로컬에서만 재현되는 실패다). `e2e/isolated-user-data.ts` 가 launch 3지점에 `--user-data-dir` 을 준다. 새 launch 지점을 만들면 그것도 거쳐야 한다
 - **`electronApp.evaluate()`로 ipcMain 핸들러를 교체하지 않는다.** nav 클릭 등 UI 인터랙션 이후에 쓰면 Electron 내부 nav 이벤트 큐가 블로킹된다. test 모드에서 `main.tsx`가 `window.__integrationsStore`를 노출하므로 `page.evaluate()`로 상태를 직접 주입한다
 - **`page.route()`는 HTTP만 가로챈다.** `ws://`는 차단할 수 없으므로 WebSocket 에러 경로는 HTTP 엔드포인트 mock으로 대신 시뮬레이션한다
 - **MemoryRouter라 `page.waitForURL()`이 동작하지 않는다.** BrowserRouter가 아니므로 DOM testid나 `waitFor({ state: 'visible' })`로 네비게이션 완료를 확인한다
