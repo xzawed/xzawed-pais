@@ -10,6 +10,6 @@ import { registerHealthRoutes, type ReadinessProbe } from '@xzawed/agent-streams
  */
 export function createServer(probes: readonly ReadinessProbe[] = []) {
   const app = Fastify({ logger: false })
-  registerHealthRoutes(app, { service: 'xzawedBuilder', probes })
+  registerHealthRoutes((path, handler) => app.get(path, handler), { service: 'xzawedBuilder', probes })
   return app
 }

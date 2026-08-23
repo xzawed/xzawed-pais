@@ -9,7 +9,7 @@ export { baseAgentSchema, baseAgentEnv, makeAgentConfig, loadAgentConfig, readSe
 export type { AgentConfig } from './config/agent-config.js'
 export { SessionDispatcher } from './streams/session-dispatcher.js'
 export { runProbes, summarize, readinessResult, redisPingProbe, loopProbe, pgProbe, agentReadinessProbes, DEFAULT_PROBE_TIMEOUT_MS } from './health/readiness.js'
-export { registerHealthRoutes, type HealthRouteOptions } from './health/routes.js'
+export { registerHealthRoutes, type HealthRouteOptions, type HealthRouteRegistrar, type HealthReply } from './health/routes.js'
 export { buildProbes } from './health/readiness.js'
 export type { CheckStatus, CheckResult, ReadinessReport, ReadinessProbe, ProbeDeps } from './health/readiness.js'
 export type { ConsumerLike } from './streams/session-dispatcher.js'
