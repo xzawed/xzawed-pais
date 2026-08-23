@@ -54,6 +54,12 @@
 
 ### 2.1 결함 — 기본 경로에서 오늘 살아있는 것
 
+> **2026-08-23 정산.** 이 표는 2026-08-22 작성 시점의 상태다. 그 뒤 11개 중 **9개가 닫혔다** — D1·D1a(#579) · D4·D7(#581·#582) · D5·D6(#587) · D8(#586) · D9(#588) · D10(#589). 아래 "근거" 열의 파일·줄 번호는 그 시점의 것이므로 지금 코드와 대조하지 마라.
+>
+> **남은 둘은 부분이다.**
+> - **D2** — `auditable` 비트는 #580 이 넣었지만 소비 쪽이 그대로다. `tools/security-audit.ts:103-104` 의 `issues: z.array(...).default([])` · `score: z.number().default(100)` 때문에 Security 가 침묵해도 "0건·100점"이 합성된다. `S5.1` 이 이것을 닫는다
+> - **D3** — `secrets:` 9건·루프백 바인딩은 #583 이 넣었으나 `docker-compose.prod.yml:53` 의 `MODE: local` 은 **의도적으로 남겼다**(사용자 판단). 완성 기준 `L1-3` 의 "`MODE: local` 0건" 조항은 따라서 미충족이고, 뒤집으려면 `AUTH` 기본값 전환과 함께 판단해야 한다 — 이 계획서가 §3에서 범위 밖으로 둔 항목이다
+
 | ID | 항목 | 근거 | 검증 |
 |---|---|---|---|
 | D1 | **SAST가 구조적으로 항상 0건이고 그것이 통과 증거로 영속된다** | `xzawedSecurity/src/executor.ts:7`이 workspaceRoot 재기준화 없이 `fs.realpath(targetPath)` · runner `WORKDIR /app` vs `WORKSPACE_ROOT: /workspace` · `analyzers/static.ts:99-103` 빈 배열 반환 · `verify.ts:286`이 passed 기록 | ◎ |
@@ -109,6 +115,28 @@
 
 ## 4. WBS
 
+### 착륙 현황 (2026-08-23 기준)
+
+**슬라이스 태그가 커밋 제목에 일관되게 붙지 않았다** — `S1.1`·`S2.1`·`S2.2`·`S3.2`·`S4.4` 는 태그 없이 머지됐다. `git log --grep` 으로는 전수를 못 얻으므로 이 표가 대조 기준이다. 새 슬라이스를 닫을 때 여기에 한 줄 추가한다.
+
+| 슬라이스 | PR | 머지 | 비고 |
+|---|---|---|---|
+| S4.4 | [#578](https://github.com/xzawed/xzawed-pais/pull/578) | 2026-08-22 | 교차 서비스 클론 6건 · CPD 필수 승격 |
+| S2.1 | [#579](https://github.com/xzawed/xzawed-pais/pull/579) | 2026-08-23 | SAST 경로 결합 |
+| S2.2 | [#580](https://github.com/xzawed/xzawed-pais/pull/580) | 2026-08-23 | `auditable` 계약 |
+| S1.1 | [#581](https://github.com/xzawed/xzawed-pais/pull/581) | 2026-08-23 | 기동 하드페일 · CORS · `TRUST_PROXY` |
+| S1.2 | [#582](https://github.com/xzawed/xzawed-pais/pull/582) | 2026-08-23 | `makeServerOptions` 분리 |
+| S1.3 | [#583](https://github.com/xzawed/xzawed-pais/pull/583) | 2026-08-23 | compose secrets · 루프백 · healthcheck 27줄 |
+| S2.3 | [#586](https://github.com/xzawed/xzawed-pais/pull/586) | 2026-08-23 | `workspace-path.ts` 단일출처 |
+| S3.1 | [#587](https://github.com/xzawed/xzawed-pais/pull/587) | 2026-08-23 | `replicated-block: shutdown-core` |
+| S2.5 | [#588](https://github.com/xzawed/xzawed-pais/pull/588) | 2026-08-23 | `posix-shell-quote.ts` (shescape 는 이 자리에 못 쓴다) |
+| S3.2 | [#589](https://github.com/xzawed/xzawed-pais/pull/589) · [#590](https://github.com/xzawed/xzawed-pais/pull/590) | 2026-08-23 | `/health/ready` 9종 · `loopProbe` 가 코어 |
+
+슬라이스가 아닌 동반 PR: [#584](https://github.com/xzawed/xzawed-pais/pull/584)(Launcher CLAUDE.md 자기모순), [#585](https://github.com/xzawed/xzawed-pais/pull/585)(단일 인스턴스 잠금 — 고아 워크트리에서 건진 미머지 작업).
+
+**남은 슬라이스**: `S2.4` · `S3.3` · `S3.4` · `S4.1` · `S4.2` · `S4.3` · E5 전부 · E6 전부 · E7 전부.
+
+---
 규모는 **파일 수 · 삽입 줄 수** 범위다. 근거는 이 저장소 커밋의 실측 — 최근 30커밋 중앙값 **4파일 / +66줄**, 최대 **76파일 / +678줄**. 시간 추정은 하지 않는다(이 저장소에 시간 실적이 없다).
 
 ### E1 — 출하 태세
@@ -123,7 +151,7 @@
 
 | ID | 슬라이스 | 선행 | 규모 | 레인 |
 |---|---|---|---|---|
-| S2.1 | **SAST 경로 결합 수정 + 항등 모킹 제거** — 완료 | — | 실측 4 / +206 | B |
+| S2.1 | SAST 경로 결합 수정 + 항등 모킹 제거 | — | 실측 4 / +206 | B |
 | S2.2 | 감사 불능 계약화(`auditable` 비트) | S2.1 | 6~9 / +200~350 | B |
 | S2.3 | `localPath` 검사 단일출처화 | S1.1 | 4~8 / +120~290 | A |
 | S2.4 | deploy-gate strict 기본화 **판단** | — | 0~2 / +1~40 | 병렬 |
@@ -144,7 +172,7 @@
 |---|---|---|---|---|
 | S4.1 | 문서 수치·상태 정산 + `check-docs` 규칙 추가 | — | 5~8 / +40~120 | 병렬 |
 | S4.2 | CI 게이트 봉합(실패 삼킴 제거 · sonar 토큰 부재 가시화 · 판정 로직) | — | 4~6 / +40~120 | 병렬 |
-| S4.4 | **교차 서비스 클론 6건 정리 + `cpd` 필수 승격** — 완료 | — | 실측치는 PR 참조 | 별도 |
+| S4.4 | 교차 서비스 클론 6건 정리 + `cpd` 필수 승격 | — | 실측치는 PR 참조 | 별도 |
 | S4.3 | 실 왕복 스모크(compose 기동) | S1.3, S3.2 | 3~6 / +150~350 | 불가 |
 
 ### E5 — 검증 채널 신뢰성
@@ -183,6 +211,9 @@
 
 **왜 먼저인가.** 판단의 전제다. 로드맵이 "남았다"고 적은 것 중 일부가 실은 완료라, 정산 전에는 어떤 우선순위도 잘못된 지도 위에서 정해진다. `S4.2`는 이후 모든 슬라이스의 그물이다 — 봉투 계약 테스트가 **어느 CI 잡에서도 안 도는 상태**로 계약을 건드리면 tsc 사각지대가 그대로 열려 있다.
 
+> **지금 어디인가 (2026-08-23).** Phase 1 은 8개 슬라이스 전부 착륙했다. Phase 2 는 `S3.1`·`S3.2` 가 끝나 **`S3.4` 하나만 남았고**, 그것이 끝나면 `S4.3` 이 열린다.
+>
+> **Phase 0 은 통째로 미착륙이다** — 계획서는 그것을 먼저 두었는데 실제로는 Phase 1·2 가 먼저 진행됐다. 그 순서를 뒤집은 것은 의도였다(출하를 막는 결함이 정산보다 급했다). 다만 `S4.1`(문서 수치 정산)이 늦어지는 동안 태그 드리프트가 실제로 생겼고, 위 **착륙 현황** 표가 그 임시 대체물이다.
 ### Phase 1 — 안전 태세 (4개 레인 병렬, 레인 내부는 직렬)
 
 | 레인 | 순서 | 직렬 이유 |
