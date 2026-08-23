@@ -154,6 +154,31 @@ export function pgProbe(
     },
   }
 }
+
+/**
+ * 라우트가 넘긴 재료로 프로브 배열을 만든다. **주지 않은 것은 검사 대상이 아니다.**
+ *
+ * 배열은 등록 시점에 만들어도 된다 — 각 프로브가 붙잡는 것은 값이 아니라 접근자라
+ * 실제 평가는 요청 시점에 일어난다. 게이트웨이가 라우트 등록보다 늦게 생겨도 되는
+ * 이유가 이것이다.
+ */
+export interface ProbeDeps {
+  // `| undefined` 를 명시하는 이유: 소비처마다 `exactOptionalPropertyTypes` 설정이 달라
+  // (Manager 는 켜져 있다) 선택 필드에 `undefined` 를 실어 넘기는 호출이 거부된다.
+  redis?: (() => { ping(): Promise<unknown> }) | undefined
+  /** 소비 루프. `isRunning()` 이 `undefined` 면 배선되지 않은 것이고 장애가 아니다. */
+  loop?: { name: string; isRunning: () => boolean | undefined } | undefined
+  pool?: (() => { query(sql: string): Promise<unknown> } | null) | undefined
+}
+
+export function buildProbes(deps: ProbeDeps): ReadinessProbe[] {
+  const probes: ReadinessProbe[] = []
+  const redis = deps.redis
+  if (redis) probes.push(redisPingProbe({ ping: () => redis().ping() }))
+  if (deps.loop) probes.push(loopProbe(deps.loop.name, deps.loop.isRunning))
+  if (deps.pool) probes.push(pgProbe(deps.pool))
+  return probes
+}
 // jscpd:ignore-end
 
 /**

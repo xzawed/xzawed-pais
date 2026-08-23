@@ -14,12 +14,18 @@ const alive = { ping: async () => 'PONG' }
 const dead = { ping: async () => { throw new Error('ECONNREFUSED') } }
 const pool = { query: async () => ({ rows: [] }) }
 
+interface ReadinessBody {
+  status: string
+  service: string
+  checks: Record<string, { status: string; ms: number; error?: string }>
+}
+
 async function call(deps: HealthDeps, url: string) {
   const app = Fastify()
   await app.register(healthRoutes, deps)
   try {
     const res = await app.inject({ method: 'GET', url })
-    return { code: res.statusCode, body: JSON.parse(res.body) as Record<string, never> }
+    return { code: res.statusCode, body: JSON.parse(res.body) as ReadinessBody }
   } finally {
     await app.close()
   }
@@ -57,13 +63,13 @@ describe('GET /health/ready — xzawedOrchestrator', () => {
     const { code, body } = await call(deps, '/health/ready')
     expect(code).toBe(expected)
     for (const [name, status] of Object.entries(checks)) {
-      expect(body['checks'][name].status, name).toBe(status)
+      expect(body.checks[name].status, name).toBe(status)
     }
   })
 
   it('실패한 프로브는 오류 사유를 싣는다', async () => {
     const { body } = await call({ redis: () => dead }, '/health/ready')
-    expect(body['checks'].redis.error).toContain('ECONNREFUSED')
+    expect(body.checks.redis.error).toContain('ECONNREFUSED')
   })
 
   it('/health 는 의존이 다 죽어도 200 이다 — liveness 와 readiness 를 섞지 않는다', async () => {
@@ -75,6 +81,6 @@ describe('GET /health/ready — xzawedOrchestrator', () => {
   it('의존을 하나도 주지 않으면 ready — 기존 호출부 호환', async () => {
     const { code, body } = await call({}, '/health/ready')
     expect(code).toBe(200)
-    expect(body['checks']).toEqual({})
+    expect(body.checks).toEqual({})
   })
 })

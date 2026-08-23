@@ -93,6 +93,7 @@ Manager는 경로가 다르지만(`file:../../../xzawedShared`) **같은 함정�
 - **`loopProbe` 가 이 모듈의 존재 이유다.** `redisPingProbe` 만으로는 "Redis 는 살아났는데 소비 루프는 죽은 채"인 상태를 못 잡는다 — `SessionDispatcher.start()` 의 `xgroup CREATE` 가 `while` 루프 **밖**이라 기동 실패가 영구 정지로 남고, 그 사이 ioredis 재연결은 계속되므로 `ping()` 은 PONG 을 준다
 - **타임아웃 타이머를 `unref()` 하지 않는다.** 프로브가 예산 안에 끝나면 `finally` 가 `clearTimeout` 하고, 매달리면 타이머가 살아 있어야 race 가 성립한다. `unref()` 를 걸면 이벤트 루프가 빌 때 판정 없이 프로세스가 나간다
 - **`agentReadinessProbes` 만 복제 블록 밖이다.** 마커 구간(`replicated-block: readiness-core`)은 Orchestrator 사본과 바이트 동일해야 하므로, 여기서만 쓰는 의존은 마커 밖에 둔다
+- **라우트 등록은 형제 모듈 `health/routes.ts` 가 맡는다.** 서비스마다 같은 20줄을 두면 서비스명 문자열만 다른 사본이 8벌 생기는데, **SonarCloud CPD 는 문자열 리터럴을 정규화해서 비교하므로 그것을 동일한 사본으로 센다**(jscpd 는 다르다고 본다 — 실측으로 확인했다). `fastify` 는 `devDependencies` 의 타입 전용 의존이라 런타임 의존이 늘지 않는다
 
 ## 함정
 

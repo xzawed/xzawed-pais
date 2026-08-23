@@ -139,4 +139,47 @@ export function pgProbe(
     },
   }
 }
+
+/**
+ * 라우트가 넘긴 재료로 프로브 배열을 만든다. **주지 않은 것은 검사 대상이 아니다.**
+ *
+ * 배열은 등록 시점에 만들어도 된다 — 각 프로브가 붙잡는 것은 값이 아니라 접근자라
+ * 실제 평가는 요청 시점에 일어난다. 게이트웨이가 라우트 등록보다 늦게 생겨도 되는
+ * 이유가 이것이다.
+ */
+export interface ProbeDeps {
+  // `| undefined` 를 명시하는 이유: 소비처마다 `exactOptionalPropertyTypes` 설정이 달라
+  // (Manager 는 켜져 있다) 선택 필드에 `undefined` 를 실어 넘기는 호출이 거부된다.
+  redis?: (() => { ping(): Promise<unknown> }) | undefined
+  /** 소비 루프. `isRunning()` 이 `undefined` 면 배선되지 않은 것이고 장애가 아니다. */
+  loop?: { name: string; isRunning: () => boolean | undefined } | undefined
+  pool?: (() => { query(sql: string): Promise<unknown> } | null) | undefined
+}
+
+export function buildProbes(deps: ProbeDeps): ReadinessProbe[] {
+  const probes: ReadinessProbe[] = []
+  const redis = deps.redis
+  if (redis) probes.push(redisPingProbe({ ping: () => redis().ping() }))
+  if (deps.loop) probes.push(loopProbe(deps.loop.name, deps.loop.isRunning))
+  if (deps.pool) probes.push(pgProbe(deps.pool))
+  return probes
+}
 // jscpd:ignore-end
+/**
+ * Orchestrator 전용 조립. 복제 블록 **밖**이다 — 여기서만 쓰는 의존이라 shared 사본에
+ * 들어가면 두 파일이 갈라진다.
+ *
+ * `projectGateway` 는 DB 풀이 없으면 **생성조차 되지 않으므로**(`server.ts` 의
+ * `if (dbPool)` 안) 접근자가 `undefined` 를 돌려주고 그것은 장애가 아니라 미구성이다.
+ */
+export function orchestratorReadinessProbes(deps: {
+  redis: () => { ping(): Promise<unknown> }
+  gatewayRunning: () => boolean | undefined
+  pool: () => { query(sql: string): Promise<unknown> } | null
+}): ReadinessProbe[] {
+  return [
+    redisPingProbe({ ping: () => deps.redis().ping() }),
+    loopProbe('projectGateway', deps.gatewayRunning),
+    pgProbe(deps.pool),
+  ]
+}

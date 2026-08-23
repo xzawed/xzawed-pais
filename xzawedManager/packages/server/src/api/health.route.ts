@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify'
-import { readinessResult, redisPingProbe, loopProbe, pgProbe, type ReadinessProbe } from '@xzawed/agent-streams'
+import { registerHealthRoutes, buildProbes } from '@xzawed/agent-streams'
 
 /**
  * 프로브 재료를 **접근자**로 받는다.
@@ -18,19 +18,15 @@ export interface HealthDeps {
 }
 
 export const healthRoute: FastifyPluginAsync<HealthDeps> = async (app, deps) => {
-  // liveness. 이벤트 루프가 응답 가능한가만 말한다.
-  // 본문 형태를 바꾸지 않는다 — `test/api/health.test.ts` 가 `toEqual` 로 단언한다.
-  app.get('/health', async () => ({ status: 'ok' }))
-
-  // readiness. 의존이 실제로 살아 있는가. `fail` 이 하나라도 있으면 503.
-  app.get('/health/ready', async (_req, reply) => {
-    const probes: ReadinessProbe[] = []
-    const redis = deps.redis
-    if (redis) probes.push(redisPingProbe({ ping: () => redis().ping() }))
-    if (deps.gatewayRunning) probes.push(loopProbe('sessionGateway', deps.gatewayRunning))
-    if (deps.pool) probes.push(pgProbe(deps.pool))
-
-    const { statusCode, body } = await readinessResult('xzawedManager', probes)
-    return reply.code(statusCode).send(body)
+  const gatewayRunning = deps.gatewayRunning
+  registerHealthRoutes(app, {
+    service: 'xzawedManager',
+    // liveness 본문을 바꾸지 않는다 — `test/api/health.test.ts` 가 `toEqual` 로 단언한다.
+    liveness: () => ({ status: 'ok' }),
+    probes: buildProbes({
+      redis: deps.redis,
+      loop: gatewayRunning ? { name: 'sessionGateway', isRunning: gatewayRunning } : undefined,
+      pool: deps.pool,
+    }),
   })
 }
