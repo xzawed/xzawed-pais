@@ -165,6 +165,22 @@ describe('analyzeFiles — 실패 분기별 관측성', () => {
     spy.mockRestore()
   })
 
+  it('realpath 와 stat 사이에 파일이 사라지면 건너뛰고 이유를 남긴다', async () => {
+    // 실파일시스템으로는 만들 수 없는 창이다 — validatePath 가 realpath 에 성공했다면
+    // 그 시점에 파일이 존재한다. 그 사이 삭제되는 TOCTOU 를 주입해 분기를 고정한다.
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const rel = await put('vanish.ts', 'eval(x)')
+    const statSpy = vi.spyOn(fs, 'stat').mockRejectedValueOnce(
+      Object.assign(new Error('ENOENT'), { code: 'ENOENT' }),
+    )
+
+    expect(await analyzeFiles([rel], ws)).toEqual([])
+    expect(spy.mock.calls.some((c) => String(c[0]).includes('stat 실패'))).toBe(true)
+
+    statSpy.mockRestore()
+    spy.mockRestore()
+  })
+
   it('여러 파일 중 일부가 실패해도 나머지는 감사한다', async () => {
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     const ok = await put('good.ts', 'eval(danger)')
