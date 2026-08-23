@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { FastifyInstance } from 'fastify'
+import fsp from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 
 /**
  * **Redis 게이트웨이의 localPath 판정.**
@@ -132,6 +135,43 @@ describe('게이트웨이 onRegister — localPath 거부', () => {
     await expect(register({ name: 'p', workspaceType: 'local', localPath: '..' })).rejects.toThrow()
     expect(mockCreate).not.toHaveBeenCalled()
     expect(mockUpdateWorkspace).not.toHaveBeenCalled()
+  })
+})
+
+describe('게이트웨이 onRegister — 통과 경로', () => {
+  it('실재하는 디렉토리는 통과하고 정규화된 값을 저장한다', async () => {
+    // 저장값이 **검사받은 값**인지 확인한다 — 이전엔 원문을 그대로 넣었다.
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'gw-ok-'))
+    try {
+      const res = await register({ name: 'p', workspaceType: 'local', localPath: `${dir}${path.sep}` })
+      expect(res).toMatchObject({ projectId: 'proj-1', status: 'registered' })
+      expect(mockCreate).toHaveBeenCalledTimes(1)
+      // 후행 구분자가 제거된 값이 workspacePath 와 localPath 양쪽에 들어간다.
+      expect(mockUpdateWorkspace).toHaveBeenCalledWith('proj-1', expect.objectContaining({
+        workspacePath: dir,
+        localPath: dir,
+      }))
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('github 타입은 clone 목적지를 Layer 1 만 통과시킨다 — 존재하지 않아도 된다', async () => {
+    // clonePath mock 이 '/workspace/proj-1' 을 돌려주는데 그 디렉토리는 없다.
+    // 여기에 존재 검사가 걸리면 github 등록이 항상 실패한다.
+    const res = await register({
+      name: 'p', workspaceType: 'github', repoUrl: 'https://example.com/a/b.git', branch: 'main',
+    })
+    // 기대값이 `path.normalize('/workspace/proj-1')` 이 **아니다.** 네이티브 normalize 는
+    // win32 에서 `\workspace\proj-1` 을 돌려준다. 판정은 입력의 모양으로 플레이버를
+    // 고르므로 POSIX 입력은 어느 호스트에서도 재작성되지 않는다 — 그것이 이 설계의 요점이다.
+    expect(res).toMatchObject({ status: 'cloning', workspacePath: '/workspace/proj-1' })
+  })
+
+  it('https 가 아닌 repoUrl 은 프로젝트를 만들기 전에 거부한다', async () => {
+    await expect(register({ name: 'p', workspaceType: 'github', repoUrl: 'http://example.com/a/b.git' }))
+      .rejects.toThrow('https')
+    expect(mockCreate).not.toHaveBeenCalled()
   })
 })
 

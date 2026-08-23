@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { normalizeWorkspacePath, WorkspacePathError } from '../workspace-path.js'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import fsp from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { normalizeWorkspacePath, assertReadableDirectory, WorkspacePathError } from '../workspace-path.js'
 
 /**
  * **워크스페이스 경로 판정의 단일 출처.**
@@ -153,5 +156,60 @@ describe('normalizeWorkspacePath — clone 목적지', () => {
       .toBe('/home/user/.xzawed/workspaces/proj-1')
     expect(normalizeWorkspacePath('C:\\Users\\dirtc\\.xzawed\\workspaces\\a3f1e2d4'))
       .toBe('C:\\Users\\dirtc\\.xzawed\\workspaces\\a3f1e2d4')
+  })
+})
+
+describe('assertReadableDirectory — Layer 2 (I/O, fail-closed)', () => {
+  let dir: string
+
+  beforeEach(async () => {
+    dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ws-path-'))
+  })
+  afterEach(async () => {
+    await fsp.rm(dir, { recursive: true, force: true })
+  })
+
+  it('실재하고 읽을 수 있는 디렉토리는 통과한다', async () => {
+    await expect(assertReadableDirectory(dir)).resolves.toBeUndefined()
+  })
+
+  it('존재하지 않으면 거부하고 원인 에러를 보존한다', async () => {
+    // 이전 판은 `catch { throw new Error(...) }` 로 `err.code` 를 지웠다.
+    // 운영에서 ENOENT 와 EACCES 를 구분할 수 없게 만드는 손실이다.
+    const missing = path.join(dir, 'nope')
+    try {
+      await assertReadableDirectory(missing)
+      throw new Error('거부될 것으로 기대했으나 통과했다')
+    } catch (e) {
+      expect(e).toBeInstanceOf(WorkspacePathError)
+      const err = e as WorkspacePathError
+      expect(err.reason).toBe('path-not-accessible')
+      // 기존 메시지 문구를 유지한다 — 하위호환.
+      expect(err.message).toContain('로컬 경로에 접근할 수 없습니다')
+      expect(err.cause).toBeDefined()
+      expect((err.cause as NodeJS.ErrnoException).code).toBe('ENOENT')
+    }
+  })
+
+  it('디렉토리가 아니면 거부한다 — 읽을 수 있는 파일도 워크스페이스 루트가 아니다', async () => {
+    // 이전 판의 `access(R_OK)` 는 읽기 가능한 **파일**을 통과시켰다. 그러면
+    // 에이전트가 그 아래 상대경로를 조합하는 순간 뒤늦게 ENOTDIR 로 죽는다.
+    const file = path.join(dir, 'a-file.txt')
+    await fsp.writeFile(file, 'x', 'utf-8')
+    try {
+      await assertReadableDirectory(file)
+      throw new Error('거부될 것으로 기대했으나 통과했다')
+    } catch (e) {
+      expect(e).toBeInstanceOf(WorkspacePathError)
+      expect((e as WorkspacePathError).reason).toBe('not-a-directory')
+    }
+  })
+
+  it('statusCode 400 을 실어 라우트가 그대로 내보낼 수 있다', async () => {
+    try {
+      await assertReadableDirectory(path.join(dir, 'nope'))
+    } catch (e) {
+      expect((e as WorkspacePathError).statusCode).toBe(400)
+    }
   })
 })
