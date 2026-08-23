@@ -22,7 +22,7 @@ import { StreamConsumer } from '../streams/consumer.js'
 // Short grace so the "cleanup after grace" path is observable quickly in tests.
 async function startServer(graceMs = 100): Promise<{ app: FastifyInstance; port: number }> {
   const app = await buildServer(
-    { port: 0, redisUrl: 'redis://127.0.0.1:6380', managerUrl: 'http://localhost:3001', claudeMode: 'cli', mode: 'local', auth: 'none', claudeModel: 'test', serveWeb: false, wsCleanupGraceMs: graceMs },
+    { port: 0, redisUrl: 'redis://127.0.0.1:6380', managerUrl: 'http://localhost:3001', claudeMode: 'cli', mode: 'local', auth: 'none', claudeModel: 'test', serveWeb: false, allowedOrigins: [], trustProxy: false, wsCleanupGraceMs: graceMs },
     { async *send() { yield { type: 'done' as const, content: '' } } }
   )
   await app.listen({ port: 0, host: '127.0.0.1' })

@@ -55,6 +55,8 @@ const BASE_CONFIG = {
   claudeMode: 'cli' as const,
   mode: 'local' as const,
   auth: 'none' as const,
+  allowedOrigins: [],
+  trustProxy: false,
   claudeModel: 'test',
   serveWeb: false,
   databaseUrl: 'postgres://test:test@localhost:5432/test',
@@ -142,5 +144,54 @@ describe('setErrorHandler', () => {
     const res = await app.inject({ method: 'GET', url: '/test-400' })
     expect(res.statusCode).toBe(400)
     expect((res.json() as { error: string }).error).toBe('Bad Request: invalid field')
+  })
+})
+
+/**
+ * **X-Forwarded-For 로 rate limit 을 우회할 수 있는가.**
+ *
+ * `@fastify/rate-limit` 의 기본 키는 `req.ip` 다. 그리고 `req.ip` 가 소켓 주소인지
+ * `X-Forwarded-For` 인지는 **Fastify 의 `trustProxy` 하나가 결정한다.**
+ *
+ * 이전 판은 `trustProxy: true` 를 하드코딩했다. 프록시 뒤가 아니면 그 헤더는
+ * 클라이언트가 임의로 쓰는 값이므로, 매 요청 다른 값을 넣으면 매번 새 버킷이 잡혀
+ * 로그인 시도 제한이 통째로 무력화된다. 브루트포스 방어가 헤더 한 줄로 사라진다.
+ *
+ * 그래서 기본값을 false 로 되돌리고, 프록시 뒤 배포에서만 명시로 켠다.
+ */
+describe('rate limit 키와 trustProxy', () => {
+  let app: FastifyInstance
+
+  afterEach(async () => { await app?.close() })
+
+  async function loginWithRotatingXff(instance: FastifyInstance, count: number): Promise<number[]> {
+    const codes: number[] = []
+    for (let i = 0; i < count; i++) {
+      const res = await instance.inject({
+        method: 'POST', url: '/auth/login',
+        headers: { 'Content-Type': 'application/json', 'x-forwarded-for': `203.0.113.${i + 1}` },
+        payload: JSON.stringify({ email: 'test@test.com', password: 'wrongpass' }),
+      })
+      codes.push(res.statusCode)
+    }
+    return codes
+  }
+
+  it('trustProxy 기본값(false)에서 X-Forwarded-For 를 매 요청 바꿔도 6번째는 429다', async () => {
+    app = await startServer()
+    const codes = await loginWithRotatingXff(app, 6) // NOSONAR — max:5 라 6번째가 경계
+    expect(codes[5]).toBe(429)
+    expect(codes.slice(0, 5).every((c) => c !== 429)).toBe(true)
+  })
+
+  it('trustProxy=true 를 명시하면 X-Forwarded-For 별로 버킷이 갈린다 — 프록시 뒤 배포용', async () => {
+    // 프록시 뒤에서는 소켓 주소가 전부 프록시 IP라 이 스위치가 없으면 **전체 사용자가
+    // 버킷 하나를 공유한다** — 한 명이 5회 틀리면 나머지 전원이 잠긴다.
+    app = await buildServer(
+      { ...BASE_CONFIG, trustProxy: true },
+      { async *send() { yield { type: 'done' as const, content: '' } } },
+    )
+    const codes = await loginWithRotatingXff(app, 6) // NOSONAR
+    expect(codes.includes(429)).toBe(false)
   })
 })
