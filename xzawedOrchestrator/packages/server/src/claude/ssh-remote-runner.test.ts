@@ -120,6 +120,25 @@ describe('SSHRemoteRunner', () => {
     expect(results).toContainEqual({ type: 'done', content: '' })
   })
 
+  it('conn.exec 에 실제로 넘기는 명령에서 프롬프트가 인용된다', async () => {
+    // **이 자리가 결함이 살아남은 이유다.** 기존 5개 테스트는 전송 계층만 보고,
+    // exec mock 이 첫 인자를 `_cmd` 로 버려 명령 문자열을 아무도 검증하지 않았다.
+    // buildRemoteCommand 가 순수 함수로 통과해도 클래스가 그것을 실제로 쓰지 않으면
+    // 무의미하므로, 러너의 실제 send() 경로를 통과시켜 캡처한다.
+    const stream = makeStream([])
+    const inst = makeClientInstance({ execStream: stream })
+    MockClient.mockImplementation(function () { return inst as unknown as InstanceType<typeof Client> })
+
+    const runner = new SSHRemoteRunner('host', 'user', '/key')
+    const injected = { ...MSG, content: 'summarize; echo nope' }
+    for await (const _chunk of runner.send([injected])) { void _chunk }
+
+    expect(inst.exec).toHaveBeenCalledWith(
+      "claude --print --output-format stream-json --verbose -- 'summarize; echo nope'",
+      expect.any(Function),
+    )
+  })
+
   it('yields error chunk when remote process exits non-zero', async () => {
     const stream = makeStream([], 1)
     const inst = makeClientInstance({ execStream: stream })
