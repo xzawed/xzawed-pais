@@ -68,20 +68,24 @@ beforeEach(() => {
 })
 
 describe('auditDeps', () => {
-  it('returns [] when no package.json', async () => {
+  it('package.json 이 없으면 not_applicable — 감사 실패가 아니라 비대상이다', async () => {
     mockAccess.mockRejectedValueOnce(new Error('ENOENT') as never)
     const result = await auditDeps('/workspace/app', '/workspace')
-    expect(result).toEqual([])
+    expect(result.issues).toEqual([])
+    expect(result.status).toBe('not_applicable')
+    expect(result.reason).toBe('no_package_json')
   })
 
-  it('returns [] when npm not available', async () => {
+  it('npm 실행이 실패하면 unavailable — 이슈 0건이 "취약점 없음"을 뜻하지 않는다', async () => {
     mockExecFile.mockImplementation(
       ((_c: unknown, _a: unknown, _o: unknown, cb: (err: Error) => void) => {
         cb(new Error('not found'))
       }) as never,
     )
     const result = await auditDeps('/workspace/app', '/workspace')
-    expect(result).toEqual([])
+    expect(result.issues).toEqual([])
+    expect(result.status).toBe('unavailable')
+    expect(result.reason).toBe('npm_exec')
   })
 
   it('audit 실행 실패(감사 불능) 시 경고를 로깅한다 — 무음 fail-open 아님', async () => {
@@ -92,7 +96,8 @@ describe('auditDeps', () => {
       }) as never,
     )
     const result = await auditDeps('/workspace/app', '/workspace')
-    expect(result).toEqual([])
+    expect(result.issues).toEqual([])
+    expect(result.status).toBe('unavailable')
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
   })
@@ -101,11 +106,11 @@ describe('auditDeps', () => {
     mockExecFile.mockImplementationOnce(cbSuccess(npmAuditOutput) as never)
 
     const result = await auditDeps('/workspace/app', '/workspace')
-    expect(result).toHaveLength(2)
-    expect(result.some((i) => i.id === 'DEP-lodash')).toBe(true)
-    expect(result.find((i) => i.id === 'DEP-lodash')?.severity).toBe('high')
-    expect(result.find((i) => i.id === 'DEP-minimist')?.severity).toBe('critical')
-    expect(result.every((i) => i.source === 'deps')).toBe(true)
+    expect(result.issues).toHaveLength(2)
+    expect(result.issues.some((i) => i.id === 'DEP-lodash')).toBe(true)
+    expect(result.issues.find((i) => i.id === 'DEP-lodash')?.severity).toBe('high')
+    expect(result.issues.find((i) => i.id === 'DEP-minimist')?.severity).toBe('critical')
+    expect(result.issues.every((i) => i.source === 'deps')).toBe(true)
   })
 
   it('reads stdout from error object when npm audit exits non-zero', async () => {
@@ -116,7 +121,7 @@ describe('auditDeps', () => {
     )
 
     const result = await auditDeps('/workspace/app', '/workspace')
-    expect(result).toHaveLength(2)
+    expect(result.issues).toHaveLength(2)
   })
 
   it('maps moderate severity to medium', async () => {
@@ -132,14 +137,14 @@ describe('auditDeps', () => {
     mockExecFile.mockImplementationOnce(cbSuccess(output) as never)
 
     const result = await auditDeps('/workspace/app', '/workspace')
-    expect(result[0]?.severity).toBe('medium')
+    expect(result.issues[0]?.severity).toBe('medium')
   })
 
   it('returns [] when npm audit returns invalid JSON', async () => {
     mockExecFile.mockImplementationOnce(cbSuccess('not json') as never)
 
     const result = await auditDeps('/workspace/app', '/workspace')
-    expect(result).toEqual([])
+    expect(result.issues).toEqual([])
   })
 })
 
@@ -199,7 +204,7 @@ describe('hasPnpmLock (via auditDeps)', () => {
 
     const result = await auditDeps('/workspace/app', '/workspace')
     // pnpm audit 경로를 탔으므로 DEP-PNPM- prefix 사용
-    expect(result.some((i) => i.id.startsWith('DEP-PNPM-'))).toBe(true)
+    expect(result.issues.some((i) => i.id.startsWith('DEP-PNPM-'))).toBe(true)
   })
 
   it('returns false path when pnpm-lock.yaml does not exist', async () => {
@@ -211,7 +216,7 @@ describe('hasPnpmLock (via auditDeps)', () => {
 
     mockExecFile.mockImplementationOnce(cbSuccess(npmAuditOutput) as never)
     const result = await auditDeps('/workspace/app', '/workspace')
-    expect(result.some((i) => i.id.startsWith('DEP-lodash') || i.id.startsWith('DEP-minimist'))).toBe(true)
+    expect(result.issues.some((i) => i.id.startsWith('DEP-lodash') || i.id.startsWith('DEP-minimist'))).toBe(true)
   })
 })
 
@@ -247,10 +252,10 @@ describe('runPnpmAudit (via auditDeps)', () => {
     mockExecFile.mockImplementationOnce(cbSuccess(pnpmAuditOutput) as never)
 
     const result = await auditDeps('/workspace/app', '/workspace')
-    expect(result).toHaveLength(2)
-    expect(result.find((i) => i.id === 'DEP-PNPM-101')?.severity).toBe('critical')
-    expect(result.find((i) => i.id === 'DEP-PNPM-202')?.severity).toBe('medium')
-    expect(result.find((i) => i.id === 'DEP-PNPM-101')?.cwe).toBe('CWE-94')
+    expect(result.issues).toHaveLength(2)
+    expect(result.issues.find((i) => i.id === 'DEP-PNPM-101')?.severity).toBe('critical')
+    expect(result.issues.find((i) => i.id === 'DEP-PNPM-202')?.severity).toBe('medium')
+    expect(result.issues.find((i) => i.id === 'DEP-PNPM-101')?.cwe).toBe('CWE-94')
   })
 
   it('reads stdout from error object when pnpm audit exits non-zero', async () => {
@@ -271,15 +276,15 @@ describe('runPnpmAudit (via auditDeps)', () => {
     )
 
     const result = await auditDeps('/workspace/app', '/workspace')
-    expect(result).toHaveLength(1)
-    expect(result[0]?.id).toBe('DEP-PNPM-999')
+    expect(result.issues).toHaveLength(1)
+    expect(result.issues[0]?.id).toBe('DEP-PNPM-999')
   })
 
   it('returns [] when pnpm audit output is invalid JSON', async () => {
     mockExecFile.mockImplementationOnce(cbSuccess('not json') as never)
 
     const result = await auditDeps('/workspace/app', '/workspace')
-    expect(result).toEqual([])
+    expect(result.issues).toEqual([])
   })
 
   it('falls back to npm when pnpm-lock.yaml exists but pnpm is not found', async () => {
@@ -294,7 +299,10 @@ describe('runPnpmAudit (via auditDeps)', () => {
 
     const result = await auditDeps('/workspace/app', '/workspace')
     // npm audit 결과 (DEP- prefix, no DEP-PNPM-)
-    expect(result.every((i) => !i.id.startsWith('DEP-PNPM-'))).toBe(true)
-    expect(result.length).toBeGreaterThan(0)
+    expect(result.issues.every((i) => !i.id.startsWith('DEP-PNPM-'))).toBe(true)
+    expect(result.issues.length).toBeGreaterThan(0)
+    // 폴백해도 감사는 실제로 돌았다 — tool 이 실제 사용 도구를 드러낸다.
+    expect(result.status).toBe('ok')
+    expect(result.tool).toBe('npm')
   })
 })

@@ -16,7 +16,7 @@ description: 여러 곳에 복제된 계약 정의(enum·필드)의 드리프트
 
 ---
 
-### [1/3] Planner Step.agentType 유니언 (6값 enum)
+### [1/4] Planner Step.agentType 유니언 (6값 enum)
 
 다음 정의처의 enum 값 집합이 모두 동일한지 비교한다:
 
@@ -34,7 +34,7 @@ git grep -n "developer.*designer.*tester.*builder.*watcher.*security" -- xzawedP
 
 ---
 
-### [2/3] Designer ComponentSpec / UISpec 필드
+### [2/4] Designer ComponentSpec / UISpec 필드
 
 다음의 zod 스키마와 TS interface 필드 집합이 일치하는지 비교한다:
 
@@ -47,7 +47,7 @@ git grep -n "developer.*designer.*tester.*builder.*watcher.*security" -- xzawedP
 
 ---
 
-### [3/3] Orchestrator IPC 3자 계약
+### [3/4] Orchestrator IPC 3자 계약
 
 Electron IPC 채널은 타입 없는 문자열 리터럴로 3곳에 중복되어 tsc가 못 잡는다:
 
@@ -68,6 +68,36 @@ git grep -n "ipcRenderer.invoke\|ipcMain.handle" -- xzawedOrchestrator/packages/
 
 를 보고한다.
 
+### [4/4] Security audit_complete payload 계약 (4중 선언)
+
+감사 결과 계약이 네 곳에 독립 선언돼 있고 tsc가 교차검증하지 못한다.
+
+| 위치 | 형태 |
+|---|---|
+| `xzawedSecurity/src/types.ts` | 수기 TS interface — 생산자 strict(내부 키 required) |
+| `xzawedManager/.../tools/security-audit.ts` 미러 interface | 소비자 lenient(전부 optional) |
+| `xzawedManager/.../tools/security-audit.ts` `outputSchema` | **z.object 기본 strip — 여기 없는 필드는 런타임에 소멸** |
+| `xzawedManager/.../streams/verify.ts` `SecurityResultSchema` | 판정 전용 minimal(2단 strip) |
+
+```
+git grep -n "audit_complete" -- xzawedSecurity/src xzawedManager/packages/server/src
+git grep -n "auditable" -- xzawedSecurity/src xzawedManager/packages/server/src
+```
+
+검사
+
+1. **payload 필드 집합의 차집합.** 네 곳 중 한 곳에만 있는 필드를 보고한다. `outputSchema`에
+   없으면 Security가 보내도 조용히 사라지므로 그 한 지점이 계약의 실질적 병목이다.
+2. **`SecurityIssue.source` enum 일치.** 네 정의처의 값 집합과 `verify.ts`의
+   `SECURITY_SOURCES` 집합이 정합한지 본다.
+3. **`outputSchema` 기본값의 방향.** `run-tests`·`build-project`는 안전측 기본값을 쓰는데
+   `security-audit`만 `issues: []` · `score: 100`으로 fail-open이다. 필드를 추가할 때 같은
+   방향의 기본값을 얹지 않았는지 확인한다.
+4. **`auditable` 내부 키의 optional 여부.** 생산자는 required, 소비자 셋은 전부 optional이
+   규칙이다. 소비자 쪽에 required가 생기면 구버전 Security가 RPC 사망한다.
+
+회귀 그물: `xzawedManager/.../tools/security-audit.test.ts`가 실제 Zod로 체인을 통과시킨다.
+
 ---
 
 ### 결과 요약 형식
@@ -75,14 +105,16 @@ git grep -n "ipcRenderer.invoke\|ipcMain.handle" -- xzawedOrchestrator/packages/
 ```
 === CONTRACT-DRIFT-CHECK 결과 ===
 
-[1/3] Planner agentType   ✅ 5개 정의처 일치  /  ❌ DRIFT — <위치: 불일치 값>
-[2/3] Designer UISpec     ✅ 일치  /  ❌ DRIFT — <필드 차집합>
-[3/3] Orchestrator IPC    ✅ 채널 집합 일치  /  ❌ DRIFT — <누락 핸들러/시그니처>
+[1/4] Planner agentType   ✅ 5개 정의처 일치  /  ❌ DRIFT — <위치: 불일치 값>
+[2/4] Designer UISpec     ✅ 일치  /  ❌ DRIFT — <필드 차집합>
+[3/4] Orchestrator IPC    ✅ 채널 집합 일치  /  ❌ DRIFT — <누락 핸들러/시그니처>
+[4/4] Security payload    ✅ 4개 선언 일치  /  ❌ DRIFT — <strip되는 필드>
 
 위험도:
 - CRITICAL: preload↔main 채널 불일치 (런타임 무응답), agentType 라우팅 실패
 - HIGH: SYSTEM_PROMPT 프로즈 enum과 z.enum 불일치 (LLM이 잘못된 값 생성)
 - MEDIUM: 반환형 필드명 표기 불일치
+- CRITICAL: outputSchema 누락 필드 (Security가 보낸 값이 런타임에 소멸 — tsc·테스트 전부 초록)
 ```
 
 DRIFT 발견 시: 어느 정의처를 단일 소스로 삼아 나머지를 맞출지 제안한다. 단, 이 스킬은 보고만 하고 수정은 사용자 판단에 맡긴다.
