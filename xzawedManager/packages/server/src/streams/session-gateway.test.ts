@@ -134,9 +134,11 @@ describe('SessionGatewayConsumer', () => {
 })
 
 describe('SessionGatewayConsumer.isRunning', () => {
-  it('기동에 성공하면 true, stop() 이후 false', async () => {
+  const make = () => new SessionGatewayConsumer('redis://localhost:6379', vi.fn())
+
+  it('소비 루프에 진입하면 true, stop() 이후 false', async () => {
     vi.mocked(getRedisClient).mockReturnValue(makeRedis() as never)
-    const gateway = new SessionGatewayConsumer('redis://localhost:6379', vi.fn())
+    const gateway = make()
 
     expect(gateway.isRunning()).toBe(false)
     const p = gateway.start()
@@ -147,17 +149,14 @@ describe('SessionGatewayConsumer.isRunning', () => {
     expect(gateway.isRunning()).toBe(false)
   })
 
-  it('기동 시점에 Redis 가 죽어 있으면 영구히 false 다 — ping 은 나중에 PONG 을 준다', async () => {
-    // 그룹 생성이 소비 루프 **밖**이라 여기서 throw 하면 `running` 이 영영 true 가
-    // 되지 않는다. 그런데 ioredis 는 계속 재연결하므로 잠시 뒤 `ping()` 은 PONG 을
-    // 준다 — Redis 프로브만으로는 이 상태를 못 잡는다. readiness 가 루프 상태를
-    // 따로 노출해야 하는 이유가 이것이다.
+  it('bus.ensureGroup 이 실패하면 루프에 진입조차 못 하고 영구히 false 다', async () => {
+    // `ensureGroup` 은 `while` 루프 **앞**이다. 여기서 throw 하면 `running` 이 영영
+    // true 가 되지 않는데, ioredis 는 계속 재연결하므로 잠시 뒤 `ping()` 은 PONG 을
+    // 준다 — Redis 프로브만 보는 readiness 는 이 상태를 ready 로 답한다.
     const redis = { ...makeRedis(), xgroup: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) }
     vi.mocked(getRedisClient).mockReturnValue(redis as never)
-    const gateway = new SessionGatewayConsumer('redis://localhost:6379', vi.fn())
 
-    await expect(gateway.start()).rejects.toThrow('ECONNREFUSED')
-    expect(gateway.isRunning()).toBe(false)
+    await expect(make().start()).rejects.toThrow('ECONNREFUSED')
     expect(redis.xreadgroup).not.toHaveBeenCalled()
   })
 })

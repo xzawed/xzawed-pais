@@ -134,31 +134,35 @@ describe('ProjectGatewayConsumer', () => {
   })
 })
 
+/**
+ * `start()` 는 `xgroup CREATE` 를 직접 부르고 BUSYGROUP 만 삼킨다. 그 분기가 루프
+ * **밖**이라, 삼키느냐 던지느냐가 그대로 `isRunning()` 의 값이 된다.
+ */
 describe('ProjectGatewayConsumer.isRunning', () => {
-  it('기동에 성공하면 true, stop() 이후 false', async () => {
-    vi.mocked(getRedisClient).mockReturnValue(makeRedis() as never)
-    const gateway = new ProjectGatewayConsumer('redis://localhost:6379', vi.fn(), vi.fn())
-
-    expect(gateway.isRunning()).toBe(false)
-    const p = gateway.start()
-    await new Promise(r => setTimeout(r, 30))
-    expect(gateway.isRunning()).toBe(true)
-    gateway.stop()
-    await p
-    expect(gateway.isRunning()).toBe(false)
-  })
-
-  it('기동 시점에 Redis 가 죽어 있으면 영구히 false 다 — ping 은 나중에 PONG 을 준다', async () => {
-    // 그룹 생성이 소비 루프 **밖**이라 여기서 throw 하면 `running` 이 영영 true 가
-    // 되지 않는다. 그런데 ioredis 는 계속 재연결하므로 잠시 뒤 `ping()` 은 PONG 을
-    // 준다 — Redis 프로브만으로는 이 상태를 못 잡는다. readiness 가 루프 상태를
-    // 따로 노출해야 하는 이유가 이것이다.
-    const redis = { ...makeRedis(), xgroup: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) }
+  const start = async (xgroup: ReturnType<typeof vi.fn>) => {
+    const redis = { ...makeRedis(), xgroup }
     vi.mocked(getRedisClient).mockReturnValue(redis as never)
     const gateway = new ProjectGatewayConsumer('redis://localhost:6379', vi.fn(), vi.fn())
+    return { redis, gateway, running: () => gateway.isRunning() }
+  }
 
+  it('그룹이 이미 있으면(BUSYGROUP) 삼키고 정상 기동한다', async () => {
+    const { gateway, running } = await start(vi.fn().mockRejectedValue(new Error('BUSYGROUP already exists')))
+    expect(running()).toBe(false)
+    const p = gateway.start()
+    await new Promise(r => setTimeout(r, 30))
+    expect(running()).toBe(true)
+    gateway.stop()
+    await p
+    expect(running()).toBe(false)
+  })
+
+  it('BUSYGROUP 이 아닌 오류는 전파되고 루프는 영영 돌지 않는다', async () => {
+    // ioredis 재연결은 계속되므로 잠시 뒤 `ping()` 은 PONG 을 준다 — Redis 프로브만
+    // 보는 readiness 는 이 죽은 게이트웨이를 ready 로 답한다.
+    const { redis, gateway, running } = await start(vi.fn().mockRejectedValue(new Error('ECONNREFUSED')))
     await expect(gateway.start()).rejects.toThrow('ECONNREFUSED')
-    expect(gateway.isRunning()).toBe(false)
+    expect(running()).toBe(false)
     expect(redis.xreadgroup).not.toHaveBeenCalled()
   })
 })
