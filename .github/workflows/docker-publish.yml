@@ -1,6 +1,8 @@
 name: Docker Publish
 
 on:
+  # 결손 이미지 재발행 수단. push 트리거만 있으면 크래시로 빠진 태그를 되돌릴 방법이 없다.
+  workflow_dispatch:
   push:
     branches: [master]
     paths:
@@ -17,6 +19,10 @@ jobs:
       contents: read
       packages: write
     strategy:
+      # 한 서비스의 QEMU arm64 크래시가 나머지 8개를 함께 끌어내리지 않게 한다.
+      # 실측: 2026-08-22·08-23 런에서 fail-fast 로 8개가 cancelled 됐다. 이미지 발행은
+      # 서비스별로 독립이므로 하나가 죽어도 나머지는 나가는 편이 낫다.
+      fail-fast: false
       matrix:
         service:
           - { name: orchestrator, dir: xzawedOrchestrator }
