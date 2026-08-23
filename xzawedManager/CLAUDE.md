@@ -80,6 +80,8 @@ cd packages/server && pnpm test <파일>
 
 ## 함정
 
+- **종료 순서는 인테이크 차단 → HTTP 드레인 → registry·DB 풀 → Redis 다.** 이전엔 `closeAll()`이 DB 풀까지 닫은 **뒤** `app.close()`를 불러, 진행 중이던 요청이 이미 `end()`된 pg 풀을 만났다. 창의 길이는 '잠깐'이 아니라 종료 시점 최장 in-flight 쿼리 시간 전체다 — `pg-pool.end()`는 체크아웃된 클라이언트가 전부 반납될 때까지 resolve 하지 않는다. `buildServer`가 `stopIntake`·`closeResources`를 따로 반환하고 그 사이에 드레인이 들어간다(`closeAll`은 기존 호환용 조합자로 남는다)
+- **종료 코어는 Orchestrator 와 복제 블록이다.** 서비스 간 import 금지(M3)에 Orchestrator 는 `@xzawed/agent-streams`도 의존하지 않아 공유 경로가 없다. `replicated-block: shutdown-core` 마커가 붙어 있고 동일성은 `scripts/check-replicated-blocks.js`가 강제한다 — 한쪽만 고치면 두 서비스의 종료 의미론이 갈라진다
 - **Fastify 인스턴스 옵션은 `makeServerOptions`가 단일 지점이다.** `buildServer`가 DB·Redis·Anthropic 배선을 통째로 끌고 와 저장소에 그것을 부르는 테스트가 **하나도 없다** — 그래서 인스턴스 옵션 두 줄이 오래 틀린 채로 있었다(로거가 `MODE==='local'`이라 **프로덕션에서만 꺼져** `app.log.*` 호출부 65곳이 no-op 이었고, `trustProxy`는 `true` 하드코딩이었다). 옵션을 순수 함수로 떼어 `__tests__/server-options.test.ts`가 고정한다. 옵션을 추가할 때 `Fastify({...})`에 직접 쓰지 말고 그 함수에 넣는다
 - **`MANAGER_WP_MUTATION`만 켜면 영원히 skip된다.** mutation은 `wp.risk ≥ MANAGER_MUTATION_MIN_RISK`(기본 HIGH)일 때만 발화하는데, 분해가 만드는 WP의 `risk`는 스키마 기본값 **MEDIUM**이고 이를 올리는 유일한 생산 경로가 리스크 분류→사람 승인→`updateWpRisks` write-back이다. 체인이 없으면 항상 건너뛴다. **체인을 켜는 것은 필요조건이지 충분조건이 아니다** — 분류가 실제로 HIGH로 채점되고 승인까지 돼야 한다(write-back은 승인된 등급을 그대로 쓴다). `MANAGER_MUTATION_MIN_RISK`를 낮추는 쪽이 확실하다.
   기동 경고는 **`MUTATION + VERIFY + minRisk=HIGH + 체인 불완전`** 조합에서만 뜬다. VERIFY가 꺼져 있으면 다른 경고가 뜨고 채널은 애초에 검증 루프에 들어가지도 않는다.

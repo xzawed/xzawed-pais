@@ -144,6 +144,16 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   const wsSessions = new Map<string, WebSocket>()
   const sessionConsumers = new Map<string, StreamConsumer>()
   const sessionCleanup = new Map<string, () => void>()
+
+  // 종료 시 세션별 소비자 루프를 세운다. 이 루프들은 공유 Redis 연결 위에서 블로킹
+  // XREADGROUP 을 돌기 때문에, 살아 있는 채로 연결을 quit 하면 루프가 종료가 아니라
+  // 에러 백오프 재시도로 떨어져 이벤트 루프를 붙잡는다.
+  // onClose 는 등록 역순(LIFO — 실측)이라 이 훅은 등록 1번째인 closePool 보다 **먼저**
+  // 돈다 — 소비자가 아직 DB 를 만질 수 있는데 풀이 먼저 닫히는 일은 없다.
+  app.addHook('onClose', async () => {
+    for (const consumer of sessionConsumers.values()) consumer.stop()
+    sessionConsumers.clear()
+  })
   const anthropicClient = config.anthropicApiKey
     ? new Anthropic({ apiKey: config.anthropicApiKey })
     : undefined

@@ -72,7 +72,15 @@ export function makeServerOptions(config: Config): { logger: boolean; trustProxy
 }
 export async function buildServer(
   config: Config,
-): Promise<{ app: ReturnType<typeof Fastify>; closeAll: () => Promise<void> }> {
+): Promise<{
+  app: ReturnType<typeof Fastify>
+  /** 기존 호출자 호환용 조합자. 종료 경로는 stopIntake / closeResources 를 따로 쓴다. */
+  closeAll: () => Promise<void>
+  /** 새 작업 유입 차단(동기). HTTP 드레인 **앞**에 온다. */
+  stopIntake: () => void
+  /** registry → DB 풀. HTTP 드레인 **뒤**에 온다 — 이것이 D6 교정이다. */
+  closeResources: () => Promise<void>
+}> {
   const app = Fastify(makeServerOptions(config))
 
   // jscpd:ignore-start
@@ -737,16 +745,28 @@ export async function buildServer(
     app.log.error({ err }, 'SessionGatewayConsumer crashed')
   })
 
-  const closeAll = async () => {
+  // 종료는 두 국면이다. 인테이크 차단(동기)은 HTTP 드레인 **앞**, 자원 해제는 드레인 **뒤**.
+  // 붙여 두면 아직 처리 중인 요청이 이미 end() 된 pg 풀을 만나
+  // 'Cannot use a pool after calling end on the pool' 로 실패한다 — 그게 D6 다.
+  const stopIntake = () => {
     modeController?.stop()
     supervisor?.stop()
     outboxRelay?.stop()
     sessionGateway.stop()
     watcherEventConsumer.stop()
     for (const c of activeConsumers.values()) c.stop()
+  }
+
+  const closeResources = async () => {
     await registry.closeAll()
     await closePool()
   }
 
-  return { app, closeAll }
+  // 기존 의미론(둘을 연달아)을 그대로 보존한 조합자. 종료 경로는 이것을 쓰지 않는다.
+  const closeAll = async () => {
+    stopIntake()
+    await closeResources()
+  }
+
+  return { app, closeAll, stopIntake, closeResources }
 }
