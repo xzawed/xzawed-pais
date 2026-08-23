@@ -11,7 +11,7 @@ xzawedManager로부터 UI/UX 설계 요청을 받아 ComponentSpec 구조로 컴
 src/
 ├── index.ts          # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
 ├── config.ts         # 환경변수 검증 (Zod) — PORT=3004, WORKSPACE_ROOT 필수
-├── server.ts         # Fastify HTTP 서버 (/health, PORT=3004)
+├── server.ts         # Fastify HTTP 서버 ((/health · /health/ready, PORT=3004))
 ├── designer.ts       # UI 컴포넌트 스펙 생성 조율 로직
 ├── types.ts          # ComponentSpec (z.lazy 재귀 스키마), ManagerToDesignerMessageSchema
 ├── streams/

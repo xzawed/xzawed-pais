@@ -78,6 +78,7 @@ packages/
 ## 함정
 
 - **서비스 상태는 `/health` 폴링이 아니라 `docker compose ps` 읽기다.** `getServiceStatuses`가 `State === 'running' && Health === 'healthy'`일 때만 `running`으로 친다. 따라서 **compose에 healthcheck가 없는 서비스는 영영 `starting`에 머문다**(`ps --format json`의 `Health`가 빈 문자열). 앱 서비스 9종에 healthcheck가 없던 동안 마법사의 완료 조건 `states.every(s => s.status === 'running')`은 결코 참이 될 수 없었다
+- **그 healthcheck 는 `/health` 가 아니라 `/health/ready` 를 친다.** `/health` 는 정적 200이라 Redis 가 죽어도 healthy 를 보고한다 — healthcheck 를 붙이는 것만으로는 마법사가 **기능적으로 죽은 스택**을 "완료"로 통과시킨다. 붙였다는 사실과 무엇을 치느냐는 별개 문제다
 - **`docker compose up -d`는 healthy를 기다리지 않는다.** 컨테이너를 띄우고 돌아온다(`depends_on: service_healthy`가 걸린 선행 서비스는 예외). 그래서 `up -d` 직후 상태를 **한 번만** 읽으면 앱 서비스는 언제나 `starting`이다 — 재시도 정책은 `renderer/src/lib/wait-for-services.ts`의 순수 함수가 갖고 `StepServices`가 그것을 쓴다. 컴포넌트 안에 두면 검사할 방법이 없다
 - **compose 파일은 사본 두 벌이다.** 저장소 루트와 `packages/app/resources/`(패키징 대상은 후자). 두 벌의 태세와 드리프트는 `test/main/compose-posture.test.ts`가 고정한다 — 한쪽만 고치면 Launcher만 깨진 채 남는다
 - **API 키는 compose secret 으로 들어간다.** 소스가 `environment: ANTHROPIC_API_KEY`라 `buildDockerEnv()`의 env 전달을 그대로 쓴다. `file:` 소스로 바꾸면 safeStorage로 봉인된 키를 **디스크에 평문으로 써야 한다** — 후퇴다

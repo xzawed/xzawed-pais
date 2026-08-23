@@ -11,7 +11,7 @@ xzawedManager로부터 작업 지시(intent)를 받아 실행 가능한 단계�
 src/
 ├── index.ts          # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
 ├── config.ts         # 환경변수 검증 (Zod) — PORT=3002, WORKSPACE_ROOT 필수
-├── server.ts         # Fastify HTTP 서버 (/health, PORT=3002)
+├── server.ts         # Fastify HTTP 서버 ((/health · /health/ready, PORT=3002))
 ├── planner.ts        # intent + context → Step[] 분해 핵심 로직
 ├── types.ts          # Step, UISpec, ManagerToPlannerMessageSchema, PlannerToManagerMessage
 ├── streams/

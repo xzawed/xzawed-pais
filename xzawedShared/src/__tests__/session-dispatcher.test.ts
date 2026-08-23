@@ -403,3 +403,46 @@ describe('SessionDispatcher — 세션 단위 종료 (5-B)', () => {
     spy.mockRestore()
   })
 })
+
+describe('SessionDispatcher.isRunning', () => {
+  it('기동에 성공하면 true, stop() 이후 false', async () => {
+    const gatewayRedis = makeGatewayRedis()
+    const dispatcher = new SessionDispatcher(
+      gatewayRedis,
+      'manager:to-planner:sessions',
+      'planner-session-dispatcher',
+      vi.fn(),
+    )
+
+    expect(dispatcher.isRunning()).toBe(false)
+    const p = dispatcher.start()
+    await new Promise(r => setTimeout(r, 20))
+    expect(dispatcher.isRunning()).toBe(true)
+    dispatcher.stop()
+    await p
+    expect(dispatcher.isRunning()).toBe(false)
+  })
+
+  it('기동 시점에 Redis 가 죽어 있으면 영구히 false 다 — ping 은 나중에 PONG 을 준다', async () => {
+    // `xgroup CREATE` 가 소비 루프 **밖**에 있어서 여기서 throw 하면 `running` 이
+    // 영영 true 가 되지 않는다. 그런데 ioredis 는 계속 재연결하므로 잠시 뒤 `ping()`
+    // 은 PONG 을 준다 — Redis 프로브만으로는 이 상태를 잡을 수 없고, 이것이
+    // readiness 가 루프 상태를 따로 노출해야 하는 이유다.
+    const gatewayRedis = {
+      xgroup: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+      xreadgroup: vi.fn(),
+      xack: vi.fn(),
+    } as unknown as Redis
+    const dispatcher = new SessionDispatcher(
+      gatewayRedis,
+      'manager:to-planner:sessions',
+      'planner-session-dispatcher',
+      vi.fn(),
+    )
+
+    await expect(dispatcher.start()).rejects.toThrow('ECONNREFUSED')
+    expect(dispatcher.isRunning()).toBe(false)
+    // 소비 루프에 한 번도 진입하지 않았다.
+    expect(gatewayRedis.xreadgroup).not.toHaveBeenCalled()
+  })
+})

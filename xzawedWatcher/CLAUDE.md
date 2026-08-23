@@ -13,7 +13,7 @@ xzawedManager로부터 감시 요청을 받아 chokidar로 파일 변경을 감�
 src/
 ├── index.ts              # 진입점: config 로드, Redis 연결, Consumer·Producer·WatcherStore·Watcher 초기화
 ├── config.ts             # 환경변수 검증 (Zod) — maxWatchers, debounceMs 포함
-├── server.ts             # Fastify HTTP 서버 (/health, PORT=3007)
+├── server.ts             # Fastify HTTP 서버 ((/health · /health/ready, PORT=3007))
 ├── watcher.ts            # chokidar 감시 로직 — per-file 디바운스, safeTriggers 이중 필터
 ├── watcher-store.ts      # WatcherStore — sessionId → WatchEntry Map 관리
 ├── executor.ts           # validatePath() — WORKSPACE_ROOT 경로 검증 (claude/ 없음)

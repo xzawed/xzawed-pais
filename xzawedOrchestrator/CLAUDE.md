@@ -52,6 +52,14 @@ cd packages/app && pnpm test:e2e    # Playwright + Electron
 - **I/O 검사(`assertReadableDirectory`)는 `workspaceType=local` 에만 건다.** github 등록 3곳 중 2곳이 `void cloneRepo(...)` 로 clone 을 던지고 즉시 `workspacePath` 를 확정하므로 그 시점에 목적지가 존재하지 않는다. 존재 검사를 clone 목적지에 걸면 github 등록이 항상 실패한다
 - **소유권 게이트** — 프로젝트 스코프 쓰기는 미소유 시 **404**로 단락한다. 존재 여부를 흘리지 않기 위한 의도적 선택이라 403이 아니다(서버 코드에 `status(403)`은 0건). 단 **`GET /projects/:projectId/knowledge`와 `GET .../decisions/pending`은 이 pre-handler를 타지 않는다** — 프로젝트 스코프인데 열린 읽기다
 
+## 헬스체크
+
+`/health` 는 liveness(정적 200), `/health/ready` 는 readiness다. compose healthcheck 는 후자를 친다.
+
+- **`health/readiness.ts` 는 shared 사본이다.** Orchestrator 만 `@xzawed/agent-streams` 를 의존하지 않아(소비처 8곳 중 유일) 복제가 유일한 선택이고, 동일성은 `scripts/check-replicated-blocks.js` 가 `readiness-core` 로 강제한다. 고칠 것이 생기면 **shared 원본을 먼저** 고치고 마커 구간을 그대로 옮긴다 — 손으로 다시 쓰면 반드시 어긋난다
+- **`projectGateway` 는 DB 풀이 없으면 생성조차 되지 않는다**(`server.ts` 의 `if (dbPool)` 안). 그래서 접근자가 `undefined` 를 돌려주고 그것은 장애가 아니라 미구성이다 — `server.ts` 는 `projectGatewayRef` 를 라우트 등록보다 먼저 선언해 두고 생성 시점에 채운다
+- **Redis ping 만으로는 부족하다.** 기동 시 Redis 가 죽어 있으면 `xgroup CREATE` 가 소비 루프 **밖**에서 throw 해 게이트웨이가 영구 정지하는데 ioredis 재연결은 계속되므로 `ping()` 은 나중에 PONG 을 준다
+
 ## 함정
 
 E2E·테스트 공통 패턴은 [docs/development/testing-patterns.md](../docs/development/testing-patterns.md)에 있다. 여기엔 이 서비스에서만 나오는 것만 둔다.

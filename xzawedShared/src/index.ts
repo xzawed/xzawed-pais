@@ -8,6 +8,8 @@ export { validateWorkspaceRoot, resolveWorkspaceRoot } from './workspace-guard.j
 export { baseAgentSchema, baseAgentEnv, makeAgentConfig, loadAgentConfig, readSecretEnv } from './config/agent-config.js'
 export type { AgentConfig } from './config/agent-config.js'
 export { SessionDispatcher } from './streams/session-dispatcher.js'
+export { runProbes, summarize, readinessResult, redisPingProbe, loopProbe, pgProbe, agentReadinessProbes, DEFAULT_PROBE_TIMEOUT_MS } from './health/readiness.js'
+export type { CheckStatus, CheckResult, ReadinessReport, ReadinessProbe } from './health/readiness.js'
 export type { ConsumerLike } from './streams/session-dispatcher.js'
 export { GatewayStartSchema, GatewayEndSchema } from './streams/session-dispatcher.js'
 export { AgentQuery, AgentQuerySchema, parseAgentQuery, collaborationPayloadFields } from './types/agent-query.js'

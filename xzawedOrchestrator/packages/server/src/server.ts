@@ -17,6 +17,7 @@ import { createRunner } from './claude/runner.factory.js'
 import { StreamProducer } from './streams/producer.js'
 import { StreamConsumer } from './streams/consumer.js'
 import { healthRoutes } from './api/health.route.js'
+import { getRedisClient } from './streams/redis.client.js'
 import { knowledgeRoutes } from './api/knowledge.route.js'
 import { decisionsRoutes } from './api/decisions.route.js'
 import { sessionsRoutes } from './api/sessions.route.js'
@@ -24,7 +25,7 @@ import { sessionWsRoutes } from './ws/session.ws.js'
 import { authRoutes } from './api/auth.route.js'
 import { projectsRoutes } from './api/projects.route.js'
 import { internalRoutes } from './api/internal.route.js'
-import { createPool, runMigrations, closePool } from './db/pool.js'
+import { createPool, runMigrations, closePool, getPool } from './db/pool.js'
 import { ProjectGatewayConsumer } from './projects/project-gateway.js'
 import { ProjectRepo } from './projects/project.repo.js'
 import { WorkspaceService } from './projects/workspace.service.js'
@@ -167,7 +168,17 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   const authHook = makeJwtAuthHook(config)
 
   await app.register(websocket)
-  await app.register(healthRoutes)
+  // 게이트웨이는 dbPool 이 있을 때만 아래 블록 안에서 생성된다. 블록 스코프라 여기서
+  // 직접 못 보므로 ref 로 잇는다 — 없으면 undefined 이고 그것은 미구성이지 장애가 아니다.
+  const projectGatewayRef: { current?: { isRunning(): boolean } } = {}
+
+  // projectGateway 는 dbPool 이 있을 때만 아래에서 생성된다 — 접근자가 undefined 를
+  // 돌려주면 미구성이고, 그것은 장애가 아니다.
+  await app.register(healthRoutes, {
+    redis: () => getRedisClient(config.redisUrl),
+    gatewayRunning: () => projectGatewayRef.current?.isRunning(),
+    pool: () => getPool(),
+  })
   if (dbPool && config.userJwtSecret) {
     await registerAuthRoutes(app, dbPool, config)
   } else {
@@ -313,6 +324,7 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
         return { projectId: project.id, name: project.name, workspacePath: project.workspace_path ?? null }
       },
     )
+    projectGatewayRef.current = projectGateway
     void projectGateway.start().catch((err: unknown) => {
       app.log.error({ err }, '[Orchestrator] ProjectGatewayConsumer crashed')
     })

@@ -11,7 +11,7 @@ xzawedManager로부터 프로젝트 경로를 받아 테스트를 실행하고 �
 src/
 ├── index.ts          # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
 ├── config.ts         # 환경변수 검증 (Zod) — workspaceRoot, testTimeoutMs 포함
-├── server.ts         # Fastify HTTP 서버 (/health, PORT=3005)
+├── server.ts         # Fastify HTTP 서버 ((/health · /health/ready, PORT=3005))
 ├── tester.ts         # 테스트 조율 — validateTestCommand(), detectTestCommand(), exec() 호출
 ├── detector.ts       # 프로젝트 타입 감지; buildCommandWithFiles(); parseTestCounts()
 ├── executor.ts       # spawn(shell:false) 실행; validatePath() — WORKSPACE_ROOT 검증

@@ -174,6 +174,18 @@ export class SessionDispatcher {
     }
   }
 
+  /**
+   * 소비 루프가 실제로 도는가. readiness 프로브가 쓴다.
+   *
+   * `xgroup CREATE` 가 이 루프 **밖**에 있어서, 기동 시점에 Redis 가 죽어 있으면
+   * `start()` 가 reject 되고 `running` 은 false 로 남는다. 그동안 ioredis 는 계속
+   * 재연결하므로 Redis 가 돌아오면 `ping()` 은 PONG 이다 — **살아 있지만 귀머거리**인
+   * 상태이고, 그것을 밖에서 볼 수 있는 유일한 신호가 이 값이다.
+   */
+  isRunning(): boolean {
+    return this.running
+  }
+
   stop(): void {
     this.running = false
     for (const consumer of this.activeConsumers.values()) {

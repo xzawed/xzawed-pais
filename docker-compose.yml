@@ -55,7 +55,7 @@ services:
       manager:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -89,7 +89,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -117,7 +117,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3002/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -147,7 +147,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3003/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -175,7 +175,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3004/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3004/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -205,7 +205,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3005/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3005/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -235,7 +235,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3006/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3006/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -265,7 +265,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3007/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3007/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -295,7 +295,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3008/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3008/health/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

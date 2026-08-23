@@ -1,16 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import Fastify from 'fastify'
-import { healthRoute } from '../../src/api/health.route.js'
-
-describe('GET /health', () => {
-  it('returns 200 with status ok', async () => {
-    const app = Fastify()
-    await app.register(healthRoute)
-    const response = await app.inject({ method: 'GET', url: '/health' })
-    expect(response.statusCode).toBe(200)
-    expect(JSON.parse(response.body)).toEqual({ status: 'ok' })
-  })
-})
+import { healthRoutes } from '../health.route.js'
 
 /**
  * readiness 는 의존이 실제로 살아 있는가를 말한다. `/health` 는 그대로 liveness 다.
@@ -23,10 +13,10 @@ describe('GET /health', () => {
 const okRedis = { ping: async () => 'PONG' }
 const okPool = { query: async () => ({ rows: [] }) }
 
-describe('GET /health/ready — xzawedManager', () => {
+describe('GET /health/ready — xzawedOrchestrator', () => {
   it('의존이 전부 살아 있으면 200 ready', async () => {
     const app = Fastify()
-    await app.register(healthRoute, {
+    await app.register(healthRoutes, {
       redis: () => okRedis,
       gatewayRunning: () => true,
       pool: () => okPool,
@@ -36,13 +26,13 @@ describe('GET /health/ready — xzawedManager', () => {
       expect(res.statusCode).toBe(200)
       const b = JSON.parse(res.body)
       expect(b.status).toBe('ready')
-      expect(b.service).toBe('xzawedManager')
+      expect(b.service).toBe('xzawedOrchestrator')
     } finally { await app.close() }
   })
 
   it('루프가 멈춰 있으면 503 — Redis 는 PONG 이어도 그렇다', async () => {
     const app = Fastify()
-    await app.register(healthRoute, {
+    await app.register(healthRoutes, {
       redis: () => okRedis,
       gatewayRunning: () => false,
       pool: () => okPool,
@@ -52,7 +42,7 @@ describe('GET /health/ready — xzawedManager', () => {
       expect(res.statusCode).toBe(503)
       const b = JSON.parse(res.body)
       expect(b.checks.redis.status).toBe('ok')
-      expect(b.checks.sessionGateway.status).toBe('fail')
+      expect(b.checks.projectGateway.status).toBe('fail')
     } finally { await app.close() }
   })
 
@@ -60,7 +50,7 @@ describe('GET /health/ready — xzawedManager', () => {
     // prod compose 는 Manager 에 DATABASE_URL 을 주지 않는다. 미구성을 실패로 세면
     // Launcher 가 실제로 배포하는 구성에서 영구 unhealthy 가 된다.
     const app = Fastify()
-    await app.register(healthRoute, {
+    await app.register(healthRoutes, {
       redis: () => okRedis,
       gatewayRunning: () => true,
       pool: () => null,
@@ -74,7 +64,7 @@ describe('GET /health/ready — xzawedManager', () => {
 
   it('DB 질의가 실패하면 503', async () => {
     const app = Fastify()
-    await app.register(healthRoute, {
+    await app.register(healthRoutes, {
       redis: () => okRedis,
       gatewayRunning: () => true,
       pool: () => ({ query: async () => { throw new Error('Cannot use a pool after calling end on the pool') } }),
@@ -88,7 +78,7 @@ describe('GET /health/ready — xzawedManager', () => {
 
   it('게이트웨이가 배선되지 않았으면 미구성 — 장애가 아니다', async () => {
     const app = Fastify()
-    await app.register(healthRoute, {
+    await app.register(healthRoutes, {
       redis: () => okRedis,
       gatewayRunning: () => undefined,
       pool: () => null,
@@ -96,13 +86,13 @@ describe('GET /health/ready — xzawedManager', () => {
     try {
       const res = await app.inject({ method: 'GET', url: '/health/ready' })
       expect(res.statusCode).toBe(200)
-      expect(JSON.parse(res.body).checks.sessionGateway.status).toBe('not_configured')
+      expect(JSON.parse(res.body).checks.projectGateway.status).toBe('not_configured')
     } finally { await app.close() }
   })
 
   it('/health 는 의존과 무관하게 200 을 유지한다', async () => {
     const app = Fastify()
-    await app.register(healthRoute, {
+    await app.register(healthRoutes, {
       redis: () => ({ ping: async () => { throw new Error('down') } }),
       gatewayRunning: () => false,
     })
@@ -116,7 +106,7 @@ describe('GET /health/ready — xzawedManager', () => {
 
   it('의존을 하나도 주지 않으면 ready — 기존 호출부 호환', async () => {
     const app = Fastify()
-    await app.register(healthRoute)
+    await app.register(healthRoutes)
     try {
       const res = await app.inject({ method: 'GET', url: '/health/ready' })
       expect(res.statusCode).toBe(200)
