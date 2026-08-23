@@ -16,6 +16,7 @@ jobs:
   turborepo:
     name: "${{ matrix.service }} (Turborepo)"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -141,6 +142,7 @@ jobs:
   independent:
     name: "${{ matrix.service }}"
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [shared-lib]
     strategy:
       fail-fast: false
@@ -200,6 +202,7 @@ jobs:
   launcher:
     name: xzawedLauncher
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -245,6 +248,7 @@ jobs:
   shared-lib:
     name: xzawedShared
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -293,6 +297,7 @@ jobs:
   redis-integration:
     name: Redis Streams Integration Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [turborepo, independent]
     services:
       redis:
@@ -356,6 +361,7 @@ jobs:
   manager-redis-integration:
     name: Manager Redis Wiring Integration
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [turborepo]
     services:
       redis:
@@ -463,6 +469,7 @@ jobs:
   cpd:
     name: Copy-Paste Detection
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.event_name == 'pull_request'
     permissions:
       pull-requests: write
@@ -532,6 +539,7 @@ jobs:
   sonar-cpd-report:
     name: SonarCloud CPD Report
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.event_name == 'pull_request'
     permissions:
       pull-requests: write
@@ -694,6 +702,7 @@ jobs:
   sonar:
     name: SonarCloud Analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [turborepo, independent, shared-lib]
     if: always()
     # fork·Dependabot PR 은 SONAR_TOKEN 에 접근할 수 없다. 그동안은 잡이 '실패'해서
@@ -823,6 +832,7 @@ jobs:
   i18n-check:
     name: i18n Key Sync Check
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -837,6 +847,7 @@ jobs:
   docs-check:
     name: Docs Invariants
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -851,6 +862,7 @@ jobs:
   module-boundaries:
     name: Module Boundaries (M3)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -873,6 +885,7 @@ jobs:
   all-checks-pass:
     name: All checks pass
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [turborepo, independent, redis-integration, manager-redis-integration, playwright-e2e, launcher, shared-lib, i18n-check, docs-check, module-boundaries, cpd, sonar]
     if: always()
     steps:
