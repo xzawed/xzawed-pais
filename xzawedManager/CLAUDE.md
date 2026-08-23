@@ -80,6 +80,7 @@ cd packages/server && pnpm test <파일>
 
 ## 함정
 
+- **Fastify 인스턴스 옵션은 `makeServerOptions`가 단일 지점이다.** `buildServer`가 DB·Redis·Anthropic 배선을 통째로 끌고 와 저장소에 그것을 부르는 테스트가 **하나도 없다** — 그래서 인스턴스 옵션 두 줄이 오래 틀린 채로 있었다(로거가 `MODE==='local'`이라 **프로덕션에서만 꺼져** `app.log.*` 호출부 65곳이 no-op 이었고, `trustProxy`는 `true` 하드코딩이었다). 옵션을 순수 함수로 떼어 `__tests__/server-options.test.ts`가 고정한다. 옵션을 추가할 때 `Fastify({...})`에 직접 쓰지 말고 그 함수에 넣는다
 - **`MANAGER_WP_MUTATION`만 켜면 영원히 skip된다.** mutation은 `wp.risk ≥ MANAGER_MUTATION_MIN_RISK`(기본 HIGH)일 때만 발화하는데, 분해가 만드는 WP의 `risk`는 스키마 기본값 **MEDIUM**이고 이를 올리는 유일한 생산 경로가 리스크 분류→사람 승인→`updateWpRisks` write-back이다. 체인이 없으면 항상 건너뛴다. **체인을 켜는 것은 필요조건이지 충분조건이 아니다** — 분류가 실제로 HIGH로 채점되고 승인까지 돼야 한다(write-back은 승인된 등급을 그대로 쓴다). `MANAGER_MUTATION_MIN_RISK`를 낮추는 쪽이 확실하다.
   기동 경고는 **`MUTATION + VERIFY + minRisk=HIGH + 체인 불완전`** 조합에서만 뜬다. VERIFY가 꺼져 있으면 다른 경고가 뜨고 채널은 애초에 검증 루프에 들어가지도 않는다.
 - **lease 가시성은 자동 상향된다.** 활성 검증 채널이 요구하는 바닥값보다 설정값이 낮으면 기동 시 올린다(올리기만, 낮추지 않음). 채널을 여럿 켜면 WP당 에이전트 호출이 9단계까지 가므로 수동 상향은 불필요하지만 값이 바뀌었다는 로그는 확인한다.

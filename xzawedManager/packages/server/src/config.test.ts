@@ -827,3 +827,24 @@ describe('G3 — MODE=remote 프로덕션 auth 하드페일', () => {
     expect(loadConfig().MODE).toBe('local')
   })
 })
+
+describe('config TRUST_PROXY', () => {
+  withBaseEnv(['TRUST_PROXY'])
+
+  it('미설정이면 false', () => {
+    delete process.env['TRUST_PROXY']
+    expect(loadConfig().TRUST_PROXY).toBe(false)
+  })
+
+  it("'true' 로만 켤 수 있다", () => {
+    process.env['TRUST_PROXY'] = 'true'
+    expect(loadConfig().TRUST_PROXY).toBe(true)
+  })
+
+  it("'1'·'yes' 같은 값은 켜지 않는다 — 오타가 조용히 프록시 신뢰를 켜지 않는다", () => {
+    for (const v of ['1', 'yes', 'TRUE', '']) {
+      process.env['TRUST_PROXY'] = v
+      expect(loadConfig().TRUST_PROXY).toBe(false)
+    }
+  })
+})
