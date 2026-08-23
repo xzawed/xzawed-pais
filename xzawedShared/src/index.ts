@@ -5,7 +5,7 @@ export type { DlqRedis, DlqMessage, DlqReason, RedriveOptions, RedriveResult, Dl
 export { RedisEventBus } from './streams/event-bus.js'
 export type { EventBus, PublishOptions, StreamConsumerPort, RequestReplyPort, RawStreamReply } from './streams/event-bus.js'
 export { validateWorkspaceRoot, resolveWorkspaceRoot } from './workspace-guard.js'
-export { baseAgentSchema, baseAgentEnv, makeAgentConfig, loadAgentConfig } from './config/agent-config.js'
+export { baseAgentSchema, baseAgentEnv, makeAgentConfig, loadAgentConfig, readSecretEnv } from './config/agent-config.js'
 export type { AgentConfig } from './config/agent-config.js'
 export { SessionDispatcher } from './streams/session-dispatcher.js'
 export type { ConsumerLike } from './streams/session-dispatcher.js'

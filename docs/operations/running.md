@@ -149,6 +149,15 @@ cd packages/app && pnpm dev
 
 `docker-compose.prod.yml`(GHCR 사전빌드 이미지)은 Launcher가 쓰는 파일이고, 저장소 루트와 `xzawedLauncher/packages/app/resources/`에 **사본 두 벌**이 있다(패키징 대상은 후자다). 둘은 orchestrator의 `CLAUDE_MODE` 기본값만 다르므로, 한쪽만 고치면 Launcher는 그대로 깨진 채 남는다.
 
+그 스택의 태세 기준선은 '인증을 걸었는가'가 아니라 **'이 기계 밖에서 닿는가'**다 — 사용자 PC에서 도는
+로컬 스택이기 때문이다. 호스트 포트를 여는 앱 서비스는 orchestrator 하나뿐이고 **루프백에만** 묶인다
+(`127.0.0.1:3000:3000`). 나머지 8개는 compose 네트워크 안에서 서비스명으로만 통신한다.
+
+**`ANTHROPIC_API_KEY`는 필수다.** compose secret 의 소스가 그 env 라 값이 없으면 `up`이 즉시 거부한다
+(`environment variable "ANTHROPIC_API_KEY" required by secret ... is not set`). 이전 판은 빈 문자열을
+흘려보냈고, 키를 하드 요구하는 7개 서비스(에이전트 6종 + Manager)가 조용히 크래시 루프에 빠졌다.
+키는 env 가 아니라 `/run/secrets/anthropic_api_key` 로 마운트되며 각 서비스는 `ANTHROPIC_API_KEY_FILE`
+로 읽는다 — env 로 넣으면 `docker inspect`의 `Config.Env`에 평문으로 남는다.
 `POSTGRES_PASSWORD`는 Launcher가 최초 실행 시 생성해 `userData/db-password`에 보관하고 compose에 주입한다. **직접 `docker compose -f docker-compose.prod.yml`을 돌릴 때는 그 값을 손수 줘야 한다** — 파일이 `${POSTGRES_PASSWORD:?}`로 요구하고, 일부 서비스만 지정해도 보간은 파일 전체에 걸린다.
 
 ## 자율 스택

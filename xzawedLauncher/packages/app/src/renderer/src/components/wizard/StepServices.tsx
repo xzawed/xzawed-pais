@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { useWizardStore } from '../../stores/wizard.store.js'
 import { useServicesStore } from '../../stores/services.store.js'
 import { SERVICE_NAMES } from '@xzawed/launcher-shared'
+import { waitForAllRunning } from '../../lib/wait-for-services.js'
+
+/** healthcheck 의 start_period 30s + 이미지 초기화. 넉넉히 잡되 무한 대기는 하지 않는다. */
+const SERVICES_READY_TIMEOUT_MS = 180_000
 
 export default function StepServices(): JSX.Element {
   const setStep = useWizardStore((s) => s.setStep)
@@ -15,11 +19,17 @@ export default function StepServices(): JSX.Element {
     setError(null)
     try {
       await globalThis.launcherAPI!.startAllServices()
-      const states = await globalThis.launcherAPI!.getServicesStatus()
+      // `up -d` 는 컨테이너를 띄우고 돌아온다 — healthy 를 기다리지 않는다. 한 번만 읽으면
+      // 앱 서비스는 언제나 starting 이라 완료 조건이 결코 참이 되지 않는다.
+      const result = await waitForAllRunning(
+        () => globalThis.launcherAPI!.getServicesStatus(),
+        { timeoutMs: SERVICES_READY_TIMEOUT_MS, intervalMs: 2_000 },
+      )
       if (signal.cancelled) return
-      setServices(states)
-      const allOk = states.every((s) => s.status === 'running')
-      if (allOk) setTimeout(() => { if (!signal.cancelled) setStep('complete') }, 600)
+      setServices(result.states)
+      if (result.ok) setTimeout(() => { if (!signal.cancelled) setStep('complete') }, 600)
+      else if (result.failed.length > 0) setError(`서비스 기동 실패: ${result.failed.join(', ')}`)
+      else setError('서비스가 제한 시간 안에 준비되지 않았습니다. 재시도하거나 로그를 확인하세요.')
     } catch (e) {
       if (!signal.cancelled) setError(String(e))
     } finally {

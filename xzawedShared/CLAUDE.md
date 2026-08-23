@@ -95,6 +95,8 @@ Manager는 경로가 다르지만(`file:../../../xzawedShared`) **같은 함정�
 - **Watcher는 협업 헬퍼를 쓰지 않는다.** Claude를 호출하지 않으므로 `createCollaborativeHandler`·`collaborationPayloadFields`·`answerViaClaude` 셋 다 빠진다. Manager가 교차질의 라우팅 대상에서 watcher를 제외하는 것과 같은 사실이다.
 - **peer 범위가 실제보다 넓다.** `zod >=3`·`ioredis >=5`인데 shared 자신은 둘 다 devDependency로만 갖는다. 한 소비자가 zod 4로 올려도 peer 경고 없이 통과하면서 여기 Zod 3 스키마와 런타임에서 어긋날 수 있다.
 
+- **`readSecretEnv`는 Orchestrator에 복제본이 있다.** Orchestrator는 이 패키지를 의존하지 않으므로(Manager와 달리) 계약을 복제하는 것 말고 선택이 없다. `replicated-block: secret-file-env` 마커가 붙어 있고 동일성은 `scripts/check-replicated-blocks.js`가 강제한다 — 한쪽만 고치면 시크릿 수령 의미론이 갈라진다
+- **`_FILE`을 읽지 못하면 throw한다.** 조용히 `<KEY>`로 폴백하면 시크릿 마운트가 깨진 것을 아무도 모른 채 다른 값으로 돈다. '키 없음'보다 나쁜 것이 '키가 있는 척'이다
 ## 환경 변수
 
 라이브러리지만 **env를 두 개 읽는다**(`streams/base-consumer.ts`). `.env.example`이 없어서 발견하기 어렵다.

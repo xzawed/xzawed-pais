@@ -61,7 +61,10 @@ xzawed 로고와 한 줄 소개를 표시하고 "시작하기" 버튼으로 진�
 
 ### Step 4: services — 서비스 기동
 
-`docker compose -f docker-compose.prod.yml up -d`를 실행하고 각 서비스의 `/health` 엔드포인트를 폴링한다:
+`docker compose -f docker-compose.prod.yml up -d`를 실행한 뒤 `docker compose ps --format json`을
+폴링한다. **런처가 `/health`를 직접 호출하지는 않는다** — 호출은 컨테이너 안의 healthcheck가 하고,
+런처는 그 결과(`Health` 필드)를 읽는다. 그래서 compose에 healthcheck가 없는 서비스는 `Health`가
+빈 문자열이라 영영 `starting`에 머문다:
 
 ```
 ○ 대기 중 → ◌ 시작 중 → ● 실행 중

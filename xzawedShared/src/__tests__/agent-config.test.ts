@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { baseAgentSchema, baseAgentEnv, makeAgentConfig, loadAgentConfig } from '../config/agent-config.js'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import fsp from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { baseAgentSchema, baseAgentEnv, makeAgentConfig, loadAgentConfig, readSecretEnv } from '../config/agent-config.js'
 
 /**
  * 에이전트 7종이 공유하는 설정 계약. 이 파일이 깨지면 일곱 서비스의 기동이 함께
@@ -177,5 +180,68 @@ describe('loadAgentConfig — 확장 스키마 로더', () => {
   it('스키마 위반은 그대로 던진다', () => {
     const load = loadAgentConfig(baseAgentSchema(3002))
     expect(() => load({})).toThrow()
+  })
+})
+
+describe('readSecretEnv — compose secret 파일 수령', () => {
+  let dir: string
+
+  beforeEach(async () => {
+    dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'secret-env-'))
+  })
+  afterEach(async () => {
+    await fsp.rm(dir, { recursive: true, force: true })
+  })
+
+  it('_FILE 이 없으면 env 값을 그대로 쓴다', () => {
+    expect(readSecretEnv({ ANTHROPIC_API_KEY: 'sk-inline' }, 'ANTHROPIC_API_KEY')).toBe('sk-inline')
+  })
+
+  it('_FILE 이 있으면 파일 내용을 읽는다', async () => {
+    const p = path.join(dir, 'key')
+    await fsp.writeFile(p, 'sk-from-file', 'utf-8')
+    expect(readSecretEnv({ ANTHROPIC_API_KEY_FILE: p }, 'ANTHROPIC_API_KEY')).toBe('sk-from-file')
+  })
+
+  it('_FILE 이 env 보다 우선한다', async () => {
+    const p = path.join(dir, 'key')
+    await fsp.writeFile(p, 'sk-from-file', 'utf-8')
+    expect(readSecretEnv({ ANTHROPIC_API_KEY: 'sk-inline', ANTHROPIC_API_KEY_FILE: p }, 'ANTHROPIC_API_KEY'))
+      .toBe('sk-from-file')
+  })
+
+  it('파일 끝 개행을 제거한다', async () => {
+    // 시크릿 파일은 편집기가 개행을 붙이기 쉽다. 그대로 두면 Authorization 헤더가 깨진다.
+    const p = path.join(dir, 'key')
+    await fsp.writeFile(p, 'sk-trailing\n', 'utf-8')
+    expect(readSecretEnv({ ANTHROPIC_API_KEY_FILE: p }, 'ANTHROPIC_API_KEY')).toBe('sk-trailing')
+  })
+
+  it('_FILE 이 읽히지 않으면 throw 한다 — env 로 조용히 폴백하지 않는다', () => {
+    // 폴백하면 시크릿 마운트가 깨진 것을 아무도 모른 채 **다른 값으로** 돈다.
+    // "키 없음"보다 나쁜 것이 "키가 있는 척"이다.
+    expect(() => readSecretEnv(
+      { ANTHROPIC_API_KEY: 'sk-inline', ANTHROPIC_API_KEY_FILE: path.join(dir, 'missing') },
+      'ANTHROPIC_API_KEY',
+    )).toThrow(/ANTHROPIC_API_KEY_FILE/)
+  })
+
+  it('_FILE 이 빈 문자열이면 설정되지 않은 것으로 본다', () => {
+    // compose 의 `${VAR:-}` 형태가 빈 문자열을 남길 수 있다.
+    expect(readSecretEnv({ ANTHROPIC_API_KEY: 'sk-inline', ANTHROPIC_API_KEY_FILE: '' }, 'ANTHROPIC_API_KEY'))
+      .toBe('sk-inline')
+  })
+})
+
+describe('baseAgentEnv — 시크릿 파일 경유', () => {
+  it('ANTHROPIC_API_KEY_FILE 로 준 키를 anthropicApiKey 에 싣는다', async () => {
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'secret-env-'))
+    try {
+      const p = path.join(dir, 'key')
+      await fsp.writeFile(p, 'sk-mounted', 'utf-8')
+      expect(baseAgentEnv({ ANTHROPIC_API_KEY_FILE: p })['anthropicApiKey']).toBe('sk-mounted')
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true })
+    }
   })
 })

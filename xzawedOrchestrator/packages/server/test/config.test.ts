@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import fsp from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 
 describe('config', () => {
   beforeEach(() => {
@@ -172,5 +175,47 @@ describe('config — trustProxy', () => {
     process.env.TRUST_PROXY = '1'
     const { loadConfig } = await import('../src/config.js')
     expect(loadConfig().trustProxy).toBe(false)
+  })
+})
+
+describe('ANTHROPIC_API_KEY_FILE — compose secret 수령', () => {
+  let dir: string
+
+  beforeEach(async () => {
+    dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'orch-secret-'))
+    process.env.CLAUDE_MODE = 'api'
+    delete process.env.ANTHROPIC_API_KEY
+    delete process.env.ANTHROPIC_API_KEY_FILE
+  })
+  afterEach(async () => {
+    delete process.env.ANTHROPIC_API_KEY
+    delete process.env.ANTHROPIC_API_KEY_FILE
+    delete process.env.CLAUDE_MODE
+    await fsp.rm(dir, { recursive: true, force: true })
+  })
+
+  it('파일로 준 키가 CLAUDE_MODE=api 하드페일을 만족시킨다', async () => {
+    // 이 규칙이 env 만 보면, compose secret 으로 키를 준 배포가 기동을 거부당한다.
+    const p = path.join(dir, 'key')
+    await fsp.writeFile(p, 'sk-ant-from-secret\n', 'utf-8')
+    process.env.ANTHROPIC_API_KEY_FILE = p
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().anthropicApiKey).toBe('sk-ant-from-secret')
+  })
+
+  it('_FILE 이 env 보다 우선한다', async () => {
+    const p = path.join(dir, 'key')
+    await fsp.writeFile(p, 'sk-from-file', 'utf-8')
+    process.env.ANTHROPIC_API_KEY = 'sk-inline'
+    process.env.ANTHROPIC_API_KEY_FILE = p
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().anthropicApiKey).toBe('sk-from-file')
+  })
+
+  it('_FILE 이 읽히지 않으면 기동을 거부한다 — env 로 조용히 폴백하지 않는다', async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-inline'
+    process.env.ANTHROPIC_API_KEY_FILE = path.join(dir, 'missing')
+    const { loadConfig } = await import('../src/config.js')
+    expect(() => loadConfig()).toThrow(/ANTHROPIC_API_KEY_FILE/)
   })
 })
