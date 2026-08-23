@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { z } from 'zod'
 
 /**
@@ -11,6 +12,34 @@ import { z } from 'zod'
  *
  * 서비스별 필드는 `.extend()`로 얹고, Claude를 쓰지 않는 Watcher는 `.omit()`으로 뺀다.
  */
+
+/**
+ * `<KEY>_FILE` 이 있으면 그 파일 내용을, 없으면 `<KEY>` 를 돌려준다.
+ *
+ * compose secret 은 값을 env 가 아니라 컨테이너 안 tmpfs 파일로 준다 — env 로 받으면
+ * `docker inspect` 의 `Config.Env` 에 평문으로 남기 때문이다.
+ *
+ * **`_FILE` 이 설정됐는데 읽지 못하면 throw 한다.** 조용히 `<KEY>` 로 폴백하면 시크릿
+ * 마운트가 깨진 것을 아무도 모른 채 다른 값으로 돈다 — '키 없음'보다 나쁜 것이
+ * '키가 있는 척'이다.
+ */
+// jscpd:ignore-start
+// replicated-block: secret-file-env
+// Orchestrator 는 @xzawed/agent-streams 를 의존하지 않는다(Manager 와 달리). 계약을 복제하는
+// 것 말고 선택이 없으므로 scripts/check-replicated-blocks.js 가 동일성을 강제한다.
+export function readSecretEnv(
+  env: Record<string, string | undefined>,
+  key: string,
+): string | undefined {
+  const filePath = env[`${key}_FILE`]
+  if (filePath === undefined || filePath === '') return env[key]
+  try {
+    return readFileSync(filePath, 'utf-8').trim()
+  } catch (e) {
+    throw new Error(`${key}_FILE=${filePath} 을(를) 읽지 못했습니다: ${String(e)}`)
+  }
+}
+// jscpd:ignore-end
 
 /** Claude를 호출하는 에이전트의 공통 필드. `defaultPort`만 서비스마다 다르다. */
 export function baseAgentSchema(defaultPort: number) {
@@ -32,7 +61,7 @@ export function baseAgentEnv(
   env: Record<string, string | undefined>,
 ): Record<string, string | undefined> {
   return {
-    anthropicApiKey: env['ANTHROPIC_API_KEY'],
+    anthropicApiKey: readSecretEnv(env, 'ANTHROPIC_API_KEY'),
     claudeModel: env['CLAUDE_MODEL'],
     redisUrl: env['REDIS_URL'],
     port: env['PORT'],

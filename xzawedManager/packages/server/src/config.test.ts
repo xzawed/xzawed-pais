@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import fsp from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
 import { loadConfig, resolveProfileEnv } from './config.js'
 
 /** 공통 env(MODE·ANTHROPIC_API_KEY) 저장/복원 + 추가 키 정리. 블록 내에서 호출. */
@@ -846,5 +849,29 @@ describe('config TRUST_PROXY', () => {
       process.env['TRUST_PROXY'] = v
       expect(loadConfig().TRUST_PROXY).toBe(false)
     }
+  })
+})
+
+describe('config ANTHROPIC_API_KEY_FILE', () => {
+  withBaseEnv(['ANTHROPIC_API_KEY_FILE'])
+  let dir: string
+
+  beforeEach(async () => { dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'mgr-secret-')) })
+  afterEach(async () => { await fsp.rm(dir, { recursive: true, force: true }) })
+
+  it('파일로 준 키가 min(1) 하드요구를 만족시킨다', async () => {
+    // compose secret 으로 키를 주면 컨테이너 env 에는 키가 없다. 파일을 읽지 않으면
+    // Manager 는 매 기동 parse 단계에서 죽는다.
+    const p = path.join(dir, 'key')
+    await fsp.writeFile(p, 'sk-ant-from-secret\n', 'utf-8')
+    process.env['ANTHROPIC_API_KEY'] = ''
+    process.env['ANTHROPIC_API_KEY_FILE'] = p
+    expect(loadConfig().ANTHROPIC_API_KEY).toBe('sk-ant-from-secret')
+  })
+
+  it('_FILE 이 읽히지 않으면 기동을 거부한다', () => {
+    process.env['ANTHROPIC_API_KEY'] = 'k'
+    process.env['ANTHROPIC_API_KEY_FILE'] = path.join(dir, 'missing')
+    expect(() => loadConfig()).toThrow(/ANTHROPIC_API_KEY_FILE/)
   })
 })

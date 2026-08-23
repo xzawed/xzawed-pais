@@ -1,3 +1,4 @@
+import { readSecretEnv } from '@xzawed/agent-streams'
 import { z } from 'zod'
 
 const configSchema = z
@@ -337,5 +338,9 @@ export function resolveProfileEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 // jscpd:ignore-end
 
 export function loadConfig(): Config {
-  return configSchema.parse(resolveProfileEnv(process.env))
+  const raw = resolveProfileEnv(process.env)
+  // compose secret 은 키를 env 가 아니라 파일로 준다. parse 전에 풀지 않으면
+  // ANTHROPIC_API_KEY 의 min(1) 이 매 기동을 거부한다. 복제 대신 shared 의 정본을 쓴다
+  // — Manager 는 Orchestrator 와 달리 @xzawed/agent-streams 를 의존한다.
+  return configSchema.parse({ ...raw, ANTHROPIC_API_KEY: readSecretEnv(raw, 'ANTHROPIC_API_KEY') })
 }

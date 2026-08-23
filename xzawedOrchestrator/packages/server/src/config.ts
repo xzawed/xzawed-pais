@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { z } from 'zod'
 
 /**
@@ -145,8 +146,38 @@ export function resolveProfileEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 // jscpd:ignore-end
 
+/**
+ * `<KEY>_FILE` 이 있으면 그 파일 내용을, 없으면 `<KEY>` 를 돌려준다.
+ *
+ * compose secret 은 값을 env 가 아니라 컨테이너 안 tmpfs 파일로 준다 — env 로 받으면
+ * `docker inspect` 의 `Config.Env` 에 평문으로 남기 때문이다.
+ *
+ * **`_FILE` 이 설정됐는데 읽지 못하면 throw 한다.** 조용히 `<KEY>` 로 폴백하면 시크릿
+ * 마운트가 깨진 것을 아무도 모른 채 다른 값으로 돈다 — '키 없음'보다 나쁜 것이
+ * '키가 있는 척'이다.
+ */
+// jscpd:ignore-start
+// replicated-block: secret-file-env
+// Orchestrator 는 @xzawed/agent-streams 를 의존하지 않는다(Manager 와 달리). 계약을 복제하는
+// 것 말고 선택이 없으므로 scripts/check-replicated-blocks.js 가 동일성을 강제한다.
+export function readSecretEnv(
+  env: Record<string, string | undefined>,
+  key: string,
+): string | undefined {
+  const filePath = env[`${key}_FILE`]
+  if (filePath === undefined || filePath === '') return env[key]
+  try {
+    return readFileSync(filePath, 'utf-8').trim()
+  } catch (e) {
+    throw new Error(`${key}_FILE=${filePath} 을(를) 읽지 못했습니다: ${String(e)}`)
+  }
+}
+// jscpd:ignore-end
+
 export function loadConfig(): Config {
-  const result = EnvSchema.safeParse(resolveProfileEnv(process.env))
+  const raw = resolveProfileEnv(process.env)
+  // 시크릿 파일은 parse 전에 풀어야 한다 — superRefine 의 CLAUDE_MODE=api 규칙이 이 값을 본다.
+  const result = EnvSchema.safeParse({ ...raw, ANTHROPIC_API_KEY: readSecretEnv(raw, 'ANTHROPIC_API_KEY') })
   if (!result.success) {
     const messages = result.error.issues.map(i => i.message).join('\n')
     throw new Error(`Configuration error:\n${messages}`)
