@@ -32,6 +32,9 @@ cd packages/app && pnpm test:e2e    # Playwright + Electron
 
 전 저장소 공통 원칙은 [docs/development/security-patterns.md](../docs/development/security-patterns.md). 이 서비스 고유분만 적는다.
 
+- **SSH 원격 러너의 인용은 `posix-shell-quote.ts` 가 한다 — `shescape` 는 이 자리에 쓸 수 없다.** `conn.exec(command)` 는 문자열 하나를 **원격 로그인 셸**에 넘기는데 shescape 는 **호스트** 셸 기준으로 이스케이프한다. 실측: `{shell:false}`(이전 판)는 아무것도 이스케이프하지 않고, `{shell:true}`는 Windows 에서 cmd.exe 문법(`a ^&^& b`)을 내면서 POSIX 메타문자 `;`·`'`·백틱은 그대로 통과시키며, `{shell:'/bin/sh'}`는 호스트에 그 바이너리가 없어 **생성자가 throw** 한다(모듈 스코프라 서버 기동이 죽는다). 순수 문자열 변환이라 Windows 로컬·Linux CI·컨테이너가 바이트 동일한 명령을 만든다
+- **`--` end-of-options 는 셸 주입을 막지 못한다.** 원격 셸이 단어 분해를 끝낸 뒤에야 `claude` 가 argv 를 본다. `--` 가 실제로 하는 일은 인용 덕에 단어 하나로 살아남은 프롬프트가 CLI 플래그로 읽히는 것을 막는 것뿐이다 — 두 방어를 혼동하면 인용을 빼도 된다고 오판하게 된다. **원격 로그인 셸이 POSIX 라는 전제**도 함께 기억한다(cmd.exe·PowerShell 원격은 커버하지 않는다)
+- **명령 조립은 `buildRemoteCommand` 순수 함수다.** 기존 테스트가 `ssh2` 를 통째로 mock 하고 `exec` 의 첫 인자를 `_cmd` 로 버려 **명령 문자열을 아무도 검증하지 않았고**, 그것이 이 결함이 살아남은 이유다. 순수 함수 계약 + 러너가 실제로 그것을 쓰는지 보는 `exec` 인자 단언, 둘 다 있어야 한다
 - **CLI 플래그 인젝션 차단** — `cli-runner.ts`가 마지막 사용자 메시지 **바로 앞에** `--` end-of-options 구분자를 넣는다(두 argv 분기 모두). 사용자 문자열이 플래그로 해석되는 것을 막는 지점이다. 단 `--system-prompt`·`--resume` 값은 `--` **앞**에 놓이므로, 그 자리에 외부 입력을 흘리면 이 방어가 적용되지 않는다(현재 세션 경로는 `systemPrompt`를 넘기지 않는다)
 - **OAuth CSRF** — `randomBytes(32)`로 state를 만들고 콜백에서 검증(`github-oauth-handler.ts`)
 - **MCP 프로세스** — command allowlist + 위험 args 차단(`mcp-process-manager.ts`)
