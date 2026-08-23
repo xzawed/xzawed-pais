@@ -31,12 +31,23 @@ export type SecuritySeverity = (typeof SECURITY_SEVERITIES)[number]
 const SEVERITY_RANK: Record<SecuritySeverity, number> = { low: 0, medium: 1, high: 2, critical: 3 }
 const DEFAULT_SECURITY_MIN_SEVERITY: SecuritySeverity = 'high'
 
-/** security 채널 판정 전용 minimal 스키마 — severity·source required(부재=파싱 실패=fail-closed·N1). */
+/** security 채널 판정 전용 minimal 스키마 — severity·source required(부재=파싱 실패=fail-closed·N1).
+ *  `auditable`은 **파싱만** 한다 — 판정 반영(미감사 → passed 강등)은 별도 슬라이스다.
+ *  여기 없으면 상위 스키마를 통과한 필드가 이 2단 strip에서 다시 사라진다. */
 const SecurityResultSchema = z.object({
   issues: z.array(z.object({
     severity: z.enum(SECURITY_SEVERITIES),
     source: z.enum(['static', 'deps', 'llm']),
   })),
+  auditable: z.object({
+    static: z.object({
+      requested: z.number().optional(),
+      scanned: z.number().optional(),
+    }).optional(),
+    deps: z.object({
+      status: z.enum(['ok', 'unavailable', 'not_applicable']).optional(),
+    }).optional(),
+  }).optional(),
 })
 
 /** sev가 floor 등급 이상인지(LOW<MEDIUM<HIGH<CRITICAL). security 게이팅용. */
@@ -270,6 +281,11 @@ async function runSecurityCheck(wp: WorkPackage, artifacts: string[], deps: Veri
   if (!deps.handlers['security_audit']) return { ok: false, reason: 'security: security_audit 핸들러 미주입' }
   // security 메시지 스키마는 상대경로(`..` 없는)만 허용 — 위반 artifact는 메시지 거부를 유발하므로 선제 필터.
   const relArtifacts = artifacts.filter((a) => !isAbsolute(a) && !a.includes('..'))
+  if (relArtifacts.length < artifacts.length) {
+    // 무음 drop 금지 — 드롭된 만큼 Security 의 requested 가 줄어 "대상이 원래 없었다"와
+    // 구분되지 않는다. 판정에는 쓰지 않는다(별도 슬라이스).
+    console.warn(`[verify] security 채널 artifact 드롭 ${artifacts.length - relArtifacts.length}건(절대경로·traversal) — 남은 ${relArtifacts.length}건만 감사`)
+  }
   const ran = await execConformanceStep(
     deps, wp, { artifacts: relArtifacts, projectPath: deps.userContext.workspaceRoot, severity: 'low' },
     'security_audit', 'security',

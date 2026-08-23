@@ -52,6 +52,8 @@ interface SecurityToManagerMessage {
     issues?: SecurityIssue[]
     score?: number                              // 0-100 (높을수록 안전)
     summary?: string
+    knowledge?: string[]
+    auditable?: SecurityAuditable               // 감사가 실제로 수행됐는지 — 아래 참조
     content: string
   }
 }
@@ -63,6 +65,12 @@ interface SecurityIssue {
   category: string
   file: string; line?: number
   description: string; suggestion: string; cwe?: string
+}
+
+interface SecurityAuditable {
+  static: { requested: number; scanned: number
+            skippedByReason: { path: number; stat: number; oversize: number; read: number; analyzerError: number } }
+  deps:   { status: 'ok' | 'unavailable' | 'not_applicable'; tool: 'npm' | 'pnpm' | null; reason?: string }
 }
 ```
 
@@ -89,7 +97,7 @@ interface SecurityIssue {
 - `deps.ts`: `npm audit`은 취약점 발견 시 비정상 종료코드 반환 → catch에서도 `e.stdout` 파싱
 - `deps.ts` severity 매핑: `moderate` → `medium`
 - `deps.ts` 목(mock): `vi.fn()` 직접 팩토리 내부 사용 후 `vi.mocked(execFile)` 접근 (hoisting 오류 방지)
-- 분석기 독립성: 각 `.catch(() => [])` — 하나가 실패해도 나머지 결과 반환
+- 분석기 독립성: `Promise.allSettled` — 하나가 실패해도 나머지 결과를 반환한다. **rejected를 무음으로 빈 배열로 강등하지 않는다** — 로그를 남기고 `auditable`에 감사 불능으로 표기한다
 - `source` 태그(static/deps/llm): 세 분석기가 finding에 출처를 태그(static→`static`·deps→`deps`·claude/LLM→`llm`). Manager P4 security 채널이 **결정론 findings(static+deps)만** 게이트로 사용하고 **LLM findings는 제외**(N6 — 비결정론 차단 금지)
 
 **협업·도메인 위키 (createCollaborativeHandler)**
@@ -115,3 +123,25 @@ vitest의 cwd는 서비스 디렉토리라 cwd ≠ workspaceRoot가 자연히 �
 
 건너뛴 이유는 무음으로 삼키지 않는다. "감사 대상을 못 읽었다"와 "취약점이 없다"는 다른 사실이고,
 그 구분이 없던 것이 이 결함을 가렸다.
+
+## 감사 가능 여부 (auditable)
+
+`issues: []`만으로는 위 두 사실이 구분되지 않으므로 payload에 **수행 여부**를 함께 싣는다.
+
+- **static** — `requested`/`scanned`와 사유별 skip 카운트. 불변식은
+  `requested === scanned + path + stat + oversize + read + analyzerError`.
+  `requested > 0 && scanned === 0`이 "대상은 있었는데 한 건도 못 읽었다"다.
+- **deps** — `ok`(실제로 돌았다) · `unavailable`(못 돌렸다) · `not_applicable`(감사 대상이 아니다).
+  뒤의 둘을 가르는 이유는 이 저장소 자신이 루트에 `package.json`이 없기 때문이다 —
+  하나로 접으면 매 감사가 "감사 불능"으로 오염된다. `ok` 판정식은
+  **JSON 파싱 성공 ∧ 기대 키 존재**다(`npm audit`은 취약점이 없어도 `vulnerabilities: {}`를 낸다).
+
+LLM 축은 넣지 않는다 — 검증 채널이 결정론 findings만 게이트로 쓰므로 판정에 쓰이지 않는다.
+
+**score는 감사 불능일 때도 바꾸지 않는다.** 그 값을 숫자로 읽어 분기하는 코드가 저장소에 없어
+신호가 되지 못하고, 오히려 "보안이 나쁨"으로 오독될 여지만 생긴다. 대신 `summary` 문구가
+감사 불능을 말한다.
+
+이 계약은 네 곳에 독립 선언돼 있다(여기 · Manager 미러 interface · Manager `outputSchema` ·
+`verify.ts` 판정 스키마). `outputSchema`를 빠뜨리면 필드가 **런타임에 조용히 strip된다** —
+검사는 `/contract-drift-check` [4/4]가 한다.
