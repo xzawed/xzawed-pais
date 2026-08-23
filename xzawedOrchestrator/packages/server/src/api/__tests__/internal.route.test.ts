@@ -20,9 +20,14 @@ vi.mock('../../projects/project.repo.js', () => ({
   }) }),
 }))
 
+vi.mock('../../projects/workspace-path.js', async (orig) => ({
+  ...(await orig<typeof import('../../projects/workspace-path.js')>()),
+  // 존재 검사(I/O)만 무력화한다. 순수 판정은 실물이 돈다.
+  assertReadableDirectory: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('../../projects/workspace.service.js', () => ({
   WorkspaceService: vi.fn().mockImplementation(function () { return ({
-    validateLocalPath: mockValidateLocalPath,
     clonePath: mockClonePath,
     cloneRepo: mockCloneRepo,
   }) }),

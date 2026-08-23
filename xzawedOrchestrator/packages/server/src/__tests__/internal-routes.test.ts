@@ -4,9 +4,14 @@ import Fastify from 'fastify'
 import { WorkspaceService } from '../projects/workspace.service.js'
 import type { FastifyInstance } from 'fastify'
 
+vi.mock('../projects/workspace-path.js', async (orig) => ({
+  ...(await orig<typeof import('../projects/workspace-path.js')>()),
+  // 존재 검사(I/O)만 무력화한다. 순수 판정은 실물이 돈다.
+  assertReadableDirectory: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('../projects/workspace.service.js', () => ({
   WorkspaceService: vi.fn().mockImplementation(function () { return ({
-    validateLocalPath: vi.fn().mockResolvedValue(undefined),
     clonePath: vi.fn().mockReturnValue('/workspace/proj-1'),
     cloneRepo: vi.fn().mockResolvedValue(undefined),
     pullRepo: vi.fn().mockResolvedValue(undefined),

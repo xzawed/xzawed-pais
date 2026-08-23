@@ -28,6 +28,7 @@ import { createPool, runMigrations, closePool } from './db/pool.js'
 import { ProjectGatewayConsumer } from './projects/project-gateway.js'
 import { ProjectRepo } from './projects/project.repo.js'
 import { WorkspaceService } from './projects/workspace.service.js'
+import { normalizeWorkspacePath, assertReadableDirectory } from './projects/workspace-path.js'
 
 const JWT_ERRORS: Record<string, string> = {
   FST_JWT_NO_AUTHORIZATION_IN_HEADER: 'Missing token',
@@ -224,27 +225,40 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
         const session = await store.findById(sessionId)
         if (!session) throw new Error('Session not found')
 
-        const project = await projectRepo.create(session.userId, payload.name, { description: payload.description })
-
-        let workspacePath: string | undefined
-        let status: 'registered' | 'cloning' = 'registered'
-
+        // **LLM 이 register_project 도구로 localPath 를 정하는 경로다.** 판정은 HTTP
+        // 진입점 둘과 같은 단일 출처를 쓴다. throw 는 RPC 에러가 되므로 별도 매핑이 없다.
+        // 검증이 projectRepo.create() 앞이라 실패 시 고아 프로젝트 행이 남지 않는다.
+        let normalizedLocalPath: string | undefined
+        // repoUrl 검사도 create 앞으로 옮겨졌으므로 좁혀진 값을 여기 담아 넘긴다.
+        let validatedRepoUrl: string | undefined
         if (payload.workspaceType === 'local') {
           if (!payload.localPath) throw new Error('localPath required')
-          await workspaceSvc.validateLocalPath(payload.localPath)
-          workspacePath = payload.localPath
+          normalizedLocalPath = normalizeWorkspacePath(payload.localPath)
+          await assertReadableDirectory(normalizedLocalPath)
         } else if (payload.workspaceType === 'github') {
           if (!payload.repoUrl) throw new Error('repoUrl required')
           const parsedUrl = new URL(payload.repoUrl)
           if (parsedUrl.protocol !== 'https:') {
             throw new Error('repoUrl must use https protocol')
           }
-          workspacePath = workspaceSvc.clonePath(project.id)
-          void workspaceSvc.cloneRepo(payload.repoUrl, workspacePath, payload.branch ?? 'main').catch(async (err: unknown) => {
+          validatedRepoUrl = payload.repoUrl
+        }
+
+        const project = await projectRepo.create(session.userId, payload.name, { description: payload.description })
+
+        let workspacePath: string | undefined
+        let status: 'registered' | 'cloning' = 'registered'
+
+        if (payload.workspaceType === 'local') {
+          workspacePath = normalizedLocalPath
+        } else if (payload.workspaceType === 'github' && validatedRepoUrl !== undefined) {
+          // clone 목적지는 Layer 1 만 — 아래가 `void cloneRepo(...)` 라 아직 존재하지 않는다.
+          workspacePath = normalizeWorkspacePath(workspaceSvc.clonePath(project.id))
+          void workspaceSvc.cloneRepo(validatedRepoUrl, workspacePath, payload.branch ?? 'main').catch(async (err: unknown) => {
             app.log.error({ err }, 'background git clone failed')
             await projectRepo.updateWorkspace(project.id, {
               workspaceType: 'github',
-              localPath: payload.localPath,
+              localPath: normalizedLocalPath ?? payload.localPath,
               repoUrl: payload.repoUrl,
               branch: payload.branch,
               workspacePath: undefined,
@@ -258,7 +272,7 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
 
         await projectRepo.updateWorkspace(project.id, {
           workspaceType: payload.workspaceType,
-          localPath: payload.localPath,
+          localPath: normalizedLocalPath ?? payload.localPath,
           repoUrl: payload.repoUrl,
           branch: payload.branch,
           workspacePath,

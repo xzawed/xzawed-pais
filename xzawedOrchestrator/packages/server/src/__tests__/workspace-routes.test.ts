@@ -37,9 +37,14 @@ const LOCAL_PROJECT_ROW = {
   workspace_path: '/home/user/project',
 }
 
+vi.mock('../projects/workspace-path.js', async (orig) => ({
+  ...(await orig<typeof import('../projects/workspace-path.js')>()),
+  // 존재 검사(I/O)만 무력화한다. 순수 판정은 실물이 돈다.
+  assertReadableDirectory: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('../projects/workspace.service.js', () => ({
   WorkspaceService: vi.fn().mockImplementation(function () { return ({
-    validateLocalPath: vi.fn().mockResolvedValue(undefined),
     clonePath: vi.fn().mockReturnValue('/home/.xzawed/workspaces/proj-1'),
     cloneRepo: vi.fn().mockResolvedValue(undefined),
     pullRepo: vi.fn().mockResolvedValue(undefined),
@@ -153,7 +158,7 @@ describe('workspace routes', () => {
         payload: { workspaceType: 'local', localPath: '/../../../etc/passwd' },
       })
       expect(res.statusCode).toBe(400)
-      expect((res.json() as { error: string }).error).toContain('absolute')
+      expect((res.json() as { error: string }).error).toContain('dotdot-segment')
     })
 
     it('localPath가 상대경로 — 400 반환 (절대경로 필수)', async () => {
@@ -165,7 +170,7 @@ describe('workspace routes', () => {
         payload: { workspaceType: 'local', localPath: 'relative/path/to/project' },
       })
       expect(res.statusCode).toBe(400)
-      expect((res.json() as { error: string }).error).toContain('absolute')
+      expect((res.json() as { error: string }).error).toContain('not-absolute')
     })
 
     it('local 타입 — 응답 body에 project 포함', async () => {

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import type { Pool } from 'pg'
 import { ProjectRepo, type ProjectUpdate } from '../projects/project.repo.js'
 import { WorkspaceService } from '../projects/workspace.service.js'
+import { normalizeWorkspacePath, assertReadableDirectory, WorkspacePathError } from '../projects/workspace-path.js'
 import { validateBranchName } from '../projects/branch-validation.js'
 import { makeUserAuthHook } from '../auth/user-auth.hook.js'
 import { assertProjectOwner } from '../auth/ownership.js'
@@ -162,27 +163,36 @@ export async function projectsRoutes(
       if (!existing) return reply.status(404).send({ error: 'Project not found' })
 
       let workspacePath: string | undefined
+      // localPath 컬럼에도 **검증된 값**을 넣는다 — 이전엔 검사한 값과 저장한 값이 달랐다.
+      let normalizedLocalPath: string | undefined
 
       if (workspaceType === 'local') {
         if (!localPath) return reply.status(400).send({ error: 'localPath required' })
-        if (localPath.includes('..') || !localPath.startsWith('/')) {
-          return reply.status(400).send({ error: 'localPath must be absolute and must not contain ..' })
+        // 판정은 workspace-path.ts 가 단일 출처다.
+        // 응답 형태를 오류 핸들러 배선에 맡기지 않는다 — 하네스에 따라 봉투가 달라진다.
+        try {
+          normalizedLocalPath = normalizeWorkspacePath(localPath)
+          await assertReadableDirectory(normalizedLocalPath)
+        } catch (err) {
+          if (err instanceof WorkspacePathError) {
+            return reply.status(400).send({ error: err.message, reason: err.reason })
+          }
+          throw err
         }
-        await workspaceSvc.validateLocalPath(localPath)
-        workspacePath = localPath
+        workspacePath = normalizedLocalPath
       } else if (workspaceType === 'github') {
         if (!repoUrl) return reply.status(400).send({ error: 'repoUrl required' })
         const parsedUrl = new URL(repoUrl)
         if (parsedUrl.protocol !== 'https:') {
           return reply.status(400).send({ error: 'repoUrl must use https protocol' })
         }
-        workspacePath = workspaceSvc.clonePath(id)
+        workspacePath = normalizeWorkspacePath(workspaceSvc.clonePath(id))
         await workspaceSvc.cloneRepo(repoUrl, workspacePath, branch)
       }
 
       const updated = await repo.updateWorkspace(id, {
         workspaceType,
-        localPath,
+        localPath: normalizedLocalPath ?? localPath,
         repoUrl,
         branch,
         workspacePath,

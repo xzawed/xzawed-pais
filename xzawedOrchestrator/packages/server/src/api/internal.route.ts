@@ -3,6 +3,7 @@ import type { Pool } from 'pg'
 import type { SessionStore } from '../sessions/session.store.js'
 import { ProjectRepo } from '../projects/project.repo.js'
 import { WorkspaceService } from '../projects/workspace.service.js'
+import { normalizeWorkspacePath, assertReadableDirectory, WorkspacePathError } from '../projects/workspace-path.js'
 import { validateBranchName } from '../projects/branch-validation.js'
 
 interface InternalRoutesConfig {
@@ -42,27 +43,47 @@ export async function internalRoutes(
 
       const repo = new ProjectRepo(pool)
 
-      const project = await repo.create(session.userId, name, { description })
-
-      let workspacePath: string | undefined
-      let status: 'registered' | 'cloning' = 'registered'
-
+      // **검증이 repo.create() 앞이다.** 뒤에 두면 검증 실패 시 워크스페이스 없는
+      // 고아 프로젝트 행이 남고, 세션과도 연결되지 않는다.
+      let normalizedLocalPath: string | undefined
+      // repoUrl 검사도 create 앞으로 옮겨졌으므로 좁혀진 값을 여기 담아 넘긴다.
+      let validatedRepoUrl: string | undefined
       if (workspaceType === 'local') {
         if (!localPath) return reply.status(400).send({ error: 'localPath required' })
-        await workspaceSvc.validateLocalPath(localPath)
-        workspacePath = localPath
+        // 응답 형태를 오류 핸들러 배선에 맡기지 않는다 — 하네스에 따라 봉투가 달라진다.
+        try {
+          normalizedLocalPath = normalizeWorkspacePath(localPath)
+          await assertReadableDirectory(normalizedLocalPath)
+        } catch (err) {
+          if (err instanceof WorkspacePathError) {
+            return reply.status(400).send({ error: err.message, reason: err.reason })
+          }
+          throw err
+        }
       } else if (workspaceType === 'github') {
         if (!repoUrl) return reply.status(400).send({ error: 'repoUrl required' })
         const parsedUrl = new URL(repoUrl)
         if (parsedUrl.protocol !== 'https:') {
           return reply.status(400).send({ error: 'repoUrl must use https protocol' })
         }
-        workspacePath = workspaceSvc.clonePath(project.id)
-        void workspaceSvc.cloneRepo(repoUrl, workspacePath, branch).catch(async (err: unknown) => {
+        validatedRepoUrl = repoUrl
+      }
+
+      const project = await repo.create(session.userId, name, { description })
+
+      let workspacePath: string | undefined
+      let status: 'registered' | 'cloning' = 'registered'
+
+      if (workspaceType === 'local') {
+        workspacePath = normalizedLocalPath
+      } else if (workspaceType === 'github' && validatedRepoUrl !== undefined) {
+        // clone 목적지는 Layer 1 만 — :61 이 `void cloneRepo(...)` 라 이 시점에 존재하지 않는다.
+        workspacePath = normalizeWorkspacePath(workspaceSvc.clonePath(project.id))
+        void workspaceSvc.cloneRepo(validatedRepoUrl, workspacePath, branch).catch(async (err: unknown) => {
           app.log.error({ err }, 'background git clone failed')
           await repo.updateWorkspace(project.id, {
             workspaceType,
-            localPath,
+            localPath: normalizedLocalPath ?? localPath,
             repoUrl,
             branch,
             workspacePath: undefined,
@@ -76,7 +97,7 @@ export async function internalRoutes(
 
       await repo.updateWorkspace(project.id, {
         workspaceType,
-        localPath,
+        localPath: normalizedLocalPath ?? localPath,
         repoUrl,
         branch,
         workspacePath,

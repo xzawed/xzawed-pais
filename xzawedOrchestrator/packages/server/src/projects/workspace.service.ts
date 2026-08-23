@@ -1,35 +1,23 @@
 import { spawn } from 'node:child_process'
-import { access, constants, rm } from 'node:fs/promises'
-import { join, resolve, parse } from 'node:path'
+import { rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { validateBranchName } from './branch-validation.js'
 
 export { validateBranchName } from './branch-validation.js'
 
-function assertNotFilesystemRoot(p: string): void {
-  const resolved = resolve(p)
-  const { root } = parse(resolved)
-  // Reject the path if it IS the filesystem root (e.g. / or C:\)
-  if (resolved === root || resolved === root.replace(/[\\/]$/, '')) {
-    throw new Error('파일시스템 루트는 워크스페이스로 사용할 수 없습니다')
-  }
-}
-
+/**
+ * 경로 **검증**은 여기 없다 — `workspace-path.ts` 가 단일 출처다.
+ *
+ * 이 클래스에 두면 라우트 테스트 3개가 클래스를 통째로 mock 하므로 검증기가 그
+ * 테스트들에서 전부 무력화된다. 라우트가 순수 모듈을 직접 import 해야 실제로 돈다.
+ * 여기 남는 것은 clone·pull 같은 I/O 뿐이다.
+ */
 export class WorkspaceService {
   readonly workspacesDir = process.env.WORKSPACES_DIR ?? join(homedir(), '.xzawed', 'workspaces')
 
   clonePath(projectId: string): string {
     return join(this.workspacesDir, projectId)
-  }
-
-  async validateLocalPath(localPath: string): Promise<void> {
-    // Reject filesystem root paths before any I/O
-    assertNotFilesystemRoot(localPath)
-    try {
-      await access(localPath, constants.R_OK)
-    } catch {
-      throw new Error(`로컬 경로에 접근할 수 없습니다: ${localPath}`)
-    }
   }
 
   async cloneRepo(repoUrl: string, destPath: string, branch: string): Promise<void> {
