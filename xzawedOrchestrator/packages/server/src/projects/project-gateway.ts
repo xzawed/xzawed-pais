@@ -141,6 +141,16 @@ export class ProjectGatewayConsumer {
     }
   }
 
+  /**
+   * 소비 루프가 실제로 도는가. readiness 프로브가 쓴다.
+   *
+   * 그룹 생성이 루프 밖이라 기동 시 Redis 가 죽어 있으면 `start()` 가 reject 되고
+   * `running` 은 false 로 남는다 — Redis 가 살아난 뒤에도 그렇다.
+   */
+  isRunning(): boolean {
+    return this.running
+  }
+
   stop(): void {
     this.running = false
   }

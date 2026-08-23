@@ -85,6 +85,17 @@ export class SessionGatewayConsumer {
     }
   }
 
+  /**
+   * 소비 루프가 실제로 도는가. readiness 프로브가 쓴다.
+   *
+   * `ensureGroup` 이 이 루프 **밖**이라 기동 시점에 Redis 가 죽어 있으면 `start()` 가
+   * reject 되고 `running` 은 false 로 남는다. 그때도 ioredis 재연결은 계속되므로
+   * `ping()` 은 나중에 PONG 을 준다 — 그 상태를 밖에서 보는 유일한 신호다.
+   */
+  isRunning(): boolean {
+    return this.running
+  }
+
   stop(): void {
     this.running = false
   }

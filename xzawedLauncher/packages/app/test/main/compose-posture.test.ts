@@ -107,6 +107,16 @@ describe.each(Object.entries(COPIES))('%s — 출하 compose 태세', (_label, f
     }
   })
 
+  it('healthcheck 는 /health 가 아니라 /health/ready 를 친다', () => {
+    // `/health` 는 정적 200 이라(liveness) 의존이 죽어도 healthy 를 보고한다.
+    // 그 신호로 Launcher 가 `running` 을 판정하고 마법사가 완료를 판정하므로,
+    // 기능적으로 죽은 스택이 '완료'로 통과했다. 실검사는 /health/ready 가 한다.
+    for (const [name, svc] of appServices(compose)) {
+      const test = JSON.stringify(svc.healthcheck?.test ?? [])
+      expect(test, `${name}`).toContain('/health/ready')
+    }
+  })
+
   it('앱 서비스 9종 모두 메모리 상한을 갖는다', () => {
     // 사용자 PC에서 도는 스택이다. 한 서비스의 누수가 기계를 통째로 잡아먹으면 안 된다.
     for (const [name, svc] of appServices(compose)) {

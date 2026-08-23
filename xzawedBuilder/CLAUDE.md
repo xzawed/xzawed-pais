@@ -11,7 +11,7 @@ xzawedManager로부터 프로젝트 경로와 빌드 타깃을 받아 빌드를 
 src/
 ├── index.ts              # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
 ├── config.ts             # 환경변수 검증 (Zod) — workspaceRoot, buildTimeoutMs 포함
-├── server.ts             # Fastify HTTP 서버 (/health, PORT=3006)
+├── server.ts             # Fastify HTTP 서버 ((/health · /health/ready, PORT=3006))
 ├── builder.ts            # 빌드 조율 — validateBuildCommand(), stripPackageManagerField(), runPreInstall()
 ├── detector.ts           # 빌드 명령 감지 — projectPath→workspaceRoot 상향 탐색 (detectBuildInfo)
 ├── executor.ts           # spawn(shell:false) 실행; validatePath() — WORKSPACE_ROOT 검증

@@ -14,7 +14,7 @@ import { KnowledgeRepo } from './db/knowledge.repo.js'
 import { EventStore } from './db/event-store.js'
 import { OutboxRelay } from './streams/outbox-relay.js'
 import { createOutboxPublish } from './streams/outbox-publish.js'
-import { createPool, runMigrations, closePool } from './db/pool.js'
+import { createPool, runMigrations, closePool, getPool } from './db/pool.js'
 import type { Pool } from 'pg'
 import { ToolRegistry } from './tools/registry.js'
 import { ClaudeRunner, type BudgetRunnerDeps, type ProviderRunnerDeps, isProviderFailure } from './claude/runner.js'
@@ -678,7 +678,12 @@ export async function buildServer(
   )
   watcherEventConsumer.start()
 
-  await app.register(healthRoute)
+  await app.register(healthRoute, {
+    redis: () => getRedisClient(config.REDIS_URL),
+    // sessionGateway 는 아래에서 생성된다. 접근자라 요청 시점에 평가된다.
+    gatewayRunning: () => sessionGateway.isRunning(),
+    pool: () => getPool(),
+  })
   // 관측성: knowledge/oracle/risk 라우트는 admin/decision(authHook 없으면 미등록·fail-closed)과 달리
   // 의도적으로 authHook 없이도 등록된다(oracleRoute·riskRoute 코멘트 참조 — oracle-tier·로컬/데모 개방).
   // 다만 SERVICE_JWT_SECRET 미설정 시 이들의 쓰기(PATCH/DELETE·approve)가 무인증 노출되므로,

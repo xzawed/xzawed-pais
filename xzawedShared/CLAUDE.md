@@ -85,6 +85,16 @@ Manager는 경로가 다르지만(`file:../../../xzawedShared`) **같은 함정�
 - **`close()`는 멱등이고 되돌릴 수 없다.** 디스패처의 종료 처리와 `handleSessionEntry`의 finally가 둘 다 부를 수 있어 이중 `quit()`을 가드로 막는다. 한 번 정지된 소비자는 `start()`를 다시 불러도 루프에 진입하지 않는다 — 세션마다 새 인스턴스를 만드는 구조라 재사용 재기동은 없다.
 - **멱등 소비 dedup 실패는 fail-open이다.** 멱등 저장소가 죽으면 중복 처리가 통과한다. 반대로 처리 중 크래시는 마커가 남아 재전달이 skip되므로 미완성 작업이 유실될 수 있다.
 
+## readiness 프로브
+
+`health/readiness.ts` 가 실검사 헬스체크의 판정 코어다 — 프로브 병렬 실행, 1초 예산 `Promise.race`, `ok`/`fail`/`not_configured` 3상태 집계.
+
+- **`not_configured` 는 실패로 세지 않는다.** prod compose 가 Manager 에 `DATABASE_URL` 을 주지 않아, 미구성을 장애로 치면 실제 배포 구성이 영구 unhealthy 가 된다
+- **`loopProbe` 가 이 모듈의 존재 이유다.** `redisPingProbe` 만으로는 "Redis 는 살아났는데 소비 루프는 죽은 채"인 상태를 못 잡는다 — `SessionDispatcher.start()` 의 `xgroup CREATE` 가 `while` 루프 **밖**이라 기동 실패가 영구 정지로 남고, 그 사이 ioredis 재연결은 계속되므로 `ping()` 은 PONG 을 준다
+- **타임아웃 타이머를 `unref()` 하지 않는다.** 프로브가 예산 안에 끝나면 `finally` 가 `clearTimeout` 하고, 매달리면 타이머가 살아 있어야 race 가 성립한다. `unref()` 를 걸면 이벤트 루프가 빌 때 판정 없이 프로세스가 나간다
+- **`agentReadinessProbes` 만 복제 블록 밖이다.** 마커 구간(`replicated-block: readiness-core`)은 Orchestrator 사본과 바이트 동일해야 하므로, 여기서만 쓰는 의존은 마커 밖에 둔다
+- **라우트 등록은 형제 모듈 `health/routes.ts` 가 맡는다.** 서비스마다 같은 20줄을 두면 서비스명 문자열만 다른 사본이 8벌 생기는데, **SonarCloud CPD 는 문자열 리터럴을 정규화해서 비교하므로 그것을 동일한 사본으로 센다**(jscpd 는 다르다고 본다 — 실측으로 확인했다). `fastify` 는 `devDependencies` 의 타입 전용 의존이라 런타임 의존이 늘지 않는다
+
 ## 함정
 
 - **`src/risk/index.ts`가 export하는 7개는 소비자가 쓸 방법이 없다.** `FULL_CONFIDENCE_SUPPORT`·`MEDIUM_SCORE_THRESHOLD`·`HIGH_SCORE_THRESHOLD`·`STAKES_SCORE_THRESHOLD`·`LOW_CONFIDENCE_THRESHOLD`·`CombineOptions`·`RouteOptions`가 `src/index.ts`로 re-export되지 않는데, `package.json`의 `exports` 맵이 `"."` 하나뿐이라 **딥 임포트도 불가능**하다. 필요하면 루트 배럴에 추가해야 한다.

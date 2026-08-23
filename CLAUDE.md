@@ -177,6 +177,11 @@ node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200�
 
 ## 인프라
 
+- **`/health` 는 liveness, `/health/ready` 는 readiness다. compose healthcheck 27줄이 전부 후자를 친다.** `/health` 는 정적 200이라 의존이 다 죽어도 healthy 를 보고하는데, Launcher 가 그 신호로 `running` 을 판정하고 마법사가 완료를 판정한다 — 기능적으로 죽은 스택이 "완료"로 통과했다. readiness 는 Redis·소비 루프·DB 를 실제로 친다
+- **readiness 의 핵심은 Redis ping 이 아니라 소비 루프 상태다.** 기동 시점에 Redis 가 죽어 있으면 `xgroup CREATE` 가 소비 루프 **밖**에서 throw 해 게이트웨이가 영구 정지하는데, ioredis 는 계속 재연결하므로 나중에 `ping()` 은 PONG 을 준다. 살아 있지만 귀머거리인 이 상태는 `isRunning()` 프로브만 잡는다
+- **중복 판정은 jscpd 와 SonarCloud 가 서로 다르다.** Sonar CPD 는 **문자열 리터럴을 정규화**해서 비교하므로 서비스명만 다른 사본을 동일한 것으로 센다. jscpd 0 clones 가 Sonar 통과를 보장하지 않는다 — 서비스명으로만 갈리는 파일이 여럿 생기면 그 자리는 공유 함수로 합친다
+- **`not_configured` 는 장애가 아니다.** prod compose 는 Manager 에 `DATABASE_URL` 을 주지 않는다 — 미구성을 실패로 세면 실제 배포 구성이 영구 unhealthy 가 된다
+
 - **Docker**: `docker-compose.yml` — postgres + redis + 9개 앱 서비스(총 11개). 전 서비스 `context: .` + `dockerfile: <서비스>/Dockerfile`. 에이전트 7개에 `WORKSPACE_ROOT=/workspace`, orchestrator에 `MANAGER_URL` 주입. Shared·Launcher는 compose 서비스가 아니다
 - **CPD는 경로를 주지 않으면 0개 파일을 스캔한다**(로컬). 서비스별로 좁혀 돌리면 **교차 서비스 클론이 구조적으로 안 보인다** — 저장소 전체를 한 번에 넘겨야 CI와 같은 결과가 나온다. 서비스끼리 import할 수 없어 복제가 유일한 선택인 블록은 `jscpd:ignore-start` + `replicated-block: <id>` 마커로 표시하고, 동일성은 `scripts/check-replicated-blocks.js`가 강제한다
 - **CI**: `.github/workflows/ci.yml`이 잡 목록의 정본이다 — 여기 숫자를 복사하지 않는다(복사본은 반드시 어긋난다). `all-checks-pass`의 `needs`가 **필수 잡** 집합이고, PR 전용 잡은 push에서 `skipped`가 정상이라 허용된다

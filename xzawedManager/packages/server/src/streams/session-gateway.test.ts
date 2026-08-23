@@ -132,3 +132,31 @@ describe('SessionGatewayConsumer', () => {
     err.mockRestore()
   })
 })
+
+describe('SessionGatewayConsumer.isRunning', () => {
+  const make = () => new SessionGatewayConsumer('redis://localhost:6379', vi.fn())
+
+  it('소비 루프에 진입하면 true, stop() 이후 false', async () => {
+    vi.mocked(getRedisClient).mockReturnValue(makeRedis() as never)
+    const gateway = make()
+
+    expect(gateway.isRunning()).toBe(false)
+    const p = gateway.start()
+    await new Promise(r => setTimeout(r, 30))
+    expect(gateway.isRunning()).toBe(true)
+    gateway.stop()
+    await p
+    expect(gateway.isRunning()).toBe(false)
+  })
+
+  it('bus.ensureGroup 이 실패하면 루프에 진입조차 못 하고 영구히 false 다', async () => {
+    // `ensureGroup` 은 `while` 루프 **앞**이다. 여기서 throw 하면 `running` 이 영영
+    // true 가 되지 않는데, ioredis 는 계속 재연결하므로 잠시 뒤 `ping()` 은 PONG 을
+    // 준다 — Redis 프로브만 보는 readiness 는 이 상태를 ready 로 답한다.
+    const redis = { ...makeRedis(), xgroup: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) }
+    vi.mocked(getRedisClient).mockReturnValue(redis as never)
+
+    await expect(make().start()).rejects.toThrow('ECONNREFUSED')
+    expect(redis.xreadgroup).not.toHaveBeenCalled()
+  })
+})

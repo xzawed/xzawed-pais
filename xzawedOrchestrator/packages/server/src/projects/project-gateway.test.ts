@@ -133,3 +133,36 @@ describe('ProjectGatewayConsumer', () => {
     )
   })
 })
+
+/**
+ * `start()` 는 `xgroup CREATE` 를 직접 부르고 BUSYGROUP 만 삼킨다. 그 분기가 루프
+ * **밖**이라, 삼키느냐 던지느냐가 그대로 `isRunning()` 의 값이 된다.
+ */
+describe('ProjectGatewayConsumer.isRunning', () => {
+  const start = async (xgroup: ReturnType<typeof vi.fn>) => {
+    const redis = { ...makeRedis(), xgroup }
+    vi.mocked(getRedisClient).mockReturnValue(redis as never)
+    const gateway = new ProjectGatewayConsumer('redis://localhost:6379', vi.fn(), vi.fn())
+    return { redis, gateway, running: () => gateway.isRunning() }
+  }
+
+  it('그룹이 이미 있으면(BUSYGROUP) 삼키고 정상 기동한다', async () => {
+    const { gateway, running } = await start(vi.fn().mockRejectedValue(new Error('BUSYGROUP already exists')))
+    expect(running()).toBe(false)
+    const p = gateway.start()
+    await new Promise(r => setTimeout(r, 30))
+    expect(running()).toBe(true)
+    gateway.stop()
+    await p
+    expect(running()).toBe(false)
+  })
+
+  it('BUSYGROUP 이 아닌 오류는 전파되고 루프는 영영 돌지 않는다', async () => {
+    // ioredis 재연결은 계속되므로 잠시 뒤 `ping()` 은 PONG 을 준다 — Redis 프로브만
+    // 보는 readiness 는 이 죽은 게이트웨이를 ready 로 답한다.
+    const { redis, gateway, running } = await start(vi.fn().mockRejectedValue(new Error('ECONNREFUSED')))
+    await expect(gateway.start()).rejects.toThrow('ECONNREFUSED')
+    expect(running()).toBe(false)
+    expect(redis.xreadgroup).not.toHaveBeenCalled()
+  })
+})

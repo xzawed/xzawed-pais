@@ -11,7 +11,7 @@ xzawedManager로부터 계획(plan)과 프로젝트 경로를 받아 코드를 �
 src/
 ├── index.ts          # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
 ├── config.ts         # 환경변수 검증 (Zod) — workspaceRoot 포함
-├── server.ts         # Fastify HTTP 서버 (/health, PORT=3003)
+├── server.ts         # Fastify HTTP 서버 ((/health · /health/ready, PORT=3003))
 ├── developer.ts      # 코드 생성·수정 조율 로직
 ├── fileio.ts         # 파일 읽기/쓰기/삭제 — 삭제는 .bak 리네임으로 보존
 ├── types.ts          # FileChange, ManagerToDeveloperMessageSchema, DeveloperToManagerMessage

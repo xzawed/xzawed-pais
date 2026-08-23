@@ -98,6 +98,14 @@ cd packages/server && pnpm test <파일>
 - **세션 종료는 에이전트에 통지해야 한다.** `registry.releaseAll` → `RedisAgentHandler.releaseSession` → 게이트웨이 `event:'end'`가 에이전트 쪽 세션 소비자와 그 전용 Redis 연결을 회수시키는 유일한 경로다. 이 체인 중 하나라도 끊기면 에이전트에 소비자가 무한 누적되고 1000개에서 신규 세션이 폐기된다.
 - **RPC 타임아웃은 `_notifiedSessions` memo를 푼다.** 에이전트만 재시작되면 그 소비자는 사라졌는데 Manager는 "이미 통지했다"고 기억한다. 타임아웃이 유일한 감지 신호라 거기서 memo를 풀어 다음 호출이 재통지하게 한다.
 
+## 헬스체크
+
+`/health` 는 liveness(정적 200), `/health/ready` 는 readiness다. compose healthcheck 는 후자를 친다.
+
+- **프로브 재료는 값이 아니라 접근자로 넘긴다.** `healthRoute` 등록이 `sessionGateway` 생성보다 **앞**이라 값을 직접 주면 그 시점에 아직 없다. 접근자는 요청 시점에 평가되므로 등록 순서 문제가 사라진다
+- **`HealthDeps` 필드는 전부 선택이다.** 주지 않은 것은 검사 대상이 아니고, 하나도 주지 않으면 항상 ready 다(기존 호출부 호환). DB 프로브는 `pool()` 이 null 이면 `not_configured` — prod compose 가 `DATABASE_URL` 을 주지 않으므로 이것을 실패로 세면 배포가 영구 unhealthy 다
+- **판정 코어는 `@xzawed/agent-streams` 의 `health/readiness.ts`** 다. Orchestrator 는 그 라이브러리를 의존하지 않아 복제본을 쓴다(`replicated-block: readiness-core`)
+
 ## 테넌트 태깅 — 격리가 아니다
 
 10개 테이블 행에 `tenant_id`를 **기록만** 한다. **읽기 술어가 0줄이므로 테넌트 간 데이터는 분리되지 않는다.** 격리는 후속 슬라이스다.

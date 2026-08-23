@@ -21,6 +21,7 @@
 | AgentQuery 교차질의 라우팅 | — | `runner.ts` |
 | 도메인 위키(누적·주입·조회) | `DATABASE_URL`(없으면 미제공) | `db/knowledge.repo.ts` |
 | Launcher 5단계 설치 마법사(self-host 온보딩) | — | `xzawedLauncher/` |
+| 실검사 readiness(`/health/ready`, 9개 서비스) — compose healthcheck 가 친다 | — | `xzawedShared/src/health/readiness.ts` |
 
 ## 플래그를 켜야 사는 것 (Flagged · 기본 off)
 
