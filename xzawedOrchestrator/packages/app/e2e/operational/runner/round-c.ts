@@ -33,7 +33,7 @@ test('Wave 2 — 전체 피처 재검증', async () => {
   fs.mkdirSync(ROUND_C_DIR, { recursive: true })
 
   const services = await checkAllServices()
-  const { app, page } = await launchElectronApp(mainEntry)
+  const { app, page, cleanup } = await launchElectronApp(mainEntry)
 
   const ss = new ScreenshotHelper(ROUND_C_DIR)
   let results
@@ -41,6 +41,7 @@ test('Wave 2 — 전체 피처 재검증', async () => {
     results = await runAllFeatures(page, ss)
   } finally {
     await app.close()
+    cleanup()   // 격리 userData 임시 디렉토리 회수
   }
 
   buildReport('C', services, results, ROUND_C_DIR)

@@ -1,6 +1,7 @@
 import { test as base } from '@playwright/test'
 import { _electron as electron, type ElectronApplication, type Page } from 'playwright'
 import path from 'node:path'
+import { isolatedUserData } from './isolated-user-data.js'
 
 const mainEntry = path.resolve(__dirname, '../out/main/index.js')
 
@@ -22,12 +23,14 @@ function makeEnv(overrides: Record<string, string> = {}): Record<string, string>
 
 export const test = base.extend<E2EFixtures>({
   electronApp: async ({}, provide) => {
+    const isolated = isolatedUserData(mainEntry)
     const app = await electron.launch({
-      args: [mainEntry],
+      args: isolated.args,
       env: makeEnv(),
     })
     await provide(app)
     await app.close()
+    isolated.cleanup()
   },
 
   page: async ({ electronApp }, provide) => {
@@ -38,12 +41,14 @@ export const test = base.extend<E2EFixtures>({
 
   // Launches the app with ELECTRON_TEST_ROUTE=login so it starts at /login
   loginApp: async ({}, provide) => {
+    const isolated = isolatedUserData(mainEntry)
     const app = await electron.launch({
-      args: [mainEntry],
+      args: isolated.args,
       env: makeEnv({ ELECTRON_TEST_ROUTE: 'login' }),
     })
     await provide(app)
     await app.close()
+    isolated.cleanup()
   },
 
   loginPage: async ({ loginApp }, provide) => {
