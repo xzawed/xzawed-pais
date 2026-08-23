@@ -10,7 +10,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.115.0",
+    "@anthropic-ai/sdk": "^0.120.0",
     "@xzawed/agent-streams": "file:../xzawedShared",
     "fastify": "^5.10.0",
     "ioredis": "^5.4.1",
