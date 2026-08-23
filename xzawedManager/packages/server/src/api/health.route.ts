@@ -19,7 +19,7 @@ export interface HealthDeps {
 
 export const healthRoute: FastifyPluginAsync<HealthDeps> = async (app, deps) => {
   const gatewayRunning = deps.gatewayRunning
-  registerHealthRoutes(app, {
+  registerHealthRoutes((path, handler) => app.get(path, handler), {
     service: 'xzawedManager',
     // liveness 본문을 바꾸지 않는다 — `test/api/health.test.ts` 가 `toEqual` 로 단언한다.
     liveness: () => ({ status: 'ok' }),
