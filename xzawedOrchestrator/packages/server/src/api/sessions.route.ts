@@ -17,6 +17,14 @@ import { assertProjectOwner } from '../auth/ownership.js'
 import { ProjectRepo, type Project } from '../projects/project.repo.js'
 import { t, type ServerLocale, type LocalizedRequest } from '../i18n/server-i18n.js'
 
+/**
+ * **등록 경로의 `workspace-path.ts` 와 별개인 두 번째 가드다. 일부러 합치지 않았다.**
+ *
+ * 여기가 검사하는 것은 사용자가 지금 입력한 값이 아니라 **DB 에 이미 저장된 행**과
+ * `WORKSPACE_ROOT` env 기본값이다. 더 엄격한 등록용 검증기를 여기 끼우면 검증기 도입
+ * 이전에 저장된 행(상대경로·`..` 포함·UNC)이 세션 생성 시점에 거부되어 **기존
+ * 프로젝트가 열리지 않는다.** 기존 행의 실측 없이는 바꿀 수 없다.
+ */
 function assertNotFilesystemRoot(p: string): void {
   const resolved = resolve(p)
   const { root } = parse(resolved)

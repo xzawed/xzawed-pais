@@ -1,13 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const { mockSpawn, mockAccess, mockRm } = vi.hoisted(() => ({
+const { mockSpawn, mockRm } = vi.hoisted(() => ({
   mockSpawn: vi.fn(),
-  mockAccess: vi.fn(),
   mockRm: vi.fn(),
 }))
 
 vi.mock('node:child_process', () => ({ spawn: mockSpawn }))
-vi.mock('node:fs/promises', () => ({ access: mockAccess, constants: { R_OK: 4 }, rm: mockRm }))
+vi.mock('node:fs/promises', () => ({ rm: mockRm }))
 
 import { WorkspaceService } from '../workspace.service.js'
 import { validateBranchName } from '../branch-validation.js'
@@ -18,41 +17,13 @@ describe('WorkspaceService', () => {
   beforeEach(() => {
     svc = new WorkspaceService()
     mockSpawn.mockReset()
-    mockAccess.mockReset()
     mockRm.mockReset()
     mockRm.mockResolvedValue(undefined)
   })
 
-  it('validateLocalPath resolves when path is accessible', async () => {
-    mockAccess.mockResolvedValue(undefined)
-    await expect(svc.validateLocalPath('/home/user/app')).resolves.toBeUndefined()
-    expect(mockAccess).toHaveBeenCalledWith('/home/user/app', 4)
-  })
-
-  it('validateLocalPath throws when path is not accessible', async () => {
-    mockAccess.mockRejectedValue(new Error('ENOENT'))
-    await expect(svc.validateLocalPath('/nonexistent')).rejects.toThrow('로컬 경로에 접근할 수 없습니다')
-  })
-
-  it('validateLocalPath throws when path is filesystem root (/)', async () => {
-    await expect(svc.validateLocalPath('/')).rejects.toThrow('파일시스템 루트는 워크스페이스로 사용할 수 없습니다')
-    expect(mockAccess).not.toHaveBeenCalled()
-  })
-
-  it('validateLocalPath throws when path resolves to a Windows-style drive root', async () => {
-    // path.resolve('C:\\') on Windows resolves to 'C:\', which equals its own root.
-    // We simulate this by testing a path whose resolve === parse(resolve).root.
-    // On POSIX, we instead rely on the '/' case above; on Windows, 'C:\' is the root.
-    // Use os.platform check to keep test portable.
-    const { platform } = await import('node:os')
-    if (platform() === 'win32') {
-      await expect(svc.validateLocalPath('C:\\')).rejects.toThrow('파일시스템 루트는 워크스페이스로 사용할 수 없습니다')
-      expect(mockAccess).not.toHaveBeenCalled()
-    } else {
-      // On POSIX, '/' is the only root; already tested above.
-      expect(true).toBe(true)
-    }
-  })
+  // `validateLocalPath` 는 이 클래스에서 제거됐다 — 경로 판정의 단일 출처는
+  // `workspace-path.ts` 이고 그 계약은 `__tests__/workspace-path.test.ts` 가 갖는다.
+  // 여기 두면 라우트 테스트들이 이 클래스를 통째로 mock 하므로 검증기가 무력화된다.
 
   it('clonePath returns correct path under homedir', () => {
     const path = svc.clonePath('proj-123')

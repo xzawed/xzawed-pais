@@ -4,9 +4,14 @@ import Fastify from 'fastify'
 import { WorkspaceService } from '../projects/workspace.service.js'
 import type { FastifyInstance } from 'fastify'
 
+vi.mock('../projects/workspace-path.js', async (orig) => ({
+  ...(await orig<typeof import('../projects/workspace-path.js')>()),
+  // 존재 검사(I/O)만 무력화한다. 순수 판정은 실물이 돈다.
+  assertReadableDirectory: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock('../projects/workspace.service.js', () => ({
   WorkspaceService: vi.fn().mockImplementation(function () { return ({
-    validateLocalPath: vi.fn().mockResolvedValue(undefined),
     clonePath: vi.fn().mockReturnValue('/workspace/proj-1'),
     cloneRepo: vi.fn().mockResolvedValue(undefined),
     pullRepo: vi.fn().mockResolvedValue(undefined),
@@ -171,7 +176,6 @@ describe('POST /internal/sessions/:id/register-project — background clone 실�
 
   it('cloneRepo 실패 시 workspace_path 리셋 updateWorkspace 호출', async () => {
     vi.mocked(WorkspaceService).mockImplementationOnce(function () { return ({
-      validateLocalPath: vi.fn().mockResolvedValue(undefined),
       clonePath: vi.fn().mockReturnValue('/workspace/proj-1'),
       cloneRepo: vi.fn().mockRejectedValue(new Error('git clone: auth failed')),
       pullRepo: vi.fn().mockResolvedValue(undefined),
@@ -208,7 +212,6 @@ describe('POST /internal/sessions/:id/register-project — background clone 실�
 
   it('cloneRepo 실패 + updateWorkspace도 실패해도 크래시 없음', async () => {
     vi.mocked(WorkspaceService).mockImplementationOnce(function () { return ({
-      validateLocalPath: vi.fn().mockResolvedValue(undefined),
       clonePath: vi.fn().mockReturnValue('/workspace/proj-1'),
       cloneRepo: vi.fn().mockRejectedValue(new Error('clone failed')),
       pullRepo: vi.fn().mockResolvedValue(undefined),
