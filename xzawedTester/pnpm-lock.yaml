@@ -19,8 +19,8 @@ importers:
   .:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: ^0.115.0
-        version: 0.115.0(zod@3.25.76)
+        specifier: ^0.120.0
+        version: 0.120.0(zod@3.25.76)
       '@xzawed/agent-streams':
         specifier: file:../xzawedShared
         version: file:../xzawedShared(ioredis@5.10.1)(zod@3.25.76)
@@ -55,8 +55,8 @@ importers:
 
 packages:
 
-  '@anthropic-ai/sdk@0.115.0':
-    resolution: {integrity: sha512-BJrFIVyjNuU8lfDyIJTvlRYzgQg+zEl78BxE7fq8esULsGz9IRQvGtW5spq3tydmtjQb/GFdooKGdGsetpx+lQ==}
+  '@anthropic-ai/sdk@0.120.0':
+    resolution: {integrity: sha512-ZlvmNFT/iIF6JD13rxbbMWD8nvGR0RaUp6yMQnoc+4Af0YjVVe/bIdW1XSQQsoxXAtg1NaT6Vak0LKFlJ4d37Q==}
     hasBin: true
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -923,7 +923,7 @@ packages:
 
 snapshots:
 
-  '@anthropic-ai/sdk@0.115.0(zod@3.25.76)':
+  '@anthropic-ai/sdk@0.120.0(zod@3.25.76)':
     dependencies:
       json-schema-to-ts: 3.1.1
       standardwebhooks: 1.0.0
