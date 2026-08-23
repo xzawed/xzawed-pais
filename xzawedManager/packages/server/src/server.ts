@@ -52,10 +52,28 @@ import type { ProduceDeps } from './decompose/producer.js'
 import type { RiskClassifyDeps } from './decompose/risk-producer.js'
 import { RiskClassificationRepo } from './db/risk-classification.repo.js'
 
+/**
+ * Fastify 인스턴스 옵션.
+ *
+ * 두 값 모두 이전엔 여기 리터럴로 박혀 있었고 둘 다 틀린 방향이었다.
+ *
+ * - `logger: config.MODE === 'local'` — **프로덕션에서만 로그가 꺼졌다.** 프로덕션 src 의
+ *   `app.log.*` 호출부 65곳(2파일)이 no-op 이 되고, 그중 `setErrorHandler` 의 `app.log.error` 도
+ *   포함이라 500 이 흔적 없이 사라졌다. 헤드리스 서비스라 양쪽 모드 모두 켠다.
+ * - `trustProxy: true` — 프록시 뒤가 아니면 `X-Forwarded-For` 는 클라이언트가 임의로 쓰는
+ *   값이다. Manager 는 오늘 rate limit 도 IP 기반 로직도 없어 악용 경로가 아직 없지만,
+ *   그래서 더더욱 하드코딩으로 켜 둘 이유가 없다. `TRUST_PROXY` 로 명시한다.
+ *
+ * `buildServer` 는 DB·Redis·Anthropic 배선을 통째로 끌고 와 테스트가 부르지 못한다.
+ * 옵션 계산만 떼어 두면 배선 없이 검사할 수 있다 — `__tests__/server-options.test.ts`.
+ */
+export function makeServerOptions(config: Config): { logger: boolean; trustProxy: boolean } {
+  return { logger: true, trustProxy: config.TRUST_PROXY }
+}
 export async function buildServer(
   config: Config,
 ): Promise<{ app: ReturnType<typeof Fastify>; closeAll: () => Promise<void> }> {
-  const app = Fastify({ logger: config.MODE === 'local', trustProxy: true })
+  const app = Fastify(makeServerOptions(config))
 
   // jscpd:ignore-start
   // replicated-block: fastify-error-envelope

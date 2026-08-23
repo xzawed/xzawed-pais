@@ -7,6 +7,14 @@ const configSchema = z
     REDIS_URL: z.string().default('redis://localhost:6379'),
     PORT: z.coerce.number().default(3001),
     MODE: z.enum(['local', 'remote']).default('local'),
+    // 리버스 프록시 뒤에서만 true(기본 false). Fastify 가 X-Forwarded-For 를 클라이언트 IP 로
+    // 채택할지 정한다. 프록시가 없는데 켜면 그 헤더는 클라이언트가 임의로 쓰는 값이 되므로,
+    // IP 기반 장치(rate limit·차단 목록)가 붙는 순간 이미 뚫린 상태가 된다. MODE 와 무관한 축이다
+    // — 원격 배포라고 프록시가 있다는 보장이 없다.
+    TRUST_PROXY: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
     // 프리미엄 프로필 프리셋(G1). 설정 시 resolveProfileEnv가 parse 전에 그 프로필의 검증된
     // 플래그 기본값을 env에 병합한다(개별 env override 우선). 미지 프로필은 resolveProfileEnv가
     // 먼저 throw하므로 여기 도달하는 값은 항상 알려진 프로필. autonomous 하드요구는 superRefine.

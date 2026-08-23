@@ -135,7 +135,7 @@ cd packages/app && pnpm dev
 | Orchestrator | CORS가 `ALLOWED_ORIGINS` **allowlist 전용** — 로컬호스트 예외가 사라진다 |
 | Orchestrator | `AUTH=jwt`·`ALLOWED_ORIGINS` 둘 다 없으면 **기동 거부** |
 | Manager | `SERVICE_JWT_SECRET` 없으면 기동 거부 |
-| Manager | Fastify 로거 **꺼짐** (Orchestrator와 반대) |
+| Manager | 로거·`trustProxy` 에 아무 영향이 없다 — 둘 다 `MODE` 와 무관한 축이다 |
 | 에이전트 7종 | 아무것도 하지 않는다 — 파싱만 한다 |
 
 `MODE=local`의 CORS는 **전면 허용이 아니다.** Origin 헤더 부재(Electron 프로덕션의 `file://`·서버 간 호출),
