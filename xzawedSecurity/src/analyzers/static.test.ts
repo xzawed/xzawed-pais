@@ -136,3 +136,40 @@ describe('analyzeFiles — 봉쇄와 실패 처리', () => {
     spy.mockRestore()
   })
 })
+
+describe('analyzeFiles — 실패 분기별 관측성', () => {
+  it('디렉토리를 대상으로 주면 읽기 실패로 건너뛰고 이유를 남긴다', async () => {
+    // stat 은 성공하고 readFile 이 EISDIR 로 실패하는 경로 — 두 분기가 다르다는 것을 고정한다.
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await fs.mkdir(path.join(ws, 'adir'), { recursive: true })
+
+    expect(await analyzeFiles(['adir'], ws)).toEqual([])
+    expect(spy.mock.calls.some((c) => String(c[0]).includes('읽기 실패'))).toBe(true)
+    spy.mockRestore()
+  })
+
+  it('상한을 넘는 파일은 건너뛰고 크기를 남긴다', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    // MAX_FILE_SIZE_BYTES = 1 MiB. 취약 패턴을 넣어도 크기 때문에 스캔되지 않아야 한다.
+    await fs.writeFile(path.join(ws, 'big.ts'), 'eval(x)\n' + 'a'.repeat(1_100_000), 'utf-8')
+
+    expect(await analyzeFiles(['big.ts'], ws)).toEqual([])
+    expect(spy.mock.calls.some((c) => String(c[0]).includes('oversized'))).toBe(true)
+    spy.mockRestore()
+  })
+
+  it('경로 거부는 거부 사유를 남긴다', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await analyzeFiles([path.join('..', 'escape.ts')], ws)
+    expect(spy.mock.calls.some((c) => String(c[0]).includes('경로 거부'))).toBe(true)
+    spy.mockRestore()
+  })
+
+  it('여러 파일 중 일부가 실패해도 나머지는 감사한다', async () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const ok = await put('good.ts', 'eval(danger)')
+    const issues = await analyzeFiles(['missing.ts', ok, path.join('..', 'x.ts')], ws)
+    expect(issues.length).toBeGreaterThan(0)
+    spy.mockRestore()
+  })
+})

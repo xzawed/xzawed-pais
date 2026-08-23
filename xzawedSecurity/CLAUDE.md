@@ -90,7 +90,6 @@ interface SecurityIssue {
 - `deps.ts` severity 매핑: `moderate` → `medium`
 - `deps.ts` 목(mock): `vi.fn()` 직접 팩토리 내부 사용 후 `vi.mocked(execFile)` 접근 (hoisting 오류 방지)
 - 분석기 독립성: 각 `.catch(() => [])` — 하나가 실패해도 나머지 결과 반환
-- `executor.test.ts`: `test.each([3개 케이스])` + `test(1개)` = 4개 테스트
 - `source` 태그(static/deps/llm): 세 분석기가 finding에 출처를 태그(static→`static`·deps→`deps`·claude/LLM→`llm`). Manager P4 security 채널이 **결정론 findings(static+deps)만** 게이트로 사용하고 **LLM findings는 제외**(N6 — 비결정론 차단 금지)
 
 **협업·도메인 위키 (createCollaborativeHandler)**
