@@ -44,7 +44,7 @@ packages/
         │   ├── index.ts      # 앱 진입점
         │   ├── claude-detector.ts   # claude whoami 실행, CLI 설치 여부 확인
         │   ├── docker-manager.ts    # docker compose up/down/ps 제어
-        │   ├── service-monitor.ts   # 서비스 상태 폴링 (/health 체크)
+        │   ├── service-monitor.ts   # docker compose ps 폴링 + compose 주입 env 조립
         │   ├── setup-store.ts       # userData/setup-complete.json 관리
         │   ├── tray-manager.ts      # 시스템 트레이 아이콘·메뉴
         │   └── updater.ts           # electron-updater 자동 업데이트
@@ -53,10 +53,10 @@ packages/
         └── renderer/
             └── src/
                 ├── App.tsx         # 라우터 — 마법사 또는 대시보드
-                ├── electron.d.ts   # Window + globalThis.electronAPI 타입 선언
+                ├── electron.d.ts   # Window + globalThis.launcherAPI 타입 선언
                 ├── components/     # 마법사 단계·대시보드·서비스 카드 컴포넌트
                 ├── stores/         # Zustand 상태 (설치 진행, 서비스 상태)
-                └── lib/            # IPC 호출 헬퍼
+                └── lib/            # IPC 호출 헬퍼 · wait-for-services(기동 대기 정책)
 ```
 
 ## 첫 실행 vs 이후 실행
@@ -73,7 +73,7 @@ packages/
 
 ## 환경 변수
 
-런처 자체는 `.env` 파일 불필요. 서비스 설정은 마법사 단계에서 `docker-compose.yml` 환경변수로 주입된다.
+런처 자체는 `.env` 파일 불필요. 서비스 설정은 마법사 단계에서 `docker-compose.prod.yml`로 주입된다 — `POSTGRES_PASSWORD`·`CLAUDE_MODE`는 env, API 키는 compose secret 경유다(`buildDockerEnv()`).
 
 ## 함정
 
@@ -81,9 +81,10 @@ packages/
 - **`docker compose up -d`는 healthy를 기다리지 않는다.** 컨테이너를 띄우고 돌아온다(`depends_on: service_healthy`가 걸린 선행 서비스는 예외). 그래서 `up -d` 직후 상태를 **한 번만** 읽으면 앱 서비스는 언제나 `starting`이다 — 재시도 정책은 `renderer/src/lib/wait-for-services.ts`의 순수 함수가 갖고 `StepServices`가 그것을 쓴다. 컴포넌트 안에 두면 검사할 방법이 없다
 - **compose 파일은 사본 두 벌이다.** 저장소 루트와 `packages/app/resources/`(패키징 대상은 후자). 두 벌의 태세와 드리프트는 `test/main/compose-posture.test.ts`가 고정한다 — 한쪽만 고치면 Launcher만 깨진 채 남는다
 - **API 키는 compose secret 으로 들어간다.** 소스가 `environment: ANTHROPIC_API_KEY`라 `buildDockerEnv()`의 env 전달을 그대로 쓴다. `file:` 소스로 바꾸면 safeStorage로 봉인된 키를 **디스크에 평문으로 써야 한다** — 후퇴다
+
 ## 보안 참고사항
 
 - API 키: `electron.safeStorage`로 OS 키체인 암호화
 - docker compose 경로: `process.resourcesPath` 내 고정 경로만 허용
 - IPC: contextBridge 최소 노출 — 민감 자격증명은 메인 프로세스에서만 처리
-- `electron.d.ts`: `interface Window` + `var electronAPI` 전역 선언 모두 필요 (`globalThis.electronAPI` 타입 추론)
+- `electron.d.ts`: `interface Window` + `var launcherAPI` 전역 선언 모두 필요 (`globalThis.launcherAPI` 타입 추론). **전역 이름은 `launcherAPI`다** — `contextBridge.exposeInMainWorld('launcherAPI', ...)`와 짝이고 `electronAPI`라는 이름은 코드에 0건이다
