@@ -98,7 +98,10 @@ async function analyzeFile(filePath: string, workspaceRoot: string): Promise<Sec
   let validPath: string
   try {
     validPath = await validatePath(filePath, workspaceRoot)
-  } catch {
+  } catch (err) {
+    // 무음 금지 — "감사 대상을 못 읽었다"와 "취약점이 없다"는 다른 사실이다.
+    // 이 catch가 조용했던 탓에 경로 결합 결함이 "이슈 0건"으로 위장돼 있었다.
+    console.warn(`[static] 경로 거부 — 감사 건너뜀: ${filePath}`, err)
     return []
   }
 
@@ -108,14 +111,16 @@ async function analyzeFile(filePath: string, workspaceRoot: string): Promise<Sec
       console.warn(`[static] skipping oversized file (${stat.size} bytes): ${validPath}`)
       return []
     }
-  } catch {
+  } catch (err) {
+    console.warn(`[static] stat 실패 — 감사 건너뜀: ${filePath}`, err)
     return []
   }
 
   let content: string
   try {
     content = await fs.readFile(validPath, 'utf-8')
-  } catch {
+  } catch (err) {
+    console.warn(`[static] 읽기 실패 — 감사 건너뜀: ${filePath}`, err)
     return []
   }
 

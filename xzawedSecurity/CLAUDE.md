@@ -98,3 +98,21 @@ interface SecurityIssue {
 - `audit_complete`에 도메인 지식 emit: Claude 분석기 결과의 `knowledge`(보안 도메인 규칙)를 함께 반환
 
 **Manager 연결:** `xzawedManager/packages/server/src/tools/security-audit.ts` (`createSecurityAuditHandler`)
+
+## 감사 경로 계약
+
+인바운드 스키마가 `artifacts`를 **상대경로**로 강제한다(`..` 금지·절대경로 금지). 그 상대경로는
+`process.cwd()`가 아니라 **`workspaceRoot` 기준**으로 해석된다 — `executor.ts`의 `validatePath`가
+`path.resolve(workspaceRoot, targetPath)`를 먼저 하고 realpath한다.
+
+**이 재기준화가 없으면 SAST가 구조적으로 항상 0건이 된다.** 배포 구성에서 runner의 cwd는 `/app`이고
+`WORKSPACE_ROOT`는 `/workspace`라 전 대상이 ENOENT가 되고, 호출부의 catch가 그것을 빈 배열로 바꾼다.
+그 결과가 Manager 검증 채널에서 `security: passed` 증거로 영속된다 — **스캔을 한 줄도 안 한 것이
+통과로 기록된다.**
+
+테스트에서 `validatePath`를 모킹하지 않는다. 항등 함수로 모킹하면 이 함수의 결함이 자기 테스트에서
+한 번도 실행되지 않는다(실제로 그랬다). 실제 임시 디렉토리에 파일을 쓰고 상대경로로 넘긴다 —
+vitest의 cwd는 서비스 디렉토리라 cwd ≠ workspaceRoot가 자연히 성립한다.
+
+건너뛴 이유는 무음으로 삼키지 않는다. "감사 대상을 못 읽었다"와 "취약점이 없다"는 다른 사실이고,
+그 구분이 없던 것이 이 결함을 가렸다.
