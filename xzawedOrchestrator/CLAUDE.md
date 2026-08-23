@@ -42,6 +42,8 @@ cd packages/app && pnpm test:e2e    # Playwright + Electron
 - **WebSocket 인증** — 헤더를 쓸 수 없으므로 `Sec-WebSocket-Protocol: bearer.<token>` 폴백을 쓴다
 - **토큰 복원 중 리다이렉트 보류** — `isRestoring` 가드가 없으면 앱 시작 시 성급하게 `/login`으로 튕긴다
 - **rate limit은 전면 적용이 아니다.** 플러그인이 `global: false`라 라우트별로 명시한 곳만 걸린다. 현재 걸린 것은 세션 쓰기 3개(`POST /sessions` 10/분 · `POST /sessions/:id/messages` 30/분 · `POST /sessions/:id/ui-actions` 60/분 — LLM 비용 경로)와 인증 3개(`register`·`login` 5/분, `refresh` 20/분)뿐이다. **프로젝트 CRUD·github-token·knowledge 수정·결정 제출 등 나머지 쓰기 라우트는 무제한**이다. GET에는 어디에도 안 걸려 있다
+- **rate limit 키는 `trustProxy`가 결정한다.** 기본 키가 `req.ip`인데 그 값이 소켓 주소인지 `X-Forwarded-For`인지를 `TRUST_PROXY`가 가른다. 프록시 없이 켜면 클라이언트가 헤더를 바꿔가며 버킷을 새로 잡아 브루트포스 방어가 사라지고, 프록시 뒤에서 끄면 전 사용자가 버킷 하나를 공유해 한 명의 실패가 전원을 잠근다. **양방향으로 틀릴 수 있으므로 배포 형태에 맞춰 명시한다** — 기본값 false
+- **CORS는 `MODE=local`에서도 전면 허용이 아니다.** `makeCorsOriginCheck`가 Origin 부재(Electron 프로덕션 `file://`·서버 간 호출)·문자열 `null`·로컬호스트(포트 무관)·`ALLOWED_ORIGINS`만 통과시킨다. 좁힐 때 Electron 경로를 깨면 다음 사람이 `origin: true`로 되돌리므로 그 네 경로는 `cors-origin.test.ts`가 개별로 고정한다. `MODE=remote`는 allowlist 전용이고, 비어 있으면 **기동을 거부**한다
 - **소유권 게이트** — 프로젝트 스코프 쓰기는 미소유 시 **404**로 단락한다. 존재 여부를 흘리지 않기 위한 의도적 선택이라 403이 아니다(서버 코드에 `status(403)`은 0건). 단 **`GET /projects/:projectId/knowledge`와 `GET .../decisions/pending`은 이 pre-handler를 타지 않는다** — 프로젝트 스코프인데 열린 읽기다
 
 ## 함정

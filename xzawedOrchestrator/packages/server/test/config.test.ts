@@ -11,6 +11,8 @@ describe('config', () => {
     delete process.env.USER_JWT_SECRET
     delete process.env.PAIS_PROFILE
     delete process.env.ORCHESTRATOR_DECOMPOSE_ENABLED
+    delete process.env.ALLOWED_ORIGINS
+    delete process.env.TRUST_PROXY
     process.env.ANTHROPIC_API_KEY = 'sk-test-key' // NOSONAR
   })
 
@@ -102,5 +104,73 @@ describe('config', () => {
     expect(() => resolveProfileEnv({ PAIS_PROFILE: 'bogus' } as NodeJS.ProcessEnv)).toThrow(
       /Unknown PAIS_PROFILE/,
     )
+  })
+})
+
+describe('config — 원격 배포 태세 하드페일', () => {
+  beforeEach(() => {
+    delete process.env.ALLOWED_ORIGINS
+    delete process.env.TRUST_PROXY
+  })
+
+  it('MODE=remote 이고 AUTH=none 이면 기동을 거부한다', async () => {
+    process.env.MODE = 'remote'
+    process.env.AUTH = 'none'
+    process.env.SERVICE_JWT_SECRET = 'x'.repeat(32)
+    process.env.USER_JWT_SECRET = 'y'.repeat(32)
+    process.env.ALLOWED_ORIGINS = 'https://app.example.com'
+    const { loadConfig } = await import('../src/config.js')
+    expect(() => loadConfig()).toThrow(/AUTH/)
+  })
+
+  it('MODE=remote 인데 ALLOWED_ORIGINS 가 비면 기동을 거부한다', async () => {
+    process.env.MODE = 'remote'
+    process.env.AUTH = 'jwt'
+    process.env.SERVICE_JWT_SECRET = 'x'.repeat(32)
+    process.env.USER_JWT_SECRET = 'y'.repeat(32)
+    const { loadConfig } = await import('../src/config.js')
+    expect(() => loadConfig()).toThrow(/ALLOWED_ORIGINS/)
+  })
+
+  it('MODE=remote + AUTH=jwt + ALLOWED_ORIGINS 면 기동한다', async () => {
+    process.env.MODE = 'remote'
+    process.env.AUTH = 'jwt'
+    process.env.SERVICE_JWT_SECRET = 'x'.repeat(32)
+    process.env.USER_JWT_SECRET = 'y'.repeat(32)
+    process.env.ALLOWED_ORIGINS = 'https://app.example.com, https://admin.example.com'
+    const { loadConfig } = await import('../src/config.js')
+    const c = loadConfig()
+    expect(c.allowedOrigins).toEqual(['https://app.example.com', 'https://admin.example.com'])
+  })
+
+  it('MODE=local 은 AUTH=none 을 그대로 허용한다 — 로컬 단일 사용자 전제', async () => {
+    process.env.MODE = 'local'
+    process.env.AUTH = 'none'
+    const { loadConfig } = await import('../src/config.js')
+    expect(() => loadConfig()).not.toThrow()
+  })
+})
+
+describe('config — trustProxy', () => {
+  beforeEach(() => {
+    delete process.env.TRUST_PROXY
+    delete process.env.ALLOWED_ORIGINS
+  })
+
+  it('기본은 false — 프록시 뒤가 아니면 X-Forwarded-For 를 믿지 않는다', async () => {
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().trustProxy).toBe(false)
+  })
+
+  it('TRUST_PROXY=true 로만 켤 수 있다', async () => {
+    process.env.TRUST_PROXY = 'true'
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().trustProxy).toBe(true)
+  })
+
+  it('아무 값이나 true 로 해석하지 않는다', async () => {
+    process.env.TRUST_PROXY = '1'
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().trustProxy).toBe(false)
   })
 })

@@ -63,6 +63,8 @@ describe.skipIf(!hasDb)('auth routes integration', () => {
     claudeMode: 'cli' as const,
     mode: 'local' as const,
     auth: 'none' as const,
+    allowedOrigins: [],
+    trustProxy: false,
     claudeModel: 'test',
     serveWeb: false,
     databaseUrl: DATABASE_URL,

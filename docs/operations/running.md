@@ -127,16 +127,24 @@ cd packages/app && pnpm dev
 
 ## 원격 배포
 
-`MODE`의 실제 효과는 네 곳뿐이고, 두 서비스가 서로 반대로 동작한다.
+`MODE`의 실제 효과는 아래가 전부이고, 두 서비스가 서로 반대로 동작한다.
 
 | 대상 | `MODE=remote`의 효과 |
 |---|---|
 | Orchestrator | Fastify 로거 **켜짐** |
-| Orchestrator | CORS가 `origin:false`로 **전면 차단** — `ALLOWED_ORIGINS`를 세팅해야 열린다 |
+| Orchestrator | CORS가 `ALLOWED_ORIGINS` **allowlist 전용** — 로컬호스트 예외가 사라진다 |
+| Orchestrator | `AUTH=jwt`·`ALLOWED_ORIGINS` 둘 다 없으면 **기동 거부** |
 | Manager | `SERVICE_JWT_SECRET` 없으면 기동 거부 |
 | Manager | Fastify 로거 **꺼짐** (Orchestrator와 반대) |
 | 에이전트 7종 | 아무것도 하지 않는다 — 파싱만 한다 |
 
+`MODE=local`의 CORS는 **전면 허용이 아니다.** Origin 헤더 부재(Electron 프로덕션의 `file://`·서버 간 호출),
+문자열 `null` Origin, 로컬호스트(포트 무관), 그리고 `ALLOWED_ORIGINS`에 적은 값만 통과한다. 임의의 웹사이트가
+사용자 브라우저를 통해 로컬 오케스트레이터를 호출하던 경로는 닫혔다.
+
+**`TRUST_PROXY=true`는 리버스 프록시 뒤에서만 켠다.** 켜면 Fastify가 `X-Forwarded-For`를 클라이언트 IP로
+채택하는데, 프록시가 없으면 그 헤더는 클라이언트가 임의로 쓰는 값이라 IP 키 rate limit이 무력화된다.
+반대로 프록시 뒤에서 끄면 전 사용자가 버킷 하나를 공유해 한 명의 로그인 실패가 전원을 잠근다.
 인증 없이 열려 있는 엔드포인트는 `/health` 하나가 아니다 — `/auth/register`·`/auth/login`·`/auth/refresh`와 `GET /projects/:id/decisions/pending`도 열려 있다.
 
 `docker-compose.prod.yml`(GHCR 사전빌드 이미지)은 Launcher가 쓰는 파일이고, 저장소 루트와 `xzawedLauncher/packages/app/resources/`에 **사본 두 벌**이 있다(패키징 대상은 후자다). 둘은 orchestrator의 `CLAUDE_MODE` 기본값만 다르므로, 한쪽만 고치면 Launcher는 그대로 깨진 채 남는다.

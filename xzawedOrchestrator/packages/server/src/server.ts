@@ -75,8 +75,45 @@ async function registerAuthStub(app: FastifyInstance): Promise<void> {
   app.get('/auth/me', async (_req, reply) => reply.code(200).send({ user: null }))
 }
 
+/** 로컬호스트 Origin 인지(포트 무관). Electron dev 렌더러가 vite 포트에서 온다. */
+export function isLocalhostOrigin(origin: string): boolean {
+  try {
+    const { hostname, protocol } = new URL(origin)
+    if (protocol !== 'http:' && protocol !== 'https:') return false
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * CORS Origin 판정.
+ *
+ * 이전엔 `MODE=local`에서 `origin: true`였다 — **어떤 웹사이트든** 사용자의 브라우저를 통해
+ * 로컬 서버를 호출할 수 있었다는 뜻이다(로컬 서버의 고전적 CSRF·DNS rebinding 표면).
+ *
+ * 좁히되 Electron 경로는 명시 보존한다.
+ * - Origin 헤더가 없으면 CORS 요청이 아니다(Electron 프로덕션의 `file://`, 서버 간 호출) → 허용
+ * - `null` 문자열 Origin 도 `file://` 문서가 보내는 값이라 로컬 모드에서 허용
+ * - 로컬 모드는 로컬호스트 Origin 을 포트 무관 허용(vite dev 서버 포트가 바뀌어도 동작)
+ * - `ALLOWED_ORIGINS` 는 두 모드 모두에서 추가 허용
+ * - 원격 모드는 `ALLOWED_ORIGINS` 만 허용하고, 비어 있으면 기동 자체가 거부된다(config)
+ */
+export function makeCorsOriginCheck(config: Config) {
+  const allow = new Set(config.allowedOrigins)
+  return (origin: string | undefined, cb: (err: Error | null, ok: boolean) => void): void => {
+    if (origin === undefined) return cb(null, true)
+    if (allow.has(origin)) return cb(null, true)
+    if (config.mode === 'local' && (origin === 'null' || isLocalhostOrigin(origin))) return cb(null, true)
+    cb(null, false)
+  }
+}
+
 export async function buildServer(config: Config, runnerOverride?: ClaudeRunner): Promise<FastifyInstance> {
-  const app = Fastify({ logger: config.mode !== 'local', trustProxy: true })
+  // trustProxy 를 하드코딩하지 않는다. 켜면 Fastify 가 X-Forwarded-For 를 클라이언트 IP 로
+  // 채택하는데, 프록시 뒤가 아니면 **클라이언트가 그 헤더를 마음대로 보낼 수 있다** —
+  // rate limit 키가 IP 라 매 요청 헤더를 바꾸면 로그인 시도 제한이 통째로 무력화된다.
+  const app = Fastify({ logger: config.mode !== 'local', trustProxy: config.trustProxy })
   const dbPool = await setupDatabase(app, config)
 
   // jscpd:ignore-start
@@ -110,14 +147,7 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
     ? new Anthropic({ apiKey: config.anthropicApiKey })
     : undefined
 
-  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(s => s.trim()).filter(Boolean) ?? []
-  let corsOrigin: string[] | boolean = false
-  if (config.mode === 'local') {
-    corsOrigin = true  // Electron dev renderer at localhost:5173 needs cross-origin access
-  } else if (allowedOrigins.length > 0) {
-    corsOrigin = allowedOrigins
-  }
-  await app.register(cors, { origin: corsOrigin })
+  await app.register(cors, { origin: makeCorsOriginCheck(config) })
 
   if (config.auth === 'jwt' && config.serviceJwtSecret) {
     await app.register(jwtPlugin, { secret: config.serviceJwtSecret })
