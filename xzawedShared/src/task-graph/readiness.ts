@@ -4,13 +4,13 @@ import { topoSort } from './topo-sort.js'
 
 /** readiness(DoR) 판정 주입점. 기본은 work-package 필드 기반. */
 export interface ReadinessOptions {
-  /** 노드가 done인지. 기본: `wp.status === 'done'`(외부 done-set 주입 가능). */
+  /** 노드가 done인지. 기본: `wp.status === 'DONE'`(외부 done-set 주입 가능). */
   isDone?: (wp: WorkPackage) => boolean
   /** 오라클 충족 여부(DoR). 기본: `wp.oracleRef != null`. P3 Oracle 스키마 도착 시 술어만 교체. */
   oracleSatisfied?: (wp: WorkPackage) => boolean
 }
 
-const defaultIsDone = (wp: WorkPackage): boolean => wp.status === 'done'
+const defaultIsDone = (wp: WorkPackage): boolean => wp.status === 'DONE'
 const defaultOracleSatisfied = (wp: WorkPackage): boolean => wp.oracleRef != null
 
 /**

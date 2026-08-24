@@ -108,12 +108,22 @@ describe('DispatchStore.recordDispatch (P1d-5a: lease + WP 고정 멱등키)', (
     expect(m.release).toHaveBeenCalled()
   })
 
+  // S6.1: override 값도 정본 enum·전이표를 지켜야 한다. 예전엔 'IN_PROGRESS' 를 넘겼는데
+  // 그것은 어느 정본에도 없던 값이고 프로덕션 writer 도 없었다(테스트만 만들던 상태).
+  // DRAFTED → BLOCKED 는 전이표가 허용하는 실제 경로다.
   it('toState override·reason을 반영한다', async () => {
     const m = makeMockPool()
-    await new DispatchStore(m.pool, () => 1).recordDispatch({ ...base, toState: 'IN_PROGRESS', reason: 'manual' })
+    await new DispatchStore(m.pool, () => 1).recordDispatch({ ...base, toState: 'BLOCKED', reason: 'manual' })
     const log = callFor(m.query, /INSERT INTO wp_state_log/i)![1] as unknown[]
-    expect(log[3]).toBe('IN_PROGRESS')
+    expect(log[3]).toBe('BLOCKED')
     expect(log[5]).toBe('manual')
+  })
+
+  it('전이표 밖 override 는 거부한다(fail-closed)', async () => {
+    const m = makeMockPool()
+    await expect(
+      new DispatchStore(m.pool, () => 1).recordDispatch({ ...base, toState: 'DONE' }),
+    ).rejects.toThrow(/전이/)
   })
 
   it('INSERT 실패 시 ROLLBACK하고 throw하며 client를 release한다', async () => {

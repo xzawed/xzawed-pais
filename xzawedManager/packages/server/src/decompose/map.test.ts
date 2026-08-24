@@ -12,7 +12,7 @@ describe('toWorkPackages', () => {
     expect(out).toHaveLength(1)
     expect(out[0]?.id).toMatch(/^wp_[0-9a-f]{32}$/)
     expect(out[0]?.oracleRef).toBeNull()
-    expect(out[0]?.status).toBe('draft')
+    expect(out[0]?.status).toBe('DRAFTED')
   })
 
   it('dependsOn(ref)을 content-hash id로 리맵', () => {

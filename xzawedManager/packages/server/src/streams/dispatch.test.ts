@@ -5,7 +5,7 @@ import type { StoredGraph, WpStateRecord } from '../db/task-graph.repo.js'
 
 const wp = (id: string, deps: string[] = [], over: Partial<WorkPackage> = {}): WorkPackage => ({
   id, storyId: 'story-1', owningRole: 'developer', oracleRef: 'oracle-1',
-  acceptanceCriteria: [], dependencies: deps, attributionCounters: {}, status: 'draft', ...over,
+  acceptanceCriteria: [], dependencies: deps, attributionCounters: {}, status: 'DRAFTED', ...over,
 })
 const G = (wps: WorkPackage[]) => buildTaskGraph(wps)
 
@@ -30,7 +30,7 @@ describe('planDispatch (순수)', () => {
   })
 
   it('ready가 없으면(이미 done) 빈 배열', () => {
-    expect(planDispatch(G([wp('a', [], { status: 'done' })]))).toEqual([])
+    expect(planDispatch(G([wp('a', [], { status: 'DONE' })]))).toEqual([])
   })
 
   it('oracle 미충족이면 ready가 아니다(기본 술어: oracleRef != null)', () => {

@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg'
-import { makeEnvelope } from '@xzawed/agent-streams'
-import type { EventEnvelope } from '@xzawed/agent-streams'
+import { makeEnvelope, assertWpTransition } from '@xzawed/agent-streams'
+import type { EventEnvelope, WpStatus } from '@xzawed/agent-streams'
 import {
   DISPATCHED_STATE, WP_DISPATCHED_EVENT, DISPATCH_ACTOR, LEASE_ACTIVE, wpStepId,
 } from '../streams/dispatch-constants.js'
@@ -11,14 +11,14 @@ export interface RecordDispatchInput {
   /** topoSort.order 인덱스(결정론). 이벤트 payload·lease.step_n 표시용(N4). */
   stepN: number
   /** 전이 from_state(초기 디스패치=DRAFTED). */
-  fromState: string
+  fromState: WpStatus
   /** lease 만료 = occurredAt + visibilityMs. */
   visibilityMs: number
   /** 디스패치 시도(0=최초). 멱등키 `{wf}:wp-${wpId}:${attempt}` 구성. */
   attempt?: number
   owner?: string | null
   /** 전이 to_state. 기본 'DISPATCHED'. */
-  toState?: string
+  toState?: WpStatus
   causationId?: string | null
   reason?: string | null
   /** G11 Slice 4: 테넌트 태그(userContext.tenantId 유래). 부재는 정상(null) — 격리 술어는 Slice 4b. */
@@ -45,8 +45,9 @@ export interface AppendWpEventInput {
   attempt: number
   stepN: number
   eventType: string
-  fromState: string
-  toState: string
+  /** 최초 전이는 null(`wp_state_log.from_state` 가 nullable). */
+  fromState: WpStatus | null
+  toState: WpStatus
   reason?: string | null
   /** G11 Slice 4: wp_state_log 테넌트 태그. 호출자(lease 경로 포함)가 명시적으로 넘긴다. */
   tenantId: string | null
@@ -60,6 +61,11 @@ export interface AppendWpEventInput {
 export async function appendWpEvent(
   client: PoolClient, env: EventEnvelope, input: AppendWpEventInput,
 ): Promise<{ eventId: string; seq: number }> {
+  // S6.1 전이 가드 — 이 함수가 wp_state_log 로 가는 프로덕션 단일 초크포인트다.
+  // **INSERT 이전에** 판정한다: 부분 기록이 남으면 append-only 감사 로그가 거짓말을 한다.
+  // DB CHECK 제약은 값 집합을, 이 가드는 순서를 막는다 — `DONE → DISPATCHED` 는 값은 전부
+  // 유효하지만 있어서는 안 되는 전이라 CHECK 로는 잡히지 않는다. fail-closed.
+  assertWpTransition(input.fromState, input.toState, `appendWpEvent(${input.wpId})`)
   // §8(P1d-6/7): dispatched/completed/escalated는 같은 (wf,wp,attempt) 봉투 멱등키 `{wf}:wp-${wpId}:${attempt}`를
   // 공유 → 키-기반 dedup 소비자가 후속 생명주기 이벤트를 skip(예: wp.completed가 같은 attempt의 wp.dispatched 뒤로
   // 유실). event_type을 키에 덧붙여 분리한다. eventId는 randomUUID라 항상 고유하므로 event_id 공유(lease provenance)는 불변.

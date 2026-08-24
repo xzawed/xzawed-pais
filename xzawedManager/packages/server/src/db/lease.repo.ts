@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from 'pg'
-import type { EventEnvelope } from '@xzawed/agent-streams'
+import type { EventEnvelope, WpStatus } from '@xzawed/agent-streams'
 import { appendWpEvent, wpEnvelope } from './dispatch.repo.js'
 import { withDeadlockRetry } from './pool.js'
 import {
@@ -57,7 +57,7 @@ const LEASE_COLS = 'workflow_id, wp_id, attempt, owner, status, expires_at, step
 
 interface AppendArgs {
   workflowId: string; wpId: string; attempt: number; stepN: number
-  eventType: string; fromState: string; toState: string; reason: string
+  eventType: string; fromState: WpStatus; toState: WpStatus; reason: string
 }
 
 /**

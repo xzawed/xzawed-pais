@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS wp_state_log (
   workflow_id  TEXT        NOT NULL,
   wp_id        TEXT        NOT NULL,
   from_state   TEXT        NULL,                -- 최초 전이는 NULL
-  to_state     TEXT        NOT NULL,            -- WP 상태머신(WORKFLOW §B); 미배선이라 CHECK 없이 TEXT(전방호환)
+  to_state     TEXT        NOT NULL,            -- WP 상태머신. 값 제약은 018 이 CHECK 로 추가했다(여기서 TEXT 로 둔 것은 당시 미배선)
   event_id     UUID        NULL,                -- 유발 event (causation, P1d-4+가 채움)
   reason       TEXT        NULL,                -- 귀속/사유(P4 fault-localization 토대)
   occurred_at  BIGINT      NOT NULL,

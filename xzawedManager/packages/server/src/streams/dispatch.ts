@@ -1,5 +1,5 @@
 import { buildTaskGraph, readyNodes, topoSort, oracleSatisfiedSet } from '@xzawed/agent-streams'
-import type { TaskGraph, ReadinessOptions, ApprovedOracleView, WorkPackage, OperationalMode } from '@xzawed/agent-streams'
+import type { TaskGraph, ReadinessOptions, ApprovedOracleView, WorkPackage, OperationalMode, WpStatus } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import type { DispatchStore } from '../db/dispatch.repo.js'
 import { DRAFTED_STATE, DISPATCHED_STATE, ESCALATED_STATE, DONE_STATE, DEFAULT_VISIBILITY_MS } from './dispatch-constants.js'
@@ -11,7 +11,7 @@ export interface DispatchPlanItem {
   /** topoSort.order 인덱스(결정론). 이벤트 payload·lease.step_n 표시·정렬용(N4); 멱등키 stepId는 wp-${wpId}로 분리(§8 #1). */
   stepN: number
   /** 전이 from_state(초기 디스패치=DRAFTED). */
-  fromState: string
+  fromState: WpStatus
 }
 
 export interface PlanDispatchOptions {

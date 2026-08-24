@@ -53,7 +53,7 @@ describe.skipIf(!url)('P3-2 오라클 루프 통합(영속→승인→DoR)', { r
         acceptanceCriteria: ['ac1'],
         dependencies: [],
         attributionCounters: {},
-        status: 'draft',
+        status: 'DRAFTED',
       }
       expect(oracleSatisfiedSet([wp], views).has('a')).toBe(true)
 

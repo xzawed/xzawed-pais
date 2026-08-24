@@ -11,7 +11,7 @@ const d = url ? describe : describe.skip
 
 const wp = (id: string, deps: string[] = []): WorkPackage => ({
   id, storyId: 's1', owningRole: 'developer', oracleRef: null,
-  acceptanceCriteria: [], dependencies: deps, attributionCounters: {}, status: 'draft',
+  acceptanceCriteria: [], dependencies: deps, attributionCounters: {}, status: 'DRAFTED',
 })
 const envelope = (workflowId: string, eventId: string): EventEnvelope => ({
   eventId, correlationId: workflowId, causationId: null, idempotencyKey: `${workflowId}:dec:0`,

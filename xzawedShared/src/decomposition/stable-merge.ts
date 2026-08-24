@@ -1,12 +1,13 @@
 import type { WorkPackage } from '../types/work-package.js'
 import { byId } from './order.js'
 
-/** 기본 in-flight 상태(재기록 금지). draft/ready는 미착수 → 갱신 가능. */
-const DEFAULT_INFLIGHT_STATUSES = new Set<WorkPackage['status']>(['in_progress', 'blocked', 'done'])
+/** 기본 in-flight 상태(재기록 금지). DRAFTED/READY 만 미착수 → 갱신 가능.
+ *  ESCALATED 는 사람 개입 대기 중인 진행 작업이라 덮으면 그 맥락이 사라진다. */
+const DEFAULT_INFLIGHT_STATUSES = new Set<WorkPackage['status']>(['DISPATCHED', 'BLOCKED', 'DONE', 'ESCALATED'])
 
 export interface MergeOptions {
   /**
-   * 노드가 in-flight(진행 중이라 재기록 금지)인지. 기본: status ∈ {in_progress, blocked, done}.
+   * 노드가 in-flight(진행 중이라 재기록 금지)인지. 기본: status ∈ {DISPATCHED, BLOCKED, DONE, ESCALATED}.
    * 실 운영은 DB latestStates 기반 술어를 소비자가 주입(P1d-6 done 파생과 동형).
    */
   isInflight?: (wp: WorkPackage) => boolean

@@ -17,7 +17,7 @@ function wp(id: string, over: Partial<WorkPackage> = {}): WorkPackage {
     oracleRef: 'oracle-1',
     acceptanceCriteria: [],
     dependencies: [],
-    status: 'draft',
+    status: 'DRAFTED',
     ...over,
   })
 }
@@ -123,7 +123,7 @@ describe('isReady / readyNodes', () => {
   })
 
   it('모든 의존이 done이면 ready다', () => {
-    const g = buildTaskGraph([wp('a', { status: 'done' }), wp('b', { dependencies: ['a'] })])
+    const g = buildTaskGraph([wp('a', { status: 'DONE' }), wp('b', { dependencies: ['a'] })])
     expect(isReady(g.nodes.get('b')!, g)).toBe(true)
   })
 
@@ -149,13 +149,13 @@ describe('isReady / readyNodes', () => {
   })
 
   it('이미 done이면 ready가 아니다', () => {
-    const g = buildTaskGraph([wp('a', { status: 'done' })])
+    const g = buildTaskGraph([wp('a', { status: 'DONE' })])
     expect(isReady(g.nodes.get('a')!, g)).toBe(false)
   })
 
   it('readyNodes는 topo 순서로 ready만, cyclic은 제외한다', () => {
     const g = buildTaskGraph([
-      wp('a', { status: 'done' }),
+      wp('a', { status: 'DONE' }),
       wp('b', { dependencies: ['a'] }),
       wp('c', { dependencies: ['a'] }),
       wp('x', { dependencies: ['y'] }),

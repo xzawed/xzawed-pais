@@ -19,7 +19,7 @@ describe('WorkPackageSchema', () => {
     const r = WorkPackageSchema.parse({ id: 'wp', storyId: 's', owningRole: 'pm', oracleRef: null })
     expect(r.acceptanceCriteria).toEqual([])
     expect(r.dependencies).toEqual([])
-    expect(r.status).toBe('draft')
+    expect(r.status).toBe('DRAFTED')
     // §7 additive 필드 기본값
     expect(r.epicId).toBeNull()
     expect(r.inputs).toEqual([])

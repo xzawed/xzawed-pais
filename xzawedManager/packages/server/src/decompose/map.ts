@@ -13,7 +13,7 @@ export interface LlmWorkPackage {
 
 /**
  * LLM 초안 → 디스패치 가능 WorkPackage[]. content-hash id 부여 후 dependsOn(ref)을 id로 리맵.
- * 미지 ref·자기참조는 드롭(dangling 방지). oracleRef=null(P3)·status='draft'. 중복 ref는 첫 항목만.
+ * 미지 ref·자기참조는 드롭(dangling 방지). oracleRef=null(P3)·status='DRAFTED'. 중복 ref는 첫 항목만.
  * 충돌(동일 hash)·사이클은 막지 않음 — 소비자(P1d-2 buildTaskGraph/detectCycle)가 inconsistent 에스컬레이션.
  */
 export function toWorkPackages(llmWps: LlmWorkPackage[]): WorkPackage[] {
@@ -41,7 +41,7 @@ export function toWorkPackages(llmWps: LlmWorkPackage[]): WorkPackage[] {
       acceptanceCriteria: w.acceptanceCriteria,
       dependencies,
       attributionCounters: {},
-      status: 'draft',
+      status: 'DRAFTED',
     })
   })
 }

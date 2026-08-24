@@ -35,7 +35,7 @@ d('G11 Slice 4 tenant 태깅 (pg)', () => {
     try {
       const wp = {
         id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null,
-        acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' as const,
+        acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'DRAFTED' as const,
       }
       const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/tt', tenantId: 'org-1' }
 
@@ -64,7 +64,7 @@ d('G11 Slice 4 tenant 태깅 (pg)', () => {
     try {
       const wp = {
         id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null,
-        acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' as const,
+        acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'DRAFTED' as const,
       }
       await repo.upsertGraph({
         workflowId: wf, workPackages: [wp], eventId: null,

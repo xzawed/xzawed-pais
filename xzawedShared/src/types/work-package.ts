@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { WpStatusSchema } from './wp-state.js'
 
 /**
  * Work Package 계약 — senario 사양 §5/§18-2의 작업 단위(PM이 분해).
@@ -6,7 +7,7 @@ import { z } from 'zod'
  *
  * ⚠️ 이 단계(P0 토대)는 **스키마 정의·테스트만**. 소비(분해 파이프라인·상태머신·디스패치)는 후속 Phase.
  * - `owningRole`: WP0 #3(5 vs 9 에이전트 토폴로지) 미해결로 현재 **자유 string**. 결정 후 enum 제약.
- * - `status`: P1 WP 상태머신(8+2 상태)으로 확장 예정. 지금은 최소 집합.
+ * - `status`: 정본은 [wp-state.ts](./wp-state.ts) 하나다(S6.1). 이 파일에 값을 복사하지 않는다.
  */
 /** §7 결함 귀속 카운터 — 계약 사슬 3계층(구현/Task/기획) 고정 형태. P4c 진동 차단(N5) 입력. */
 export const AttributionCountersSchema = z
@@ -46,8 +47,8 @@ export const WorkPackageSchema = z.object({
   risk: WpRiskSchema.default('MEDIUM'),
   /** §7 결함 국소화 귀속 카운터(고정 {impl,task,plan}). P4c 진동 차단(N5) 입력. */
   attributionCounters: AttributionCountersSchema,
-  /** 최소 상태 집합. P1에서 정식 상태머신으로 확장. */
-  status: z.enum(['draft', 'ready', 'in_progress', 'blocked', 'done']).default('draft'),
+  /** 상태 정본은 `types/wp-state.ts` 하나다 — 여기에 값을 다시 적지 않는다(S6.1). */
+  status: WpStatusSchema.default('DRAFTED'),
 })
 
 export type WorkPackage = z.infer<typeof WorkPackageSchema>
