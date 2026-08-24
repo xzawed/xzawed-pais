@@ -5,6 +5,7 @@ import {
   WP_TRANSITIONS,
   canTransition,
   isTerminalWpState,
+  assertWpTransition,
 } from '../types/wp-state.js'
 import { WorkPackageSchema } from '../types/work-package.js'
 
@@ -98,5 +99,41 @@ describe('상태 전이표', () => {
       }
     }
     expect([...seen].sort()).toEqual([...WP_STATES].sort())
+  })
+})
+
+/**
+ * `assertWpTransition` 은 `wp_state_log` writer 전부가 지나는 가드다 —
+ * 소비자(Manager)에서만 실행되면 이 파일의 계약이 검증되지 않은 채 남는다.
+ */
+describe('assertWpTransition', () => {
+  it('허용 전이는 통과시킨다', () => {
+    expect(() => assertWpTransition('DRAFTED', 'DISPATCHED', 'wp-a')).not.toThrow()
+    expect(() => assertWpTransition('DISPATCHED', 'DONE', 'wp-a')).not.toThrow()
+  })
+
+  it('from 이 null/undefined 면 순서 검사를 건너뛴다', () => {
+    expect(() => assertWpTransition(null, 'DONE', 'wp-a')).not.toThrow()
+    expect(() => assertWpTransition(undefined, 'ESCALATED', 'wp-a')).not.toThrow()
+  })
+
+  it('허용되지 않은 전이는 사유를 담아 throw 한다', () => {
+    expect(() => assertWpTransition('DONE', 'DISPATCHED', 'wp-a'))
+      .toThrow('wp-a: 허용되지 않은 전이 DONE → DISPATCHED')
+  })
+
+  it('to 가 enum 밖이면 throw 한다', () => {
+    expect(() => assertWpTransition('DRAFTED', 'IN_PROGRESS' as never, 'wp-a'))
+      .toThrow(/알 수 없는 WP 상태 'IN_PROGRESS'/)
+  })
+
+  it('from 이 enum 밖이면 throw 한다(to 가 유효해도)', () => {
+    expect(() => assertWpTransition('in_progress' as never, 'DONE', 'wp-a'))
+      .toThrow(/알 수 없는 WP 상태 'in_progress'/)
+  })
+
+  it('ctx 가 메시지 앞에 붙는다(어느 writer 인지 식별)', () => {
+    expect(() => assertWpTransition('DONE', 'READY', 'appendTransition(wp-9)'))
+      .toThrow(/^appendTransition\(wp-9\): /)
   })
 })
