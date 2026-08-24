@@ -176,20 +176,35 @@ export class TaskGraphRepo {
     return rows.map(mapRow)
   }
 
-  /** P2r-4: graph의 모든 WP risk를 갱신(read-modify-write). version 불변(재분해 아님)·WP id 불변
-   *  (content-hash가 risk 제외·N4)·userContext 보존. 그래프 없으면 no-op. risk.approved 소비자가 호출. */
+  /**
+   * P2r-4: graph의 모든 WP risk를 갱신. version 불변(재분해 아님)·WP id 불변
+   * (content-hash가 risk 제외·N4)·`userContext` 등 `graph_dag` 형제 키 보존.
+   * 그래프 없으면 no-op. risk.approved 소비자가 호출.
+   *
+   * **단일 UPDATE 로 원자화한다(S6.2).** 예전에는 `getGraph` → JS 로 재조립 → 전체 교체였는데,
+   * 읽기와 쓰기 사이에 재분해가 끼면 그 결과를 **통째로 되돌렸다**(lost update). `graph_dag` 를
+   * 쓰는 곳이 이 메서드와 `upsertGraph` 둘뿐이라 눈에 잘 띄지 않았고, 재분해가 원래 전량 교체라
+   * 증상도 없었다 — 재진입 병합이 들어오면서 **보존한 진행 중 WP 를 되살려 덮는 경로**가 된다.
+   * 버전 검사로 탐지하는 대신 창 자체를 없앤다(재시도 루프라는 새 실패 모드도 생기지 않는다).
+   */
   async updateWpRisks(workflowId: string, risk: WpRisk): Promise<{ updated: number }> {
-    const stored = await this.getGraph(workflowId)
-    if (!stored) return { updated: 0 }
-    const updated = stored.workPackages.map((wp) => ({ ...wp, risk }))
-    const dag = JSON.stringify({
-      workPackages: updated,
-      ...(stored.userContext != null && { userContext: stored.userContext }),
-    })
-    await this.pool.query(
-      `UPDATE task_graphs SET graph_dag = $2, updated_at = NOW() WHERE workflow_id = $1`,
-      [workflowId, dag],
+    const { rows } = await this.pool.query<{ n: number | string }>(
+      `UPDATE task_graphs
+          SET graph_dag = jsonb_set(
+                graph_dag,
+                '{workPackages}',
+                (
+                  SELECT COALESCE(jsonb_agg(jsonb_set(wp, '{risk}', to_jsonb($2::text)) ORDER BY ord), '[]'::jsonb)
+                    FROM jsonb_array_elements(graph_dag->'workPackages') WITH ORDINALITY AS t(wp, ord)
+                )
+              ),
+              updated_at = NOW()
+        WHERE workflow_id = $1
+          AND jsonb_typeof(graph_dag->'workPackages') = 'array'
+        RETURNING jsonb_array_length(graph_dag->'workPackages') AS n`,
+      [workflowId, risk],
     )
-    return { updated: updated.length }
+    const row = rows[0]
+    return { updated: row ? Number(row.n) : 0 }
   }
 }

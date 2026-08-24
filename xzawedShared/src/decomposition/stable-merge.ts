@@ -1,19 +1,20 @@
 import type { WorkPackage } from '../types/work-package.js'
+import { WP_INFLIGHT_STATES } from '../types/wp-state.js'
 import { byId } from './order.js'
-
-/** 기본 in-flight 상태(재기록 금지). DRAFTED/READY 만 미착수 → 갱신 가능.
- *  ESCALATED 는 사람 개입 대기 중인 진행 작업이라 덮으면 그 맥락이 사라진다. */
-const DEFAULT_INFLIGHT_STATUSES = new Set<WorkPackage['status']>(['DISPATCHED', 'BLOCKED', 'DONE', 'ESCALATED'])
 
 export interface MergeOptions {
   /**
-   * 노드가 in-flight(진행 중이라 재기록 금지)인지. 기본: status ∈ {DISPATCHED, BLOCKED, DONE, ESCALATED}.
-   * 실 운영은 DB latestStates 기반 술어를 소비자가 주입(P1d-6 done 파생과 동형).
+   * 노드가 in-flight(진행 중이라 재기록 금지)인지.
+   *
+   * **기본값을 프로덕션에서 그대로 쓰면 안 된다.** 기본은 `wp.status ∈ WP_INFLIGHT_STATES` 인데,
+   * `graph_dag` 의 status 는 프로덕션에서 영원히 `DRAFTED` 라 **항상 공집합**이다 —
+   * 실제 진행 상태는 `wp_state_log` 에만 있다. 소비자가 `latestStates` 기반 술어를 주입해야 한다
+   * (`streams/decomposition-consumer.ts` 가 그렇게 한다. `isDone` ← `doneSet` 과 같은 구조).
    */
   isInflight?: (wp: WorkPackage) => boolean
 }
 
-const defaultIsInflight = (wp: WorkPackage): boolean => DEFAULT_INFLIGHT_STATUSES.has(wp.status)
+const defaultIsInflight = (wp: WorkPackage): boolean => WP_INFLIGHT_STATES.has(wp.status)
 
 /**
  * §6 재진입 병합. incoming을 적용하되 existing의 in-flight 노드(+의존 폐포)는 보존(N4: 진행 중 재기록 금지).

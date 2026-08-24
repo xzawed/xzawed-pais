@@ -32,11 +32,19 @@ export function parseMigrationVersion(name: string): number | null {
   return m ? Number.parseInt(m[1]!, 10) : null
 }
 
-/** 주석(--)을 제거해 오탐 방지 + 연속 공백 정규화(개행 포함 단일 라인화). */
+/**
+ * 주석(--)을 제거해 오탐 방지 + 연속 공백 정규화(개행 포함 단일 라인화).
+ *
+ * **개행을 먼저 정규화해야 한다.** 이 저장소는 `core.autocrlf=true` 라 작업 트리 파일이 CRLF 인데,
+ * JS 정규식의 `.` 은 `\r` 를 넘지 않고 `$` 는 `m` 없이 문자열 끝만 본다 — `/--.*$/` 로는
+ * `-- 주석\r` 이 매칭되지 않아 **주석이 그대로 남고 오탐이 난다.**
+ * Linux CI(LF)는 통과하고 Windows 로컬만 깨지는 불일치라 실제로 018 의 설명 주석에 있던
+ * `ADD CONSTRAINT` 가 위반으로 잡혔다.
+ */
 export function normalize(sql: string): string {
   return sql
-    .split('\n')
-    .map((line) => line.replace(/--.*$/, ''))
+    .split(/\r\n|\r|\n/)
+    .map((line) => line.replace(/--.*/, ''))
     .join('\n')
     .replace(/\s+/g, ' ')
 }

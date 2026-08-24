@@ -24,7 +24,7 @@ const msg = (workPackages: WorkPackage[], over: Partial<EventEnvelope> = {}): De
 })
 
 function mockRepo(version = 1) {
-  return { upsertGraph: vi.fn().mockResolvedValue({ version }) } as unknown as
+  return { getGraph: vi.fn().mockResolvedValue(null), upsertGraph: vi.fn().mockResolvedValue({ version }) } as unknown as
     TaskGraphRepo & { upsertGraph: ReturnType<typeof vi.fn> }
 }
 
@@ -119,7 +119,7 @@ describe('handleDecompositionEmitted — inconsistentStream override', () => {
 
 describe('handleDecompositionEmitted — upsert 오류 전파(DLQ 경로 보존)', () => {
   it('upsertGraph 실패는 structural로 삼키지 않고 전파한다(BaseConsumer 재시도/DLQ로 위임)', async () => {
-    const repo = { upsertGraph: vi.fn().mockRejectedValue(new Error('db down')) } as unknown as
+    const repo = { getGraph: vi.fn().mockResolvedValue(null), upsertGraph: vi.fn().mockRejectedValue(new Error('db down')) } as unknown as
       TaskGraphRepo & { upsertGraph: ReturnType<typeof vi.fn> }
     const publish = vi.fn().mockResolvedValue('1-0')
     await expect(handleDecompositionEmitted(msg([wp('a')]), { repo, publish })).rejects.toThrow('db down')
@@ -240,7 +240,7 @@ describe('handleDecompositionEmitted — oracle_approval DecisionRequest 발행 
   it('C3: oracleStore+decisionStore+drafts면 oracle_approval DecisionRequest 발행', async () => {
     const createRequest = vi.fn().mockResolvedValue({ eventId: 'e1' })
     const upsertDraft = vi.fn().mockResolvedValue(undefined)
-    const repo = { upsertGraph: vi.fn().mockResolvedValue({ version: 1 }) } as unknown as Parameters<typeof handleDecompositionEmitted>[1]['repo']
+    const repo = { getGraph: vi.fn().mockResolvedValue(null), upsertGraph: vi.fn().mockResolvedValue({ version: 1 }) } as unknown as Parameters<typeof handleDecompositionEmitted>[1]['repo']
     const m = msgWithDraftsAndProject([draft])
     await handleDecompositionEmitted(m, { repo, publish: vi.fn().mockResolvedValue(undefined), oracleStore: { upsertDraft }, decisionStore: { createRequest } })
     expect(upsertDraft).toHaveBeenCalledTimes(1)
@@ -253,7 +253,7 @@ describe('handleDecompositionEmitted — oracle_approval DecisionRequest 발행 
 
   it('C3: decisionStore 미주입이면 createRequest 발행 안 함(회귀 0)', async () => {
     const upsertDraft = vi.fn().mockResolvedValue(undefined)
-    const repo = { upsertGraph: vi.fn().mockResolvedValue({ version: 1 }) } as unknown as Parameters<typeof handleDecompositionEmitted>[1]['repo']
+    const repo = { getGraph: vi.fn().mockResolvedValue(null), upsertGraph: vi.fn().mockResolvedValue({ version: 1 }) } as unknown as Parameters<typeof handleDecompositionEmitted>[1]['repo']
     const m: DecompositionEmittedMessage = {
       envelope: env({ workflowId: 'wf-c3' }),
       type: 'decomposition.emitted',

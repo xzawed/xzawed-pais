@@ -43,6 +43,27 @@ describe('findNonIdempotentDdl — IF NOT EXISTS 계열', () => {
   it('주석 안의 DDL 은 오탐하지 않는다', () => {
     expect(findNonIdempotentDdl('-- CREATE TABLE t (id INT);\nSELECT 1;')).toEqual([])
   })
+
+  /**
+   * **CRLF 회귀.** 이 저장소는 `core.autocrlf=true` 라 작업 트리 파일이 CRLF 다.
+   * JS 정규식의 `.` 은 `\r` 를 넘지 않고 `$` 는 `m` 없이 문자열 끝만 보므로,
+   * `/--.*$/` 는 `-- 주석\r` 을 **매칭하지 못한다** → 주석이 안 지워져 오탐이 난다.
+   * Linux CI(LF)에서는 통과하고 Windows 로컬에서만 깨지는, 가장 나쁜 종류의 불일치다.
+   * (실제로 018 마이그레이션의 설명 주석에 있는 `ADD CONSTRAINT` 가 위반으로 잡혔다.)
+   */
+  it.each([
+    ['CRLF', '\r\n'],
+    ['LF', '\n'],
+    ['CR', '\r'],
+  ])('%s 개행에서도 주석을 제거한다', (_label, eol) => {
+    const sql = `-- ADD CONSTRAINT 는 카탈로그 가드가 필요하다${eol}-- CREATE TABLE t (id INT);${eol}SELECT 1;`
+    expect(findNonIdempotentDdl(sql)).toEqual([])
+  })
+
+  it('CRLF 파일에서도 진짜 위반은 여전히 잡는다(과잉 제거 아님)', () => {
+    expect(findNonIdempotentDdl('-- 설명\r\nCREATE TABLE t (id INT);\r\n'))
+      .toContain('CREATE TABLE without IF NOT EXISTS')
+  })
 })
 
 describe('findNonIdempotentDdl — IF NOT EXISTS 가 존재하지 않는 DDL', () => {
