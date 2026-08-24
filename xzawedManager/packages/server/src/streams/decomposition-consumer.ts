@@ -7,8 +7,10 @@ import {
   buildTaskGraph,
   detectCycle,
   makeEnvelope,
+  mergeKeepInflight,
+  WP_INFLIGHT_STATES,
 } from '@xzawed/agent-streams'
-import type { TaskGraph } from '@xzawed/agent-streams'
+import type { TaskGraph, WorkPackage, WpStatus } from '@xzawed/agent-streams'
 import type { TaskGraphRepo } from '../db/task-graph.repo.js'
 import { OracleDraftSchema } from '../db/oracle.types.js'
 import type { OracleScenario, OracleInvariant } from '../db/oracle.types.js'
@@ -125,7 +127,51 @@ async function surfaceInconsistent(
   }
 }
 
-/** 결정론 소비 핸들러: build → (구조오류|사이클 → inconsistent 발행) | (정상 → upsert). LLM 호출 0. */
+type MergeResult =
+  | { ok: true; workPackages: WorkPackage[] }
+  | { ok: false; reason: InconsistentReason; detail: string }
+
+/**
+ * 재진입 병합(S6.2) — 기존 그래프의 **진행 중 WP 와 그 의존 폐포**를 보존한 채 incoming 을 적용한다.
+ *
+ * **술어는 `wp.status` 가 아니라 `latestStates` 에서 온다.** `graph_dag` 의 status 는 프로덕션에서
+ * 영원히 `DRAFTED` 이고(분해가 쓰고 아무도 바꾸지 않는다) 실제 진행 상태는 `wp_state_log` 에만
+ * 있다 — 기본 술어로 판정하면 항상 공집합이라 병합이 무의미해진다(`dispatch.ts` 가 `isDone` 을
+ * `doneSet` 으로 갈아끼우는 것과 같은 구조).
+ *
+ * **병합 결과를 다시 검증한다.** 두 그래프가 각각 비순환이어도 합집합은 순환일 수 있다
+ * (기존 `a→b` · incoming `b→a`). 사이클 검사는 incoming 에만 걸려 있었으므로 여기서 한 번 더 건다.
+ */
+async function mergeWithInflight(
+  workflowId: string, incoming: WorkPackage[], deps: DecompositionDeps,
+): Promise<MergeResult> {
+  // 읽기 실패(DB 다운·저장 JSON 손상)는 **삼키지 않고 전파한다.** 여기서 inconsistent 로 바꾸면
+  // 소비자가 메시지를 ack 해 분해가 영영 사라진다 — `structural` 은 DAG 모양이 틀렸다는 의미
+  // 범주이지 전송·저장 오류가 아니다. upsertGraph 실패를 전파하는 것과 같은 계약이고,
+  // 전파해도 upsertGraph 이전이라 쓰기는 일어나지 않는다(fail-closed 는 그대로).
+  const existing = await deps.repo.getGraph(workflowId)
+  if (!existing || existing.workPackages.length === 0) return { ok: true, workPackages: incoming }
+
+  const states = await deps.repo.latestStates(workflowId)
+  const merged = mergeKeepInflight(existing.workPackages, incoming, {
+    isInflight: (w) => {
+      const s = states.get(w.id)?.toState
+      return s !== undefined && WP_INFLIGHT_STATES.has(s as WpStatus)
+    },
+  })
+
+  try {
+    const cycles = detectCycle(buildTaskGraph(merged))
+    if (cycles.length > 0) {
+      return { ok: false, reason: 'cycle', detail: `재진입 병합 결과가 순환이다: ${cycles.map((c) => c.join('→')).join(' | ')}` }
+    }
+  } catch (e) {
+    return { ok: false, reason: 'structural', detail: `재진입 병합 결과가 구조적으로 무효다: ${(e as Error).message}` }
+  }
+  return { ok: true, workPackages: merged }
+}
+
+/** 결정론 소비 핸들러: build → (구조오류|사이클 → inconsistent 발행) | (병합 → upsert). LLM 호출 0. */
 export async function handleDecompositionEmitted(
   msg: DecompositionEmittedMessage,
   deps: DecompositionDeps,
@@ -147,9 +193,19 @@ export async function handleDecompositionEmitted(
     await surfaceInconsistent(msg, deps, 'cycle')
     return { status: 'inconsistent', reason: 'cycle' }
   }
+  // S6.2 재진입 병합 — 재분해가 진행 중 WP 를 통째로 덮어쓰던 것(F1)을 막는다.
+  // 실패 시 영속하지 않고 사람에게 올린다(fail-closed): 무엇이 진행 중인지 모르는 채로 쓰면
+  // 그것이 정확히 이 슬라이스가 막으려는 결함이다.
+  const merged = await mergeWithInflight(workflowId, wps, deps)
+  if (!merged.ok) {
+    await emitInconsistent(msg, deps, merged.reason, { detail: merged.detail })
+    await surfaceInconsistent(msg, deps, merged.reason, merged.detail)
+    return { status: 'inconsistent', reason: merged.reason }
+  }
+
   const { version } = await deps.repo.upsertGraph({
     workflowId,
-    workPackages: wps,
+    workPackages: merged.workPackages,
     eventId: msg.envelope.eventId,
     // P4a-2: 워크스페이스 컨텍스트를 그래프와 함께 영속(미존재 시 null — 워커가 placeholder 폴백).
     userContext: msg.payload.userContext ?? null,

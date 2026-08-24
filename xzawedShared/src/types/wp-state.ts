@@ -62,6 +62,21 @@ export function isTerminalWpState(s: WpStatus): boolean {
 }
 
 /**
+ * **재분해가 덮으면 안 되는 상태**(S6.2) — `DRAFTED`·`READY` 만 미착수라 갱신 가능하다.
+ *
+ * `ESCALATED` 가 여기 있는 이유: 사람 개입 대기 중인 진행 작업이라 덮으면 그 맥락이 사라진다.
+ * `DONE` 은 이미 끝난 것을 되살리지 않기 위해서다.
+ *
+ * ⚠️ **소비자는 이 집합을 `WorkPackage.status` 에 그대로 대면 안 된다.** 그 필드는 프로덕션에서
+ * 영원히 `DRAFTED` 다(분해가 쓰고 아무도 바꾸지 않는다) — 실제 진행 상태는 `wp_state_log` 에만
+ * 있으므로 술어는 `latestStates` 에서 파생해야 한다. 기본 술어로 판정하면 **항상 공집합**이고,
+ * 그 위에 세운 테스트는 위음성이다.
+ */
+export const WP_INFLIGHT_STATES: ReadonlySet<WpStatus> = new Set<WpStatus>([
+  'DISPATCHED', 'BLOCKED', 'DONE', 'ESCALATED',
+])
+
+/**
  * 전이 허용 여부. `from` 이 null 이면 최초 전이라 어떤 상태로도 허용한다
  * (`wp_state_log.from_state` 가 nullable 인 것과 같은 의미).
  */

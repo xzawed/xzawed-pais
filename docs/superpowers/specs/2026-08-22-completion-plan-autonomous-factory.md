@@ -78,7 +78,7 @@
 
 | ID | 항목 | 근거 | 검증 |
 |---|---|---|---|
-| F1 | 재분해가 진행 중 WP를 통째로 덮어씀(방어 함수는 있는데 미배선) | `decomposition-consumer.ts:150-156` | △ |
+| F1 | ~~재분해가 진행 중 WP를 통째로 덮어씀~~ → **`S6.2` 로 해소.** 술어를 `latestStates` 에서 파생해야 실효가 있다 | `decomposition-consumer.ts:150-156` | ◎ |
 | F2 | risk write-back이 전 WP를 균일 덮어씀 | `db/task-graph.repo.ts:177-190` | △ |
 | F3 | ~~WP 상태 정본이 둘로 갈림~~ → **`S6.1` 로 해소.** 실측해 보니 **셋**이었다(테스트가 쓰던 `'READY'` 포함) | `work-package.ts:50` vs `dispatch-constants.ts` | ◎ |
 | F4 | `security_audit`·`design_ui` WP가 빈 플랜으로 통과 | `verify.ts:82-85`가 빈 배열 → `:334`에서 즉시 통과, 증거 기록 0회 | ◎ |
@@ -134,14 +134,17 @@
 | S3.2 | [#589](https://github.com/xzawed/xzawed-pais/pull/589) · [#590](https://github.com/xzawed/xzawed-pais/pull/590) | 2026-08-23 | `/health/ready` 9종 · `loopProbe` 가 코어 |
 | S3.4 | [#615](https://github.com/xzawed/xzawed-pais/pull/615) | 2026-08-24 | `manager_schema_migrations` · `db/migration-guard.ts`. **접두사가 계약이다** — Orchestrator 와 런타임 DB 를 공유한다 |
 | S6.1 | [#616](https://github.com/xzawed/xzawed-pais/pull/616) | 2026-08-24 | `types/wp-state.ts` 정본 6종 + 전이표 · 마이그레이션 018(데이터 이전 + CHECK). 대문자가 정본 |
+| S6.2 | [#618](https://github.com/xzawed/xzawed-pais/pull/618) | 2026-08-24 | 재진입 병합 배선 — 술어는 `latestStates` 유래. `updateWpRisks` lost-update 도 함께 봉합 |
 
 슬라이스가 아닌 동반 PR: [#584](https://github.com/xzawed/xzawed-pais/pull/584)(Launcher CLAUDE.md 자기모순), [#585](https://github.com/xzawed/xzawed-pais/pull/585)(단일 인스턴스 잠금 — 고아 워크트리에서 건진 미머지 작업).
 
-**남은 슬라이스는 11건이다**(2026-08-24): `S3.3` · `S4.3` · E5 전부(5) · `S6.2` · `S6.3` · `S7.1` · `S7.2`.
+**남은 슬라이스는 10건이다**(2026-08-24): `S3.3` · `S4.3` · E5 전부(5) · `S6.3` · `S7.1` · `S7.2`.
 
-그중 **즉시 착수 가능 7건** — `S3.3` · `S4.3` · `S5.1` · `S5.3` · `S6.2` · `S6.3` · `S7.1`. **`S6.1` 이 닫히면서 `S6.2`(재진입 병합 배선) 선행이 풀렸다.** 나머지 4건은 `S6.2`→`S7.2` 와 `S5.1`→`S5.2a`→`S5.2b`, `S5.3`→`S5.4` 사슬에 걸려 있다.
+그중 **즉시 착수 가능 7건** — `S3.3` · `S4.3` · `S5.1` · `S5.3` · `S6.3` · `S7.1` · `S7.2`. **`S6.2` 가 닫히면서 그래프 레인이 전부 풀렸다** — `S7.2`(spec_fix 재분해 트리거)의 선행이 없어졌다. 나머지 3건은 `S5.1`→`S5.2a`→`S5.2b` 와 `S5.3`→`S5.4` 사슬뿐이다.
 
-> **`S6.2` 는 이제 순수 배선이다.** `mergeKeepInflight` 는 shared 에 이미 있고 테스트도 완비돼 있는데 Manager 호출자가 0곳이다. **S6.1 이전에 그것을 배선했다면 무음 실패였다** — 기본 in-flight 술어가 소문자 집합을 보는데 프로덕션 그래프는 `'draft'` 만 담았으므로 **모든 WP 가 교체 가능으로 판정**됐을 것이다. 지금은 같은 값 공간이고, `ESCALATED`(사람 개입 대기)도 보존 대상에 포함된다.
+> **`S6.2` 는 "순수 배선"이 아니었다(2026-08-24 실측).** `mergeKeepInflight` 를 그냥 부르는 것으로는 아무 효과가 없다 — 기본 in-flight 술어는 `wp.status` 를 읽는데 `graph_dag` 의 status 는 **S6.1 이후에도 영원히 `DRAFTED`** 다(`decompose/map.ts` 가 유일한 writer 이고 아무도 바꾸지 않는다). 실제 진행 상태는 `wp_state_log` 에만 있으므로 술어를 `latestStates` 에서 파생해야 실효가 생긴다. 계획서가 이 슬라이스에만 "유닛은 위음성 · pg 통합 필수"를 적어 둔 이유가 이것이었고, 실측해 보니 그 이유가 S6.1 로도 사라지지 않았다.
+>
+> 배선하면서 드러난 것 둘. **(1)** 병합은 두 그래프의 합집합이라 각각 비순환이어도 **합치면 순환**일 수 있다 — 사이클 검사가 incoming 에만 걸려 있었으므로 병합 후 한 번 더 건다(fail-closed). **(2)** `graph_dag` writer 가 둘인데 `updateWpRisks` 가 read-modify-write 라 **병합 결과를 통째로 되돌릴 수 있었다**(lost update). 재분해가 원래 전량 교체라 증상이 없던 것이 병합이 들어오면서 실제 경로가 됐다 — 단일 `UPDATE`+`jsonb_set` 으로 창을 없앴다.
 
 ---
 규모는 **파일 수 · 삽입 줄 수** 범위다. 근거는 이 저장소 커밋의 실측 — 최근 30커밋 중앙값 **4파일 / +66줄**, 최대 **76파일 / +678줄**. 시간 추정은 하지 않는다(이 저장소에 시간 실적이 없다).
