@@ -24,11 +24,13 @@ Manager 비-테스트 소스에서 `tenantId`가 등장하는 곳은 `types/user
 | # | 제약 | 근거 | 이 설계에 미친 영향 |
 |---|---|---|---|
 | C1 | Manager↔Orchestrator DB는 **런타임만 공유·CI는 분리** | `docker-compose.yml:83`("postgres 공유 DB" 주석)·CI는 잡마다 격리 pg에 Manager 마이그레이션만 적용 | 크로스 서비스 조인 백필은 프로덕션에선 되고 **CI에선 전 통합 스위트가 죽는다**. `server.ts:80`이 try/catch 없이 `runMigrations` 호출 → 마이그레이션 실패 = 기동 실패 → **백필 전면 배제** |
-| C2 | Manager 러너는 **버전 추적 없이 매 기동 전량 재실행** | `pool.ts:55-76`(readdir→sort→전부 apply·`schema_migrations` 없음·advisory lock 729431 + 40P01/40001 재시도 #403) | Orchestrator 007/008 백필 패턴 복사 금지. **백필 배제의 두 번째 독립 근거** |
+| C2 | Manager 러너는 **버전 추적 없이 매 기동 전량 재실행** *(2026-08-24 S3.4로 변경됨 — 아래 주)* | `pool.ts:55-76`(readdir→sort→전부 apply·`schema_migrations` 없음·advisory lock 729431 + 40P01/40001 재시도 #403) | Orchestrator 007/008 백필 패턴 복사 금지. **백필 배제의 두 번째 독립 근거** |
 | C3 | migration이 enforcement의 **전제가 아니다** | `release-gate.repo.ts:111`이 이미 `graph_dag->'userContext'->>'projectId'`로 운영 중 | 4b는 DDL 0줄로도 가능. 이번 컬럼 추가는 인덱스 성능·JSONB 없는 테이블 커버를 위한 **선택**이며 그렇게 문서화한다 |
 | C5 | `upsertGraph`의 `ON CONFLICT DO UPDATE`가 `graph_dag`를 **통째 교체** | `task-graph.repo.ts:83-90` | 재분해가 tenantId 없이 오면 테넌트 유실(P4a-2 userContext 유실과 동형) → **COALESCE 보존 규칙 필수** |
 | C6 | Manager엔 `authUser` 객체가 **없다** | `jwt.plugin.ts:12-25`(`verifyServiceToken`은 `jwtVerify()`만 수행) | 태그를 HTTP 요청자로부터 얻을 수 없다 → **소스는 페이로드(userContext)뿐** |
 | C7 | tenantId **부재가 정상 상태** | Orchestrator `sessions.route.ts:107·117` 조건부 spread. 부재 3경우 = pool 없음 / 프로젝트 미소유·미존재 / `users.org_id` NULL | 태그 컬럼은 nullable, 인자는 **nullable-but-required** |
+
+> **C2 후속 (2026-08-24, S3.4).** Manager 러너는 이제 버전을 추적한다 — 단 테이블 이름은 `manager_schema_migrations`다. C1(런타임 DB 공유)이 정확히 그 이유로, 접두사 없는 `schema_migrations`를 쓰면 Orchestrator의 버전 1~8과 번호가 겹쳐 **양쪽이 서로의 마이그레이션을 예외 없이 건너뛴다.** 이 설계의 "Orchestrator 패턴 복사 금지"는 백필뿐 아니라 **테이블 이름에도** 해당했다. C2의 나머지(백필 배제 근거)는 그대로 유효하다.
 
 ### 정정된 가정 (적대 검증 결과)
 

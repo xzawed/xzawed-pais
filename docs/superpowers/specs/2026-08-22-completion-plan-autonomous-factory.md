@@ -91,7 +91,7 @@
 | ID | 항목 | 검증 |
 |---|---|---|
 | O1 | 메트릭 수집 코드 0건 — DLQ 적재량·PEL 깊이·비용을 볼 수 없다 | △ |
-| O2 | 마이그레이션 버전 추적 부재(Manager) — 매 기동 전량 재실행 | △ |
+| O2 | ~~마이그레이션 버전 추적 부재(Manager) — 매 기동 전량 재실행~~ → **`S3.4` 로 해소**(`manager_schema_migrations`) | ◎ |
 | O3 | 출하 compose에 healthcheck·리소스 제한 부재 | ○ |
 
 ### 2.4 정직성 — 문서와 코드의 어긋남
@@ -132,12 +132,13 @@
 | S3.1 | [#587](https://github.com/xzawed/xzawed-pais/pull/587) | 2026-08-23 | `replicated-block: shutdown-core` |
 | S2.5 | [#588](https://github.com/xzawed/xzawed-pais/pull/588) | 2026-08-23 | `posix-shell-quote.ts` (shescape 는 이 자리에 못 쓴다) |
 | S3.2 | [#589](https://github.com/xzawed/xzawed-pais/pull/589) · [#590](https://github.com/xzawed/xzawed-pais/pull/590) | 2026-08-23 | `/health/ready` 9종 · `loopProbe` 가 코어 |
+| S3.4 | [#615](https://github.com/xzawed/xzawed-pais/pull/615) | 2026-08-24 | `manager_schema_migrations` · `db/migration-guard.ts`. **접두사가 계약이다** — Orchestrator 와 런타임 DB 를 공유한다 |
 
 슬라이스가 아닌 동반 PR: [#584](https://github.com/xzawed/xzawed-pais/pull/584)(Launcher CLAUDE.md 자기모순), [#585](https://github.com/xzawed/xzawed-pais/pull/585)(단일 인스턴스 잠금 — 고아 워크트리에서 건진 미머지 작업).
 
-**남은 슬라이스는 13건이다**: `S3.3` · `S3.4` · `S4.3` · E5 전부(5) · E6 전부(3) · `S7.1` · `S7.2`.
+**남은 슬라이스는 12건이다**(2026-08-24): `S3.3` · `S4.3` · E5 전부(5) · E6 전부(3) · `S7.1` · `S7.2`.
 
-그중 **즉시 착수 가능 7건** — `S3.3` · `S3.4` · `S4.3` · `S5.1` · `S5.3` · `S6.3` · `S7.1`. 나머지 6건은 `S3.4`→`S6.1`→`S6.2`→`S7.2` 와 `S5.1`→`S5.2a`→`S5.2b`, `S5.3`→`S5.4` 사슬에 걸려 있다.
+그중 **즉시 착수 가능 7건** — `S3.3` · `S4.3` · `S5.1` · `S5.3` · `S6.1` · `S6.3` · `S7.1`. **`S3.4` 가 닫히면서 그래프 레인의 선행이 풀렸다** — `S6.1` 이 이제 착수 가능하고, 나머지 5건은 `S6.1`→`S6.2`→`S7.2` 와 `S5.1`→`S5.2a`→`S5.2b`, `S5.3`→`S5.4` 사슬에 걸려 있다.
 
 ---
 규모는 **파일 수 · 삽입 줄 수** 범위다. 근거는 이 저장소 커밋의 실측 — 최근 30커밋 중앙값 **4파일 / +66줄**, 최대 **76파일 / +678줄**. 시간 추정은 하지 않는다(이 저장소에 시간 실적이 없다).
@@ -234,7 +235,9 @@
 
 `S3.1` · `S3.2` · `S3.4` (병렬) → `S4.3`
 
-**`S3.4`가 여기 있는 것이 핵심이다.** `S6.1`(WP 상태 CHECK 제약)을 먼저 하면, 비멱등 DDL 정적 검사가 `ADD CONSTRAINT`를 보지 않으므로 **테스트는 그린인데 두 번째 기동에서 Manager가 죽는다**(Postgres에 `ADD CONSTRAINT IF NOT EXISTS`가 없고 Manager는 매 기동 전량 재실행한다).
+**`S3.4`가 여기 있는 것이 핵심이었다.** `S6.1`(WP 상태 CHECK 제약)을 먼저 하면, 비멱등 DDL 정적 검사가 `ADD CONSTRAINT`를 보지 않으므로 **테스트는 그린인데 두 번째 기동에서 Manager가 죽는다**(Postgres에 `ADD CONSTRAINT IF NOT EXISTS`가 없고 당시 Manager는 매 기동 전량 재실행했다). 실 DB로 확인한 값은 `ADD CONSTRAINT` 재실행 시 **SQLSTATE 42710**이다.
+
+> **착륙(2026-08-24).** `S3.4` 가 닫혔다 — 이제 `manager_schema_migrations` 로 1회만 적용하고, 가드는 `ADD CONSTRAINT` 와 이름 없는 제약(`ADD PRIMARY KEY`·`ADD UNIQUE`·`ADD FOREIGN KEY`·`ADD CHECK`)·`CREATE TYPE`·`CREATE TRIGGER`·`CREATE SEQUENCE` 까지 본다. **설계에서 한 번 틀렸던 것을 남긴다** — 처음엔 Orchestrator 와 같은 `schema_migrations` 이름을 썼는데, 두 서비스가 런타임에 같은 DB 를 쓰므로(`docker-compose.yml:83`) 버전 번호가 서로를 덮어 **예외 없이 마이그레이션을 건너뛰는** 무음 실패가 된다. Grok 의 독립 반증이 잡았고, 공유 DB 를 실제로 만들어 재현·수정했다.
 
 `S4.3`은 `S1.3`(기동 가능한 compose)과 `S3.2`(의미 있는 healthcheck)에 의존한다. 지금 스모크를 먼저 만들면 "프로세스가 살아있다"만 검증하는 잡이 된다 — 헬스체크가 무검사 200이기 때문이다.
 
