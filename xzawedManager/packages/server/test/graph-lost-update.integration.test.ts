@@ -78,7 +78,7 @@ d('graph_dag 동시 쓰기 (pg)', () => {
 
   it('userContext 를 보존한다(graph_dag 형제 키)', async () => {
     const wfId = `wf-lu-${Date.now()}-uc`
-    const userContext = { userId: 'u1', projectId: 'p1', workspaceRoot: 'F:/ws', tenantId: 't1' }
+    const userContext = { userId: 'u1', projectId: 'p1', workspaceRoot: '/ws', tenantId: 't1' }
     await repo.upsertGraph({ workflowId: wfId, workPackages: [wp('a')], userContext })
 
     await repo.updateWpRisks(wfId, 'HIGH')
