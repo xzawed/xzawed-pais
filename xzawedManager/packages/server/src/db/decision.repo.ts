@@ -94,7 +94,7 @@ export class DecisionRepo {
    * decision_requests 행을 FOR UPDATE로 잡은 채 human_decisions에 INSERT하고 다시
    * decision_requests를 UPDATE하므로, 동시에 도는 DDL(마이그레이션 CREATE INDEX =
    * 테이블 ShareLock)과 락 순서가 엇갈릴 수 있다. 재정렬로는 피할 수 없는 종류라
-   * 저장소가 이미 마이그레이션에 쓴 처방(applyMigration)을 그대로 쓴다.
+   * 저장소가 이미 마이그레이션에 쓴 처방(`withDeadlockRetry`)을 그대로 쓴다.
    *
    * 재시도가 안전한 이유: 40P01은 pg가 트랜잭션을 이미 중단시켜 부분 커밋이 없고,
    * 몸체가 BEGIN부터 다시 시작하며 외부 부수효과가 없다.
