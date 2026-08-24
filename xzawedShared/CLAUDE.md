@@ -50,6 +50,7 @@ Manager는 경로가 다르지만(`file:../../../xzawedShared`) **같은 함정�
 | `types/agent-query.ts` | 교차질의 계약. `collaborationPayloadFields`가 답변자 스키마의 공통 필드 |
 | `types/event-envelope.ts` | 이벤트소싱 메타데이터(`eventId`·`correlationId`·`causationId`·`idempotencyKey`). **스트림 봉투와 다른 것이다** |
 | `types/work-package.ts` | WorkPackage 계약. `risk`·`inputs`·`outputs`·`epicId`·`attributionCounters` |
+| `types/wp-state.ts` | **WP 상태 정본**(S6.1). enum 6종·전이표·`canTransition`·`assertWpTransition`. `wp_state_log` writer 는 전부 이 가드를 지난다 |
 | `claude/answer-query.ts` | Claude 호출 헬퍼. `callClaudeTextWithUsage`는 usage를 노출해 비용 서킷의 입력이 된다 |
 | `claude/knowledge.ts` | 응답에서 도메인 지식 배열 추출 |
 | `prompt/domain-knowledge.ts` | 위키 지식을 프롬프트에 주입하는 포매터 |

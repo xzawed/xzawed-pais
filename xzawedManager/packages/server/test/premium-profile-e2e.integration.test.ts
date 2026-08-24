@@ -75,8 +75,8 @@ describe('G9 프리미엄 프로필 아크 E2E (autonomous 프로필이 build→
       //  oracleRef non-null: autonomous 프로필은 MANAGER_ORACLE_DOR를 켜지 않으므로 기본 DoR 게이트
       //  (readiness.ts: oracleRef != null)가 적용된다 — 분해가 생성하는 WP는 oracleRef를 가진다(실 프로필 경로).
       const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/g9', tenantId: 'org-g9' }
-      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: 'or-a', acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' }
-      const b: WorkPackage = { id: 'b', storyId: 's2', owningRole: 'developer', oracleRef: 'or-b', acceptanceCriteria: ['AC2'], dependencies: ['a'], attributionCounters: {}, status: 'draft' }
+      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: 'or-a', acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'DRAFTED' }
+      const b: WorkPackage = { id: 'b', storyId: 's2', owningRole: 'developer', oracleRef: 'or-b', acceptanceCriteria: ['AC2'], dependencies: ['a'], attributionCounters: {}, status: 'DRAFTED' }
       await repo.upsertGraph({ workflowId: wf, workPackages: [a, b], eventId: null, userContext: uc })
 
       // fake 결정론 에이전트 핸들러 — judgePrimaryResult 계약 만족(fail-closed 사각 회피).

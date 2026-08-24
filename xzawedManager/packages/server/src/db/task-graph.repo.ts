@@ -1,6 +1,6 @@
 import type { Pool } from 'pg'
 import { z } from 'zod'
-import { WorkPackageSchema, type WorkPackage, type WpRisk } from '@xzawed/agent-streams'
+import { WorkPackageSchema, assertWpTransition, type WorkPackage, type WpRisk, type WpStatus } from '@xzawed/agent-streams'
 import { AbsoluteUserContextSchema, type UserContext } from '../types/user-context.js'
 
 export interface PersistGraphInput {
@@ -23,8 +23,8 @@ export interface StoredGraph {
 export interface WpTransitionInput {
   workflowId: string
   wpId: string
-  toState: string
-  fromState?: string | null
+  toState: WpStatus
+  fromState?: WpStatus | null
   eventId?: string | null
   reason?: string | null
 }
@@ -132,6 +132,10 @@ export class TaskGraphRepo {
    *  나중에 실 호출자가 붙으면 그 writer가 남기는 wp_state_log 행만 영구 미태깅으로 남는다(범위 확대 방지 위해
    *  코드는 그대로 두고 이 주석만 남긴다). */
   async appendTransition(input: WpTransitionInput): Promise<{ seq: number }> {
+    // S6.1: `wp_state_log` 의 **두 번째 writer** 다. DB CHECK 는 값만 막고 순서는 못 막으므로
+    // dispatch.repo 의 초크포인트와 같은 가드를 여기에도 건다 — 지금 프로덕션 호출자가 0곳이라도
+    // 나중에 붙는 writer 가 `DONE → DISPATCHED` 를 조용히 기록하는 구멍을 미리 닫는다.
+    assertWpTransition(input.fromState ?? null, input.toState, `appendTransition(${input.wpId})`)
     const { rows } = await this.pool.query<{ seq: number | string }>(
       `INSERT INTO wp_state_log (workflow_id, wp_id, from_state, to_state, event_id, reason, occurred_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7)

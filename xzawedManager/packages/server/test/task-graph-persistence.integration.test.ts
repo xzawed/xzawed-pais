@@ -10,7 +10,7 @@ const d = url ? describe : describe.skip
 
 const wp = (id: string, deps: string[] = []): WorkPackage => ({
   id, storyId: 'story-1', owningRole: 'developer', oracleRef: null,
-  acceptanceCriteria: [], dependencies: deps, attributionCounters: {}, status: 'draft',
+  acceptanceCriteria: [], dependencies: deps, attributionCounters: {}, status: 'DRAFTED',
 })
 
 d('task-graph 영속 통합 (pg)', () => {

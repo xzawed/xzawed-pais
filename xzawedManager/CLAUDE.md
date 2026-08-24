@@ -21,7 +21,7 @@ cd packages/server && pnpm test <파일>
 | `gates/approval-gate.ts` | 승인 게이트 순수 모듈(`effectiveMode`·`parseDecision`·`GATED_TOOLS`·`DEPLOY_TOOLS`) |
 | `decompose/` | **분해 생산자.** `pipeline.ts`의 다단계 LLM 분해와 `map.ts`의 WorkPackage 매핑. 소비는 `streams/`가 한다 |
 | `streams/` | Supervisor와 소비자들. 디스패치·lease·워커·검증·결정·리스크·릴리스·강등 |
-| `db/` | 저장소 계층 + `migrations/001~017`. `oracle`·`decision`·`advisory`의 `*.types.ts`는 Zod 정본이지만 `release-gate.types.ts`는 TS 인터페이스, `risk-classification.types.ts`는 이벤트 상수다(아티팩트 스키마는 shared에 있다) |
+| `db/` | 저장소 계층 + `migrations/`. `oracle`·`decision`·`advisory`의 `*.types.ts`는 Zod 정본이지만 `release-gate.types.ts`는 TS 인터페이스, `risk-classification.types.ts`는 이벤트 상수다(아티팩트 스키마는 shared에 있다) |
 | `api/` | `sessions`·`knowledge`·`decision`·`oracle`·`risk`·`admin`·`health` 라우트 |
 
 ## 계약
@@ -93,6 +93,8 @@ cd packages/server && pnpm test <파일>
 - **held-set은 in-memory다.** SAFE 모드에서 보류된 디스패치는 재시작 시 소실된다.
 - **마이그레이션은 `manager_schema_migrations`로 1회만 적용된다**(S3.4 이전엔 추적이 없어 매 기동 전량 재실행이었다). **이름의 `manager_` 접두사가 계약이다** — 런타임에 Orchestrator와 같은 DB를 쓰는데(`docker-compose.yml:83`) Orchestrator가 이미 `schema_migrations`에 자기 버전 1~8을 기록한다. 접두사를 떼면 두 서비스의 버전 번호가 서로를 덮어 **예외 없이 조용히 마이그레이션을 건너뛴다**(Manager가 자기 001~008을 적용됨으로 오인하거나, 반대로 Orchestrator가 `users`·`sessions` 없이 성공을 반환한다). 다른 테이블이 전부 `manager_` 접두사인 것과 같은 이유다
 - **버전 추적이 생겨도 멱등 가드는 남는다.** 추적 테이블이 없던 기존 DB가 새 러너로 처음 뜨면 기록이 비어 전량이 한 번 더 돈다 — 그 한 번을 안전하게 만드는 것이 `db/migration-guard.ts`이고 `__tests__/migrate-idempotent.test.ts`가 실제 파일을 훑는다. **`ADD CONSTRAINT`와 이름 없는 제약(`ADD PRIMARY KEY`·`ADD UNIQUE`·`ADD FOREIGN KEY`·`ADD CHECK`), `CREATE TYPE`은 Postgres에 `IF NOT EXISTS` 문법이 없어** 카탈로그 조회 가드(`pg_constraint`·`pg_type`)나 `DO $$ ... EXCEPTION WHEN duplicate_object $$`로 감싸야 통과한다. 가드 판정은 **블록이 아니라 IF 영역 단위**다
+- **WP 상태 정본은 `@xzawed/agent-streams` 의 `types/wp-state.ts` 하나다**(S6.1). 여기 값을 다시 선언하지 않는다 — 이전엔 shared 소문자 enum 과 Manager 대문자 상수가 **교집합 0** 으로 갈려 있었고, 한쪽을 읽는 술어가 다른 쪽이 쓴 값을 영원히 못 봤다(`isReady` 의 `wp.status === 'done'` 기본 술어가 그랬다). `dispatch-constants.ts` 의 별칭은 `satisfies WpStatus` 로 드리프트를 tsc 에 노출한다.
+- **`wp_state_log` writer 는 둘이고 둘 다 `assertWpTransition` 을 지난다**(`dispatch.repo.appendWpEvent` · `task-graph.repo.appendTransition`). **DB CHECK 와 이 가드는 다른 것을 막는다** — CHECK 는 값 집합만 보므로 `DONE → DISPATCHED` 처럼 값이 전부 유효한 불법 전이는 잡지 못한다. 새 writer 를 추가하면 가드를 함께 건다.
 - **트랜잭션 밖 `FOR UPDATE SKIP LOCKED`는 무효**다. 잠금이 즉시 풀려 동시성 보호가 사라진다.
 - **소비자 그룹이 스트림을 공유하면 멱등 키에 그룹 성분을 넣어야 한다.** 없으면 한 그룹의 마커가 다른 그룹의 핸들러를 굶긴다.
 - **세션 정리는 게이트웨이 경로에서만 의미가 있다.** `makeSessionStarter`를 부르는 곳이 둘인데 프로덕션 진입은 `server.ts`의 게이트웨이 starter 하나뿐이다. `sessions.route.ts`가 만드는 starter는 `POST /api/sessions/:sessionId/start` 전용이고 그 엔드포인트를 호출하는 코드가 저장소에 없다 — 테스트에서만 도달한다. 그래서 starter의 `registry`는 **필수이되 nullable**이다(선택으로 두면 누락이 무음 no-op이 되어 tsc가 못 잡는다).

@@ -13,7 +13,7 @@ function wp(id: string, over: Partial<WorkPackage> = {}): WorkPackage {
     oracleRef: 'oracle-1',
     acceptanceCriteria: [],
     dependencies: [],
-    status: 'draft',
+    status: 'DRAFTED',
     ...over,
   })
 }
@@ -166,32 +166,32 @@ describe('mergeKeepInflight', () => {
   })
 
   it('미착수(draft/ready) existing은 incoming 버전으로 갱신', () => {
-    const existing = [wp('a', { status: 'ready', acceptanceCriteria: ['old'] })]
-    const incoming = [wp('a', { status: 'draft', acceptanceCriteria: ['new'] })]
+    const existing = [wp('a', { status: 'READY', acceptanceCriteria: ['old'] })]
+    const incoming = [wp('a', { status: 'DRAFTED', acceptanceCriteria: ['new'] })]
     const out = mergeKeepInflight(existing, incoming)
     expect(out[0]?.acceptanceCriteria).toEqual(['new'])
   })
 
   it('in-flight(in_progress/done) existing은 incoming이 있어도 유지', () => {
-    const existing = [wp('a', { status: 'in_progress', acceptanceCriteria: ['kept'] })]
-    const incoming = [wp('a', { status: 'draft', acceptanceCriteria: ['ignored'] })]
+    const existing = [wp('a', { status: 'DISPATCHED', acceptanceCriteria: ['kept'] })]
+    const incoming = [wp('a', { status: 'DRAFTED', acceptanceCriteria: ['ignored'] })]
     const out = mergeKeepInflight(existing, incoming)
-    expect(out[0]?.status).toBe('in_progress')
+    expect(out[0]?.status).toBe('DISPATCHED')
     expect(out[0]?.acceptanceCriteria).toEqual(['kept'])
   })
 
   it('incoming에서 사라진 not-in-flight existing은 드롭', () => {
-    const out = mergeKeepInflight([wp('a', { status: 'ready' })], [wp('b')])
+    const out = mergeKeepInflight([wp('a', { status: 'READY' })], [wp('b')])
     expect(out.map((w) => w.id)).toEqual(['b'])
   })
 
   it('incoming에서 사라진 in-flight existing은 보존', () => {
-    const out = mergeKeepInflight([wp('a', { status: 'done' })], [wp('b')])
+    const out = mergeKeepInflight([wp('a', { status: 'DONE' })], [wp('b')])
     expect(out.map((w) => w.id)).toEqual(['a', 'b'])
   })
 
   it('보존된 in-flight 노드의 의존 폐포도 유지(buildTaskGraph 수용 — dangling 0)', () => {
-    const existing = [wp('a', { status: 'done', dependencies: ['dep'] }), wp('dep', { status: 'ready' })]
+    const existing = [wp('a', { status: 'DONE', dependencies: ['dep'] }), wp('dep', { status: 'READY' })]
     const incoming = [wp('b')]
     const out = mergeKeepInflight(existing, incoming)
     expect(out.map((w) => w.id).sort()).toEqual(['a', 'b', 'dep'])
@@ -199,8 +199,8 @@ describe('mergeKeepInflight', () => {
   })
 
   it('isInflight 술어 주입 override', () => {
-    const existing = [wp('a', { status: 'draft', acceptanceCriteria: ['kept'] })]
-    const incoming = [wp('a', { status: 'draft', acceptanceCriteria: ['ignored'] })]
+    const existing = [wp('a', { status: 'DRAFTED', acceptanceCriteria: ['kept'] })]
+    const incoming = [wp('a', { status: 'DRAFTED', acceptanceCriteria: ['ignored'] })]
     const out = mergeKeepInflight(existing, incoming, { isInflight: () => true })
     expect(out[0]?.acceptanceCriteria).toEqual(['kept'])
   })
@@ -212,20 +212,20 @@ describe('mergeKeepInflight', () => {
 
   it('빈 existing/빈 incoming 안전', () => {
     expect(mergeKeepInflight([], [])).toEqual([])
-    expect(mergeKeepInflight([wp('a', { status: 'in_progress' })], []).map((w) => w.id)).toEqual(['a'])
+    expect(mergeKeepInflight([wp('a', { status: 'DISPATCHED' })], []).map((w) => w.id)).toEqual(['a'])
   })
 
   it('blocked existing은 기본 술어로 in-flight 취급(보존)', () => {
-    const existing = [wp('a', { status: 'blocked', acceptanceCriteria: ['kept'] })]
-    const incoming = [wp('a', { status: 'draft', acceptanceCriteria: ['ignored'] })]
+    const existing = [wp('a', { status: 'BLOCKED', acceptanceCriteria: ['kept'] })]
+    const incoming = [wp('a', { status: 'DRAFTED', acceptanceCriteria: ['ignored'] })]
     const out = mergeKeepInflight(existing, incoming)
-    expect(out[0]?.status).toBe('blocked')
+    expect(out[0]?.status).toBe('BLOCKED')
     expect(out[0]?.acceptanceCriteria).toEqual(['kept'])
   })
 
   it('의존 폐포 전이 깊이 3 이상(BFS 다단 재귀)', () => {
     const existing = [
-      wp('a', { status: 'done', dependencies: ['b'] }),
+      wp('a', { status: 'DONE', dependencies: ['b'] }),
       wp('b', { dependencies: ['c'] }),
       wp('c'),
     ]
@@ -249,5 +249,30 @@ describe('AttributionCountersSchema export', () => {
   test('shared 배럴에서 AttributionCountersSchema를 노출한다', () => {
     expect(AttributionCountersSchema).toBeDefined()
     expect(AttributionCountersSchema.parse({})).toEqual({ impl: 0, task: 0, plan: 0 })
+  })
+})
+
+/**
+ * S6.1 이후 `ESCALATED` 가 `WorkPackage['status']` 의 정당한 값이 됐다.
+ * 에스컬레이션은 **사람 개입 대기 중인 진행 작업**이므로 재분해가 덮으면 그 맥락이 사라진다.
+ */
+describe('mergeKeepInflight — ESCALATED 보존', () => {
+  it('ESCALATED 노드는 in-flight 로 보존한다', () => {
+    const out = mergeKeepInflight(
+      [wp('a', { status: 'ESCALATED', acceptanceCriteria: ['kept'] })],
+      [wp('a', { status: 'DRAFTED', acceptanceCriteria: ['ignored'] })],
+    )
+    expect(out[0]?.status).toBe('ESCALATED')
+    expect(out[0]?.acceptanceCriteria).toEqual(['kept'])
+  })
+
+  it('DRAFTED·READY 는 여전히 갱신 가능하다(미착수)', () => {
+    for (const s of ['DRAFTED', 'READY'] as const) {
+      const out = mergeKeepInflight(
+        [wp('a', { status: s, acceptanceCriteria: ['old'] })],
+        [wp('a', { status: 'DRAFTED', acceptanceCriteria: ['new'] })],
+      )
+      expect(out[0]?.acceptanceCriteria, `${s} 가 보존됐다`).toEqual(['new'])
+    }
   })
 })

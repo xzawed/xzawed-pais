@@ -25,7 +25,7 @@ function wp(id: string): WorkPackage {
     dependencies: [],
     risk: 'MEDIUM',
     attributionCounters: { impl: 0, task: 0, plan: 0 },
-    status: 'draft',
+    status: 'DRAFTED',
   } as WorkPackage
 }
 

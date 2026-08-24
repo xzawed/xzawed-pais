@@ -86,8 +86,8 @@ describe.skipIf(!dbUrl || !redisUrl)('G9 배선 증명 E2E (실 Redis 소비자�
 
       // develop_code WP 2개(a→b 의존). userContext.workspaceRoot 절대경로(AbsoluteUserContextSchema·파생 검증 조건).
       const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/g9c' }
-      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: 'or-a', acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' }
-      const b: WorkPackage = { id: 'b', storyId: 's2', owningRole: 'developer', oracleRef: 'or-b', acceptanceCriteria: ['AC2'], dependencies: ['a'], attributionCounters: {}, status: 'draft' }
+      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: 'or-a', acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'DRAFTED' }
+      const b: WorkPackage = { id: 'b', storyId: 's2', owningRole: 'developer', oracleRef: 'or-b', acceptanceCriteria: ['AC2'], dependencies: ['a'], attributionCounters: {}, status: 'DRAFTED' }
 
       // 분해 LLM 우회: decomposition.emitted를 직접 시드(실 DecompositionConsumer가 소비→그래프 영속→handleDispatch).
       await bus.publish(DECOMP_STREAM, {

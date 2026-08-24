@@ -11,7 +11,7 @@ import type { Redis } from 'ioredis'
 
 const wp = (id: string, deps: string[] = []): WorkPackage => ({
   id, storyId: 's1', owningRole: 'developer', oracleRef: null,
-  acceptanceCriteria: [], dependencies: deps, attributionCounters: {}, status: 'draft',
+  acceptanceCriteria: [], dependencies: deps, attributionCounters: {}, status: 'DRAFTED',
 })
 
 const env = (over: Partial<EventEnvelope> = {}): EventEnvelope => ({

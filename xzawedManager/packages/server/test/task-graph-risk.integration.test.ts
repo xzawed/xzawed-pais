@@ -10,7 +10,7 @@ function wp(id: string, risk: 'LOW' | 'MEDIUM' | 'HIGH' = 'MEDIUM'): WorkPackage
   return {
     id, storyId: 's1', epicId: null, owningRole: 'developer',
     inputs: [], outputs: [], oracleRef: null, acceptanceCriteria: ['x'],
-    dependencies: [], risk, attributionCounters: { impl: 0, task: 0, plan: 0 }, status: 'draft',
+    dependencies: [], risk, attributionCounters: { impl: 0, task: 0, plan: 0 }, status: 'DRAFTED',
   } as WorkPackage
 }
 

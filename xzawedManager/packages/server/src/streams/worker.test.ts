@@ -32,7 +32,7 @@ describe('D5: buildWorkerInput model 주입 + 디스패치 조회', () => {
 
 const wp = (over: Partial<WorkPackage> = {}): WorkPackage => ({
   id: over.id ?? 'a', storyId: 's1', owningRole: over.owningRole ?? 'developer', oracleRef: null,
-  acceptanceCriteria: over.acceptanceCriteria ?? ['ac1'], dependencies: [], attributionCounters: {}, status: 'draft',
+  acceptanceCriteria: over.acceptanceCriteria ?? ['ac1'], dependencies: [], attributionCounters: {}, status: 'DRAFTED',
 })
 const sig = (wpId = 'a', attempt = 0) => ({
   envelope: { eventId: '11111111-1111-1111-1111-111111111111', correlationId: 'wf1', causationId: null, workflowId: 'wf1', stepId: `wp.dispatch_signal:${wpId}`, attemptId: attempt, idempotencyKey: `wf1:wp.dispatch_signal:${wpId}:${attempt}`, occurredAt: 1 },
@@ -111,7 +111,7 @@ describe('handleWpDispatchSignal', () => {
     const developer = { execute: vi.fn().mockResolvedValue({ artifacts: ['src/a.ts'] }) }
     const repo = {
       getGraph: vi.fn().mockResolvedValue({
-        workPackages: [{ id: 'wp-1', storyId: 's1', owningRole: 'developer', acceptanceCriteria: ['AC1'], risk: 'MEDIUM', dependencies: [], attributionCounters: {}, status: 'draft', inputs: [], outputs: [] }],
+        workPackages: [{ id: 'wp-1', storyId: 's1', owningRole: 'developer', acceptanceCriteria: ['AC1'], risk: 'MEDIUM', dependencies: [], attributionCounters: {}, status: 'DRAFTED', inputs: [], outputs: [] }],
         userContext: { userId: 'u', projectId: 'p', workspaceRoot: '/abs/ws' },
       }),
       latestStates: vi.fn().mockResolvedValue(new Map()),

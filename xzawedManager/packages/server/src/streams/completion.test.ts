@@ -6,7 +6,7 @@ import type { LeaseRecord } from '../db/lease.repo.js'
 
 const wp = (id: string, deps: string[] = []): WorkPackage => ({
   id, storyId: 'story-1', owningRole: 'developer', oracleRef: 'oracle-1',
-  acceptanceCriteria: [], dependencies: deps, attributionCounters: {}, status: 'draft',
+  acceptanceCriteria: [], dependencies: deps, attributionCounters: {}, status: 'DRAFTED',
 })
 const stored = (wps: WorkPackage[]): StoredGraph => ({ workflowId: 'wf-1', workPackages: wps, eventId: null, version: 1, userContext: null })
 const stateRec = (wpId: string, toState: string, seq = 1): WpStateRecord => ({

@@ -59,7 +59,7 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
       const store = new DispatchStore(pool)
       const leaseStore = new LeaseStore(pool)
       const wf = `wf-ew-${Date.now()}`
-      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: [], dependencies: [], attributionCounters: {}, status: 'draft' }
+      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: [], dependencies: [], attributionCounters: {}, status: 'DRAFTED' }
       await repo.upsertGraph({ workflowId: wf, workPackages: [a], eventId: null })
       await store.recordDispatch({ workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED', attempt: 0, visibilityMs: 60000 })
 
@@ -90,7 +90,7 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
       const repo = new TaskGraphRepo(pool)
       const wf = `wf-ew-uc-${Date.now()}`
       const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
-      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' }
+      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'DRAFTED' }
       await repo.upsertGraph({ workflowId: wf, workPackages: [a], eventId: null, userContext: uc })
 
       // 실 Postgres 라운드트립: graph_dag JSONB → getGraph → 워커 주입
@@ -118,7 +118,7 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
       const store = new DispatchStore(pool)
       const leaseStore = new LeaseStore(pool)
       const wf = `wf-ew-vf-${Date.now()}`
-      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'tester', oracleRef: null, acceptanceCriteria: [], dependencies: [], attributionCounters: {}, status: 'draft' }
+      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'tester', oracleRef: null, acceptanceCriteria: [], dependencies: [], attributionCounters: {}, status: 'DRAFTED' }
       await repo.upsertGraph({ workflowId: wf, workPackages: [a], eventId: null })
       await store.recordDispatch({ workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED', attempt: 0, visibilityMs: 60000 })
 
@@ -167,7 +167,7 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
       const store = new DispatchStore(pool)
       const leaseStore = new LeaseStore(pool)
       const wf = `wf-ew-vp-${Date.now()}`
-      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'tester', oracleRef: null, acceptanceCriteria: [], dependencies: [], attributionCounters: {}, status: 'draft' }
+      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'tester', oracleRef: null, acceptanceCriteria: [], dependencies: [], attributionCounters: {}, status: 'DRAFTED' }
       await repo.upsertGraph({ workflowId: wf, workPackages: [a], eventId: null })
       await store.recordDispatch({ workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED', attempt: 0, visibilityMs: 60000 })
 
@@ -204,7 +204,7 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
       const oracleRepo = new OracleRepo(pool)
       const wf = `wf-ew-cf-${Date.now()}`
       const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
-      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' }
+      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'DRAFTED' }
       await repo.upsertGraph({ workflowId: wf, workPackages: [a], eventId: null, userContext: uc })
       await store.recordDispatch({ workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED', attempt: 0, visibilityMs: 60000 })
 
@@ -257,7 +257,7 @@ describe.skipIf(!url)('P4-1 실행 워커 루프 통합(dispatch_signal→완료
       const oracleRepo = new OracleRepo(pool)
       const wf = `wf-ew-cff-${Date.now()}`
       const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/workspace/p1' }
-      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'draft' }
+      const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: ['AC1'], dependencies: [], attributionCounters: {}, status: 'DRAFTED' }
       await repo.upsertGraph({ workflowId: wf, workPackages: [a], eventId: null, userContext: uc })
       await store.recordDispatch({ workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED', attempt: 0, visibilityMs: 60000 })
       await oracleRepo.upsertDraft({

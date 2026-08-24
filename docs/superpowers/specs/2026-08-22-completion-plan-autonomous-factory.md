@@ -80,7 +80,7 @@
 |---|---|---|---|
 | F1 | 재분해가 진행 중 WP를 통째로 덮어씀(방어 함수는 있는데 미배선) | `decomposition-consumer.ts:150-156` | △ |
 | F2 | risk write-back이 전 WP를 균일 덮어씀 | `db/task-graph.repo.ts:177-190` | △ |
-| F3 | WP 상태 정본이 둘로 갈림 | `work-package.ts:50` vs `dispatch-constants.ts` | △ |
+| F3 | ~~WP 상태 정본이 둘로 갈림~~ → **`S6.1` 로 해소.** 실측해 보니 **셋**이었다(테스트가 쓰던 `'READY'` 포함) | `work-package.ts:50` vs `dispatch-constants.ts` | ◎ |
 | F4 | `security_audit`·`design_ui` WP가 빈 플랜으로 통과 | `verify.ts:82-85`가 빈 배열 → `:334`에서 즉시 통과, 증거 기록 0회 | ◎ |
 | F5 | 검증 실패 브리프가 없고 이벤트 구독자가 0 | 보고됨 | △ |
 | F6 | `spec_fix`·`reject`가 결정 소비자에서 무동작 | `decision-consumer.ts:61-104`에 3분기뿐 | △ |
@@ -133,12 +133,15 @@
 | S2.5 | [#588](https://github.com/xzawed/xzawed-pais/pull/588) | 2026-08-23 | `posix-shell-quote.ts` (shescape 는 이 자리에 못 쓴다) |
 | S3.2 | [#589](https://github.com/xzawed/xzawed-pais/pull/589) · [#590](https://github.com/xzawed/xzawed-pais/pull/590) | 2026-08-23 | `/health/ready` 9종 · `loopProbe` 가 코어 |
 | S3.4 | [#615](https://github.com/xzawed/xzawed-pais/pull/615) | 2026-08-24 | `manager_schema_migrations` · `db/migration-guard.ts`. **접두사가 계약이다** — Orchestrator 와 런타임 DB 를 공유한다 |
+| S6.1 | [#616](https://github.com/xzawed/xzawed-pais/pull/616) | 2026-08-24 | `types/wp-state.ts` 정본 6종 + 전이표 · 마이그레이션 018(데이터 이전 + CHECK). 대문자가 정본 |
 
 슬라이스가 아닌 동반 PR: [#584](https://github.com/xzawed/xzawed-pais/pull/584)(Launcher CLAUDE.md 자기모순), [#585](https://github.com/xzawed/xzawed-pais/pull/585)(단일 인스턴스 잠금 — 고아 워크트리에서 건진 미머지 작업).
 
-**남은 슬라이스는 12건이다**(2026-08-24): `S3.3` · `S4.3` · E5 전부(5) · E6 전부(3) · `S7.1` · `S7.2`.
+**남은 슬라이스는 11건이다**(2026-08-24): `S3.3` · `S4.3` · E5 전부(5) · `S6.2` · `S6.3` · `S7.1` · `S7.2`.
 
-그중 **즉시 착수 가능 7건** — `S3.3` · `S4.3` · `S5.1` · `S5.3` · `S6.1` · `S6.3` · `S7.1`. **`S3.4` 가 닫히면서 그래프 레인의 선행이 풀렸다** — `S6.1` 이 이제 착수 가능하고, 나머지 5건은 `S6.1`→`S6.2`→`S7.2` 와 `S5.1`→`S5.2a`→`S5.2b`, `S5.3`→`S5.4` 사슬에 걸려 있다.
+그중 **즉시 착수 가능 7건** — `S3.3` · `S4.3` · `S5.1` · `S5.3` · `S6.2` · `S6.3` · `S7.1`. **`S6.1` 이 닫히면서 `S6.2`(재진입 병합 배선) 선행이 풀렸다.** 나머지 4건은 `S6.2`→`S7.2` 와 `S5.1`→`S5.2a`→`S5.2b`, `S5.3`→`S5.4` 사슬에 걸려 있다.
+
+> **`S6.2` 는 이제 순수 배선이다.** `mergeKeepInflight` 는 shared 에 이미 있고 테스트도 완비돼 있는데 Manager 호출자가 0곳이다. **S6.1 이전에 그것을 배선했다면 무음 실패였다** — 기본 in-flight 술어가 소문자 집합을 보는데 프로덕션 그래프는 `'draft'` 만 담았으므로 **모든 WP 가 교체 가능으로 판정**됐을 것이다. 지금은 같은 값 공간이고, `ESCALATED`(사람 개입 대기)도 보존 대상에 포함된다.
 
 ---
 규모는 **파일 수 · 삽입 줄 수** 범위다. 근거는 이 저장소 커밋의 실측 — 최근 30커밋 중앙값 **4파일 / +66줄**, 최대 **76파일 / +678줄**. 시간 추정은 하지 않는다(이 저장소에 시간 실적이 없다).

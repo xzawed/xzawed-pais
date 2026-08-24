@@ -85,7 +85,7 @@ describe('planVerificationChecks — 파생 체크 플랜', () => {
 
 const wpFix = (over: Partial<WorkPackage> = {}): WorkPackage => ({
   id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null,
-  acceptanceCriteria: ['ac1'], dependencies: [], attributionCounters: {}, status: 'draft', ...over,
+  acceptanceCriteria: ['ac1'], dependencies: [], attributionCounters: {}, status: 'DRAFTED', ...over,
 })
 const buildInput = (wp: WorkPackage) => ({ projectPath: '/ws', wp: wp.id })
 

@@ -21,7 +21,7 @@ async function cleanup(pool: import('pg').Pool): Promise<void> {
 async function dispatchAndEscalate(
   repo: TaskGraphRepo, store: DispatchStore, leaseStore: LeaseStore, wf: string,
 ): Promise<void> {
-  const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: [], dependencies: [], attributionCounters: {}, status: 'draft' }
+  const a: WorkPackage = { id: 'a', storyId: 's1', owningRole: 'developer', oracleRef: null, acceptanceCriteria: [], dependencies: [], attributionCounters: {}, status: 'DRAFTED' }
   await repo.upsertGraph({ workflowId: wf, workPackages: [a], eventId: null })
   await store.recordDispatch({ workflowId: wf, wpId: 'a', stepN: 0, fromState: 'DRAFTED', attempt: 0, visibilityMs: 60000 })
 }
