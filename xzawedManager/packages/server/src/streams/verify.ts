@@ -1,4 +1,4 @@
-import { isAbsolute } from 'node:path'
+import { isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
 import { makeEnvelope } from '@xzawed/agent-streams'
 import type { WorkPackage, WpRisk } from '@xzawed/agent-streams'
@@ -32,7 +32,7 @@ const SEVERITY_RANK: Record<SecuritySeverity, number> = { low: 0, medium: 1, hig
 const DEFAULT_SECURITY_MIN_SEVERITY: SecuritySeverity = 'high'
 
 /** security 채널 판정 전용 minimal 스키마 — severity·source required(부재=파싱 실패=fail-closed·N1).
- *  `auditable`은 **파싱만** 한다 — 판정 반영(미감사 → passed 강등)은 별도 슬라이스다.
+ *  `auditable`은 **`judgeAuditable`이 판정에 쓴다**(S5.1 — 미감사는 통과가 아니다).
  *  여기 없으면 상위 스키마를 통과한 필드가 이 2단 strip에서 다시 사라진다. */
 const SecurityResultSchema = z.object({
   issues: z.array(z.object({
@@ -53,6 +53,82 @@ const SecurityResultSchema = z.object({
 /** sev가 floor 등급 이상인지(LOW<MEDIUM<HIGH<CRITICAL). security 게이팅용. */
 export function meetsMinSeverity(sev: SecuritySeverity, floor: SecuritySeverity): boolean {
   return SEVERITY_RANK[sev] >= SEVERITY_RANK[floor]
+}
+
+/** `judgeAuditable` 입력 — `SecurityResultSchema.auditable` 과 같은 모양(파싱 결과를 그대로 넘긴다). */
+export type AuditableView = z.infer<typeof SecurityResultSchema>['auditable']
+export type AuditableVerdict = { auditable: true } | { auditable: false; reason: string }
+
+/**
+ * **감사 불능 판정**(S5.1) — "취약점 없음"과 "스캔 못 함"을 구분한다.
+ *
+ * Security 가 아무것도 스캔하지 못해도 결과는 `issues: []` 로 온다. 그것만 읽으면
+ * **무실행이 통과로 영속된다**(D2). `auditable` 비트는 #580 이 넣었고 생산자
+ * (`xzawedSecurity/src/security.ts`)가 실제로 채우는데, 소비 쪽이 파싱만 하고 있었다.
+ *
+ * **fail-closed 다.** `auditable` 은 optional 이므로 `a?.static?.scanned === 0` 같은 형태로 읽으면
+ * **부재가 통과**가 된다 — 막으려던 무음 통과와 정확히 같은 모양이다. 그래서 증명이 없으면 불능이다.
+ *
+ * 범위 밖으로 둔 하나. **부분 스캔**(`scanned < requested`)은 증거가 0 은 아니라 통과시킨다
+ * — 설계상 건너뛰는 비코드 파일이 있어 여기서 막으면 오탐이 된다.
+ *
+ * **요청 0건은 보낸 것이 0건일 때만 정상이다.** 보낸 게 있는데 요청이 0이면 Security 가 대상을
+ * 못 받은 것이라 "감사 대상 없음"과 다르다. 산출물 자체가 없는 WP 의 공허 통과는 `S5.2a` 범위다.
+ */
+export function judgeAuditable(
+  auditable: AuditableView,
+  opts: { droppedArtifacts: number; sentArtifacts: number },
+): AuditableVerdict {
+  // 정규화 후에도 감사할 수 없는 경로(workspaceRoot 밖·traversal)가 남으면 집계가 실제와 어긋난다.
+  if (opts.droppedArtifacts > 0) {
+    return { auditable: false, reason: `artifact ${opts.droppedArtifacts}건이 감사 대상 밖이라 집계를 신뢰할 수 없음` }
+  }
+  if (!auditable) return { auditable: false, reason: 'auditable 집계 부재 — 스캔 여부를 증명할 수 없음' }
+
+  const s = auditable.static
+  if (!s || s.requested === undefined || s.scanned === undefined) {
+    return { auditable: false, reason: 'static 감사 집계 불완전(requested/scanned 부재)' }
+  }
+  // 수치 위생 — 음수 requested 는 아래 0-스캔 검사를 우회하고, scanned>requested 는 집계 자체가 깨진 것이다.
+  // 전선은 JSON 이라 Zod `z.number()` 만으로는 정수·비음수가 보장되지 않는다.
+  if (!Number.isInteger(s.requested) || !Number.isInteger(s.scanned) || s.requested < 0 || s.scanned < 0) {
+    return { auditable: false, reason: `static 감사 집계가 비정상(requested=${s.requested} scanned=${s.scanned})` }
+  }
+  if (s.scanned > s.requested) {
+    return { auditable: false, reason: `static 감사 집계 모순 — 요청 ${s.requested}건보다 스캔 ${s.scanned}건이 많음` }
+  }
+  // 보냈는데 요청이 0이면 Security 가 대상을 못 받았다는 뜻이다 — "대상이 원래 없었다"와 다르다.
+  if (opts.sentArtifacts > 0 && s.requested === 0) {
+    return { auditable: false, reason: `artifact ${opts.sentArtifacts}건을 보냈는데 감사 요청은 0건(집계 불일치)` }
+  }
+  if (s.requested > 0 && s.scanned === 0) {
+    return { auditable: false, reason: `static 감사 무실행 — ${s.requested}건 요청 중 0건 스캔` }
+  }
+
+  const d = auditable.deps
+  if (!d || d.status === undefined) return { auditable: false, reason: '의존성 감사 집계 부재' }
+  if (d.status === 'unavailable') return { auditable: false, reason: '의존성 감사 불가(도구 사용 불가)' }
+
+  return { auditable: true }
+}
+
+/**
+ * artifact 경로를 **감사 가능한 형태로 정규화**한다. 감사할 수 없으면 null.
+ *
+ * Security 의 인바운드 스키마는 상대경로만 받는데(전선 규칙) Developer 는 절대경로를 낼 수 있다
+ * (`applyChange` 가 workspaceRoot 하위 절대경로를 허용한다). 그것을 **드롭하면** 정상 산출물이
+ * 감사에서 빠지고, S5.1 이 그 드롭을 불능으로 세면 **채널이 영구 차단**된다 — 전선 규칙을 판정에
+ * 결합시킨 꼴이다. workspaceRoot 안이면 상대화해서 **감사 범위를 넓히는** 것이 맞다.
+ *
+ * 진짜로 못 하는 것만 null 이다: workspaceRoot 밖 절대경로 · traversal · 루트 자신.
+ */
+export function toAuditPath(artifact: string, workspaceRoot: string): string | null {
+  const abs = isAbsolute(artifact) ? artifact : join(workspaceRoot, artifact)
+  const rel = relative(workspaceRoot, abs)
+  // 빈 문자열=루트 자신, `..` 시작=밖. 두 경우 모두 감사 대상이 아니다.
+  if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || rel.startsWith('../')) return null
+  if (isAbsolute(rel)) return null // 다른 드라이브(Windows)
+  return rel.split(sep).join('/')
 }
 
 /** 판정 전용 minimal 스키마 — 핸들러 outputSchema의 .default()에 기대지 않고
@@ -280,11 +356,15 @@ async function runSecurityCheck(wp: WorkPackage, artifacts: string[], deps: Veri
   }
   if (!deps.handlers['security_audit']) return { ok: false, reason: 'security: security_audit 핸들러 미주입' }
   // security 메시지 스키마는 상대경로(`..` 없는)만 허용 — 위반 artifact는 메시지 거부를 유발하므로 선제 필터.
-  const relArtifacts = artifacts.filter((a) => !isAbsolute(a) && !a.includes('..'))
-  if (relArtifacts.length < artifacts.length) {
-    // 무음 drop 금지 — 드롭된 만큼 Security 의 requested 가 줄어 "대상이 원래 없었다"와
-    // 구분되지 않는다. 판정에는 쓰지 않는다(별도 슬라이스).
-    console.warn(`[verify] security 채널 artifact 드롭 ${artifacts.length - relArtifacts.length}건(절대경로·traversal) — 남은 ${relArtifacts.length}건만 감사`)
+  // S5.1: 절대경로를 **드롭하지 않고 workspaceRoot 기준으로 상대화**한다. Security 의 상대경로
+  // 규칙은 전선 형식이지 감사 범위가 아니다 — 드롭하면 Developer 가 낸 정상 산출물이 감사에서 빠진다.
+  // 진짜로 감사할 수 없는 것(루트 밖·traversal)만 남고, 그것은 아래 judgeAuditable 이 불능으로 센다.
+  const relArtifacts = artifacts
+    .map((a) => toAuditPath(a, deps.userContext!.workspaceRoot))
+    .filter((a): a is string => a !== null)
+  const droppedArtifacts = artifacts.length - relArtifacts.length
+  if (droppedArtifacts > 0) {
+    console.warn(`[verify] security 채널 artifact ${droppedArtifacts}건이 workspaceRoot 밖·traversal — 감사 불능으로 판정`)
   }
   const ran = await execConformanceStep(
     deps, wp, { artifacts: relArtifacts, projectPath: deps.userContext.workspaceRoot, severity: 'low' },
@@ -293,6 +373,12 @@ async function runSecurityCheck(wp: WorkPackage, artifacts: string[], deps: Veri
   if (!ran.ok) return ran
   const parsed = SecurityResultSchema.safeParse(ran.result)
   if (!parsed.success) return { ok: false, reason: 'security: 결과 파싱 실패(issues/severity/source 부재)' }
+  // S5.1: "취약점 없음"과 "스캔 못 함"을 구분한다 — 감사 불능은 통과가 아니다(L2-2).
+  // issues 검사보다 **먼저** 본다: 스캔을 못 했으면 issues 가 비어 있는 것에 의미가 없다.
+  const auditable = judgeAuditable(parsed.data.auditable, { droppedArtifacts, sentArtifacts: relArtifacts.length })
+  if (!auditable.auditable) {
+    return { ok: false, reason: `security: 감사 불능 — ${auditable.reason}`.slice(0, REASON_MAX) }
+  }
   const floor = deps.securityMinSeverity ?? DEFAULT_SECURITY_MIN_SEVERITY
   const blocking = parsed.data.issues.filter((i) => SECURITY_SOURCES.has(i.source) && meetsMinSeverity(i.severity, floor))
   if (blocking.length > 0) {

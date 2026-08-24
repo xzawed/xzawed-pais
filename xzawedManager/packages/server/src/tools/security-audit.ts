@@ -99,9 +99,22 @@ const auditableSchema = z.object({
  * 네 선언(에이전트 types.ts · 이 미러 interface · 이 스키마 · verify.ts 판정 스키마)을
  * 한 PR에 함께 착륙시킨다. 검사는 /contract-drift-check [4/4].
  */
+/**
+ * ⚠️ **`issues`·`score` 에 기본값을 주지 않는다**(S5.1 / 결함 D2).
+ * `.default([])` · `.default(100)` 은 Security 가 침묵해도 **"0건·100점"을 합성해**
+ * 감사했다는 증거 없이 만점을 보고했다 — 기본 경로(대화형 챗)의 약속 위반이다(L1-5).
+ * 부재는 파싱 실패(=fail-closed)여야 한다. 생산자(`xzawedSecurity/src/security.ts:120-124`)는
+ * 둘을 **항상** 싣는다 — 필수화의 정상 경로 회귀는 0이다.
+ *
+ * **`auditable` 은 optional 을 유지한다.** 이 스키마의 관용은 *전선 수준*(구버전 Security 의
+ * 메시지를 통째로 거부하지 않는다)이고, "증거 없이 통과 금지"는 *판정 수준*이다 —
+ * 다른 층이다. 부재는 `verify.ts` 의 `judgeAuditable` 이 fail-closed 로 막는다.
+ *
+ * `summary`·`content` 는 표시용이라 기본값을 유지한다(판정 입력이 아니다).
+ */
 export const outputSchema = z.object({
-  issues: z.array(securityIssueSchema).default([]),
-  score: z.number().default(100),
+  issues: z.array(securityIssueSchema),
+  score: z.number(),
   summary: z.string().default(''),
   content: z.string().default(''),
   knowledge: z.array(z.string()).optional(),
