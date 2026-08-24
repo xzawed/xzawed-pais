@@ -4,38 +4,53 @@
 
 ### AI Multi-Agent Orchestration Platform
 
-> Describe what you want to build in plain language — nine specialized AI agents handle planning, development, design, testing, building, and monitoring automatically.
+Describe what you want in plain language.
+
+Seven specialized Claude agents plan, code, design, test, build, watch, and audit it —
+coordinated by an orchestrator and a manager, talking only over Redis Streams.
 
 <br/>
 
-**🌐 Language:** English | [한국어](./README.ko.md)
+**🌐 Language:** English · [한국어](./README.ko.md)
 
 <br/>
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![Redis](https://img.shields.io/badge/Redis-Streams-DC382D?logo=redis&logoColor=white)](https://redis.io/)
-[![Anthropic](https://img.shields.io/badge/Claude-Sonnet%204.6-D97706?logo=anthropic&logoColor=white)](https://anthropic.com/)
-
-[![pnpm](https://img.shields.io/badge/pnpm-9.x-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
-[![Fastify](https://img.shields.io/badge/Fastify-5.x-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
-[![Vitest](https://img.shields.io/badge/Vitest-2%2F3.x-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
-[![Turborepo](https://img.shields.io/badge/Turborepo-2.x-EF4444?logo=turborepo&logoColor=white)](https://turbo.build/)
-
-[![Tests](https://img.shields.io/badge/tests-337%2B%20passing-brightgreen)](./docs/README.md)
-[![CI](https://img.shields.io/badge/CI-GitHub%20Actions-2088FF?logo=githubactions&logoColor=white)](./.github/workflows/ci.yml)
-[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](./docker-compose.yml)
+[![CI](https://github.com/xzawed/xzawed-pais/actions/workflows/ci.yml/badge.svg)](https://github.com/xzawed/xzawed-pais/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
+
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A522-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![pnpm](https://img.shields.io/badge/pnpm-%E2%89%A510-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
+[![Redis](https://img.shields.io/badge/Redis-Streams-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+[![Claude](https://img.shields.io/badge/Claude-Anthropic-D97706?logo=anthropic&logoColor=white)](https://anthropic.com/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](./docker-compose.yml)
 
 </div>
 
 ---
 
-## ✨ Overview
+## ✨ What it is
 
-**xzawedPAIS** is a single-repository AI multi-agent orchestration platform. A user's natural-language instruction flows through a pipeline of nine specialized Claude-powered services — each responsible for a distinct phase of the software lifecycle — with all inter-service communication handled exclusively via **Redis Streams**.
+**xzawedPAIS** is a single-repository platform where a natural-language instruction flows through a pipeline of specialized Claude-powered services.
 
-No service imports another directly. Every message crosses a stream boundary, giving the system fault tolerance and process-level isolation by design.
+Each service owns one phase of the software lifecycle — planning, development, design, testing, building, watching, security.
+
+Services never import each other. **Every message crosses a Redis Stream boundary**, which buys process-level isolation, independent failure domains, and a replayable audit trail by construction. A CI job (`module-boundaries`) enforces it.
+
+---
+
+## ⚠️ What actually runs by default
+
+We keep this at the top on purpose.
+
+**The default experience is an interactive chat with human approval gates.** You describe a goal, agents propose work, and you approve anything irreversible before it happens.
+
+The fully autonomous arc — task-graph decomposition, verification channels, oracles, risk classification, release and deploy gates — is **real, merged, and tested, but sits behind feature flags that ship off**.
+
+> 📖 **[`docs/LIVE_VS_FLAGGED.md`](./docs/LIVE_VS_FLAGGED.md) is the single source of truth** for what runs by default versus what is dormant.
+>
+> Turn the autonomous stack on with `PAIS_PROFILE=autonomous` (plus a JWT secret and a database).
 
 ---
 
@@ -43,85 +58,74 @@ No service imports another directly. Every message crosses a stream boundary, gi
 
 ```
 👤 User
-   │  (HTTP / WebSocket / MCP)
+   │  HTTP · WebSocket · MCP
    ▼
-🎯 xzawedOrchestrator  (port 3000)  — intent refinement & relay
+🎯 Orchestrator  :3000   intent refinement · approval surface · Electron UI
    │
    │  Redis Streams
    ▼
-🗂️ xzawedManager       (port 3001)  — Claude tool-calling loop & dispatch
+🗂️ Manager       :3001   Claude tool-calling loop · agent dispatch
    │
-   ├──▶ 📋 xzawedPlanner    (port 3002)  — intent → Step[] decomposition
-   ├──▶ 💻 xzawedDeveloper  (port 3003)  — code generation & file I/O
-   ├──▶ 🎨 xzawedDesigner   (port 3004)  — UI component spec design
-   ├──▶ 🧪 xzawedTester     (port 3005)  — test execution & analysis
-   ├──▶ 🔨 xzawedBuilder    (port 3006)  — build detection & execution
-   ├──▶ 👁️  xzawedWatcher   (port 3007)  — file-change monitoring
-   └──▶ 🔒 xzawedSecurity   (port 3008)  — OWASP security audit
+   ├──▶ 📋 Planner    :3002   intent → executable Step[]
+   ├──▶ 💻 Developer  :3003   code generation · file I/O
+   ├──▶ 🎨 Designer   :3004   UI component specs
+   ├──▶ 🧪 Tester     :3005   test execution · analysis
+   ├──▶ 🔨 Builder    :3006   build detection · execution
+   ├──▶ 👁️ Watcher    :3007   file-change streaming
+   └──▶ 🔒 Security   :3008   OWASP security audit
 ```
 
 ---
 
 ## 📦 Services
 
-| Service | Port | Tests | Role |
-|---|---|---|---|
-| [xzawedOrchestrator](./xzawedOrchestrator/) | 3000 | 65 / 65 | User instruction intake, intent refinement, Manager relay |
-| [xzawedManager](./xzawedManager/) | 3001 | 51 / 51 | Claude tool-calling loop, sub-agent dispatch |
-| [xzawedPlanner](./xzawedPlanner/) | 3002 | 33 / 33 | intent → executable Step[] breakdown |
-| [xzawedDeveloper](./xzawedDeveloper/) | 3003 | 31 / 31 | Code generation & modification, file I/O |
-| [xzawedDesigner](./xzawedDesigner/) | 3004 | 26 / 26 | UI component spec & layout design |
-| [xzawedTester](./xzawedTester/) | 3005 | 28 / 28 | Test execution & failure analysis |
-| [xzawedBuilder](./xzawedBuilder/) | 3006 | 32 / 32 | Project build detection & execution |
-| [xzawedWatcher](./xzawedWatcher/) | 3007 | 26 / 26 | File-change surveillance & event streaming |
-| [xzawedSecurity](./xzawedSecurity/) | 3008 | 45 / 45 | OWASP Top 10 security audit |
+| Service | Port | Role |
+|---|---|---|
+| [Orchestrator](./xzawedOrchestrator/CLAUDE.md) | 3000 | Instruction intake, intent refinement, approval & decision surfaces, Electron app |
+| [Manager](./xzawedManager/CLAUDE.md) | 3001 | Claude tool-calling loop, agent dispatch, autonomous arc |
+| [Planner](./xzawedPlanner/CLAUDE.md) | 3002 | Decomposes intent into executable steps |
+| [Developer](./xzawedDeveloper/CLAUDE.md) | 3003 | Generates and modifies code |
+| [Designer](./xzawedDesigner/CLAUDE.md) | 3004 | Designs UI component specifications |
+| [Tester](./xzawedTester/CLAUDE.md) | 3005 | Runs tests and analyzes failures |
+| [Builder](./xzawedBuilder/CLAUDE.md) | 3006 | Detects and runs project builds |
+| [Watcher](./xzawedWatcher/CLAUDE.md) | 3007 | Streams file-change events |
+| [Security](./xzawedSecurity/CLAUDE.md) | 3008 | Audits against OWASP Top 10 |
+
+Two more pieces are not HTTP services:
+
+- **[Shared](./xzawedShared/CLAUDE.md)** — `@xzawed/agent-streams`, the common library every agent and the Manager consume.
+- **[Launcher](./xzawedLauncher/CLAUDE.md)** — an Electron installer that sets the stack up for non-developers.
+
+> Each service's own `CLAUDE.md` holds its structure, contracts, and pitfalls. This table is an index, not a summary.
 
 ---
 
-## 🛠️ Tech Stack
+## ⚡ How services talk
 
-| Category | Technology |
-|---|---|
-| Language | TypeScript 5 (strict mode) |
-| Package manager | pnpm 10 |
-| Monorepo build | Turborepo 2 (Orchestrator + Manager) |
-| HTTP server | Fastify 5 |
-| Messaging | ioredis — Redis Streams |
-| Schema validation | Zod |
-| AI SDK | @anthropic-ai/sdk — Claude Sonnet 4.6 |
-| Testing | Vitest 2/3 (`pool: 'forks'`) |
-| Orchestrator extras | @modelcontextprotocol/sdk, React 19, Electron |
-| Containerization | Docker Compose (all 9 services + Redis) |
-| CI/CD | GitHub Actions (build · test · audit on every PR) |
-
----
-
-## ⚡ How It Works — Redis Streams
-
-Every service communicates through named Redis streams. No direct imports cross service boundaries.
+One rule: **named Redis streams, never a direct import.**
 
 ```
-Stream key format:  {source}:to-{target}:{sessionId}
-Consumer group:     {target}-consumers
+Stream key:      {source}:to-{target}:{sessionId}
+Consumer group:  {target}-consumers
 
-Examples:
-  orchestrator:to-manager:{sid}   →  manager-consumers
-  manager:to-planner:{sid}        →  planner-consumers
-  manager:to-developer:{sid}      →  developer-consumers
-  planner:to-manager:{sid}        →  manager-consumers
+orchestrator:to-manager:{sid}   →  manager-consumers
+manager:to-planner:{sid}        →  planner-consumers
+planner:to-manager:{sid}        →  manager-consumers
 ```
 
-Each message carries a common envelope:
+Every message carries the same envelope:
 
 ```typescript
 {
-  sessionId:  string   // isolates concurrent sessions
-  messageId:  string
-  timestamp:  number
-  type:       string   // service-defined event type
-  payload:    object   // service-defined body
+  sessionId: string   // isolates concurrent sessions
+  messageId: string
+  timestamp: number
+  type:      string   // service-defined event type
+  payload:   object   // service-defined body
 }
 ```
+
+Retries, dead-letter isolation, and idempotent consumption are handled once, in the shared `BaseConsumer`.
 
 ---
 
@@ -129,18 +133,38 @@ Each message carries a common envelope:
 
 ### Prerequisites
 
-- Node.js **22+** and pnpm **10+** (`engines` enforces both)
-- Docker, or a Redis reachable at `redis://localhost:6379`
-- `ANTHROPIC_API_KEY` from [console.anthropic.com](https://console.anthropic.com/)
+- **Node.js ≥ 22** and **pnpm ≥ 10** — both enforced by `engines`
+- **Docker**, or a Redis reachable at `redis://localhost:6379`
+- An **`ANTHROPIC_API_KEY`** from [console.anthropic.com](https://console.anthropic.com/)
 
-### Install
+<br/>
+
+### Option A — Docker (shortest path)
 
 ```bash
 git clone https://github.com/xzawed/xzawed-pais.git
 cd xzawed-pais
+
+# 1. Every service needs its own .env — a missing file aborts the run
+for s in Orchestrator Manager Planner Developer Designer Tester Builder Watcher Security; do
+  cp "xzawed$s/.env.example" "xzawed$s/.env"
+done
+
+# 2. Root .env — compose fails interpolation without it
+echo 'POSTGRES_PASSWORD=choose-one' > .env
+
+docker compose up --build
 ```
 
-There is no root `package.json` — install per service. **Build `xzawedShared` first:** the seven agent services depend on it through `file:../xzawedShared` and its `dist/` is not in git, so a fresh clone cannot start them until it is built.
+This starts **11 containers**: `postgres`, `redis`, and the nine services. They share a `workspace` volume for file I/O, and every app service is gated on a real `/health/ready` probe before its dependents start.
+
+> **There is no browser UI in the images.** The Orchestrator image does not ship `packages/web` — use curl plus a WebSocket client, or run the Electron app from source.
+
+<br/>
+
+### Option B — From source
+
+There is **no root `package.json`**. Install per service, and **build `xzawedShared` first** — the agents depend on it through `file:../xzawedShared`, and its `dist/` is not in git.
 
 ```bash
 cd xzawedShared && pnpm install && pnpm build && cd ..
@@ -154,93 +178,72 @@ for svc in xzawedPlanner xzawedDeveloper xzawedDesigner \
 done
 ```
 
-### Configure
-
-Two things bite here.
-
-**`.env` is read by the seven agent services only.** Their `dev` script passes `--env-file=.env`. Orchestrator and Manager do not, and no service in this repo uses `dotenv` — so putting values in `xzawedManager/.env` has **no effect** when you run `pnpm dev`. Those two take their configuration from the shell.
-
-**`docker compose` needs a root `.env`** holding `POSTGRES_PASSWORD`, and there is no root `.env.example` to copy from. Without it, even `docker compose up redis planner` aborts during interpolation.
-
-### Run
-
-The shortest working path is [Docker](#-docker).
-
-From source:
+Then run:
 
 ```bash
-# Agents — .env works here
+# Agents read .env directly
 cp xzawedPlanner/.env.example xzawedPlanner/.env    # repeat per agent
-cd xzawedPlanner && pnpm dev                        # port 3002
+cd xzawedPlanner && pnpm dev                        # :3002
 
-# Orchestrator / Manager — put the values in the shell
+# Orchestrator and Manager take config from the shell
 cd xzawedManager/packages/server
 ANTHROPIC_API_KEY=sk-ant-... REDIS_URL=redis://localhost:6379 pnpm dev
 ```
 
-**`POST /sessions/:id/messages` returns 202 and nothing else** — the reply streams over WebSocket. The full procedure, including the Electron app and the autonomous profile, is in **[docs/operations/running.md](docs/operations/running.md)**.
+<br/>
 
-### Test
+### Two things that bite
 
-```bash
-cd xzawedManager/packages/server && pnpm test <file>    # single file
-cd xzawedDeveloper && pnpm test -- --reporter=verbose   # verbose
-```
+**`.env` is read by the seven agent services only.** Their `dev` script passes `--env-file=.env`. Orchestrator and Manager do not, and nothing in this repo uses `dotenv` — so values in `xzawedManager/.env` have **no effect**. Put them in the shell.
 
-Integration tests skip silently without `DATABASE_URL` — check the skip count. A local green is not a CI green.
+**`docker compose` needs a root `.env`** holding `POSTGRES_PASSWORD`, and there is no root `.env.example` to copy from. Without it even `docker compose up redis planner` aborts.
+
+> `POST /sessions/:id/messages` returns **202 and nothing else** — the reply streams over WebSocket. Full procedure, including the Electron app and the autonomous profile: **[docs/operations/running.md](./docs/operations/running.md)**.
 
 ---
 
-## 🐳 Docker
+## 🧪 Testing
 
 ```bash
-# 1. Every service needs its own .env — a missing file aborts the run
-for s in Orchestrator Manager Planner Developer Designer Tester Builder Watcher Security; do
-  cp "xzawed$s/.env.example" "xzawed$s/.env"
-done
-
-# 2. Root .env — compose fails interpolation without it
-echo 'POSTGRES_PASSWORD=choose-one' > .env
-
-docker compose up --build
+cd xzawedManager/packages/server && pnpm test <file>    # a single file
+cd xzawedDeveloper && pnpm test                         # a whole service
 ```
 
-This starts 11 containers: `postgres`, `redis`, and the nine services. They share a `workspace` volume for file I/O, and Redis is health-checked before its dependents start.
+Integration tests **skip silently without a database**. Always read the skip count — a local green is not a CI green.
 
-**There is no browser UI in the images.** The Orchestrator Dockerfile does not ship `packages/web`, so use curl plus a WebSocket client, or run the Electron app from source.
+> Sync the shared library into its consumers after changing it: `bash scripts/sync-shared.sh`. `file:` dependencies are *copied* at install time, so a rebuild alone leaves consumers stale.
 
 ---
 
 ## ⚙️ CI/CD
 
-Every push and pull request triggers [GitHub Actions](./.github/workflows/ci.yml):
+Every push and pull request runs [GitHub Actions](./.github/workflows/ci.yml) — build, test, and audit for every service, plus repo-wide gates for duplication, module boundaries, i18n key sync, documentation invariants, and SonarCloud.
 
-| Check | Scope |
-|---|---|
-| `pnpm build` | All 9 services in parallel |
-| `pnpm test` | 337+ tests across all services |
-| `pnpm audit` | Zero moderate+ vulnerabilities enforced |
+`ci.yml` is the source of truth for the job list; we deliberately do not copy the count here.
 
-[Dependabot](./.github/dependabot.yml) opens weekly PRs for dependency updates across all 9 services.
+[Dependabot](./.github/dependabot.yml) opens weekly dependency PRs across every package directory.
 
 ---
 
 ## 📚 Documentation
 
-**New to xzawedPAIS?** Start with the [Quick Start Guide](./QUICKSTART.md) — step-by-step instructions written for non-developers.
-
-Full API references, service design specs, and guides live in [`docs/`](./docs/README.md).
+| Start here | For |
+|---|---|
+| **[QUICKSTART.md](./QUICKSTART.md)** | Step-by-step setup written for non-developers |
+| **[docs/LIVE_VS_FLAGGED.md](./docs/LIVE_VS_FLAGGED.md)** | What runs by default vs. what is flag-gated |
+| **[docs/README.md](./docs/README.md)** | Full index — architecture, operations, development |
+| **[CONTRIBUTING.md](./CONTRIBUTING.md)** | Branching, PR checklist, review expectations |
+| **[CLAUDE.md](./CLAUDE.md)** | Repo-wide conventions, security invariants, workflow |
 
 ---
 
 ## 📄 License
 
-[MIT License](./LICENSE) © 2026 xzawed
-
----
+[MIT](./LICENSE) © 2026 xzawed
 
 <div align="center">
+<br/>
 
-Built with ❤️ using [Claude Sonnet 4.6](https://anthropic.com/)
+Built with [Claude](https://anthropic.com/)
 
 </div>
