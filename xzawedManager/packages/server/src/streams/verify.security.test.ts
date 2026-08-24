@@ -6,7 +6,12 @@ const wp = { id: 'wp-1', storyId: 's1', owningRole: 'developer', acceptanceCrite
 const devResult = { artifacts: ['src/a.ts'] }
 const okBuilder = { execute: vi.fn().mockResolvedValue({ success: true }) }
 const okTester = { execute: vi.fn().mockResolvedValue({ success: true, passed: 1, failed: 0 }) }
-const sec = (issues: unknown[]) => ({ execute: vi.fn().mockResolvedValue({ issues }) })
+/** S5.1: 감사 가능 비트가 없으면 채널이 fail-closed 로 막는다 — 기본 픽스처는 "정상 감사" 상태다. */
+const AUDITED = { static: { requested: 1, scanned: 1 }, deps: { status: 'ok' as const } }
+const sec = (issues: unknown[], auditable: unknown = AUDITED) =>
+  ({ execute: vi.fn().mockResolvedValue({ issues, auditable }) })
+/** auditable 키 자체를 빼는 변형 — `sec(x, undefined)` 는 기본 파라미터가 삼켜 AUDITED 가 된다. */
+const secNoAuditable = (issues: unknown[]) => ({ execute: vi.fn().mockResolvedValue({ issues }) })
 
 function baseDeps(over: Partial<VerifyDeps>): VerifyDeps {
   return {
@@ -110,5 +115,59 @@ describe('verifyWp security 채널', () => {
     expect(securityAudit.execute).toHaveBeenCalledTimes(1)
     const passedArtifacts = (securityAudit.execute.mock.calls[0]?.[0] as { artifacts?: string[] })?.artifacts
     expect(passedArtifacts).toEqual(['src/a.ts'])
+  })
+  /**
+   * **드롭이 아니라 상대화다**(S5.1). Developer 는 workspaceRoot 하위 절대경로를 낼 수 있고
+   * (applyChange 가 허용한다) 그것은 정상 산출물이다. 드롭해서 감사에서 빼면 커버리지가 줄고,
+   * 그 드롭을 감사 불능으로 세면 **정상 WP 가 채널에 영구 차단**된다.
+   */
+  test('workspaceRoot 하위 절대경로는 상대화해서 감사한다(차단하지 않는다)', async () => {
+    const securityAudit = sec([])
+    const v = await verifyWp('develop_code', wp, { artifacts: ['/abs/ws/src/a.ts', 'src/b.ts'] },
+      baseDeps({ securityEnabled: true, handlers: { build_project: okBuilder, run_tests: okTester, security_audit: securityAudit } }))
+    const sent = (securityAudit.execute.mock.calls[0]?.[0] as { artifacts?: string[] })?.artifacts
+    expect(sent).toEqual(['src/a.ts', 'src/b.ts'])
+    expect(v.ok, '정상 산출물이 채널을 막았다').toBe(true)
+  })
+
+  test('workspaceRoot 밖 경로가 섞이면 감사 불능이다(집계를 믿을 수 없다)', async () => {
+    const securityAudit = sec([])
+    const v = await verifyWp('develop_code', wp, { artifacts: ['src/a.ts', '/etc/passwd'] },
+      baseDeps({ securityEnabled: true, handlers: { build_project: okBuilder, run_tests: okTester, security_audit: securityAudit } }))
+    expect(v.ok).toBe(false)
+    expect(v.ok === false && v.reason).toMatch(/감사 불능/)
+  })
+
+})
+
+/**
+ * **배선 테스트**(S5.1). 순수 `judgeAuditable` 만 테스트하면 그것을 `runSecurityCheck` 에서
+ * 부르는 것을 빼먹어도 초록이다 — 채널이 실제로 막는지를 여기서 본다.
+ * 이것이 없으면 S6.2 에서 겪은 "함수는 있는데 호출자가 0곳" 과 같은 상태가 된다.
+ */
+describe('verifyWp security 채널 — 감사 불능은 통과가 아니다(S5.1)', () => {
+  const clean: unknown[] = []
+
+  test('auditable 이 없으면 이슈 0건이어도 통과하지 않는다', async () => {
+    const securityAudit = secNoAuditable(clean)
+    const v = await verifyWp('develop_code', wp, devResult,
+      baseDeps({ securityEnabled: true, handlers: { build_project: okBuilder, run_tests: okTester, security_audit: securityAudit } as never }))
+    expect(v.ok).toBe(false)
+    expect(v.ok === false && v.reason).toMatch(/감사 불능/)
+  })
+
+  test('요청은 있는데 0건 스캔이면 통과하지 않는다', async () => {
+    const securityAudit = sec(clean, { static: { requested: 7, scanned: 0 }, deps: { status: 'ok' } })
+    const v = await verifyWp('develop_code', wp, devResult,
+      baseDeps({ securityEnabled: true, handlers: { build_project: okBuilder, run_tests: okTester, security_audit: securityAudit } as never }))
+    expect(v.ok).toBe(false)
+    expect(v.ok === false && v.reason).toMatch(/7건 요청 중 0건/)
+  })
+
+  test('의존성 감사 불가면 통과하지 않는다', async () => {
+    const securityAudit = sec(clean, { static: { requested: 1, scanned: 1 }, deps: { status: 'unavailable' } })
+    const v = await verifyWp('develop_code', wp, devResult,
+      baseDeps({ securityEnabled: true, handlers: { build_project: okBuilder, run_tests: okTester, security_audit: securityAudit } as never }))
+    expect(v.ok).toBe(false)
   })
 })

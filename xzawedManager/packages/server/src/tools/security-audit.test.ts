@@ -90,18 +90,50 @@ describe('outputSchema — 소비자 lenient', () => {
 })
 
 describe('outputSchema — 기존 필드 회귀', () => {
-  it('payload 가 비어도 기본값으로 채운다', () => {
-    const out = outputSchema.parse({})
-    expect(out.issues).toEqual([])
-    expect(out.score).toBe(100)
-  })
+  // ⚠️ 여기 있던 `payload 가 비어도 기본값으로 채운다` 는 **결함 D2 를 고정하던 테스트**다.
+  // 빈 payload 를 `0건·100점` 으로 합성하는 것이 정확히 "감사 불능이 만점으로 보고되는" 경로였다
+  // (L1-5). S5.1 에서 뒤집었고, 대체 단언은 위 `합성하지 않는다` describe 에 있다.
 
   it('issue 의 source 세 값을 받는다', () => {
     for (const source of ['static', 'deps', 'llm'] as const) {
       const out = outputSchema.parse({
+        score: 100,
         issues: [{ id: 'x', severity: 'low', source, category: 'c', file: 'f', description: 'd', suggestion: 's' }],
       })
       expect(out.issues[0]?.source).toBe(source)
     }
+  })
+})
+
+/**
+ * **합성 금지**(S5.1 / 결함 D2). `issues.default([])` · `score.default(100)` 은
+ * Security 가 침묵해도 **"0건·100점"을 만들어 낸다** — 챗 도구가 광고한 대로 감사했다는
+ * 증거 없이 만점을 보고하던 자리다. 기본 경로(대화형 챗)의 약속 위반이라 verify 채널보다 먼저다.
+ *
+ * 생산자(`xzawedSecurity/src/security.ts:120-124`)는 `issues`·`score`·`summary`·`auditable` 을
+ * **항상** 싣는다. 필수화해도 정상 경로 회귀가 0인 이유다.
+ */
+describe('outputSchema — 침묵을 만점으로 합성하지 않는다(S5.1)', () => {
+  const base = {
+    issues: [], score: 100, summary: 's', content: 'c',
+    auditable: { static: { requested: 1, scanned: 1 }, deps: { status: 'ok' } },
+  }
+
+  it('완전한 payload 는 그대로 통과한다(회귀 0)', () => {
+    expect(outputSchema.parse(base)).toMatchObject({ issues: [], score: 100 })
+  })
+
+  it.each(['issues', 'score'])('%s 가 없으면 파싱에 실패한다(합성 금지)', (field) => {
+    const { [field]: _drop, ...partial } = base as Record<string, unknown>
+    expect(outputSchema.safeParse(partial).success, `${field} 부재가 통과했다`).toBe(false)
+  })
+
+  it('빈 payload 를 0건·100점으로 만들어 내지 않는다', () => {
+    expect(outputSchema.safeParse({}).success).toBe(false)
+  })
+
+  it('auditable 부재는 여전히 통과시킨다 — 관용은 전선 수준이고 판정은 judgeAuditable 이 한다', () => {
+    const { auditable: _d, ...noAuditable } = base as Record<string, unknown>
+    expect(outputSchema.safeParse(noAuditable).success).toBe(true)
   })
 })

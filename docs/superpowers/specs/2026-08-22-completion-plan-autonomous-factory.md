@@ -135,10 +135,11 @@
 | S3.4 | [#615](https://github.com/xzawed/xzawed-pais/pull/615) | 2026-08-24 | `manager_schema_migrations` · `db/migration-guard.ts`. **접두사가 계약이다** — Orchestrator 와 런타임 DB 를 공유한다 |
 | S6.1 | [#616](https://github.com/xzawed/xzawed-pais/pull/616) | 2026-08-24 | `types/wp-state.ts` 정본 6종 + 전이표 · 마이그레이션 018(데이터 이전 + CHECK). 대문자가 정본 |
 | S6.2 | [#618](https://github.com/xzawed/xzawed-pais/pull/618) | 2026-08-24 | 재진입 병합 배선 — 술어는 `latestStates` 유래. `updateWpRisks` lost-update 도 함께 봉합 |
+| S5.1 | [#619](https://github.com/xzawed/xzawed-pais/pull/619) | 2026-08-25 | 감사 불능 판정 — `judgeAuditable` · 합성 기본값 제거 · artifact 상대화 |
 
 슬라이스가 아닌 동반 PR: [#584](https://github.com/xzawed/xzawed-pais/pull/584)(Launcher CLAUDE.md 자기모순), [#585](https://github.com/xzawed/xzawed-pais/pull/585)(단일 인스턴스 잠금 — 고아 워크트리에서 건진 미머지 작업).
 
-**남은 슬라이스는 10건이다**(2026-08-24): `S3.3` · `S4.3` · E5 전부(5) · `S6.3` · `S7.1` · `S7.2`.
+**남은 슬라이스는 9건이다**(2026-08-25): `S3.3` · `S4.3` · `S5.2a` · `S5.2b` · `S5.3` · `S5.4` · `S6.3` · `S7.1` · `S7.2`.
 
 그중 **즉시 착수 가능 7건** — `S3.3` · `S4.3` · `S5.1` · `S5.3` · `S6.3` · `S7.1` · `S7.2`. **`S6.2` 가 닫히면서 그래프 레인이 전부 풀렸다** — `S7.2`(spec_fix 재분해 트리거)의 선행이 없어졌다. 나머지 3건은 `S5.1`→`S5.2a`→`S5.2b` 와 `S5.3`→`S5.4` 사슬뿐이다.
 
