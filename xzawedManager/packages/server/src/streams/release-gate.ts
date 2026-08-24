@@ -1,8 +1,28 @@
 import type { WorkPackage } from '@xzawed/agent-streams'
 import { DONE_STATE } from './dispatch-constants.js'
-import type { ChannelOutcome, ReleaseGateResult, WpGateView } from '../db/release-gate.types.js'
+import type { ChannelName, ChannelOutcome, ReleaseGateResult, WpGateView } from '../db/release-gate.types.js'
 
-/** WP별 증거를 집계해 릴리스 게이트 판정. evidence가 required 집합을 인코딩(develop_code/run_tests/build만 행 존재). */
+/**
+ * WP 가 **무엇을 내기로 했는지**에 따라 요구 증거가 다르다(S5.2a).
+ *
+ * 이전에는 모든 WP 에 `tc: passed` 를 요구했는데, `security` 역할 WP 는 **돌릴 테스트가 없어**
+ * 영원히 미증명이었다 — S5.2a 가 자기검증으로 증거를 남기게 만들어도 게이트가 여전히 막는다.
+ * 요구 채널을 역할에서 파생해 그 자리를 푼다.
+ *
+ * **`designer` 는 일부러 넣지 않았다.** `design_ui` 자기검증은 `S5.2b` 다 — 증거를 남기지 못하는
+ * 상태에서 요구만 바꾸면 `unverifiable` 이 그대로 남고(정상), 통과시키면 그것이 무음 통과다.
+ * 미지 역할도 `tc` 로 남긴다(모르는 것을 느슨하게 열지 않는다 — fail-closed).
+ */
+const REQUIRED_CHANNEL_BY_ROLE: Record<string, ChannelName> = {
+  security: 'security',
+}
+const DEFAULT_REQUIRED_CHANNEL: ChannelName = 'tc'
+
+function requiredChannelFor(wp: WorkPackage): ChannelName {
+  return REQUIRED_CHANNEL_BY_ROLE[wp.owningRole] ?? DEFAULT_REQUIRED_CHANNEL
+}
+
+/** WP별 증거를 집계해 릴리스 게이트 판정. 요구 채널은 owningRole 에서 파생(S5.2a). */
 export function evaluateReleaseGate(
   workPackages: WorkPackage[],
   evidenceByWp: Map<string, ChannelOutcome[]>,
@@ -17,9 +37,10 @@ export function evaluateReleaseGate(
       blockingReasons.push(`wp ${wp.id}: 검증 증거 없음 — 검증 불가 도구 유형 또는 미영속(un-proven)`)
       continue
     }
-    const hasTcPassed = outcomes.some((o) => o.channel === 'tc' && o.outcome === 'passed')
+    const required = requiredChannelFor(wp)
+    const hasRequiredPassed = outcomes.some((o) => o.channel === required && o.outcome === 'passed')
     const skipped = outcomes.filter((o) => o.outcome === 'skipped').map((o) => o.channel)
-    const missingChannels = [...(hasTcPassed ? [] : (['tc'] as const)), ...skipped]
+    const missingChannels = [...(hasRequiredPassed ? [] : [required]), ...skipped]
     const proven = missingChannels.length === 0
     perWp.push({ wpId: wp.id, proven, unverifiable: false, missingChannels })
     if (!proven) blockingReasons.push(`wp ${wp.id}: 미증명 채널 [${missingChannels.join(', ')}]`)

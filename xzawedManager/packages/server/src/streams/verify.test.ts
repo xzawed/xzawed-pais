@@ -64,10 +64,19 @@ describe('judgePrimaryResult — 결과-근거 판정(fail-closed)', () => {
     expect(judgePrimaryResult('build_project', { success: false }).ok).toBe(false)
     expect(judgePrimaryResult('build_project', {}).ok).toBe(false)
   })
-  it('결과-근거 채널 비적용 도구(develop_code·design_ui·security_audit) → ok(pass-through)', () => {
+  it('결과-근거 채널 비적용 도구(develop_code·design_ui) → ok(pass-through)', () => {
+    // develop_code 는 파생 체크(build→test 실 재실행)가 판정하고, design_ui 는 아직 자기검증이 없다(S5.2b).
     expect(judgePrimaryResult('develop_code', { artifacts: [] })).toEqual({ ok: true })
     expect(judgePrimaryResult('design_ui', null)).toEqual({ ok: true })
-    expect(judgePrimaryResult('security_audit', undefined)).toEqual({ ok: true })
+  })
+
+  it('security_audit 은 더 이상 pass-through 가 아니다(S5.2a)', () => {
+    // 여기 있던 `security_audit → ok` 가 **결함 F4 를 고정하던 단언**이다 —
+    // 증거 0회로 통과하던 자리라 릴리스 게이트가 그 WP 를 unverifiable 로 영구 차단했다.
+    expect(judgePrimaryResult('security_audit', undefined).ok).toBe(false)
+    expect(judgePrimaryResult('security_audit', {
+      issues: [], auditable: { static: { requested: 1, scanned: 1 }, deps: { status: 'ok' } },
+    })).toEqual({ ok: true })
   })
 })
 

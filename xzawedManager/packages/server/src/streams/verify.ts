@@ -160,6 +160,57 @@ export function judgePrimaryResult(tool: string, result: unknown): VerificationV
     if (!parsed.data.success) return { ok: false, reason: 'build_project: success=false' }
     return { ok: true }
   }
+  if (tool === 'security_audit') return judgeSecurityAuditWp(result)
+  return { ok: true }
+}
+
+/**
+ * **`security_audit` WP 자기검증**(S5.2a / 결함 F4 · 수용 기준 L2-3).
+ *
+ * 이전에는 pass-through 였고 파생 플랜도 비어 있어 **증거 0회로 즉시 통과**했다.
+ * 그 결과 릴리스 게이트가 그 WP 를 `unverifiable` 로 보고 워크플로를 영구 차단했다.
+ *
+ * **이 WP 의 산출물 자체가 감사 결과다.** 그러니 자기검증은 "감사가 실제로 돌았는가"다 —
+ * 취약점을 찾은 것은 **성공한 감사**이지 실패가 아니다. 발견을 막는 것은 *코드를 낸 WP* 의
+ * security 채널 몫이고, 이 WP 의 몫은 증거 있는 감사를 내는 것이다.
+ *
+ * **판정 기준은 요청 건수가 아니라 "무언가가 실제로 감사됐는가"다.** `buildWorkerInput` 이 모든 WP 에
+ * `artifacts: []` 를 하드코딩하므로(`worker.ts` — WP 의 `inputs`/`outputs` 미배선·F7) static 은
+ * `requested: 0` 이 되지만, **의존성 감사는 `projectPath` 기준이라 artifacts 와 무관하게 실제로 돈다.**
+ * 요청 0건을 곧바로 실패로 세면 그 deps 증거를 버리고 security WP 가 **영원히 완료되지 않는다** —
+ * 원래 결함(DONE 은 되고 게이트만 막힘)보다 나쁘다.
+ *
+ * `judgeAuditable` 과 답하는 질문이 다르다. 그쪽은 "이 감사 결과를 *남의 코드* 게이트 신호로 믿어도
+ * 되는가"이고, 여기는 "이 WP 가 감사 작업을 실제로 했는가"다. 그래서 `deps.unavailable` 하나로
+ * 불능이 되지 않는다 — static 이 실제로 스캔했다면 증거는 존재한다.
+ */
+export function judgeSecurityAuditWp(result: unknown): VerificationVerdict {
+  const parsed = SecurityResultSchema.safeParse(result)
+  if (!parsed.success) {
+    return { ok: false, reason: 'security_audit: 결과 파싱 실패(issues/severity/source 부재)' }
+  }
+  const a = parsed.data.auditable
+  if (!a) return { ok: false, reason: 'security_audit: auditable 집계 부재 — 감사 수행을 증명할 수 없음' }
+
+  const s = a.static
+  if (!s || s.requested === undefined || s.scanned === undefined) {
+    return { ok: false, reason: 'security_audit: static 감사 집계 불완전(requested/scanned 부재)' }
+  }
+  if (!Number.isInteger(s.requested) || !Number.isInteger(s.scanned) || s.requested < 0 || s.scanned < 0) {
+    return { ok: false, reason: `security_audit: 감사 집계가 비정상(requested=${s.requested} scanned=${s.scanned})` }
+  }
+  // 대상을 받고도 하나도 못 스캔했으면 deps 가 돌았든 말든 **맡은 일을 안 한 것**이다.
+  if (s.requested > 0 && s.scanned === 0) {
+    return { ok: false, reason: `security_audit: static 감사 무실행 — ${s.requested}건 요청 중 0건 스캔` }
+  }
+  // 증거 = static 이 실제로 스캔했거나, 의존성 감사가 실제로 돌았거나. 둘 다 아니면 아무것도 안 했다.
+  const depsRan = a.deps?.status === 'ok'
+  if (s.scanned === 0 && !depsRan) {
+    return {
+      ok: false,
+      reason: `security_audit: 공허 감사 — static 0건 스캔·deps ${a.deps?.status ?? '집계 없음'}(감사된 것이 없다)`,
+    }
+  }
   return { ok: true }
 }
 
@@ -432,6 +483,9 @@ export async function verifyWp(
   const primary = judgePrimaryResult(tool, result)
   if (!primary.ok) return primary
   if (tool === 'run_tests' || tool === 'build_project') deps.recordOutcome?.('tc', 'passed')
+  // S5.2a: security_audit WP 는 자기 결과가 증거다. 판정을 통과한 뒤에만 기록한다 —
+  // 기록이 없으면 릴리스 게이트가 `unverifiable` 로 보고 워크플로를 영구 차단한다.
+  if (tool === 'security_audit') deps.recordOutcome?.('security', 'passed')
   const checks = planVerificationChecks(tool)
   if (checks.length === 0) return { ok: true }
   // 파생 체크는 검증 대상 워크스페이스 경로가 명시돼야만 의미가 있다 — 부재 시 '.'로 돌리면 에이전트
