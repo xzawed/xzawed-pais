@@ -34,7 +34,7 @@ describe('handleDecompositionEmitted — happy path', () => {
     const publish = vi.fn().mockResolvedValue('1-0')
     const out = await handleDecompositionEmitted(msg([wp('a'), wp('b', ['a'])]), { repo, publish })
     expect(repo.upsertGraph).toHaveBeenCalledWith({
-      workflowId: 'wf-1', workPackages: [wp('a'), wp('b', ['a'])], eventId: 'evt-1', userContext: null,
+      workflowId: 'wf-1', workPackages: [wp('a'), wp('b', ['a'])], eventId: 'evt-1', userContext: null, intent: null,
     })
     expect(publish).not.toHaveBeenCalled()
     expect(out).toEqual({ status: 'persisted', version: 1 })
@@ -385,5 +385,45 @@ describe('handleDecompositionEmitted — inconsistent surface (C7)', () => {
     await handleDecompositionEmitted(msg([wp('a')]), { repo, publish, notifyUser, failureDecisionStore })
     expect(notifyUser).not.toHaveBeenCalled()
     expect(failureDecisionStore.createRequest).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * **분해 입력(intent)은 그래프와 함께 영속된다**(S7.2 / 결함 F6).
+ *
+ * `spec_fix` 재분해는 `produceDecomposition(intent, …)` 을 다시 부르는 것인데, intent 가 어디에도
+ * 남지 않아 돌릴 재료 자체가 없었다. `userContext` 와 같은 방식으로 `graph_dag` 에 얹었다.
+ */
+describe('intent 영속 — spec_fix 재분해의 재료', () => {
+  it('payload.intent 를 upsertGraph 로 함께 영속한다', async () => {
+    const repo = mockRepo(1)
+    const m = { ...msg([wp('a')]), payload: { workPackages: [wp('a')], oracleDrafts: [], intent: '로그인 기능' } } as DecompositionEmittedMessage
+    await handleDecompositionEmitted(m, { repo, publish: vi.fn() })
+    expect(repo.upsertGraph).toHaveBeenCalledWith(expect.objectContaining({ intent: '로그인 기능' }))
+  })
+
+  /**
+   * `upsertGraph` 는 graph_dag 를 **통째로 교체**한다. 재분해 발행이 intent 를 안 실으면 원 스펙이
+   * 유실되고 다음 `spec_fix` 가 돌 재료가 없어진다 — 병합 때문에 이미 읽은 기존 그래프에서 이월한다.
+   */
+  it('새 발행에 intent 가 없으면 기존 그래프의 것을 이월한다', async () => {
+    const repo = mockRepo(2)
+    ;(repo.getGraph as ReturnType<typeof vi.fn>).mockResolvedValue({
+      workflowId: 'wf-1', workPackages: [wp('old')], eventId: null, version: 1, userContext: null, intent: '원래 스펙',
+    })
+    ;(repo as unknown as { latestStates: ReturnType<typeof vi.fn> }).latestStates = vi.fn().mockResolvedValue(new Map())
+    await handleDecompositionEmitted(msg([wp('a')]), { repo, publish: vi.fn() })
+    expect(repo.upsertGraph).toHaveBeenCalledWith(expect.objectContaining({ intent: '원래 스펙' }))
+  })
+
+  it('새 발행의 intent 가 기존 것을 이긴다(스펙 수정본이 정본)', async () => {
+    const repo = mockRepo(2)
+    ;(repo.getGraph as ReturnType<typeof vi.fn>).mockResolvedValue({
+      workflowId: 'wf-1', workPackages: [wp('old')], eventId: null, version: 1, userContext: null, intent: '원래 스펙',
+    })
+    ;(repo as unknown as { latestStates: ReturnType<typeof vi.fn> }).latestStates = vi.fn().mockResolvedValue(new Map())
+    const m = { ...msg([wp('a')]), payload: { workPackages: [wp('a')], oracleDrafts: [], intent: '수정된 스펙' } } as DecompositionEmittedMessage
+    await handleDecompositionEmitted(m, { repo, publish: vi.fn() })
+    expect(repo.upsertGraph).toHaveBeenCalledWith(expect.objectContaining({ intent: '수정된 스펙' }))
   })
 })

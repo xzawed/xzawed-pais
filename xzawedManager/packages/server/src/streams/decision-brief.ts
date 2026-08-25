@@ -18,6 +18,11 @@ export interface EscalationInfo {
    * 순수 빌더는 받은 것만 쓴다. 조회 실패·미배선이면 빈 배열이고 브리프는 이전과 같은 모양이 된다.
    */
   failures?: { attempt: number; reason: string }[]
+  /**
+   * S7.2: `spec_fix`(재분해) 핸들러가 배선됐는가. **버튼을 그릴지의 유일한 근거다** —
+   * 핸들러 없이 노출하면 눌러도 RESOLVED 만 남기는 거짓 affordance 가 된다(S7.3 이 지운 것).
+   */
+  specFixAvailable?: boolean
 }
 
 /** `DecisionRepo.createRequest` 입력의 구조적 부분집합 — repo 직접 결합 회피(M3). */
@@ -100,11 +105,11 @@ export function buildDefectBrief(info: EscalationInfo): DecisionRequestInput {
         `attempt=${tries}`,
         ...failures.map((f) => `wp.verification.failed@attempt=${f.attempt}`),
       ],
-      // D10: decision-consumer는 defect_brief에서 fix_reverify만 능동 처리한다(escalated lease reopen→재디스패치).
-      // spec_fix(재분해)·accept_known(수용)·reject(saga)는 핸들러가 없어 RESOLVED만 남기는 무음 no-op이므로
-      // 거짓 affordance를 제거하기 위해 핸들 가능한 choice만 노출한다(미구현 동작 버튼 비표시).
-      // 후속 슬라이스가 핸들러를 추가하면 그 choice를 다시 노출한다(degraded-signoff-brief가 핸들 가능 choice만 나열하는 선례).
-      options: ['fix_reverify'],
+      // D10: 핸들 가능한 choice만 노출한다 — 핸들러 없는 버튼은 눌러도 RESOLVED만 남기는
+      // 무음 no-op(거짓 affordance)이라 S7.3 이 지웠다.
+      // S7.2: `spec_fix` 핸들러가 배선되면 다시 노출한다. `accept_known`(수용)·`reject`(saga)는
+      // 여전히 핸들러가 없어 빠져 있다 — 그 둘을 넣기 전에 소비자 분기를 먼저 만든다.
+      options: info.specFixAvailable === true ? ['fix_reverify', 'spec_fix'] : ['fix_reverify'],
       attribution,
     },
   }
@@ -117,7 +122,13 @@ export function buildDefectBrief(info: EscalationInfo): DecisionRequestInput {
  */
 export function makeEscalationBrief(
   store: DecisionBriefStore,
-  opts?: { now?: () => number; ttlMs?: number; failureStore?: VerificationFailureLookup },
+  opts?: {
+    now?: () => number
+    ttlMs?: number
+    failureStore?: VerificationFailureLookup
+    /** S7.2: `spec_fix` 핸들러 배선 여부 — 버튼 노출의 유일한 근거(미배선이면 안 그린다). */
+    specFixAvailable?: boolean
+  },
 ): (info: EscalationInfo) => Promise<void> {
   return async (info) => {
     const nowFn = opts?.now ?? Date.now
@@ -131,7 +142,7 @@ export function makeEscalationBrief(
       console.error('[decision-brief] 검증 실패 사유 조회 실패(사유 없이 브리프 발행):', err)
     }
     await store.createRequest({
-      ...buildDefectBrief({ ...info, failures }),
+      ...buildDefectBrief({ ...info, failures, specFixAvailable: opts?.specFixAvailable === true }),
       tenantId: info.tenantId ?? null,
       ...(expiresAt && { expiresAt }),
     })

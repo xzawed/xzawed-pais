@@ -509,6 +509,9 @@ export async function buildServer(
         ...(failureStore && { failureStore }),
         // S6.3: 선행 WP 산출물 → 후행 WP 입력(결함 F7). security static 이 실제로 스캔하게 된다.
         ...(outputStore && { outputStore }),
+        // S7.2: spec_fix → 재분해(결함 F6). **접근자로 넘긴다** — `decompose` 조립이 이 호출보다
+        // 뒤라 값으로 주면 undefined 다. 클로저는 런타임(사람이 버튼을 누른 시점)에 평가된다.
+        ...(config.MANAGER_DECOMPOSE_ENABLED && { decomposeDeps: () => decompose }),
         // C5: DecisionRecordedConsumer에 riskStore 주입 → approve 분기 활성. MANAGER_RISK_DECISION 게이트로
         //   생산자(emit) 측과 대칭 — flag off면 소비자가 riskStore를 받지 않아 'off→바이트 동일' 불변식이 문자 그대로 성립.
         // D5: MANAGER_MODEL_ROUTING도 riskStore(approvedForWorkflow) 소비 — 둘 중 하나면 주입.

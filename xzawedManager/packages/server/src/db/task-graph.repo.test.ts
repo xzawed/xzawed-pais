@@ -66,7 +66,7 @@ describe('TaskGraphRepo.getGraph', () => {
     const pool = mockPool({ rows: [{ graph_dag: { workPackages: [wp] }, event_id: 'evt-9', version: 3 }] })
     const out = await new TaskGraphRepo(pool).getGraph('wf-1')
     expect(pool.query.mock.calls[0][0]).toMatch(/SELECT graph_dag, event_id, version FROM task_graphs WHERE workflow_id = \$1/i)
-    expect(out).toEqual({ workflowId: 'wf-1', workPackages: [wp], eventId: 'evt-9', version: 3, userContext: null })
+    expect(out).toEqual({ workflowId: 'wf-1', workPackages: [wp], eventId: 'evt-9', version: 3, userContext: null, intent: null })
   })
 
   it('workPackages가 없으면 빈 배열로 파싱한다', async () => {

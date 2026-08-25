@@ -46,6 +46,7 @@ async function emitWorkPackages(
   workPackages: WorkPackage[],
   oracleDrafts: OracleDraft[] = [],
   userContext?: UserContext,
+  intent?: string,
 ): Promise<void> {
   const envelope = makeEnvelope(
     { correlationId: workflowId, causationId: null, workflowId, stepId: 'decomposition.emitted', attemptId: 0 },
@@ -54,7 +55,9 @@ async function emitWorkPackages(
   await deps.publish(DECOMPOSE_STREAM, {
     envelope,
     type: 'decomposition.emitted',
-    payload: { workPackages, oracleDrafts, ...(userContext !== undefined && { userContext }) },
+    // S7.2: intent 는 `userContext` 와 같은 방식의 additive 필드다 — 소비자가 graph_dag 에 실어
+    //       `spec_fix` 재분해가 돌릴 재료로 남긴다. 없으면 소비자가 기존 값을 이월한다.
+    payload: { workPackages, oracleDrafts, ...(userContext !== undefined && { userContext }), ...(intent !== undefined && intent.trim().length > 0 && { intent: intent.trim() }) },
   })
 }
 
@@ -89,7 +92,7 @@ export async function produceDecomposition(
       error: err instanceof Error ? err.message : String(err),
     })
     const workPackages = fallbackWorkPackages(intent)
-    await emitWorkPackages(deps, workflowId, workPackages, [], userContext)
+    await emitWorkPackages(deps, workflowId, workPackages, [], userContext, intent)
     return { emitted: workPackages.length, escalated: false }
   }
 
@@ -120,6 +123,6 @@ export async function produceDecomposition(
     singleRoleStoryIds: result.singleRoleStoryIds.length,
   })
   // ok 경로만 oracleDrafts 전달 — inconsistent/기술 fallback 경로는 기본 [](degraded·blocker#5).
-  await emitWorkPackages(deps, workflowId, result.workPackages, result.oracleDrafts, userContext)
+  await emitWorkPackages(deps, workflowId, result.workPackages, result.oracleDrafts, userContext, intent)
   return { emitted: result.workPackages.length, escalated: false }
 }

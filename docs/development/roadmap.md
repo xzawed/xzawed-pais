@@ -23,7 +23,7 @@
 | P3 | Oracle DoR 게이트 + 초안 생성 (`MANAGER_ORACLE_DOR`·`MANAGER_ORACLE_DRAFT`) | 부분 | step branch git 워크플로 · WP 상태머신 |
 | P4 | 실행 워커 + 검증 채널 5종(conformance·impact·property·mutation·security) + advisory 비차단 큐 (`MANAGER_TASK_WORKER`·`MANAGER_WP_*`) | 부분 | fuzz(fast-check) · per-tier θ 캘리브레이션 · 결함 국소화 잔여(진동 누적·graph_dag 영속·재진입·계층 승급) · Tester 적대 측면 |
 | P5 | fail-closed 릴리스 게이트 · 사인오프 · 배포 게이팅 · 강등 모드 FSM (`MANAGER_RELEASE_GATE`·`MANAGER_RELEASE_SIGNOFF`·`MANAGER_DEPLOY_GATE`·`MANAGER_DEGRADED_MODE`) | 부분 | 강등 enforcement · saga 보상 · canary/롤백 |
-| P6 | 의사결정 영속 · 결함 브리프 · 결정 라우팅 · 대기함 UI · 만료 재에스컬레이션 (`MANAGER_DECISION_*`) | 부분 | `spec_fix`·`reject` 실동작(`accept_known`은 `degraded_*`에 한해 동작) · 관측성/SLO |
+| P6 | 의사결정 영속 · 결함 브리프 · 결정 라우팅 · 대기함 UI · 만료 재에스컬레이션 (`MANAGER_DECISION_*`) | 부분 | `reject` 실동작(`accept_known`은 `degraded_*`에 한해 동작) · 관측성/SLO |
 
 > **강등 모드는 코드가 아니라 스위치가 남았다.** `MANAGER_DEGRADED_MODE`가 NORMAL/DEGRADED/SAFE를 신호 구동 FSM으로 관측하고, 게이팅도 이미 `dispatch.ts`에 있다 — SAFE면 신규 디스패치 보류, DEGRADED + HIGH-risk면 사인오프 요구. 다만 `MANAGER_DEGRADED_ENFORCE`·`MANAGER_DEGRADED_SIGNOFF`가 **둘 다 기본 false**이고 off면 `getMode`가 주입되지 않아 스킵된다(회귀 0). 남은 것은 아래 1번이다.
 
@@ -35,7 +35,7 @@
 
 1. **강등 enforcement 활성화** — 게이팅 코드는 있으니 신호원과 운영성을 채운다. 추가 신호원(브로커·하트비트·이벤트스토어·보안사고), stuck-DEGRADED idle-probe, SAFE 재개 사인오프. 그다음 플래그를 켤 조건을 정한다.
 2. **모델 라우팅 확장 + 분해 정밀화** — designer·tester·security 에이전트의 모델 소비(각 ~2줄, `payload.model ?? config` 동일 패턴). `near_term` 필터. **WP I/O 는 런타임 포착으로 이미 흐른다** — 실행이 낸 산출물이 `wp_outputs`를 거쳐 후행 입력이 된다(S6.3). 남은 것은 분해 시점 *예측* I/O(계약 체인·impact-DAG 입력)이고, 재진입 머지는 S6.2로 착륙했다.
-3. **결정 라우팅 실동작** — `spec_fix`(재분해)·`reject`(saga 보상)를 실제로 동작시킨다. `verification.failed` 브리프는 착륙했다 — 사유가 `wp_verification_failures`에 영속되고 에스컬레이션 브리프가 그것을 실어 대기함까지 간다. `accept_known`은 `degraded_release`·`degraded_dispatch`에서 이미 사인오프를 영속하고, `decomposition.inconsistent` 브리프도 이미 있다 — 남은 것은 그 둘을 뺀 나머지다.
+3. **결정 라우팅 실동작** — 남은 것은 `reject`(saga 보상)다. `spec_fix`(재분해)는 착륙했다 — 분해 입력이 `graph_dag`에 영속되고 `spec_fix`가 사람 피드백을 덧붙여 재분해를 트리거한다(S7.2). `verification.failed` 브리프는 착륙했다 — 사유가 `wp_verification_failures`에 영속되고 에스컬레이션 브리프가 그것을 실어 대기함까지 간다. `accept_known`은 `degraded_release`·`degraded_dispatch`에서 이미 사인오프를 영속하고, `decomposition.inconsistent` 브리프도 이미 있다 — 남은 것은 그 둘을 뺀 나머지다.
 4. **saga 보상 · canary/롤백** — 강등/실패 시 보상 트랜잭션과 점진 배포. 1번에 의존한다.
 
 > ⚠️ **시퀀싱 함정(해소됨).** 이전 판에는 "게이트를 먼저 닫으면 채널 skip이 fail-open을 fail-closed로 위장한다"고 적혀 있었으나 **방향이 반대였다.** 릴리스 게이트는 증거 0행을 `unverifiable`로 **차단**하므로(`streams/release-gate.ts`), 먼저 닫으면 위장이 아니라 `design_ui`·`security_audit` 역할 워크플로의 **영구 차단**이었다.
