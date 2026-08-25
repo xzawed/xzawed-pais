@@ -137,12 +137,13 @@
 | S6.2 | [#618](https://github.com/xzawed/xzawed-pais/pull/618) | 2026-08-24 | 재진입 병합 배선 — 술어는 `latestStates` 유래. `updateWpRisks` lost-update 도 함께 봉합 |
 | S5.1 | [#619](https://github.com/xzawed/xzawed-pais/pull/619) | 2026-08-25 | 감사 불능 판정 — `judgeAuditable` · 합성 기본값 제거 · artifact 상대화 |
 | S5.2a | [#620](https://github.com/xzawed/xzawed-pais/pull/620) | 2026-08-25 | `security_audit` WP 자기검증 + 릴리스 게이트의 역할별 요구 증거 |
+| S5.2b | [#623](https://github.com/xzawed/xzawed-pais/pull/623) | 2026-08-25 | `design_ui` WP 자기검증 — `DesignAudit` 생산자 계약 · 게이트 역할 맵에 `designer` |
 
 슬라이스가 아닌 동반 PR: [#584](https://github.com/xzawed/xzawed-pais/pull/584)(Launcher CLAUDE.md 자기모순), [#585](https://github.com/xzawed/xzawed-pais/pull/585)(단일 인스턴스 잠금 — 고아 워크트리에서 건진 미머지 작업).
 
-**남은 슬라이스는 8건이다**(2026-08-25): `S3.3` · `S4.3` · `S5.2b` · `S5.3` · `S5.4` · `S6.3` · `S7.1` · `S7.2`.
+**남은 슬라이스는 7건이다**(2026-08-25): `S3.3` · `S4.3` · `S5.3` · `S5.4` · `S6.3` · `S7.1` · `S7.2`.
 
-그중 **즉시 착수 가능 7건** — `S3.3` · `S4.3` · `S5.1` · `S5.3` · `S6.3` · `S7.1` · `S7.2`. **`S6.2` 가 닫히면서 그래프 레인이 전부 풀렸다** — `S7.2`(spec_fix 재분해 트리거)의 선행이 없어졌다. 나머지 3건은 `S5.1`→`S5.2a`→`S5.2b` 와 `S5.3`→`S5.4` 사슬뿐이다.
+그중 **즉시 착수 가능 6건** — `S3.3` · `S4.3` · `S5.3` · `S6.3` · `S7.1` · `S7.2`. **`S6.2` 가 닫히면서 그래프 레인이 전부 풀렸다** — `S7.2`(spec_fix 재분해 트리거)의 선행이 없어졌다. **verify 레인도 `S5.2b` 로 닫혔다** — 남은 사슬은 `S5.3`→`S5.4` 하나뿐이고 그것이 유일한 미착수 선행이다.
 
 > **`S6.2` 는 "순수 배선"이 아니었다(2026-08-24 실측).** `mergeKeepInflight` 를 그냥 부르는 것으로는 아무 효과가 없다 — 기본 in-flight 술어는 `wp.status` 를 읽는데 `graph_dag` 의 status 는 **S6.1 이후에도 영원히 `DRAFTED`** 다(`decompose/map.ts` 가 유일한 writer 이고 아무도 바꾸지 않는다). 실제 진행 상태는 `wp_state_log` 에만 있으므로 술어를 `latestStates` 에서 파생해야 실효가 생긴다. 계획서가 이 슬라이스에만 "유닛은 위음성 · pg 통합 필수"를 적어 둔 이유가 이것이었고, 실측해 보니 그 이유가 S6.1 로도 사라지지 않았다.
 >

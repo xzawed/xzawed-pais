@@ -9,12 +9,16 @@ import type { ChannelName, ChannelOutcome, ReleaseGateResult, WpGateView } from 
  * 영원히 미증명이었다 — S5.2a 가 자기검증으로 증거를 남기게 만들어도 게이트가 여전히 막는다.
  * 요구 채널을 역할에서 파생해 그 자리를 푼다.
  *
- * **`designer` 는 일부러 넣지 않았다.** `design_ui` 자기검증은 `S5.2b` 다 — 증거를 남기지 못하는
- * 상태에서 요구만 바꾸면 `unverifiable` 이 그대로 남고(정상), 통과시키면 그것이 무음 통과다.
+ * **`designer` 는 `S5.2b` 에서 들어왔다.** S5.2a 시점에는 일부러 뺐다 — 증거를 남기지 못하는
+ * 상태에서 요구만 바꾸면 `unverifiable` 이 그대로 남고(정상), 통과시키면 그것이 무음 통과이기
+ * 때문이다. 이제 `judgeDesignUiWp` 가 `design: passed` 를 남기므로 요구가 성립한다.
+ * **역할을 여기 추가하기 전에 그 역할이 증거를 남기는지 먼저 확인한다** — 순서를 뒤집으면
+ * 그 워크플로가 영구 blocked 가 되거나(증거 없음) 무음 통과가 된다(요구 없음).
  * 미지 역할도 `tc` 로 남긴다(모르는 것을 느슨하게 열지 않는다 — fail-closed).
  */
 const REQUIRED_CHANNEL_BY_ROLE: Record<string, ChannelName> = {
   security: 'security',
+  designer: 'design',
 }
 const DEFAULT_REQUIRED_CHANNEL: ChannelName = 'tc'
 

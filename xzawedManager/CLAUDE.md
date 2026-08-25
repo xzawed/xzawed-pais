@@ -70,13 +70,14 @@ cd packages/server && pnpm test <파일>
 
 무음 통과·무음 소멸·무음 drop은 금지다. 처리할 수 없는 메시지는 조용히 ack하지 말고 error를 발행하거나 사람에게 올린다.
 
-**`MANAGER_DEPLOY_GATE_STRICT` 기본값을 지금 뒤집지 않는 이유.** 셋이다.
+**`MANAGER_DEPLOY_GATE_STRICT` 기본값을 지금 뒤집지 않는 이유.** 둘이다.
 
 1. **기본 태세에서 무의미하다.** `MANAGER_DEPLOY_GATE` 자체가 기본 off라 게이트가 돌지 않는다. STRICT는 그 위에 얹히는 값이다.
-2. **지금 켜면 배포가 영구 차단된다.** 릴리스 게이트는 증거 0행을 `unverifiable`로 차단하는데(`streams/release-gate.ts`), `design_ui`·`security_audit` WP는 자기검증이 없어 증거를 한 행도 남기지 않는다. STRICT를 먼저 켜면 그 역할이 배정된 워크플로의 배포가 사인오프 외에는 뚫리지 않는다.
-3. **fail-open이 무방비가 아니다.** `deploy_project`는 `DEPLOY_TOOLS`라 **실행 전 사람 승인**이 강제되고 `effectiveMode`가 auto override를 무시한다. 게이트 판정이 없어도 사람이 카드를 보고 승인해야 배포가 나간다.
+2. **fail-open이 무방비가 아니다.** `deploy_project`는 `DEPLOY_TOOLS`라 **실행 전 사람 승인**이 강제되고 `effectiveMode`가 auto override를 무시한다. 게이트 판정이 없어도 사람이 카드를 보고 승인해야 배포가 나간다.
 
-**뒤집는 조건.** `design_ui`·`security_audit` WP 자기검증이 착륙해 릴리스 게이트가 그 워크플로에서 증거를 남기게 된 뒤다 — 릴리스 게이트 하드 닫기와 **같은 시점**에 함께 판단한다. 상세는 [완성 실행계획](../docs/superpowers/specs/2026-08-22-completion-plan-autonomous-factory.md).
+**셋째 이유였던 "지금 켜면 배포가 영구 차단된다"는 사라졌다.** `design_ui`·`security_audit` WP가 자기검증으로 각각 `design`·`security` 증거를 남기고(`streams/verify.ts`), 게이트의 요구 채널이 `owningRole`에서 파생된다(`streams/release-gate.ts`). **역할을 요구 맵에 넣기 전에 그 역할이 증거를 남기는지 먼저 확인한다** — 순서를 뒤집으면 그 워크플로가 영구 blocked(증거 없음)이거나 무음 통과(요구 없음)가 된다.
+
+**뒤집는 조건.** 남은 선행은 **per-WP 재채점(S5.3)** 이고, 릴리스 게이트 하드 닫기와 **같은 시점**에 함께 판단한다. 상세는 [완성 실행계획](../docs/superpowers/specs/2026-08-22-completion-plan-autonomous-factory.md).
 
 ## 함정
 

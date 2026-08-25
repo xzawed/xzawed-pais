@@ -10,6 +10,14 @@ const DesignResponseSchema = z.object({
   knowledge: z.array(z.string()).optional(),
 })
 
+/** 설계 산출물 + **출처**(S5.2b). `source` 없이는 폴백 스텁과 실제 설계가 구분되지 않는다. */
+export interface DesignResult {
+  components: ComponentSpec[]
+  uiSpec: UISpec
+  knowledge?: string[]
+  source: 'llm' | 'fallback'
+}
+
 const API_TIMEOUT_MS = Number(process.env["CLAUDE_TIMEOUT_MS"] ?? "120000")
 
 const SYSTEM_PROMPT = `You are a UI/UX design agent. Given a design intent and context, produce component specifications.
@@ -79,7 +87,7 @@ export class ClaudeRunner {
     targetFramework: string,
     designSystem: string,
     clarificationContext?: string,
-  ): Promise<{ components: ComponentSpec[]; uiSpec: UISpec; knowledge?: string[] } | AgentQuery> {
+  ): Promise<DesignResult | AgentQuery> {
     const userContent = [
       formatDomainKnowledge(context),
       `Intent: ${intent}`,
@@ -104,7 +112,7 @@ export class ClaudeRunner {
     )
   }
 
-  parseResponse(text: string, intent: string): { components: ComponentSpec[]; uiSpec: UISpec; knowledge?: string[] } | AgentQuery {
+  parseResponse(text: string, intent: string): DesignResult | AgentQuery {
     const cleaned = stripJsonFences(text)
 
     const start = cleaned.indexOf('{')
@@ -131,17 +139,22 @@ export class ClaudeRunner {
           content: intent,
         },
         ...(knowledge && knowledge.length > 0 ? { knowledge } : {}),
+        source: 'llm',
       }
     } catch {
       return this.fallback(intent)
     }
   }
 
-  private fallback(intent: string): { components: ComponentSpec[]; uiSpec: UISpec } {
+  private fallback(intent: string): DesignResult {
     // fallback은 파싱/검증 실패 경로에서만 호출된다 — generic stub을 design_complete로
     // 발행하면 malformed LLM 출력이 '성공'으로 위장되므로 파싱 실패를 관측 가능화한다.
+    //
+    // **그 관측 가능화는 이 프로세스 로그에서 끝났다**(S5.2b). Manager 는 이 warn 을 볼 수 없고
+    // 전선 위 모양은 성공과 같다 — 스텁도 컴포넌트 1개다. `source: 'fallback'` 이 그 간극을 잇는다.
     console.warn('[designer] LLM 응답 파싱 실패 — 컴포넌트 스펙 없음, generic 폴백 사용')
     return {
+      source: 'fallback',
       components: [{
         name: 'Component',
         description: intent.slice(0, 120),

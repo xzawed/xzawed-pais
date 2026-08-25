@@ -48,8 +48,14 @@ interface DesignerToManagerMessage {
   payload: {
     components?: ComponentSpec[]
     uiSpec?: UISpec
+    designed?: DesignAudit   // 설계 수행 집계 — Manager 가 자기검증에 쓴다
     content: string
   }
+}
+
+interface DesignAudit {
+  source: 'llm' | 'fallback'   // fallback = 파싱 실패로 발행한 generic 스텁
+  components: number           // 같은 메시지에 실은 컴포넌트 수
 }
 
 interface ComponentSpec {
@@ -75,6 +81,7 @@ interface UISpec {
 
 - `ComponentSpec` 재귀 구조: `z.lazy()`로 정의; `z.ZodType<ComponentSpec>` 어노테이션 필요 (`exactOptionalPropertyTypes` 호환)
 - `claude/runner.ts`의 `parseResponse`: JSON 펜스 제거 후 `ComponentSpec[]` 파싱
+- **파싱 실패 폴백은 컴포넌트 1개를 낸다 — 그래서 개수로는 실패를 구분할 수 없다.** 폴백은 generic 스텁을 `design_complete`로 발행하므로 전선 위 모양이 성공과 같고, `console.warn`은 이 프로세스 로그에만 남는다. 소비자(Manager 자기검증)가 구분할 수 있는 유일한 신호가 `designed.source`다 — **폴백 경로를 늘릴 때 이 필드를 반드시 함께 채운다**
 - **Redis 메시지 검증**: 수신 메시지는 `ManagerToDesignerMessageSchema.safeParse()`로 검증. 실패 시 xack 후 skip
 - **Redis xack 보장**: `handler()` 호출을 `try/finally`로 감싸 PEL 누수 방지
 
