@@ -881,6 +881,11 @@ jobs:
       - name: Check replicated contract blocks stay identical
         run: node scripts/check-replicated-blocks.js
 
+      # prod compose 는 루트와 Launcher resources/ 에 두 벌 있고, 사용자에게 나가는 것은 후자다.
+      # 루트만 고치면 배포 스택은 그대로라 이 검사가 그 드리프트를 잡는다.
+      - name: Check prod compose copies stay in parity
+        run: node scripts/check-compose-parity.js
+
   # ── Summary gate (required for branch protection) ─────────────────────────
   all-checks-pass:
     name: All checks pass

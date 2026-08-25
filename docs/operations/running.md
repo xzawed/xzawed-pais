@@ -153,11 +153,25 @@ cd packages/app && pnpm dev
 로컬 스택이기 때문이다. 호스트 포트를 여는 앱 서비스는 orchestrator 하나뿐이고 **루프백에만** 묶인다
 (`127.0.0.1:3000:3000`). 나머지 8개는 compose 네트워크 안에서 서비스명으로만 통신한다.
 
-**`ANTHROPIC_API_KEY`는 필수다.** compose secret 의 소스가 그 env 라 값이 없으면 `up`이 즉시 거부한다
-(`environment variable "ANTHROPIC_API_KEY" required by secret ... is not set`). 이전 판은 빈 문자열을
-흘려보냈고, 키를 하드 요구하는 7개 서비스(에이전트 6종 + Manager)가 조용히 크래시 루프에 빠졌다.
+**`ANTHROPIC_API_KEY`는 필수다.** 미설정이든 빈 문자열이든 `docker compose`가 즉시 거부한다.
+키를 요구하는 서비스는 **8개**다 — 에이전트 6종과 Manager는 무조건(`z.string().min(1)`), orchestrator는
+`CLAUDE_MODE=api`일 때다(루트 사본의 기본값이 `api`, Launcher 사본은 `cli`).
+
+**미설정과 빈 문자열은 compose 안에서 다른 장치가 막는다.** `secrets.*.environment`는 **미설정만**
+거부한다(`environment variable "ANTHROPIC_API_KEY" required by secret ... is not set`). 빈 문자열이면
+compose는 그냥 뜨고 `/run/secrets/anthropic_api_key`가 **아예 생기지 않아**, 각 서비스가
+`ANTHROPIC_API_KEY_FILE`을 읽다 throw하고 `restart: unless-stopped`가 되살려 크래시 루프가 된다.
+그것을 막는 것이 파일 상단의 `x-require-anthropic-api-key: ${ANTHROPIC_API_KEY:?...}`다 — 둘은 한 쌍이다.
+
 키는 env 가 아니라 `/run/secrets/anthropic_api_key` 로 마운트되며 각 서비스는 `ANTHROPIC_API_KEY_FILE`
 로 읽는다 — env 로 넣으면 `docker inspect`의 `Config.Env`에 평문으로 남는다.
+확인 방법은 `ANTHROPIC_API_KEY=<값> docker compose -f docker-compose.prod.yml config`이며, 렌더된
+출력에서 값이 나타나는 곳은 서비스에 붙지 않는 `x-require-anthropic-api-key` 한 줄뿐이다.
+
+> **prod compose 는 두 벌이다.** 루트와 `xzawedLauncher/packages/app/resources/`. Launcher가 실제로
+> 띄우는 것은 **후자**이므로(`process.resourcesPath`) 루트만 고치면 배포 스택은 그대로다. 두 사본의
+> 동일성은 `node scripts/check-compose-parity.js`가 강제하고, 의도된 차이는 그 스크립트의 `ALLOWED`에
+> 선언한다(현재 1건 — `CLAUDE_MODE` 기본값).
 `POSTGRES_PASSWORD`는 Launcher가 최초 실행 시 생성해 `userData/db-password`에 보관하고 compose에 주입한다. **직접 `docker compose -f docker-compose.prod.yml`을 돌릴 때는 그 값을 손수 줘야 한다** — 파일이 `${POSTGRES_PASSWORD:?}`로 요구하고, 일부 서비스만 지정해도 보간은 파일 전체에 걸린다.
 
 ## 자율 스택
