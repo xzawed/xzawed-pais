@@ -137,6 +137,7 @@
 | S6.2 | [#618](https://github.com/xzawed/xzawed-pais/pull/618) | 2026-08-24 | 재진입 병합 배선 — 술어는 `latestStates` 유래. `updateWpRisks` lost-update 도 함께 봉합 |
 | S5.1 | [#619](https://github.com/xzawed/xzawed-pais/pull/619) | 2026-08-25 | 감사 불능 판정 — `judgeAuditable` · 합성 기본값 제거 · artifact 상대화 |
 | S5.2a | [#620](https://github.com/xzawed/xzawed-pais/pull/620) | 2026-08-25 | `security_audit` WP 자기검증 + 릴리스 게이트의 역할별 요구 증거 |
+| S5.2b | [#623](https://github.com/xzawed/xzawed-pais/pull/623) | 2026-08-25 | `design_ui` WP 자기검증 — `DesignAudit` 생산자 계약 · 게이트 역할 맵에 `designer` |
 
 슬라이스가 아닌 동반 PR: [#584](https://github.com/xzawed/xzawed-pais/pull/584)(Launcher CLAUDE.md 자기모순), [#585](https://github.com/xzawed/xzawed-pais/pull/585)(단일 인스턴스 잠금 — 고아 워크트리에서 건진 미머지 작업).
 
