@@ -98,25 +98,44 @@ describe('evaluateReleaseGate — 역할별 요구 증거(S5.2a)', () => {
   })
 
   /**
-   * `design_ui` 는 **아직 자기검증이 없다**(S5.2b). 증거를 남기지 못하므로 여전히
-   * `unverifiable` 이어야 한다 — 여기서 미리 통과시키면 그것이 무음 통과다.
+   * **S5.2b 로 designer 가 맵에 들어왔다.** S5.2a 시점에는 이 자리에 "designer 는 맵에 없다"를
+   * 고정하는 테스트가 있었고, 그 조건이 바로 `judgeDesignUiWp` 가 `design: passed` 를 남기게 된
+   * 것이다. 증거를 남기게 만들기 **전에** 맵을 고쳤다면 designer WP 는 영구 blocked 였다.
    */
-  it('designer WP 는 아직 증거가 없어 unverifiable 이다(S5.2b 전까지)', () => {
-    const dsn = ({ id: 'd1', storyId: 's', owningRole: 'designer', acceptanceCriteria: [], risk: 'MEDIUM' }) as never
-    const r = evaluateReleaseGate([dsn], ev({}))
+  const dsnWp = (id: string) =>
+    ({ id, storyId: 's', owningRole: 'designer', acceptanceCriteria: [], risk: 'MEDIUM' }) as never
+
+  it('designer WP 는 증거가 아예 없으면 여전히 unverifiable 이다', () => {
+    const r = evaluateReleaseGate([dsnWp('d1')], ev({}))
     expect(r.status).toBe('blocked')
     expect(r.perWp[0]!.unverifiable).toBe(true)
   })
 
-  /**
-   * 위 테스트는 **증거가 비면 역할 맵을 보기 전에 단락**하므로 맵에 designer 를 넣어도 초록이다 —
-   * 그것만으로는 "designer 는 아직 맵에 없다"를 고정하지 못한다. 증거를 주고 요구 채널을 직접 본다.
-   */
-  it('designer 는 역할 맵에 없어 여전히 tc 를 요구한다(S5.2b 전까지 완화 금지)', () => {
-    const dsn = ({ id: 'd1', storyId: 's', owningRole: 'designer', acceptanceCriteria: [], risk: 'MEDIUM' }) as never
-    const r = evaluateReleaseGate([dsn], ev({ d1: [{ channel: 'security', outcome: 'passed' }] }))
+  it('designer WP 는 design:passed 로 증명된다(tc 를 요구하지 않는다)', () => {
+    const r = evaluateReleaseGate([dsnWp('d1')], ev({ d1: [{ channel: 'design', outcome: 'passed' }] }))
+    expect(r.status).toBe('passed')
+    expect(r.perWp[0]!.proven).toBe(true)
+    expect(r.perWp[0]!.missingChannels).toEqual([])
+  })
+
+  it('designer WP 가 엉뚱한 증거만 가지면 증명되지 않는다', () => {
+    const r = evaluateReleaseGate([dsnWp('d1')], ev({ d1: [{ channel: 'security', outcome: 'passed' }] }))
     expect(r.status).toBe('blocked')
-    expect(r.perWp[0]!.missingChannels).toEqual(['tc'])
+    expect(r.perWp[0]!.missingChannels).toEqual(['design'])
+  })
+
+  it('designer WP 의 design 채널이 skipped 면 증명되지 않는다', () => {
+    const r = evaluateReleaseGate([dsnWp('d1')], ev({ d1: [{ channel: 'design', outcome: 'skipped' }] }))
+    expect(r.status).toBe('blocked')
+  })
+
+  it('세 역할이 섞인 그래프 — 각자 자기 증거를 갖추면 통과한다', () => {
+    const r = evaluateReleaseGate([wp('a'), secWp('s1'), dsnWp('d1')], ev({
+      a: [{ channel: 'tc', outcome: 'passed' }],
+      s1: [{ channel: 'security', outcome: 'passed' }],
+      d1: [{ channel: 'design', outcome: 'passed' }],
+    }))
+    expect(r.status).toBe('passed')
   })
 
   it('미지 역할(오타·LLM 창작)도 tc 를 요구한다(fail-closed)', () => {

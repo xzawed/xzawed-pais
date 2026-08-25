@@ -10,9 +10,19 @@ const mockGenerateDesign = vi.fn()
 const mockAnswerQuery = vi.fn()
 const mockRunner = { generateDesign: mockGenerateDesign, answerQuery: mockAnswerQuery }
 
+// 러너가 **실제로 내는 모양**이다 — `source` 는 S5.2b 이후 필수 필드다. 이것을 빼고 테스트하면
+// 프로덕션이 낼 수 없는 입력에 대해서만 초록이 된다(S5.2a 가 정확히 그 틈에서 오판했다).
 const defaultDesignResult = {
   components: [{ name: 'LoginForm', description: 'form', props: {} }],
   uiSpec: { type: 'mockup_viewer' as const, title: 'Login', content: 'login page' },
+  source: 'llm' as const,
+}
+
+/** 러너의 파싱 실패 폴백이 내는 모양(`claude/runner.ts` fallback 과 같다). */
+const fallbackDesignResult = {
+  components: [{ name: 'Component', description: 'login form', props: { children: 'React.ReactNode' } }],
+  uiSpec: { type: 'mockup_viewer' as const, title: 'login form', content: 'login form' },
+  source: 'fallback' as const,
 }
 
 function makeRequest(overrides?: Partial<ManagerToDesignerMessage['payload']>): ManagerToDesignerMessage {
@@ -115,5 +125,46 @@ describe('Designer.handle', () => {
     await designer.handle(makeRequest())
     const call = mockPublish.mock.calls[0]
     expect(call[1].payload.content).toContain('1 component')
+  })
+})
+
+describe('Designer.handle — 설계 수행 집계(S5.2b)', () => {
+  it('design_complete 에 designed 집계를 싣는다', async () => {
+    mockGenerateDesign.mockResolvedValueOnce(defaultDesignResult)
+    await designer.handle(makeRequest())
+    expect(mockPublish.mock.calls[0]?.[1].payload.designed).toEqual({ source: 'llm', components: 1 })
+  })
+
+  it('폴백 결과는 source=fallback 으로 실린다 — 소비자가 성공과 구분할 수 있다', async () => {
+    mockGenerateDesign.mockResolvedValueOnce(fallbackDesignResult)
+    await designer.handle(makeRequest())
+    expect(mockPublish.mock.calls[0]?.[1].payload.designed).toEqual({ source: 'fallback', components: 1 })
+  })
+
+  it('designed.components 는 실제 발행 배열 길이와 같다', async () => {
+    mockGenerateDesign.mockResolvedValueOnce({
+      ...defaultDesignResult,
+      components: [
+        { name: 'A', description: 'a', props: {} },
+        { name: 'B', description: 'b', props: {} },
+        { name: 'C', description: 'c', props: {} },
+      ],
+    })
+    await designer.handle(makeRequest())
+    const payload = mockPublish.mock.calls[0]?.[1].payload
+    expect(payload.designed.components).toBe(payload.components.length)
+    expect(payload.designed.components).toBe(3)
+  })
+
+  it('폴백과 성공은 컴포넌트 수가 같아 designed 없이는 구분되지 않는다', async () => {
+    mockGenerateDesign.mockResolvedValueOnce(defaultDesignResult)
+    await designer.handle(makeRequest())
+    const ok = mockPublish.mock.calls[0]?.[1].payload
+    mockPublish.mockClear()
+    mockGenerateDesign.mockResolvedValueOnce(fallbackDesignResult)
+    await designer.handle(makeRequest())
+    const bad = mockPublish.mock.calls[0]?.[1].payload
+    expect(bad.components.length).toBe(ok.components.length)
+    expect(bad.designed.source).not.toBe(ok.designed.source)
   })
 })

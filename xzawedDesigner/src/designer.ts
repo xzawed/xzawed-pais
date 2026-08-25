@@ -32,6 +32,9 @@ export class Designer {
             payload: {
               components: result.components,
               uiSpec: result.uiSpec,
+              // S5.2b: 설계 수행 집계. `components` 와 **같은 객체 리터럴에서** 파생하므로
+              // 두 값이 어긋나면 전선에서 유실된 것이다(소비자가 fail-closed 로 잡는다).
+              designed: { source: result.source, components: result.components.length },
               ...(result.knowledge ? { knowledge: result.knowledge } : {}),
               content: `Generated ${result.components.length} component(s) for: ${payload.intent.slice(0, 80)}`,
             },

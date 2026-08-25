@@ -161,6 +161,63 @@ export function judgePrimaryResult(tool: string, result: unknown): VerificationV
     return { ok: true }
   }
   if (tool === 'security_audit') return judgeSecurityAuditWp(result)
+  if (tool === 'design_ui') return judgeDesignUiWp(result)
+  return { ok: true }
+}
+
+/** `design_ui` WP 자기검증 전용 minimal 스키마. `designed` 가 **여기에도** 있어야 한다 —
+ *  없으면 `tools/design-ui.ts` 상위 스키마를 통과한 필드가 이 2단 strip 에서 다시 사라진다(S5.1). */
+const DesignerResultSchema = z.object({
+  components: z.array(z.object({ name: z.string() })),
+  designed: z.object({
+    source: z.enum(['llm', 'fallback']),
+    components: z.number(),
+  }).optional(),
+})
+
+/**
+ * **`design_ui` WP 자기검증**(S5.2b / 결함 F4 · 수용 기준 L2-3).
+ *
+ * `security_audit` 과 같은 이유로 pass-through 였고 파생 플랜도 비어 증거 0회로 즉시 통과했다.
+ * 그런데 이쪽은 **판정 재료를 만드는 것부터가 슬라이스였다.**
+ *
+ * **컴포넌트 수는 증거가 될 수 없다.** Designer 의 파싱 실패 폴백(`claude/runner.ts`)이
+ * generic 스텁 컴포넌트 **1개**를 그대로 `design_complete` 로 발행하므로 `components.length > 0`
+ * 은 프로덕션에서 **항상 참**이다. 그 술어로 게이트를 열면 LLM 응답을 한 글자도 못 읽은 실행이
+ * 통과한다 — 막으려던 무음 통과와 정확히 같은 모양이다. 폴백은 Designer 프로세스 로그에
+ * `console.warn` 만 남길 뿐 전선에서는 성공과 구별되지 않았다.
+ *
+ * 그래서 **생산자가 출처를 밝히게 했다**(`DesignAudit.source`) — `auditable` 비트(S2.2)와 같은
+ * 해법이고, 소비자가 유도할 수 없는 값이라 생산자만 낼 수 있다.
+ *
+ * **fail-closed 다.** `designed` 는 optional 이므로 `d?.source === 'fallback'` 처럼 읽으면
+ * **부재가 통과**가 된다. 증명이 없으면 통과가 아니다.
+ *
+ * **신뢰 경계가 생산자에 있다는 것을 명시해 둔다.** 폴백 스텁을 `source: 'llm'` 으로 실어 보내면
+ * 이 판정은 통과한다 — `auditable`(S5.1)이 Security 를 믿는 것과 같은 자리다. 여기서 막는 것은
+ * **정직한 생산자의 실패가 성공으로 보이는 것**이지 거짓말하는 생산자가 아니다.
+ *
+ * 판정을 여기서 멈춘 이유. 컴포넌트의 `description`·`props` 충실도까지 요구하면 프로덕션이
+ * 실제로 내는 값에 대해 거짓 실패가 나고 design WP 가 영원히 완료되지 않는다 — S5.2a 에서
+ * `requested === 0` 을 실패로 세려다 뒤집힌 것과 같은 함정이다. `DesignResponseSchema` 가
+ * 이미 `components.min(1)` 과 `name.min(1)` 을 강제하므로 `source: 'llm'` 은 "LLM 응답을
+ * 파싱·검증해 이름 있는 컴포넌트를 얻었다"는 뜻이다.
+ */
+export function judgeDesignUiWp(result: unknown): VerificationVerdict {
+  const parsed = DesignerResultSchema.safeParse(result)
+  if (!parsed.success) return { ok: false, reason: 'design_ui: 결과 파싱 실패(components 부재)' }
+
+  const d = parsed.data.designed
+  if (!d) return { ok: false, reason: 'design_ui: designed 집계 부재 — 설계 수행을 증명할 수 없음' }
+  if (d.source === 'fallback') {
+    return { ok: false, reason: 'design_ui: 폴백 스텁 — LLM 응답 파싱 실패로 실제 설계 산출물이 없음' }
+  }
+  const actual = parsed.data.components.length
+  if (actual === 0) return { ok: false, reason: 'design_ui: 컴포넌트 0개 — 설계 산출물 없음' }
+  // 집계와 배열은 생산자에서 같은 리터럴로 파생된다 — 어긋나면 전선에서 유실된 것이다(fail-closed).
+  if (d.components !== actual) {
+    return { ok: false, reason: `design_ui: 집계 불일치 — designed.components=${d.components} 인데 배열은 ${actual}개(전선 유실)` }
+  }
   return { ok: true }
 }
 
@@ -483,9 +540,10 @@ export async function verifyWp(
   const primary = judgePrimaryResult(tool, result)
   if (!primary.ok) return primary
   if (tool === 'run_tests' || tool === 'build_project') deps.recordOutcome?.('tc', 'passed')
-  // S5.2a: security_audit WP 는 자기 결과가 증거다. 판정을 통과한 뒤에만 기록한다 —
+  // S5.2a/S5.2b: security_audit·design_ui WP 는 자기 결과가 증거다. 판정을 통과한 뒤에만 기록한다 —
   // 기록이 없으면 릴리스 게이트가 `unverifiable` 로 보고 워크플로를 영구 차단한다.
   if (tool === 'security_audit') deps.recordOutcome?.('security', 'passed')
+  if (tool === 'design_ui') deps.recordOutcome?.('design', 'passed')
   const checks = planVerificationChecks(tool)
   if (checks.length === 0) return { ok: true }
   // 파생 체크는 검증 대상 워크스페이스 경로가 명시돼야만 의미가 있다 — 부재 시 '.'로 돌리면 에이전트

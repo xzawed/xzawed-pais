@@ -64,10 +64,15 @@ describe('judgePrimaryResult — 결과-근거 판정(fail-closed)', () => {
     expect(judgePrimaryResult('build_project', { success: false }).ok).toBe(false)
     expect(judgePrimaryResult('build_project', {}).ok).toBe(false)
   })
-  it('결과-근거 채널 비적용 도구(develop_code·design_ui) → ok(pass-through)', () => {
-    // develop_code 는 파생 체크(build→test 실 재실행)가 판정하고, design_ui 는 아직 자기검증이 없다(S5.2b).
+  it('결과-근거 채널 비적용 도구(develop_code) → ok(pass-through)', () => {
+    // develop_code 는 파생 체크(build→test 실 재실행)가 판정한다.
     expect(judgePrimaryResult('develop_code', { artifacts: [] })).toEqual({ ok: true })
-    expect(judgePrimaryResult('design_ui', null)).toEqual({ ok: true })
+  })
+
+  it('design_ui 는 더 이상 pass-through 가 아니다(S5.2b)', () => {
+    // 여기 있던 `design_ui → ok` 도 **결함 F4 를 고정하던 단언**이다 — security_audit 과 같은 자리다.
+    // 상세 판정은 design-wp-selfverify.test.ts 가 갖는다.
+    expect(judgePrimaryResult('design_ui', null).ok).toBe(false)
   })
 
   it('security_audit 은 더 이상 pass-through 가 아니다(S5.2a)', () => {
@@ -166,9 +171,12 @@ describe('verifyWp — 검증 오케스트레이션(fail-closed·never-throw)', 
     expect(verifySessionId('wf1', 'a', 1)).not.toBe(verifySessionId('wf1', 'a', 0))
     expect(verifySessionId('wf1', 'b', 0)).not.toBe(verifySessionId('wf1', 'a', 0))
   })
-  it('파생 체크 비대상 도구(design_ui) → 즉시 ok', async () => {
+  it('파생 체크 비대상 도구(design_ui)라도 자기검증은 통과해야 한다(S5.2b)', async () => {
     const deps: VerifyDeps = { handlers: {}, buildInput, workflowId: 'wf1', attempt: 0 }
-    expect(await verifyWp('design_ui', wpFix({ owningRole: 'designer' }), null, deps)).toEqual({ ok: true })
+    // 파생 플랜은 여전히 비어 있지만(실행 가능 ground truth 부재) 자기검증이 먼저 걸린다.
+    expect((await verifyWp('design_ui', wpFix({ owningRole: 'designer' }), null, deps)).ok).toBe(false)
+    const designed = { components: [{ name: 'A', description: 'a', props: {} }], designed: { source: 'llm', components: 1 } }
+    expect(await verifyWp('design_ui', wpFix({ owningRole: 'designer' }), designed, deps)).toEqual({ ok: true })
   })
 })
 

@@ -1,7 +1,7 @@
 // P5-1 릴리스 게이트(M1). 진실원천은 manager_events(wp.verified / gate.passed / gate.blocked).
 // 도메인별 :main 스트림 패턴(oracle/advisory/decision/risk)과 정합.
 
-export type ChannelName = 'tc' | 'conformance' | 'impact' | 'property' | 'mutation' | 'security'
+export type ChannelName = 'tc' | 'conformance' | 'impact' | 'property' | 'mutation' | 'security' | 'design'
 export type ChannelOutcomeKind = 'passed' | 'skipped'
 export interface ChannelOutcome {
   channel: ChannelName

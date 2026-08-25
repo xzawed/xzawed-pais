@@ -9,11 +9,10 @@ vi.mock('@anthropic-ai/sdk', () => ({
 }))
 
 import { ClaudeRunner } from './runner.js'
+import type { DesignResult } from './runner.js'
 
 /** generateDesign/parseResponse 결과를 디자인 형태로 좁힌다(AgentQuery면 실패). */
-function asDesign(
-  r: { components: ComponentSpec[]; uiSpec: UISpec; knowledge?: string[] } | AgentQuery,
-): { components: ComponentSpec[]; uiSpec: UISpec; knowledge?: string[] } {
+function asDesign(r: DesignResult | AgentQuery): DesignResult {
   if (r instanceof AgentQuery) throw new Error('expected design result, got AgentQuery')
   return r
 }
@@ -173,5 +172,41 @@ describe('ClaudeRunner.answerQuery', () => {
     mockCreate.mockResolvedValueOnce({ content: [{ type: 'text', text: '디자인 관점 답변' }] })
     const answer = await runner.answerQuery('재고 표시 가능?', { x: 1 })
     expect(answer).toBe('디자인 관점 답변')
+  })
+})
+
+describe('ClaudeRunner.parseResponse — 설계 출처(S5.2b)', () => {
+  const validJson = JSON.stringify({
+    components: [{ name: 'LoginForm', description: 'login', props: { onSubmit: '() => void' } }],
+    uiSpec: { type: 'mockup_viewer', title: 'Login', content: '## Login' },
+  })
+
+  it('응답을 파싱·검증했으면 source=llm 이다', () => {
+    expect(asDesign(runner.parseResponse(validJson, 'login form')).source).toBe('llm')
+  })
+
+  it('JSON 자체가 없으면 source=fallback 이다', () => {
+    expect(asDesign(runner.parseResponse('컴포넌트를 만들 수 없습니다.', 'x')).source).toBe('fallback')
+  })
+
+  it('JSON.parse 실패는 source=fallback 이다', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(asDesign(runner.parseResponse('{invalid json here}', 'x')).source).toBe('fallback')
+  })
+
+  it('스키마 검증 실패(components 빈 배열)는 source=fallback 이다', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const r = asDesign(runner.parseResponse('{"components":[],"uiSpec":{"type":"mockup_viewer"}}', 'x'))
+    expect(r.source).toBe('fallback')
+  })
+
+  // S5.2b 의 존재 이유를 고정한다. 폴백도 컴포넌트 1개를 내므로 **개수만으로는 실패를 구분할 수
+  // 없다** — 이 불변식이 깨지면 소비자(judgeDesignUiWp)의 `source` 판정 근거도 함께 재검토해야 한다.
+  it('폴백도 컴포넌트 1개를 내므로 개수만으로는 성공과 구분되지 않는다', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const ok = asDesign(runner.parseResponse(validJson, 'x'))
+    const bad = asDesign(runner.parseResponse('{invalid}', 'x'))
+    expect(bad.components).toHaveLength(ok.components.length)
+    expect(bad.source).not.toBe(ok.source)
   })
 })
