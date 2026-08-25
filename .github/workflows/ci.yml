@@ -419,6 +419,12 @@ jobs:
         working-directory: xzawedManager/packages/server
         run: pnpm vitest run test/premium-profile-wiring.integration.test.ts
 
+      # S3.3: DLQ/PEL 지표는 실 키스페이스를 훑어야 의미가 있다 — 목으로는 "고정 목록으로는 못 잰다"는
+      # 전제 자체를 검증할 수 없다. Manager turborepo 잡에 redis 가 없어 여기서만 돈다(위와 같은 이유).
+      - name: Run Redis metrics integration
+        working-directory: xzawedManager/packages/server
+        run: pnpm vitest run src/test/redis-metrics.integration.test.ts
+
   # ── Playwright E2E (Electron) ─────────────────────────────────────────────
   playwright-e2e:
     name: Playwright E2E
