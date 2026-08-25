@@ -124,6 +124,7 @@ pnpm build && pnpm test                        # 해당 서비스
 pnpm audit --audit-level=moderate              # dev 포함. --prod만 보면 놓친다
 npx jscpd@3.5.10 --config .jscpd.json <경로...>  # 0 clones. **경로를 반드시 준다**
 node scripts/check-replicated-blocks.js        # 복제 계약 블록 동일성
+node scripts/check-compose-parity.js           # prod compose 두 사본 동일성
 node scripts/check-i18n.js                     # ko/en/ja 일치
 node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200줄·이력 마커 0
 ```
@@ -181,6 +182,8 @@ node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200�
 - **readiness 의 핵심은 Redis ping 이 아니라 소비 루프 상태다.** 기동 시점에 Redis 가 죽어 있으면 `xgroup CREATE` 가 소비 루프 **밖**에서 throw 해 게이트웨이가 영구 정지하는데, ioredis 는 계속 재연결하므로 나중에 `ping()` 은 PONG 을 준다. 살아 있지만 귀머거리인 이 상태는 `isRunning()` 프로브만 잡는다
 - **중복 판정은 jscpd 와 SonarCloud 가 서로 다르다.** Sonar CPD 는 **문자열 리터럴을 정규화**해서 비교하므로 서비스명만 다른 사본을 동일한 것으로 센다. jscpd 0 clones 가 Sonar 통과를 보장하지 않는다 — 서비스명으로만 갈리는 파일이 여럿 생기면 그 자리는 공유 함수로 합친다
 - **`not_configured` 는 장애가 아니다.** prod compose 는 Manager 에 `DATABASE_URL` 을 주지 않는다 — 미구성을 실패로 세면 실제 배포 구성이 영구 unhealthy 가 된다
+- **prod compose 는 두 벌이고 사용자에게 나가는 것은 Launcher 사본이다.** 루트와 `xzawedLauncher/packages/app/resources/` 에 250여 줄이 중복돼 있는데 `docker-manager.ts` 는 `process.resourcesPath` 로 후자를 연다 — **루트만 고치면 배포 스택은 안 고쳐진다.** 의도된 차이는 `CLAUDE_MODE` 기본값 한 줄뿐이고 동일성은 `scripts/check-compose-parity.js` 가 강제한다
+- **compose 에서 미설정과 빈 문자열은 다르다.** `secrets.*.environment` 는 **미설정만** 거부한다 — 빈 문자열이면 그냥 뜨고 secret 파일이 안 생겨 소비 서비스가 기동 실패·재시작 루프에 빠진다. 둘 다 막으려면 `${VAR:?}` 보간이 함께 있어야 한다(값이 컨테이너 env 로 새지 않도록 서비스에 붙지 않는 최상위 `x-` 필드에 둔다)
 
 - **Docker**: `docker-compose.yml` — postgres + redis + 9개 앱 서비스(총 11개). 전 서비스 `context: .` + `dockerfile: <서비스>/Dockerfile`. 에이전트 7개에 `WORKSPACE_ROOT=/workspace`, orchestrator에 `MANAGER_URL` 주입. Shared·Launcher는 compose 서비스가 아니다
 - **CPD는 경로를 주지 않으면 0개 파일을 스캔한다**(로컬). 서비스별로 좁혀 돌리면 **교차 서비스 클론이 구조적으로 안 보인다** — 저장소 전체를 한 번에 넘겨야 CI와 같은 결과가 나온다. 서비스끼리 import할 수 없어 복제가 유일한 선택인 블록은 `jscpd:ignore-start` + `replicated-block: <id>` 마커로 표시하고, 동일성은 `scripts/check-replicated-blocks.js`가 강제한다
