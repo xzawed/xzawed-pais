@@ -2,6 +2,7 @@ import type { Pool } from 'pg'
 import { z } from 'zod'
 import { WorkPackageSchema, assertWpTransition, type WorkPackage, type WpRisk, type WpStatus } from '@xzawed/agent-streams'
 import { AbsoluteUserContextSchema, type UserContext } from '../types/user-context.js'
+import { normalizeIntent } from '../decompose/intent.js'
 
 export interface PersistGraphInput {
   workflowId: string
@@ -90,10 +91,8 @@ export class TaskGraphRepo {
     const dag = JSON.stringify({
       workPackages: input.workPackages,
       ...(input.userContext != null && { userContext: input.userContext }),
-      // S7.2: **공백을 걷어낸 뒤** 비면 저장하지 않는다. `.length > 0` 만으로는 `"   "` 가 통과해
-      // "분해 입력이 있다"는 거짓 신호가 되고, spec_fix 가 사실상 빈 스펙으로 재분해를 돌린다
-      // (Grok 반증이 잡았다 — 트립와이어로 실제 재분해 진입을 확인했다).
-      ...(typeof input.intent === 'string' && input.intent.trim().length > 0 && { intent: input.intent.trim() }),
+      // S7.2: 보이는 내용이 없으면 저장하지 않는다 — 판정은 `normalizeIntent` 하나로 모았다.
+      ...(normalizeIntent(input.intent) !== null && { intent: normalizeIntent(input.intent)! }),
     })
     const { rows } = await this.pool.query<{ version: number }>(
       `INSERT INTO task_graphs (workflow_id, graph_dag, event_id, version, tenant_id, created_at, updated_at)
@@ -134,10 +133,9 @@ export class TaskGraphRepo {
     if (rawUc !== undefined && !ucParsed.success) {
       console.warn(`[task-graph] getGraph(${workflowId}): userContext 파싱 실패 — placeholder 강등`, ucParsed.error.issues)
     }
-    // S7.2: 문자열이 아니거나 **공백뿐이면** null — spec_fix 가 그것으로 재분해를 돌리지 않게 한다.
-    // 읽기에서도 거르는 이유는 기존 행에 공백 intent 가 이미 들어가 있을 수 있기 때문이다.
+    // S7.2: 읽기에서도 정규화한다 — 이 가드가 생기기 전에 저장된 공백 intent 가 행에 남아 있을 수 있다.
     const rawIntent = row.graph_dag?.intent
-    const intent = typeof rawIntent === 'string' && rawIntent.trim().length > 0 ? rawIntent.trim() : null
+    const intent = normalizeIntent(rawIntent)
     return {
       workflowId, workPackages, eventId: row.event_id, version: row.version,
       userContext: ucParsed.success ? ucParsed.data : null,

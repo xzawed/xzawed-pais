@@ -18,6 +18,7 @@ import { AbsoluteUserContextSchema } from '../types/user-context.js'
 import { buildOracleBrief } from './oracle-brief.js'
 import type { DecisionRequestInput } from './decision-brief.js'
 import { formatInconsistentReason, buildDecomposeFailureBrief } from './decompose-failure.js'
+import { normalizeIntent } from '../decompose/intent.js'
 
 // 단일 type 스트림(manager:decomposition:{wf})용 스키마 — 다른 type 메시지가 들어오면
 // BaseConsumer가 invalid_schema로 DLQ 격리한다(의도된 동작; P1d-4가 이 스트림을 다중화하면 재검토).
@@ -215,8 +216,12 @@ export async function handleDecompositionEmitted(
     userContext: msg.payload.userContext ?? null,
     // S7.2: `upsertGraph` 는 graph_dag 를 통째로 교체하므로 새 발행에 intent 가 없으면 **유실**된다.
     // 재분해 발행이 intent 를 안 실어도 원 스펙이 남아 있어야 다음 `spec_fix` 가 돌 수 있다 —
-    // 병합 때문에 이미 읽어 둔 `existing` 에서 이월한다(추가 조회 0).
-    intent: msg.payload.intent ?? merged.storedIntent ?? null,
+    // 병합 때문에 이미 읽어 둔 값에서 이월한다(추가 조회 0).
+    //
+    // ⚠️ **정규화가 여기 없으면 공백이 저장된 스펙을 이긴다.** `payload.intent ?? storedIntent` 에서
+    //    `"   "` 는 truthy 라 이월을 밀어내고, 그 다음 `upsertGraph` 가 그것을 버려 **원 스펙이
+    //    삭제**된다 — 원래 구멍보다 나쁜 데이터 손실이고 Grok 반증이 실측으로 잡았다.
+    intent: normalizeIntent(msg.payload.intent) ?? merged.storedIntent ?? null,
   })
   // P3-2: 초안 오라클 pending 영속(멱등 upsertDraft). oracleId는 repo가 workflowId로 파생(D2 — 단일 출처).
   // 미주입/빈 배열이면 skip(회귀 0). upsertGraph 성공 후에만 — 영속 실패 시 오라클 미적재.
