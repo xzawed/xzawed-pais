@@ -138,10 +138,11 @@
 | S5.1 | [#619](https://github.com/xzawed/xzawed-pais/pull/619) | 2026-08-25 | 감사 불능 판정 — `judgeAuditable` · 합성 기본값 제거 · artifact 상대화 |
 | S5.2a | [#620](https://github.com/xzawed/xzawed-pais/pull/620) | 2026-08-25 | `security_audit` WP 자기검증 + 릴리스 게이트의 역할별 요구 증거 |
 | S5.2b | [#623](https://github.com/xzawed/xzawed-pais/pull/623) | 2026-08-25 | `design_ui` WP 자기검증 — `DesignAudit` 생산자 계약 · 게이트 역할 맵에 `designer` |
+| S5.3a | [#624](https://github.com/xzawed/xzawed-pais/pull/624) | 2026-08-25 | 채널 결과 의미론 — `not_applicable` 도입. **경계선은 "누가 범위를 정했는가"** 다 |
 
 슬라이스가 아닌 동반 PR: [#584](https://github.com/xzawed/xzawed-pais/pull/584)(Launcher CLAUDE.md 자기모순), [#585](https://github.com/xzawed/xzawed-pais/pull/585)(단일 인스턴스 잠금 — 고아 워크트리에서 건진 미머지 작업).
 
-**남은 슬라이스는 7건이다**(2026-08-25): `S3.3` · `S4.3` · `S5.3` · `S5.4` · `S6.3` · `S7.1` · `S7.2`.
+**남은 슬라이스는 7건이다**(2026-08-25): `S3.3` · `S4.3` · `S5.3a` · `S5.3b` · `S5.4` · `S6.3` · `S7.1` · `S7.2` — `S5.3` 을 둘로 쪼갰으므로 항목은 8개이고 미착륙 슬라이스 수는 그대로 7이다(아래 표 참조).
 
 그중 **즉시 착수 가능 6건** — `S3.3` · `S4.3` · `S5.3` · `S6.3` · `S7.1` · `S7.2`. **`S6.2` 가 닫히면서 그래프 레인이 전부 풀렸다** — `S7.2`(spec_fix 재분해 트리거)의 선행이 없어졌다. **verify 레인도 `S5.2b` 로 닫혔다** — 남은 사슬은 `S5.3`→`S5.4` 하나뿐이고 그것이 유일한 미착수 선행이다.
 
@@ -195,8 +196,22 @@
 | S5.1 | security 채널 무실행 판정 | **S2.1, S2.2** | 4~7 / +150~300 | verify |
 | S5.2a | `security_audit` WP 자기검증 | S5.1 | 8~12 / +250~400 | verify |
 | S5.2b | `design_ui` WP 자기검증 | S5.2a | 10~14 / +300~500 | verify |
-| S5.3 | per-WP 재채점(mutation 데드락 해소) | — | 14~20 / +450~750 | risk |
-| S5.4 | per-tier θ | S5.3 | 5~9 / +100~250 | verify |
+| S5.3a | 채널 결과 의미론(비대상 ≠ 미증명) — **데드락 해소** | — | 4~7 / +150~300 | risk |
+| S5.3b | per-WP 재채점(risk write-back·F2) | — | 12~18 / +400~700 | risk |
+| S5.4 | per-tier θ | S5.3b | 5~9 / +100~250 | verify |
+
+> **`S5.3` 을 둘로 쪼갠 이유 — 계획서의 인과 모델이 틀렸다(2026-08-25 실측).** 원래 한 줄은
+> "per-WP 재채점(mutation 데드락 해소)"이었다. **per-WP 재채점은 데드락을 풀지 못한다.**
+> 검증 채널 5종이 **전부 기본 off** 이고 꺼진 채널도 `recordOutcome` 을 부르는데 그 값이
+> `skipped`(미증명)였다 — WP 의 risk 를 HIGH 로 만들어 mutation 을 돌려도 나머지 넷이 여전히
+> 차단한다. 실증(`evaluateReleaseGate` 에 기본 태세 outcome 을 넣음): `blocked` ·
+> `missing [conformance, impact, property, mutation, security]`.
+>
+> 데드락의 원인은 **등급이 아니라 skip 의미론**이므로 그것만 떼어 `S5.3a` 로 먼저 착륙시킨다.
+> `S5.3b`(F2 — risk write-back 이 전 WP 를 균일 덮어씀)는 생산자 체인 전체를 건드린다:
+> `produceRiskClassification(intent, …)` 은 **intent 만 받고 WP 를 못 본다**(`trigger.ts` 가
+> 분해 결과를 넘기지 않는다). LLM 프롬프트·스코어링·영속·승인 UI·`risk.approved` 페이로드·
+> `updateWpRisks` 시그니처가 전부 따라온다. `S5.4`(per-tier θ)의 선행은 `S5.3b` 다.
 
 ### E6 — 자율 데이터 무결성
 
@@ -255,13 +270,13 @@
 | 레인 | 순서 | 근거 |
 |---|---|---|
 | verify(직렬 강제) | `S5.1` → `S5.2a` → `S5.2b` → `S5.4` | `verify.ts` 단일 파일에 6개 항목이 몰린다 |
-| risk | `S5.3` | verify 미접촉. mutation과 릴리스 게이트의 데드락을 푸는 유일한 경로 |
+| risk | `S5.3a` → `S5.3b` | verify 미접촉. 데드락을 푸는 것은 `S5.3a`(skip 의미론)이고 `S5.3b`(per-WP 등급)는 별개 결함이다 |
 | 그래프(직렬) | `S6.1` → `S6.2` → `S7.2` | 상태 정본 → 병합 → 재분해 트리거 |
 | 독립 | `S6.3` · `S7.1` · `S3.3` | 파일 교집합 0 |
 
 ### Phase 4 — 게이트 결정
 
-`MANAGER_RELEASE_GATE` 하드 닫기 판단. **선행: `S5.1`·`S5.2a`·`S5.2b`·`S5.3` 전부.**
+`MANAGER_RELEASE_GATE` 하드 닫기 판단. **선행: `S5.1`·`S5.2a`·`S5.2b`·`S5.3a` 전부.**
 
 두 방향이 모두 닫혀야 게이트가 의미를 갖는다. 지금 닫으면 `design_ui`·`security_audit` 역할이 배정된 워크플로가 **영구 blocked**가 되고, security 채널만 켜면 **무실행이 통과로 영속**된다.
 
@@ -289,8 +304,8 @@
 | S4.2 | "all-checks-pass가 sonar·cpd를 needs에 포함하고 cpd가 실패를 삼키지 않는다" | needs에 둘 다 없고 실패 삼킴이 있음 |
 | S5.1 | "security_audit이 아무 파일도 스캔하지 않으면 채널이 통과하지 않는다" | 빈 이슈 배열이 정상 파싱되어 무조건 통과 기록 |
 | S5.2a | "security_audit WP는 증거 없이 통과하지 않는다" | 빈 플랜 → 즉시 통과, 증거 기록 0회 |
-| S5.3 | "risk write-back은 WP별 등급을 유지한다" | 전 WP를 균일 덮어쓰기 |
-| S5.3 | "MEDIUM WP의 mutation skip이 릴리스 게이트를 영구 차단하지 않는다" | skip이 미증명 채널로 들어가 차단 |
+| S5.3b | "risk write-back은 WP별 등급을 유지한다" | 전 WP를 균일 덮어쓰기 |
+| S5.3a | "꺼진 채널의 결과가 릴리스 게이트를 영구 차단하지 않는다" | 5종 전부 `skipped` 기록 → 미증명 채널로 들어가 차단 |
 | S6.1 | "WP 상태 정본 enum과 상태 전이표의 값 집합이 일치한다" | 두 정본의 교집합이 0 |
 | S6.2 | "재분해는 진행 중 WP를 보존한다" | 전량 교체. **유닛만으로는 위음성** — 기본 술어가 항상 공집합이라 pg 통합 필수 |
 | S7.1 | "검증 실패는 사유를 담은 DecisionRequest를 만든다" | 대상 파일이 없어 import 실패 |

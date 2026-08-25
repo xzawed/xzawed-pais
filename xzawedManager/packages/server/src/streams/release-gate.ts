@@ -43,8 +43,18 @@ export function evaluateReleaseGate(
     }
     const required = requiredChannelFor(wp)
     const hasRequiredPassed = outcomes.some((o) => o.channel === required && o.outcome === 'passed')
-    const skipped = outcomes.filter((o) => o.outcome === 'skipped').map((o) => o.channel)
-    const missingChannels = [...(hasRequiredPassed ? [] : [required]), ...skipped]
+    // **통과도 비대상도 아닌 것은 전부 미증명이다**(S5.3a). 이전엔 `=== 'skipped'` 로 좁혀
+    // 셌는데, 그러면 **미지의 outcome 종류가 조용히 통과**한다 — 모르는 것을 느슨하게 여는 쪽이라
+    // 역할 맵의 fail-closed 기본값과 어긋난다. 여기서 뒤집어 두면 새 종류는 기본이 차단이다.
+    //
+    // 비대상을 세지 않는 근거. 채널이 켜진 채 실패하면 `verifyWp` 가 완료를 발행하지 않아 WP 가
+    // DONE 에 못 간다 — 즉 게이트가 보는 WP 는 **이미 검증을 통과한 것들**이고, 거기서 설정상
+    // 비대상인 채널을 미증명으로 세는 것은 이중 판정이다. 검증 채널 5종은 전부 기본 off 이므로
+    // 그렇게 세면 테스트를 통과한 WP 조차 "미증명 채널 5개"로 영구 차단된다.
+    const unproven = outcomes
+      .filter((o) => o.outcome !== 'passed' && o.outcome !== 'not_applicable')
+      .map((o) => o.channel)
+    const missingChannels = [...(hasRequiredPassed ? [] : [required]), ...unproven]
     const proven = missingChannels.length === 0
     perWp.push({ wpId: wp.id, proven, unverifiable: false, missingChannels })
     if (!proven) blockingReasons.push(`wp ${wp.id}: 미증명 채널 [${missingChannels.join(', ')}]`)
