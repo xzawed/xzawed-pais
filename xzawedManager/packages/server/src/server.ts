@@ -41,6 +41,7 @@ import { OracleRepo } from './db/oracle.repo.js'
 import { DecisionRepo } from './db/decision.repo.js'
 import { AdvisoryRepo } from './db/advisory.repo.js'
 import { ReleaseGateRepo } from './db/release-gate.repo.js'
+import { VerificationFailureRepo } from './db/verification-failure.repo.js'
 import { releaseGateWarnings } from './streams/server-release-gate.js'
 import { resolveLeaseVisibilityMs } from './streams/lease-visibility.js'
 import { oracleRoute } from './api/oracle.route.js'
@@ -282,6 +283,9 @@ export async function buildServer(
   const advisoryStore = pool && config.MANAGER_WP_ADVISORY ? new AdvisoryRepo(pool) : undefined
   // P5-1: 릴리스 게이트 증거/결과 영속소(recordEvidence·recordGate·evidenceForWorkflow). MANAGER_RELEASE_GATE + pool 시만 생성(회귀 0).
   const releaseStore = pool && config.MANAGER_RELEASE_GATE ? new ReleaseGateRepo(pool) : undefined
+  // S7.1: 검증 실패 사유 투영. **플래그가 없다** — 이미 나던 실패를 사람이 읽는 브리프로 잇는 것이라
+  // 켜고 끌 새 동작이 아니다. pool 이 없으면(미구성) 미주입이고 사유는 이전처럼 스트림에만 남는다.
+  const failureStore = pool ? new VerificationFailureRepo(pool) : undefined
   // P2r-3/P2r-4 공유 repo — Supervisor에 riskStore 주입(C5) 위해 createSupervisor 전 선언(상세 배선은 아래 riskClassify 블록).
   // D5: MANAGER_MODEL_ROUTING도 riskStore(approvedForWorkflow) 소비 — 세 조건 중 하나면 생성.
   const riskStore = pool && (config.MANAGER_RISK_CLASSIFY || config.MANAGER_RISK_ROUTING || config.MANAGER_MODEL_ROUTING) ? new RiskClassificationRepo(pool) : undefined
@@ -498,6 +502,8 @@ export async function buildServer(
         isProviderFailure,
         // P5-1: 릴리스 게이트 증거/결과 영속소(ReleaseGateRepo). releaseGate flag + 주입 시 게이트 평가.
         ...(releaseStore && { releaseStore }),
+        // S7.1: 검증 실패 사유 투영 — 워커가 쓰고 에스컬레이션 브리프가 읽는다(결함 F5).
+        ...(failureStore && { failureStore }),
         // C5: DecisionRecordedConsumer에 riskStore 주입 → approve 분기 활성. MANAGER_RISK_DECISION 게이트로
         //   생산자(emit) 측과 대칭 — flag off면 소비자가 riskStore를 받지 않아 'off→바이트 동일' 불변식이 문자 그대로 성립.
         // D5: MANAGER_MODEL_ROUTING도 riskStore(approvedForWorkflow) 소비 — 둘 중 하나면 주입.

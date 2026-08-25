@@ -9,7 +9,7 @@ import type { Publish } from './decomposition-consumer.js'
 import type { ConformanceOracleStore, ImpactOracleStore, InvariantOracleStore } from './conformance.js'
 import { WpDispatchSignalSchema, type WpDispatchSignalMessage } from './dispatch-signal.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
-import { verifyWp, publishVerificationFailed, type SecuritySeverity } from './verify.js'
+import { verifyWp, publishVerificationFailed, REASON_MAX, type SecuritySeverity } from './verify.js'
 import type { ChannelOutcome } from '../db/release-gate.types.js'
 import { produceAdvisory, type AdvisoryStore } from './advisory.js'
 import { buildGoldenBrief } from './golden-brief.js'
@@ -90,6 +90,13 @@ export interface WorkerDeps {
   releaseGateEnabled?: boolean
   /** G11 Slice 4: tenantId(5번째 인자)는 워커 userContext 유래. */
   releaseStore?: { recordEvidence(workflowId: string, wpId: string, attempt: number, outcomes: ChannelOutcome[], tenantId: string | null): Promise<void> }
+  /**
+   * S7.1: 검증 실패 **사유** 영속(best-effort). 미주입이면 이전과 동일하게 사유가 스트림에만 남는다
+   * — 그 스트림은 소비자가 0이라 사람에게 도달하지 않는다(결함 F5).
+   */
+  failureStore?: {
+    record(input: { workflowId: string; wpId: string; attempt: number; reason: string; tenantId: string | null }): Promise<void>
+  }
 }
 
 export type WorkerOutcome =
@@ -261,6 +268,18 @@ async function runVerifyGate(
     await publishVerificationFailed(deps.publish, workflowId, msg.payload.wpId, msg.payload.attempt, verdict.reason, deps.now?.())
   } catch (err) {
     console.error('[worker] wp.verification.failed 발행 실패(완료 부재가 reclaim 보장):', err)
+  }
+  // S7.1: 사유를 영속한다. 위 발행은 `manager:events:{workflowId}` 로 가는데 **소비자가 0** 이고
+  // per-workflow 라 고정 이름 소비자가 붙을 수도 없다 — 사람이 읽는 것은 에스컬레이션 브리프이고,
+  // 그것이 이 표를 읽어 사유를 싣는다. best-effort: 실패해도 완료 부재가 reclaim 을 보장한다.
+  try {
+    await deps.failureStore?.record({
+      workflowId, wpId: msg.payload.wpId, attempt: msg.payload.attempt,
+      // 사유는 에이전트 출력이 섞인 문자열이라 상한을 건다 — 스트림 발행과 같은 값을 쓴다.
+      reason: verdict.reason.slice(0, REASON_MAX), tenantId: userContext?.tenantId ?? null,
+    })
+  } catch (err) {
+    console.error('[worker] 검증 실패 사유 영속 실패(브리프에 사유 없이 진행):', err)
   }
   return { status: 'verification_failed', wpId: msg.payload.wpId, reason: verdict.reason }
 }

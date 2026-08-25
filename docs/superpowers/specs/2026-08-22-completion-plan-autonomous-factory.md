@@ -82,7 +82,7 @@
 | F2 | risk write-back이 전 WP를 균일 덮어씀 | `db/task-graph.repo.ts:177-190` | △ |
 | F3 | ~~WP 상태 정본이 둘로 갈림~~ → **`S6.1` 로 해소.** 실측해 보니 **셋**이었다(테스트가 쓰던 `'READY'` 포함) | `work-package.ts:50` vs `dispatch-constants.ts` | ◎ |
 | F4 | `security_audit`·`design_ui` WP가 빈 플랜으로 통과 | `verify.ts:82-85`가 빈 배열 → `:334`에서 즉시 통과, 증거 기록 0회 | ◎ |
-| F5 | 검증 실패 브리프가 없고 이벤트 구독자가 0 | 보고됨 | △ |
+| F5 | ~~검증 실패 브리프가 없고 이벤트 구독자가 0~~ → **`S7.1` 로 해소.** 스트림에 구독자를 붙이는 대신 사유를 영속해(`wp_verification_failures`) 사람이 실제로 읽는 에스컬레이션 브리프가 싣는다 — `manager:events:{wf}` 는 per-workflow 라 고정 이름 소비자가 애초에 못 붙는다 | `verify.ts` 관측 이벤트 | ◎ |
 | F6 | `spec_fix`·`reject`가 결정 소비자에서 무동작 | `decision-consumer.ts:61-104`에 3분기뿐 | △ |
 | F7 | WP `inputs`/`outputs`가 항상 빈 배열 | `decompose/map.ts:35-45` | △ |
 
@@ -139,12 +139,13 @@
 | S5.2a | [#620](https://github.com/xzawed/xzawed-pais/pull/620) | 2026-08-25 | `security_audit` WP 자기검증 + 릴리스 게이트의 역할별 요구 증거 |
 | S5.2b | [#623](https://github.com/xzawed/xzawed-pais/pull/623) | 2026-08-25 | `design_ui` WP 자기검증 — `DesignAudit` 생산자 계약 · 게이트 역할 맵에 `designer` |
 | S5.3a | [#624](https://github.com/xzawed/xzawed-pais/pull/624) | 2026-08-25 | 채널 결과 의미론 — `not_applicable` 도입. **경계선은 "누가 범위를 정했는가"** 다 |
+| S7.1 | [#625](https://github.com/xzawed/xzawed-pais/pull/625) | 2026-08-25 | 검증 실패 사유 → 에스컬레이션 브리프. 스트림 소비자 대신 **이미 사람이 읽는 표면**에 실었다 |
 
 슬라이스가 아닌 동반 PR: [#584](https://github.com/xzawed/xzawed-pais/pull/584)(Launcher CLAUDE.md 자기모순), [#585](https://github.com/xzawed/xzawed-pais/pull/585)(단일 인스턴스 잠금 — 고아 워크트리에서 건진 미머지 작업).
 
-**남은 슬라이스는 7건이다**(2026-08-25): `S3.3` · `S4.3` · `S5.3a` · `S5.3b` · `S5.4` · `S6.3` · `S7.1` · `S7.2` — `S5.3` 을 둘로 쪼갰으므로 항목은 8개이고 미착륙 슬라이스 수는 그대로 7이다(아래 표 참조).
+**남은 슬라이스는 6건이다**(2026-08-25): `S3.3` · `S4.3` · `S5.3b` · `S5.4` · `S6.3` · `S7.2`.
 
-그중 **즉시 착수 가능 6건** — `S3.3` · `S4.3` · `S5.3` · `S6.3` · `S7.1` · `S7.2`. **`S6.2` 가 닫히면서 그래프 레인이 전부 풀렸다** — `S7.2`(spec_fix 재분해 트리거)의 선행이 없어졌다. **verify 레인도 `S5.2b` 로 닫혔다** — 남은 사슬은 `S5.3`→`S5.4` 하나뿐이고 그것이 유일한 미착수 선행이다.
+그중 **즉시 착수 가능 5건** — `S3.3` · `S4.3` · `S5.3b` · `S6.3` · `S7.2`. **남은 사슬은 `S5.3b`→`S5.4` 하나뿐이고 그것이 유일한 미착수 선행이다** — 그래프 레인은 `S6.2` 로, verify 레인은 `S5.2b` 로 이미 풀렸다.
 
 > **`S6.2` 는 "순수 배선"이 아니었다(2026-08-24 실측).** `mergeKeepInflight` 를 그냥 부르는 것으로는 아무 효과가 없다 — 기본 in-flight 술어는 `wp.status` 를 읽는데 `graph_dag` 의 status 는 **S6.1 이후에도 영원히 `DRAFTED`** 다(`decompose/map.ts` 가 유일한 writer 이고 아무도 바꾸지 않는다). 실제 진행 상태는 `wp_state_log` 에만 있으므로 술어를 `latestStates` 에서 파생해야 실효가 생긴다. 계획서가 이 슬라이스에만 "유닛은 위음성 · pg 통합 필수"를 적어 둔 이유가 이것이었고, 실측해 보니 그 이유가 S6.1 로도 사라지지 않았다.
 >
@@ -272,7 +273,7 @@
 | verify(직렬 강제) | `S5.1` → `S5.2a` → `S5.2b` → `S5.4` | `verify.ts` 단일 파일에 6개 항목이 몰린다 |
 | risk | `S5.3a` → `S5.3b` | verify 미접촉. 데드락을 푸는 것은 `S5.3a`(skip 의미론)이고 `S5.3b`(per-WP 등급)는 별개 결함이다 |
 | 그래프(직렬) | `S6.1` → `S6.2` → `S7.2` | 상태 정본 → 병합 → 재분해 트리거 |
-| 독립 | `S6.3` · `S7.1` · `S3.3` | 파일 교집합 0 |
+| 독립 | `S6.3` · `S3.3` | 파일 교집합 0 |
 
 ### Phase 4 — 게이트 결정
 
