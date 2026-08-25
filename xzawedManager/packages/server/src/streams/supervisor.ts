@@ -11,6 +11,8 @@ import { LeaseSweeper } from './lease-sweeper.js'
 import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
 import type { VerificationFailureRepo } from '../db/verification-failure.repo.js'
 import type { WpOutputRepo } from '../db/wp-output.repo.js'
+import { makeSpecFixRedecompose } from './spec-fix.js'
+import type { ProduceDeps } from '../decompose/producer.js'
 import { DecisionSweeper } from './decision-sweeper.js'
 import { DecisionRecordedConsumer, type DecisionRoutingDeps } from './decision-consumer.js'
 import { DecisionExpiredConsumer } from './decision-expiry-consumer.js'
@@ -153,6 +155,27 @@ export class Supervisor {
   }
 }
 
+/**
+ * S7.2: `spec_fix` 재분해 어댑터 — 접근자를 **호출 시점에** 평가한다.
+ *
+ * `createSupervisor` 시점에는 `decompose` 가 아직 조립되지 않았으므로 값을 잡아 둘 수 없다.
+ * 호출 시점에도 없으면(분해 flag off) 재분해하지 않고 사유를 남긴다 — 조용한 no-op 이 되면
+ * 사람이 버튼을 눌러도 아무 일이 안 나는 것을 아무도 모른다.
+ */
+export function makeRedecompose(
+  repo: TaskGraphRepo,
+  accessor: () => ProduceDeps | undefined,
+): (workflowId: string, feedback: string | null) => Promise<unknown> {
+  return async (workflowId, feedback) => {
+    const decompose = accessor()
+    if (!decompose) {
+      console.warn(`[spec-fix] ${workflowId}: 분해 생산자 미구성(MANAGER_DECOMPOSE_ENABLED off) — 재분해 생략`)
+      return { status: 'skipped', reason: 'decompose_disabled' }
+    }
+    return makeSpecFixRedecompose(repo, decompose)(workflowId, feedback)
+  }
+}
+
 /** server.ts Supervisor 배선 게이트 결정(순수·테스트 가능): flag+pool='wire', flag만='warn', 아니면 'skip'. */
 export function shouldWireSupervisor(enabled: boolean, hasPool: boolean): 'wire' | 'warn' | 'skip' {
   if (enabled && hasPool) return 'wire'
@@ -200,6 +223,13 @@ export interface SupervisorDeps {
   /** S6.3: WP 실제 산출물 투영(WpOutputRepo). 워커가 쓰고 후행 디스패치가 읽는다. **플래그가 없다** —
    *  이미 나던 산출물을 후행 입력으로 잇는 것이라 켜고 끌 새 동작이 아니다. */
   outputStore?: WpOutputRepo
+  /**
+   * S7.2: `spec_fix` 재분해용 분해 deps **접근자**(결함 F6). 값이 아니라 접근자인 이유는
+   * server.ts 에서 `decompose` 조립이 `createSupervisor` 보다 **뒤**이기 때문이다 — 값으로 넘기면
+   * 그 시점에 아직 없다(헬스 프로브가 접근자를 쓰는 것과 같은 이유). 미주입이면 spec_fix 버튼도
+   * 그리지 않는다(핸들러 없는 버튼 = 거짓 affordance).
+   */
+  decomposeDeps?: () => ProduceDeps | undefined
   /** C5: approve→RiskClassificationRepo.approve 분기용.
    *  D5: approvedForWorkflow도 노출(모델 라우팅 조회) — RiskClassificationRepo가 양쪽 모두 구현.
    *  modelRouting은 Partial(DB 스키마·RiskClassification)이나 resolveWpModel이 undefined tier를 폴백으로 처리. */
@@ -478,6 +508,8 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
         onEscalated: makeEscalationBrief(briefStore, {
           ...briefOpts,
           ...(deps.failureStore && { failureStore: deps.failureStore }),
+          // S7.2: 핸들러가 배선된 경우에만 spec_fix 버튼을 그린다(거짓 affordance 방지·S7.3 과 같은 규칙).
+          specFixAvailable: deps.decomposeDeps !== undefined,
         }),
       }),
       ...(briefStore && { graphStore: deps.repo }),
@@ -546,10 +578,17 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     ? new DecisionRecordedConsumer(
         makeRedis(),
         {
+          // ⚠️ **여기는 손으로 나열하는 릴레이다 — 새 선택 의존을 넣을 때 이 줄을 빠뜨리면 tsc 가 침묵한다.**
+          // 워커 릴레이(`buildWorkerConsumerDeps`)는 `deps` 를 통째로 넘겨 이 구멍을 없앴지만, 여기는
+          // 각 키가 `config` 플래그 조합에 걸려 있어 통째 전달이 불가능하다. S7.1 이 정확히 이 모양에서
+          // 기능 전체를 죽였다(유닛 1491건 초록). **의존을 추가하면 이 객체를 지나는지 테스트로 고정하라.**
           decisionStore: deps.decisionStore,
           leaseStore: deps.leaseStore,
           publish: deps.publish,
           visibilityMs: config.visibilityMs,
+          // S7.2: spec_fix → 재분해(결함 F6). 접근자가 호출 시점에 undefined 면(분해 flag off)
+          // 조용히 no-op 하지 않고 사유를 남긴다 — 버튼이 보이는데 아무 일도 안 나는 것이 최악이다.
+          ...(deps.decomposeDeps && { redecompose: makeRedecompose(deps.repo, deps.decomposeDeps) }),
           // P5-2a/N2: accept_known 사인오프 — release(P5-2a) 또는 degraded_dispatch(N2) 시 signoffStore 필요.
           ...((config.releaseSignoff || config.degradedSignoff) && deps.decisionStore && { signoffStore: deps.decisionStore }),
           // C5: approve→RiskClassificationRepo.approve 분기용.

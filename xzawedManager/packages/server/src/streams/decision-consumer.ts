@@ -30,7 +30,8 @@ export function groupScopedDedupKey(group: string, msg: DecisionEventMessage): s
   return k === null ? null : `${group}:${k}`
 }
 
-const RecordedPayloadSchema = z.object({ requestId: z.string().min(1), choice: z.string(), decisionId: z.string().optional(), decidedBy: z.string().optional() })
+// S7.2: `justification` 은 `spec_fix` 재분해의 유일한 새 입력이다(없으면 같은 스펙 재분해 = 루프).
+const RecordedPayloadSchema = z.object({ requestId: z.string().min(1), choice: z.string(), decisionId: z.string().optional(), decidedBy: z.string().optional(), justification: z.string().nullable().optional() })
 
 export interface DecisionRoutingDeps {
   decisionStore: { getRequest(requestId: string): Promise<DecisionRequest | null> }
@@ -50,6 +51,11 @@ export interface DecisionRoutingDeps {
   }
   /** N2: accept_known on degraded_dispatch → 사인오프 후 재디스패치(handleDispatch 재실행·승인 WP 통과). 미주입이면 no-op. */
   redispatch?: (workflowId: string) => Promise<void>
+  /**
+   * S7.2: `spec_fix` → **재분해**(결함 F6). 사람이 "구현이 아니라 스펙이 틀렸다"고 판정한 것이므로
+   * 같은 WP 재실행이 아니라 분해를 다시 한다. 미주입이면 no-op(회귀 0 — 버튼도 노출되지 않는다).
+   */
+  redecompose?: (workflowId: string, feedback: string | null) => Promise<unknown>
 }
 
 /**
@@ -70,6 +76,14 @@ export function buildDecisionRecordedHandler(deps: DecisionRoutingDeps): (msg: D
         const r = await deps.leaseStore.reopenLease({ workflowId: req.workflowId, wpId: req.wpId, visibilityMs: deps.visibilityMs, causationId: p.data.requestId })
         if (r.status !== 'reopened') return
         await publishDispatchSignal(deps.publish, req.workflowId, req.wpId, r.attempt, deps.now?.() ?? Date.now())
+        return
+      }
+      // S7.2: spec_fix → 재분해. `defect_brief` 에서만 받는다 — 다른 결정 유형에 붙으면
+      // 그 워크플로의 분해가 통째로 다시 도는 예기치 못한 부작용이 된다(fail-closed).
+      if (p.data.choice === 'spec_fix' && deps.redecompose) {
+        const req = await deps.decisionStore.getRequest(p.data.requestId)
+        if (req?.type !== 'defect_brief') return
+        await deps.redecompose(req.workflowId, p.data.justification ?? null)
         return
       }
       if (p.data.choice === 'accept_known' && deps.signoffStore && p.data.decisionId && p.data.decidedBy) {

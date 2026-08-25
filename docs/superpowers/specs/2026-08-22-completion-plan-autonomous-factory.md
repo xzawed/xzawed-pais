@@ -83,7 +83,7 @@
 | F3 | ~~WP 상태 정본이 둘로 갈림~~ → **`S6.1` 로 해소.** 실측해 보니 **셋**이었다(테스트가 쓰던 `'READY'` 포함) | `work-package.ts:50` vs `dispatch-constants.ts` | ◎ |
 | F4 | `security_audit`·`design_ui` WP가 빈 플랜으로 통과 | `verify.ts:82-85`가 빈 배열 → `:334`에서 즉시 통과, 증거 기록 0회 | ◎ |
 | F5 | ~~검증 실패 브리프가 없고 이벤트 구독자가 0~~ → **`S7.1` 로 해소.** 스트림에 구독자를 붙이는 대신 사유를 영속해(`wp_verification_failures`) 사람이 실제로 읽는 에스컬레이션 브리프가 싣는다 — `manager:events:{wf}` 는 per-workflow 라 고정 이름 소비자가 애초에 못 붙는다 | `verify.ts` 관측 이벤트 | ◎ |
-| F6 | `spec_fix`·`reject`가 결정 소비자에서 무동작 | `decision-consumer.ts:61-104`에 3분기뿐 | △ |
+| F6 | ~~`spec_fix`~~·`reject`가 결정 소비자에서 무동작 → **`spec_fix` 는 `S7.2` 로 해소.** 진짜 선행은 분기가 아니라 **재료**였다 — `produceDecomposition(intent,…)` 인데 intent 가 어디에도 없었다. `graph_dag` 에 `userContext` 와 같은 방식으로 얹어 풀었다(JSONB 라 마이그레이션 0). `reject`(saga 보상)는 남아 있다 | `decision-consumer.ts` | ◎ |
 | F7 | ~~WP `inputs`/`outputs`가 항상 빈 배열~~ → **`S6.3` 으로 해소.** 분해가 *예측한* I/O 를 채우는 대신 실행이 *실제로 낸* 산출물을 `wp_outputs` 에 포착해 후행 입력으로 흘린다 — Developer 가 이미 변경 파일 경로를 돌려주므로 LLM 예측이 불필요하다. `graph_dag` 의 필드는 계획으로 남긴다(`wp.status` 와 같은 혼동 회피) | `worker.ts` `buildWorkerInput` | ◎ |
 
 ### 2.3 운영 기반

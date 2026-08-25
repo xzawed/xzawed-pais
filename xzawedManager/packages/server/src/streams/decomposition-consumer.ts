@@ -31,6 +31,9 @@ export const DecompositionEmittedSchema = z.object({
     // P4a-2: 워크스페이스 컨텍스트(additive optional) — 그래프에 영속돼 실행 워커가 주입.
     // 절대경로 강제(자율 실행 경로) — 위반 메시지는 BaseConsumer invalid_schema DLQ 격리.
     userContext: AbsoluteUserContextSchema.optional(),
+    // S7.2: 이 그래프를 만든 분해 입력(additive optional) — 그래프에 영속돼 `spec_fix` 재분해가 쓴다.
+    // 부재는 정상이다(레거시 발행·재분해 경로) — 그때는 기존 값을 이월한다.
+    intent: z.string().min(1).optional(),
   }),
 })
 export type DecompositionEmittedMessage = z.infer<typeof DecompositionEmittedSchema>
@@ -128,7 +131,8 @@ async function surfaceInconsistent(
 }
 
 type MergeResult =
-  | { ok: true; workPackages: WorkPackage[] }
+  /** S7.2: `storedIntent` 는 기존 그래프의 분해 입력 — 새 발행에 intent 가 없을 때 이월용(추가 조회 0). */
+  | { ok: true; workPackages: WorkPackage[]; storedIntent?: string | null }
   | { ok: false; reason: InconsistentReason; detail: string }
 
 /**
@@ -150,7 +154,7 @@ async function mergeWithInflight(
   // 범주이지 전송·저장 오류가 아니다. upsertGraph 실패를 전파하는 것과 같은 계약이고,
   // 전파해도 upsertGraph 이전이라 쓰기는 일어나지 않는다(fail-closed 는 그대로).
   const existing = await deps.repo.getGraph(workflowId)
-  if (!existing || existing.workPackages.length === 0) return { ok: true, workPackages: incoming }
+  if (!existing || existing.workPackages.length === 0) return { ok: true, workPackages: incoming, storedIntent: existing?.intent ?? null }
 
   const states = await deps.repo.latestStates(workflowId)
   const merged = mergeKeepInflight(existing.workPackages, incoming, {
@@ -168,7 +172,7 @@ async function mergeWithInflight(
   } catch (e) {
     return { ok: false, reason: 'structural', detail: `재진입 병합 결과가 구조적으로 무효다: ${(e as Error).message}` }
   }
-  return { ok: true, workPackages: merged }
+  return { ok: true, workPackages: merged, storedIntent: existing.intent }
 }
 
 /** 결정론 소비 핸들러: build → (구조오류|사이클 → inconsistent 발행) | (병합 → upsert). LLM 호출 0. */
@@ -209,6 +213,10 @@ export async function handleDecompositionEmitted(
     eventId: msg.envelope.eventId,
     // P4a-2: 워크스페이스 컨텍스트를 그래프와 함께 영속(미존재 시 null — 워커가 placeholder 폴백).
     userContext: msg.payload.userContext ?? null,
+    // S7.2: `upsertGraph` 는 graph_dag 를 통째로 교체하므로 새 발행에 intent 가 없으면 **유실**된다.
+    // 재분해 발행이 intent 를 안 실어도 원 스펙이 남아 있어야 다음 `spec_fix` 가 돌 수 있다 —
+    // 병합 때문에 이미 읽어 둔 `existing` 에서 이월한다(추가 조회 0).
+    intent: msg.payload.intent ?? merged.storedIntent ?? null,
   })
   // P3-2: 초안 오라클 pending 영속(멱등 upsertDraft). oracleId는 repo가 workflowId로 파생(D2 — 단일 출처).
   // 미주입/빈 배열이면 skip(회귀 0). upsertGraph 성공 후에만 — 영속 실패 시 오라클 미적재.

@@ -135,7 +135,12 @@ export class DecisionRepo {
       const eventId = await this.appendEvent(client, {
         eventType: DECISION_RECORDED_EVENT, workflowId: row.workflow_id, correlationId: row.correlation_id,
         causationId: d.requestId, stepKey: d.decisionId, actor: d.decidedBy,
-        payload: { decisionId: d.decisionId, requestId: d.requestId, choice: d.choice, routedTo: d.routedTo, decidedBy: d.decidedBy },
+        // S7.2: `justification` 을 싣는다(additive) — `spec_fix` 재분해는 사람이 무엇을 고치라 했는지가
+        // 있어야 의미가 있다. 없으면 같은 intent 로 같은 분해를 다시 돌리는 루프가 된다.
+        payload: {
+          decisionId: d.decisionId, requestId: d.requestId, choice: d.choice,
+          routedTo: d.routedTo, decidedBy: d.decidedBy, justification: d.justification ?? null,
+        },
       })
       await client.query('COMMIT')
       return { eventId }
