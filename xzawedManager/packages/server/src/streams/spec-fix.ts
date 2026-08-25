@@ -1,5 +1,6 @@
 import { produceDecomposition, type ProduceDeps } from '../decompose/producer.js'
 import type { UserContext } from '../types/user-context.js'
+import { normalizeIntent } from '../decompose/intent.js'
 
 /** 재분해 입력에 실을 사람 피드백 상한 — 분해 프롬프트를 자유 텍스트가 잠식하지 않게. */
 export const FEEDBACK_MAX = 2000
@@ -48,9 +49,9 @@ export function makeSpecFixRedecompose(
       console.warn(`[spec-fix] ${workflowId}: 그래프 없음 — 재분해 생략`)
       return { status: 'skipped', reason: 'graph_not_found' }
     }
-    // 저장소가 이미 걸러 주지만 여기서도 **공백을 걷어내고** 판정한다 — 이 함수는 저장소 밖에서도
-    // 주입 가능한 포트를 받고, `"   "` 는 truthy 라 `!graph.intent` 만으로는 통과한다(Grok 반증).
-    const stored = graph.intent?.trim()
+    // 저장소가 이미 걸러 주지만 여기서도 정규화한다 — 이 함수는 저장소 밖에서도 주입 가능한
+    // 포트를 받으므로 스스로 판정할 수 있어야 한다.
+    const stored = normalizeIntent(graph.intent)
     if (!stored) {
       // S7.2 이전에 만들어진 그래프에는 분해 입력이 없다. 추정해서 돌리지 않는다.
       console.warn(`[spec-fix] ${workflowId}: 분해 입력 미영속(레거시 그래프) — 재분해 생략`)

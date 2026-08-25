@@ -4,6 +4,7 @@ const produceDecomposition = vi.fn().mockResolvedValue({ emitted: 1, escalated: 
 vi.mock('../decompose/producer.js', () => ({ produceDecomposition }))
 
 const { buildRedecomposeIntent, makeSpecFixRedecompose, FEEDBACK_MAX } = await import('./spec-fix.js')
+const { normalizeIntent } = await import('../decompose/intent.js')
 const { buildDefectBrief } = await import('./decision-brief.js')
 const { buildDecisionRecordedHandler } = await import('./decision-consumer.js')
 const { makeRedecompose } = await import('./supervisor.js')
@@ -190,5 +191,37 @@ describe('공백 스펙 — 저장도 재분해도 하지 않는다', () => {
     const store = { getGraph: vi.fn().mockResolvedValue({ intent: '  로그인 기능  ', userContext: null }) }
     expect(await makeSpecFixRedecompose(store, {} as never)('wf1', null)).toEqual({ status: 'redecomposed' })
     expect(produceDecomposition.mock.calls[0]![0]).toBe('로그인 기능')
+  })
+})
+
+/**
+ * **판정을 한 곳으로 모은 이유**(S7.2 · Grok 반증 2회).
+ *
+ * 처음엔 각 경계에 `.length > 0` 을 흩어 뒀고 `"   "` 가 전부 통과했다. 고친 뒤에도 **다섯 번째
+ * 경계**(소비자의 `payload.intent ?? storedIntent`)가 남아 공백이 저장된 스펙을 이기고
+ * `upsertGraph` 가 그것을 버려 **원 스펙이 삭제**됐다. 판정이 복제되면 그중 하나는 반드시 어긋난다.
+ */
+describe('normalizeIntent — 보이지 않는 것은 스펙이 아니다', () => {
+  it.each(['', '   ', '\t', '\n  \n', '\u200B', '\uFEFF', '\u200B \u200D'])('%j 는 null 이다', (v) => {
+    expect(normalizeIntent(v)).toBeNull()
+  })
+
+  it.each([null, undefined, 42, {}, []])('문자열이 아닌 %j 도 null 이다', (v) => {
+    expect(normalizeIntent(v)).toBeNull()
+  })
+
+  it('내용이 있으면 앞뒤만 다듬는다', () => {
+    expect(normalizeIntent('  로그인 기능  ')).toBe('로그인 기능')
+    expect(normalizeIntent('로그인 기능')).toBe('로그인 기능')
+  })
+
+  /** ZWSP 는 `trim()` 이 못 지운다 — 붙여넣기로도 생기는 "보이지 않는 스펙"이다. */
+  it('폭 0 문자만 있어도 재분해하지 않는다', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const store = { getGraph: vi.fn().mockResolvedValue({ intent: '\u200B', userContext: null }) }
+    expect(await makeSpecFixRedecompose(store, {} as never)('wf1', 'x')).toEqual({
+      status: 'skipped', reason: 'intent_not_stored',
+    })
+    expect(produceDecomposition).not.toHaveBeenCalled()
   })
 })

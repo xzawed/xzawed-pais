@@ -5,6 +5,7 @@ import { defaultInconsistentStream, type InconsistentReason } from '../streams/d
 import { buildStageCircuit } from './stages/run-stage.js'
 import type { OracleDraft } from '../db/oracle.types.js'
 import type { UserContext } from '../types/user-context.js'
+import { normalizeIntent } from './intent.js'
 
 /** Supervisor DecompositionConsumer가 구독하는 스트림(manager:decomposition:{channel='main'}). */
 export const DECOMPOSE_STREAM = 'manager:decomposition:main'
@@ -57,7 +58,7 @@ async function emitWorkPackages(
     type: 'decomposition.emitted',
     // S7.2: intent 는 `userContext` 와 같은 방식의 additive 필드다 — 소비자가 graph_dag 에 실어
     //       `spec_fix` 재분해가 돌릴 재료로 남긴다. 없으면 소비자가 기존 값을 이월한다.
-    payload: { workPackages, oracleDrafts, ...(userContext !== undefined && { userContext }), ...(intent !== undefined && intent.trim().length > 0 && { intent: intent.trim() }) },
+    payload: { workPackages, oracleDrafts, ...(userContext !== undefined && { userContext }), ...(normalizeIntent(intent) !== null && { intent: normalizeIntent(intent)! }) },
   })
 }
 

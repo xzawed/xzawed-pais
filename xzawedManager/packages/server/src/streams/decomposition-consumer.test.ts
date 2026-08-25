@@ -427,3 +427,34 @@ describe('intent 영속 — spec_fix 재분해의 재료', () => {
     expect(repo.upsertGraph).toHaveBeenCalledWith(expect.objectContaining({ intent: '수정된 스펙' }))
   })
 })
+
+/**
+ * **공백 intent 가 저장된 스펙을 지우면 안 된다**(S7.2 · Grok 반증).
+ *
+ * `payload.intent ?? storedIntent` 에서 `"   "` 는 truthy 라 이월을 밀어내고, 그 다음
+ * `upsertGraph` 가 그것을 버려 **원 스펙이 삭제**된다 — 원래 구멍보다 나쁜 데이터 손실이다.
+ */
+describe('공백 intent — 저장된 스펙을 이기지 못한다', () => {
+  const withStored = () => {
+    const repo = mockRepo(2)
+    ;(repo.getGraph as ReturnType<typeof vi.fn>).mockResolvedValue({
+      workflowId: 'wf-1', workPackages: [wp('old')], eventId: null, version: 1, userContext: null, intent: '원래 스펙',
+    })
+    ;(repo as unknown as { latestStates: ReturnType<typeof vi.fn> }).latestStates = vi.fn().mockResolvedValue(new Map())
+    return repo
+  }
+
+  it.each(['   ', '\t', '\u200B'])('payload.intent 가 %j 여도 원 스펙이 남는다', async (bad) => {
+    const repo = withStored()
+    const m = { ...msg([wp('a')]), payload: { workPackages: [wp('a')], oracleDrafts: [], intent: bad } } as DecompositionEmittedMessage
+    await handleDecompositionEmitted(m, { repo, publish: vi.fn() })
+    expect(repo.upsertGraph).toHaveBeenCalledWith(expect.objectContaining({ intent: '원래 스펙' }))
+  })
+
+  it('내용 있는 새 intent 는 여전히 이긴다(과잉 차단 아님)', async () => {
+    const repo = withStored()
+    const m = { ...msg([wp('a')]), payload: { workPackages: [wp('a')], oracleDrafts: [], intent: '  수정된 스펙  ' } } as DecompositionEmittedMessage
+    await handleDecompositionEmitted(m, { repo, publish: vi.fn() })
+    expect(repo.upsertGraph).toHaveBeenCalledWith(expect.objectContaining({ intent: '수정된 스펙' }))
+  })
+})
