@@ -17,7 +17,7 @@
 | P0 | 세션 이벤트소싱 + 트랜잭셔널 아웃박스 (`EVENT_SOURCED_SESSION`) | 완료 | — |
 | P1a~c | BaseConsumer 바운드 재시도 + DLQ · 멱등 소비 · EventBus 전송 추상화 | 완료 | — |
 | P1d | Task Manager — 그래프 코어·영속·소비·디스패치·lease/escalation·완료 흐름·Supervisor 배선 (`TASK_MANAGER_ENABLED`) | 완료 | — |
-| P2 | PM 다단계 분해 파이프라인 + 자가수선 (`MANAGER_DECOMPOSE_ENABLED`) | 부분 | WP `inputs`/`outputs` 채움 · 재진입 머지(`merge_keep_inflight`) · `near_term` 필터 |
+| P2 | PM 다단계 분해 파이프라인 + 자가수선 (`MANAGER_DECOMPOSE_ENABLED`) | 부분 | 분해 시점 WP `inputs`/`outputs` 예측 채움 · `near_term` 필터 |
 | P2r | 리스크 분류 — 결정론 코어·영속·LLM 생산자·라우팅·승인 UI·모델 라우팅 소비 (`MANAGER_RISK_*`·`MANAGER_MODEL_ROUTING`) | 완료 | per-WP 재채점 · designer/tester/security 모델 소비 |
 | 횡단 | WP 계약 스키마 정합 + 회복탄력성(budget·provider 서킷·벌크헤드) | 완료 | — |
 | P3 | Oracle DoR 게이트 + 초안 생성 (`MANAGER_ORACLE_DOR`·`MANAGER_ORACLE_DRAFT`) | 부분 | step branch git 워크플로 · WP 상태머신 |
@@ -34,7 +34,7 @@
 전부 착수 가능(선행조건 없음 또는 이미 충족).
 
 1. **강등 enforcement 활성화** — 게이팅 코드는 있으니 신호원과 운영성을 채운다. 추가 신호원(브로커·하트비트·이벤트스토어·보안사고), stuck-DEGRADED idle-probe, SAFE 재개 사인오프. 그다음 플래그를 켤 조건을 정한다.
-2. **모델 라우팅 확장 + 분해 정밀화** — designer·tester·security 에이전트의 모델 소비(각 ~2줄, `payload.model ?? config` 동일 패턴). WP `inputs`/`outputs` 채움(계약 체인·impact-DAG 입력), 재진입 머지, `near_term` 필터.
+2. **모델 라우팅 확장 + 분해 정밀화** — designer·tester·security 에이전트의 모델 소비(각 ~2줄, `payload.model ?? config` 동일 패턴). `near_term` 필터. **WP I/O 는 런타임 포착으로 이미 흐른다** — 실행이 낸 산출물이 `wp_outputs`를 거쳐 후행 입력이 된다(S6.3). 남은 것은 분해 시점 *예측* I/O(계약 체인·impact-DAG 입력)이고, 재진입 머지는 S6.2로 착륙했다.
 3. **결정 라우팅 실동작** — `spec_fix`(재분해)·`reject`(saga 보상)를 실제로 동작시킨다. `verification.failed` 브리프는 착륙했다 — 사유가 `wp_verification_failures`에 영속되고 에스컬레이션 브리프가 그것을 실어 대기함까지 간다. `accept_known`은 `degraded_release`·`degraded_dispatch`에서 이미 사인오프를 영속하고, `decomposition.inconsistent` 브리프도 이미 있다 — 남은 것은 그 둘을 뺀 나머지다.
 4. **saga 보상 · canary/롤백** — 강등/실패 시 보상 트랜잭션과 점진 배포. 1번에 의존한다.
 

@@ -10,6 +10,7 @@ import { handleCompletion } from './completion.js'
 import { LeaseSweeper } from './lease-sweeper.js'
 import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
 import type { VerificationFailureRepo } from '../db/verification-failure.repo.js'
+import type { WpOutputRepo } from '../db/wp-output.repo.js'
 import { DecisionSweeper } from './decision-sweeper.js'
 import { DecisionRecordedConsumer, type DecisionRoutingDeps } from './decision-consumer.js'
 import { DecisionExpiredConsumer } from './decision-expiry-consumer.js'
@@ -196,6 +197,9 @@ export interface SupervisorDeps {
   /** S7.1: 검증 실패 사유 투영(VerificationFailureRepo). 워커가 쓰고 에스컬레이션 브리프가 읽는다.
    *  **플래그가 없다** — 사유 영속은 새 동작을 켜는 것이 아니라 이미 나던 실패를 사람에게 잇는 것이다. */
   failureStore?: VerificationFailureRepo
+  /** S6.3: WP 실제 산출물 투영(WpOutputRepo). 워커가 쓰고 후행 디스패치가 읽는다. **플래그가 없다** —
+   *  이미 나던 산출물을 후행 입력으로 잇는 것이라 켜고 끌 새 동작이 아니다. */
+  outputStore?: WpOutputRepo
   /** C5: approve→RiskClassificationRepo.approve 분기용.
    *  D5: approvedForWorkflow도 노출(모델 라우팅 조회) — RiskClassificationRepo가 양쪽 모두 구현.
    *  modelRouting은 Partial(DB 스키마·RiskClassification)이나 resolveWpModel이 undefined tier를 폴백으로 처리. */
@@ -335,7 +339,7 @@ export function shouldWireDecisionRoute(routing: boolean, hasPool: boolean, hasA
 /** P4b-1: WorkerConsumer deps 조립(순수·D4) — wpVerify→verifyEnabled 스레딩을 행동 단언 가능하게 분리.
  *  instanceOf 단언만으로는 이 한 줄의 누락(undefined→off)이 무음 fail-open 퇴행이 되는 것을 잡지 못한다. */
 export function buildWorkerConsumerDeps(
-  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs' | 'releaseStore' | 'riskStore' | 'budget' | 'provider' | 'isProviderFailure' | 'decisionStore' | 'failureStore'>
+  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs' | 'releaseStore' | 'riskStore' | 'budget' | 'provider' | 'isProviderFailure' | 'decisionStore' | 'failureStore' | 'outputStore'>
     & { handlers: Record<string, AgentExecutor> },
   config: SupervisorConfig,
 ): WorkerDeps {
@@ -385,6 +389,8 @@ export function buildWorkerConsumerDeps(
     // S7.1: 플래그 없이 주입만으로 배선한다 — 새 동작을 켜는 것이 아니라 이미 나던 실패 사유를
     // 사람이 읽는 브리프까지 잇는 것이다. 미주입이면 사유가 소비자 0 스트림에만 남는다(기존 동작).
     ...(deps.failureStore && { failureStore: deps.failureStore }),
+    // S6.3: 선행 산출물→후행 입력 배선(결함 F7). 미주입이면 artifacts 가 빈 배열로 흘러 이전과 같다.
+    ...(deps.outputStore && { outputStore: deps.outputStore }),
     // D5: 모델 라우팅 — flag + riskStore + ids 주입 시 워커가 디스패치 시 모델 해석.
     // riskStore.approvedForWorkflow가 Partial<Record<RoutedAgent,ModelTier>>를 반환하나 resolveWpModel이
     // undefined tier를 폴백으로 처리하므로 WorkerDeps 포트(Record 요구)로 안전하게 캐스트.

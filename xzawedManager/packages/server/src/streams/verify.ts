@@ -132,6 +132,46 @@ export function toAuditPath(artifact: string, workspaceRoot: string): string | n
   return rel.split(sep).join('/')
 }
 
+/**
+ * artifact 경로를 **전선에 실을 수 있는 형태**로 정규화한다(S6.3).
+ *
+ * `toAuditPath` 와 같은 규칙을 WP 산출물 포착에 적용한다. Security 의 인바운드 스키마는
+ * `!isAbsolute && !includes('..')` 를 강제하는데(`xzawedSecurity/src/types.ts`) **Developer 는
+ * workspaceRoot 하위 절대경로를 낼 수 있다**(`applyChange` 가 허용한다 — S5.1 이 기록한 사실).
+ * 정규화 없이 후행 입력으로 흘리면 safeParse 가 실패해 DLQ→120초 타임아웃이 된다.
+ *
+ * `workspaceRoot` 를 모르면 상대화할 수 없으므로 **이미 안전한 것만 남긴다**(fail-safe).
+ * 판단할 근거가 없는 것을 통과시키지 않는다.
+ */
+export function toWireArtifacts(artifacts: string[], workspaceRoot?: string): string[] {
+  const out = new Set<string>()
+  for (const a of artifacts) {
+    if (typeof a !== 'string' || a.length === 0) continue
+    // workspaceRoot 를 알면 상대화하고(밖·traversal 은 null), 모르면 원문 그대로 관문에 건다.
+    const candidate = workspaceRoot ? toAuditPath(a, workspaceRoot) : a
+    if (candidate !== null && acceptedBySecurityInbound(candidate)) out.add(candidate)
+  }
+  return [...out]
+}
+
+/**
+ * Security 인바운드 술어의 **사본**(`xzawedSecurity/src/types.ts` — `!isAbsolute && !includes('..')`).
+ *
+ * 두 분기가 서로 다른 규칙을 쓰고 있었다. 상대화 경로는 `toAuditPath` 의 **의미적** 판정
+ * (`path.relative` 기준 탈출 여부)만 거쳤는데, Security 의 판정은 **어휘적**이다 — 그래서
+ * `patches/v1..v2.diff` 처럼 탈출이 아닌 **정상 파일명**이 통과해 나갔다. Zod `refine` 은
+ * 원소별이라 그런 경로 하나가 `security_audit` **메시지 전체**를 거부시키고 DLQ→120초
+ * 타임아웃이 된다 — 한 파일이 감사에서 빠지는 것보다 훨씬 나쁘다. Grok 반증이 잡았다.
+ *
+ * **대가를 적어 둔다.** 이름에 `..` 가 든 정상 파일은 감사 대상에서 빠진다. Security 의 술어를
+ * 의미적 검사로 완화하면 해결되지만 그것은 **보안 표면의 서비스 간 계약 변경**이라 별도 판단이다.
+ * 여기서는 "보낼 수 없는 것은 보내지 않는다"만 한다 — 소비자가 못 받는 값을 만들지 않는 것이
+ * 생산자의 책임이다.
+ */
+function acceptedBySecurityInbound(p: string): boolean {
+  return !isAbsolute(p) && !p.includes('..')
+}
+
 /** 판정 전용 minimal 스키마 — 핸들러 outputSchema의 .default()에 기대지 않고
  *  필드 부재=파싱 실패=fail(불확실=실패, senario N1). `passed`는 N8 vacuous-pass 봉합용. */
 const TesterResultSchema = z.object({ success: z.boolean(), passed: z.number(), failed: z.number() })

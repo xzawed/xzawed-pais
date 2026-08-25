@@ -84,7 +84,7 @@
 | F4 | `security_audit`·`design_ui` WP가 빈 플랜으로 통과 | `verify.ts:82-85`가 빈 배열 → `:334`에서 즉시 통과, 증거 기록 0회 | ◎ |
 | F5 | ~~검증 실패 브리프가 없고 이벤트 구독자가 0~~ → **`S7.1` 로 해소.** 스트림에 구독자를 붙이는 대신 사유를 영속해(`wp_verification_failures`) 사람이 실제로 읽는 에스컬레이션 브리프가 싣는다 — `manager:events:{wf}` 는 per-workflow 라 고정 이름 소비자가 애초에 못 붙는다 | `verify.ts` 관측 이벤트 | ◎ |
 | F6 | `spec_fix`·`reject`가 결정 소비자에서 무동작 | `decision-consumer.ts:61-104`에 3분기뿐 | △ |
-| F7 | WP `inputs`/`outputs`가 항상 빈 배열 | `decompose/map.ts:35-45` | △ |
+| F7 | ~~WP `inputs`/`outputs`가 항상 빈 배열~~ → **`S6.3` 으로 해소.** 분해가 *예측한* I/O 를 채우는 대신 실행이 *실제로 낸* 산출물을 `wp_outputs` 에 포착해 후행 입력으로 흘린다 — Developer 가 이미 변경 파일 경로를 돌려주므로 LLM 예측이 불필요하다. `graph_dag` 의 필드는 계획으로 남긴다(`wp.status` 와 같은 혼동 회피) | `worker.ts` `buildWorkerInput` | ◎ |
 
 ### 2.3 운영 기반
 
