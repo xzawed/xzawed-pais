@@ -62,7 +62,8 @@ cd packages/server && pnpm test <파일>
 | **사전 게이트 대상** | `deploy_project` 전체 + `github_ops`의 **쓰기 액션만**(`GITHUB_WRITE_ACTIONS` — createRepo·createBranch·commitAndPush·createPR·createIssue·mergeBranch). 도구가 아니라 액션 단위다 — 목록 조회까지 카드를 띄우면 게이트가 소음이 되고, 소음이 된 게이트는 무조건 승인을 부른다 |
 | 검증 게이트 (증거 없음·판정 불가) | **fail-closed** — verdict 실패 시 `publishCompletion` 전에 반환 |
 | 빈 테스트 스위트 | **fail-closed** — `success && failed===0`이어도 `passed<=0`이면 vacuous로 차단 |
-| 릴리스 게이트 (증거 부재·skip) | **fail-closed** — `status:'blocked'` |
+| 릴리스 게이트 (증거 부재) | **fail-closed** — `status:'blocked'` |
+| **릴리스 게이트 (채널 결과)** | `passed`·`not_applicable` 만 통과. **그 외는 전부 차단**(미지 종류 포함). `not_applicable`=설정상 비대상 또는 이 WP 가 대상 아님, `skipped`=대상인데 미증명 |
 | 오라클 승인 tx 중 bad JSON | **fail-closed** — ROLLBACK |
 | **배포 게이트 (게이트 부재·`'default'` sentinel·조회 오류)** | **fail-open — 허용한다.** `MANAGER_DEPLOY_GATE_STRICT`를 켜야 차단으로 바뀐다. **기본값을 지금 뒤집지 않는다** — 아래 근거 |
 | advisory 채널 | **비차단** — 구조적으로 verdict 경로에 유입되지 않는다 |
@@ -91,6 +92,8 @@ cd packages/server && pnpm test <파일>
 - **오라클 초안은 소비자 없이는 영속되지 않는다.** 초안 생성만 켜고 Supervisor(`TASK_MANAGER_ENABLED`+`DATABASE_URL`)를 끄면 emit은 되는데 저장이 안 된다.
 - **`tsconfig.json`이 테스트 파일을 exclude한다.** 타입으로 호출부를 강제하는 장치는 `src/` 프로덕션 코드에만 성립하고 테스트 호출부는 검사되지 않는다.
 - **userContext를 넘기는 trigger 테스트는 `ensureWs` mock을 반드시 주입**한다. 빠뜨리면 실제 `mkdir(workspaceRoot)`가 돌아 Linux CI에서 `EACCES`로 죽는다(로컬 Windows는 통과한다).
+- **꺼진 채널도 결과를 기록한다 — 그 값이 게이트를 살리고 죽인다.** 검증 채널 5종은 전부 기본 off인데 `runChannelChecks`가 그때도 `recordOutcome`을 부른다. 그 값이 `skipped`(미증명)면 릴리스 게이트를 켜는 순간 **테스트를 통과한 WP조차 "미증명 채널 5개"로 영구 차단**된다. 그래서 비대상은 `not_applicable`로 기록한다. 이 결함은 **유닛 1466건 초록 아래 숨어 있었다** — 게이트 테스트가 outcome을 손으로 만들어 넣을 뿐 `verify.ts`가 실제로 무엇을 기록하는지 본 테스트가 0개였기 때문이다. 새 채널을 추가하면 **비대상 분기의 기록값을 반드시 확인**한다
+- **경계선: 켠 채널이 증명 못 한 것은 비대상이 아니다.** 판단 기준은 **누가 범위를 정했는가**다 — 설정·설계가 정한 범위 밖(플래그 off·min-risk 미달)이면 `not_applicable`, 범위 안인데 재료가 없으면(승인 베이스라인 부재·스토어 미주입) `skipped`다. 운영자가 증명을 요구했는데 증명 없이 통과시키는 것이 **정확히 이 게이트가 막으려는 것**이다. 위 항목을 고치면서 한 번 반대로 넣었다가 Grok 반증이 잡았다
 - **held-set은 in-memory다.** SAFE 모드에서 보류된 디스패치는 재시작 시 소실된다.
 - **마이그레이션은 `manager_schema_migrations`로 1회만 적용된다**(S3.4 이전엔 추적이 없어 매 기동 전량 재실행이었다). **이름의 `manager_` 접두사가 계약이다** — 런타임에 Orchestrator와 같은 DB를 쓰는데(`docker-compose.yml:83`) Orchestrator가 이미 `schema_migrations`에 자기 버전 1~8을 기록한다. 접두사를 떼면 두 서비스의 버전 번호가 서로를 덮어 **예외 없이 조용히 마이그레이션을 건너뛴다**(Manager가 자기 001~008을 적용됨으로 오인하거나, 반대로 Orchestrator가 `users`·`sessions` 없이 성공을 반환한다). 다른 테이블이 전부 `manager_` 접두사인 것과 같은 이유다
 - **버전 추적이 생겨도 멱등 가드는 남는다.** 추적 테이블이 없던 기존 DB가 새 러너로 처음 뜨면 기록이 비어 전량이 한 번 더 돈다 — 그 한 번을 안전하게 만드는 것이 `db/migration-guard.ts`이고 `__tests__/migrate-idempotent.test.ts`가 실제 파일을 훑는다. **`ADD CONSTRAINT`와 이름 없는 제약(`ADD PRIMARY KEY`·`ADD UNIQUE`·`ADD FOREIGN KEY`·`ADD CHECK`), `CREATE TYPE`은 Postgres에 `IF NOT EXISTS` 문법이 없어** 카탈로그 조회 가드(`pg_constraint`·`pg_type`)나 `DO $$ ... EXCEPTION WHEN duplicate_object $$`로 감싸야 통과한다. 가드 판정은 **블록이 아니라 IF 영역 단위**다

@@ -356,14 +356,26 @@ interface AuthoredCheckConfig<T> {
  * fail-closed(불확실=실패, N1). 미활성/베이스라인 부재면 skip(ok·회귀 0).
  */
 async function runAuthoredCheck<T>(wp: WorkPackage, deps: VerifyDeps, cfg: AuthoredCheckConfig<T>): Promise<VerificationVerdict> {
-  if (!cfg.enabled || !deps.oracleStore) { deps.recordOutcome?.(cfg.channel, 'skipped'); return { ok: true } }
+  // 채널 자체가 꺼져 있다 — 비대상이지 미증명이 아니다(S5.3a).
+  if (!cfg.enabled) { deps.recordOutcome?.(cfg.channel, 'not_applicable'); return { ok: true } }
+  // 켠 채로 스토어가 없다 = 구성 오류. 프로덕션 배선(`supervisor.ts`)이 `enabled` 를 스토어 주입과
+  // AND 하므로 도달하지 않지만, **배선이 바뀌어도 조용히 통과하지 않도록** 여기서 미증명으로 센다.
+  if (!deps.oracleStore) { deps.recordOutcome?.(cfg.channel, 'skipped'); return { ok: true } }
   let baseline: T | null
   try {
     baseline = await cfg.baseline()
   } catch (err) {
     return { ok: false, reason: `${cfg.dir}: 베이스라인 조회 실패 — ${err instanceof Error ? err.message : String(err)}` }
   }
-  if (baseline == null) { deps.recordOutcome?.(cfg.channel, 'skipped'); return { ok: true } } // 승인 베이스라인 없음 → skip(회귀 0)
+  // **승인 베이스라인 없음은 비대상이 아니다 — 미증명이다.**
+  //
+  // 운영자가 이 채널을 **켰다**. 그런데 이 story 의 승인 오라클/골든/불변식이 하나도 없어 아무것도
+  // 증명하지 못했다. 이것을 비대상으로 묶으면 "증명을 요구해 놓고 증명 없이 통과"가 된다 —
+  // S5.3a 초안이 실제로 그렇게 게이트를 약화시켰고 Grok 반증이 잡았다.
+  //
+  // `{ ok: true }` 를 유지하는 것은 별개다. 검증 단계에서 WP 를 **실패시키지는** 않는다(회귀 0 —
+  // 오라클 미승인이 WP 를 죽이지는 않는다). 릴리스 게이트에서만 막는다.
+  if (baseline == null) { deps.recordOutcome?.(cfg.channel, 'skipped'); return { ok: true } }
   if (!deps.userContext?.workspaceRoot) {
     return { ok: false, reason: `${cfg.dir}: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)` }
   }
@@ -437,8 +449,12 @@ export function meetsMinRisk(wpRisk: WpRisk, minRisk: WpRisk): boolean {
 /** P4 mutation θ_risk 채널(N8 강화): HIGH-risk WP의 스위트 강도를 자가단언 하니스로 검증.
  *  oracle 미소비 — 자체 guard 후 executeAuthoredTest 재사용(CPD0). score<θ면 하니스가 fail→fail(blocking). never-throw. */
 function runMutationCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
-  if (deps.mutationEnabled !== true) { deps.recordOutcome?.('mutation', 'skipped'); return Promise.resolve({ ok: true }) }
-  if (!meetsMinRisk(wp.risk, deps.mutationMinRisk ?? 'HIGH')) { deps.recordOutcome?.('mutation', 'skipped'); return Promise.resolve({ ok: true }) }
+  if (deps.mutationEnabled !== true) { deps.recordOutcome?.('mutation', 'not_applicable'); return Promise.resolve({ ok: true }) }
+  // 이 WP 는 mutation 대상 등급이 아니다 — 설계상 범위 밖이지 미증명이 아니다(S5.3a).
+  // ⚠️ 이 비대상 판정은 `wp.risk` 만큼만 믿을 수 있는데, risk write-back 이 전 WP 를 균일하게
+  //    덮어쓰는 한 등급은 분해 기본값(MEDIUM)에 머문다(결함 F2 · `S5.3b`). 그것이 고쳐져야
+  //    "이 WP 는 mutation 대상이 아니다"가 실제 판단이 된다.
+  if (!meetsMinRisk(wp.risk, deps.mutationMinRisk ?? 'HIGH')) { deps.recordOutcome?.('mutation', 'not_applicable'); return Promise.resolve({ ok: true }) }
   if (!deps.userContext?.workspaceRoot) {
     return Promise.resolve({ ok: false, reason: `${MUTATION_DIR}: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)` })
   }
@@ -458,7 +474,7 @@ function runMutationCheck(wp: WorkPackage, deps: VerifyDeps): Promise<Verificati
 /** P4 4d security 채널: develop_code 산출물에 SAST(security_audit)를 실행하고 결정론 findings(source∈{static,deps})
  *  중 severity≥floor가 있으면 fail(blocking). LLM findings 제외(N6). never-throw·fail-closed. oracle 미소비. */
 async function runSecurityCheck(wp: WorkPackage, artifacts: string[], deps: VerifyDeps): Promise<VerificationVerdict> {
-  if (deps.securityEnabled !== true) { deps.recordOutcome?.('security', 'skipped'); return { ok: true } }
+  if (deps.securityEnabled !== true) { deps.recordOutcome?.('security', 'not_applicable'); return { ok: true } }
   if (!deps.userContext?.workspaceRoot) {
     return { ok: false, reason: 'security: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)' }
   }
