@@ -9,7 +9,7 @@ import type { Publish } from './decomposition-consumer.js'
 import type { ConformanceOracleStore, ImpactOracleStore, InvariantOracleStore } from './conformance.js'
 import { WpDispatchSignalSchema, type WpDispatchSignalMessage } from './dispatch-signal.js'
 import { resolveAgentTool } from '../tools/agent-tool-map.js'
-import { verifyWp, publishVerificationFailed, REASON_MAX, type SecuritySeverity } from './verify.js'
+import { verifyWp, publishVerificationFailed, extractArtifacts, toWireArtifacts, REASON_MAX, type SecuritySeverity } from './verify.js'
 import type { ChannelOutcome } from '../db/release-gate.types.js'
 import { produceAdvisory, type AdvisoryStore } from './advisory.js'
 import { buildGoldenBrief } from './golden-brief.js'
@@ -37,7 +37,7 @@ export interface WorkerDeps {
   publish: Publish
   /** 완료 신호 스트림(기본 manager:completions:main; createSupervisor가 COMPLETION_PREFIX:channel 주입). */
   completionStream?: string
-  buildInput?: (wp: WorkPackage, userContext?: UserContext, model?: string) => Record<string, unknown>
+  buildInput?: (wp: WorkPackage, userContext?: UserContext, model?: string, artifacts?: string[]) => Record<string, unknown>
   now?: () => number
   /** P4b-1: 검증 게이트(=MANAGER_WP_VERIFY). on이면 완료 발행 전 verifyWp fail-closed 판정 —
    *  실패 시 완료 미발행(lease 백스톱이 reclaim→escalate) + wp.verification.failed 관측 이벤트. */
@@ -97,6 +97,15 @@ export interface WorkerDeps {
   failureStore?: {
     record(input: { workflowId: string; wpId: string; attempt: number; reason: string; tenantId: string | null }): Promise<void>
   }
+  /**
+   * S6.3: WP 실제 산출물 투영(결함 F7). 성공한 WP 의 결과 artifacts 를 쓰고, 후행 WP 디스패치 시
+   * `wp.dependencies` 산출물을 모아 에이전트 입력의 `artifacts` 로 넘긴다.
+   * 미주입이면 이전과 동일하게 빈 배열이 흘러 security static 은 `requested: 0` 이다.
+   */
+  outputStore?: {
+    record(input: { workflowId: string; wpId: string; artifacts: string[]; tenantId: string | null }): Promise<void>
+    unionFor(workflowId: string, wpIds: string[]): Promise<string[]>
+  }
 }
 
 export type WorkerOutcome =
@@ -111,7 +120,9 @@ export type WorkerOutcome =
  *  ⚠️ projectPath(P4a-2): userContext 존재 시 workspaceRoot **절대경로** — builder/tester `validatePath`는
  *  `fs.realpath(projectPath)`를 에이전트 cwd 기준으로 해석하므로 '.'는 cwd≠workspaceRoot 배포에서 거부(NEW-2).
  *  절대경로는 cwd 무관 + `path.relative(realRoot, realProject)=''`로 containment 통과. 미존재 시 '.' 폴백(P4-1 동작 보존). */
-export function buildWorkerInput(wp: WorkPackage, userContext?: UserContext, model?: string): Record<string, unknown> {
+export function buildWorkerInput(
+  wp: WorkPackage, userContext?: UserContext, model?: string, artifacts: string[] = [],
+): Record<string, unknown> {
   const acList = wp.acceptanceCriteria.map((a) => `- ${a}`).join('\n')
   const fullIntent = wp.acceptanceCriteria.length
     ? `Implement story ${wp.storyId}.\nAcceptance criteria:\n${acList}`
@@ -120,7 +131,10 @@ export function buildWorkerInput(wp: WorkPackage, userContext?: UserContext, mod
   // runner.ts buildAgentQueryPayload와 동일하게 클램프(AC 전체는 plan에 무손실 보존 — developer가 읽음).
   const intent = fullIntent.slice(0, 4000)
   const projectPath = userContext?.workspaceRoot ?? '.'
-  return { intent, plan: fullIntent, context: {}, priority: 'normal', projectPath, target: 'development', severity: 'low', artifacts: [], ...(model !== undefined && { model }) }
+  // S6.3: `artifacts` 는 **선행 WP 가 실제로 낸 파일**이다(호출부가 `wp.dependencies` 로 조회해 넘긴다).
+  // 이전엔 `[]` 하드코딩이라 security_audit WP 가 감사할 대상을 한 건도 못 받았고 static 은
+  // 구조적으로 항상 `requested: 0` 이었다(결함 F7 — S5.2a 가 그 위에서 판정을 세워야 했다).
+  return { intent, plan: fullIntent, context: {}, priority: 'normal', projectPath, target: 'development', severity: 'low', artifacts, ...(model !== undefined && { model }) }
 }
 
 /** 워커 배선 판정(순수·D4 패턴): taskWorker flag + 핸들러 주입 둘 다 있어야 배선. */
@@ -198,7 +212,16 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
     const approved = await deps.riskStore.approvedForWorkflow(workflowId).catch(() => null)
     routedModel = resolveWpModel(approved?.modelRouting, wp.owningRole, deps.modelRouting)
   }
-  const input = (deps.buildInput ?? buildWorkerInput)(wp, userContext, routedModel)
+  // S6.3: 선행 WP 가 실제로 낸 파일을 모아 입력의 `artifacts` 로 넘긴다(결함 F7).
+  // never-throw — 조회 실패로 WP 를 죽이지 않는다. 빈 배열이면 이전과 같은 입력이 된다(회귀 0).
+  let inputArtifacts: string[] = []
+  if (deps.outputStore && wp.dependencies.length > 0) {
+    inputArtifacts = await deps.outputStore.unionFor(workflowId, wp.dependencies).catch((err: unknown) => {
+      console.error('[worker] 선행 산출물 조회 실패(빈 입력으로 진행):', err)
+      return []
+    })
+  }
+  const input = (deps.buildInput ?? buildWorkerInput)(wp, userContext, routedModel, inputArtifacts)
   // 하드닝: 장기 실행(verify/conformance는 WP당 다단계 에이전트 호출·최대 5×120s) 중 lease 가시성 만료·
   // false reclaim을 막기 위해 실행 동안 주기적으로 renewLease(하트비트). leaseStore+visibilityMs 주입 시에만
   // 활성(미주입=P4-1/P4b 동작 보존·회귀 0). stop()은 finally에서 모든 종료 경로에 보장.
@@ -228,6 +251,23 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
     await maybeProduceAdvisory(tool, workflowId, wp, msg.payload.attempt, result, userContext, deps)
     // Slice 1: verdict.ok 후 미freeze golden 있으면 golden_diff 사인오프 요청(best-effort·완료 영향 0).
     await maybeRequestGoldenSignoff(tool, workflowId, userContext, deps)
+    // S6.3: 이 WP 가 실제로 낸 산출물을 기록해 후행이 입력으로 받게 한다(결함 F7).
+    // 검증을 통과한 뒤에만 쓴다 — 검증 실패한 실행의 파일을 후행이 감사하면 안 된다.
+    // best-effort: 기록 실패가 완료 발행을 막지 않는다(완료가 load-bearing 신호다).
+    if (deps.outputStore) {
+      try {
+        // 전선 형식으로 정규화해 저장한다 — Security 인바운드는 상대경로만 받는데 Developer 는
+        // workspaceRoot 하위 **절대경로를 낼 수 있다**(S5.1). 정규화 없이 흘리면 후행의 safeParse 가
+        // 실패해 DLQ→타임아웃이 된다. 저장 시점에 한 번 정규화해 소비처마다 반복하지 않는다.
+        await deps.outputStore.record({
+          workflowId, wpId,
+          artifacts: toWireArtifacts(extractArtifacts(result), userContext?.workspaceRoot),
+          tenantId: userContext?.tenantId ?? null,
+        })
+      } catch (err) {
+        console.error('[worker] WP 산출물 기록 실패(후행이 빈 입력을 받는다):', err)
+      }
+    }
     await publishCompletion(deps, workflowId, wpId, msg.payload.attempt)
     return { status: 'completed', wpId }
   } finally {
