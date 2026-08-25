@@ -15,7 +15,8 @@ import {
 
 export const WP_VERIFICATION_FAILED = 'wp.verification.failed'
 /** 관측 이벤트 reason 상한 — 에이전트 오류 메시지 폭주가 페이로드를 키우지 않도록. */
-const REASON_MAX = 500
+/** 관측 이벤트·영속 사유의 공통 상한 — 에이전트 오류 전문이 스트림·DB 를 잠식하지 않게(S7.1 에서 export). */
+export const REASON_MAX = 500
 
 export type VerificationVerdict = { ok: true } | { ok: false; reason: string }
 

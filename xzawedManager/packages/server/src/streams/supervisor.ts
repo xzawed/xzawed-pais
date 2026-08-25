@@ -9,6 +9,7 @@ import { RISK_PREFIX, RISK_GROUP } from '../db/risk-classification.types.js'
 import { handleCompletion } from './completion.js'
 import { LeaseSweeper } from './lease-sweeper.js'
 import { makeEscalationBrief, type DecisionBriefStore } from './decision-brief.js'
+import type { VerificationFailureRepo } from '../db/verification-failure.repo.js'
 import { DecisionSweeper } from './decision-sweeper.js'
 import { DecisionRecordedConsumer, type DecisionRoutingDeps } from './decision-consumer.js'
 import { DecisionExpiredConsumer } from './decision-expiry-consumer.js'
@@ -192,6 +193,9 @@ export interface SupervisorDeps {
   isProviderFailure?: (err: unknown) => boolean
   /** P5-1: 릴리스 게이트 증거/결과 영속소(ReleaseGateRepo). releaseGate flag + 주입 시 게이트 평가. */
   releaseStore?: ReleaseGateRepo
+  /** S7.1: 검증 실패 사유 투영(VerificationFailureRepo). 워커가 쓰고 에스컬레이션 브리프가 읽는다.
+   *  **플래그가 없다** — 사유 영속은 새 동작을 켜는 것이 아니라 이미 나던 실패를 사람에게 잇는 것이다. */
+  failureStore?: VerificationFailureRepo
   /** C5: approve→RiskClassificationRepo.approve 분기용.
    *  D5: approvedForWorkflow도 노출(모델 라우팅 조회) — RiskClassificationRepo가 양쪽 모두 구현.
    *  modelRouting은 Partial(DB 스키마·RiskClassification)이나 resolveWpModel이 undefined tier를 폴백으로 처리. */
@@ -331,7 +335,7 @@ export function shouldWireDecisionRoute(routing: boolean, hasPool: boolean, hasA
 /** P4b-1: WorkerConsumer deps 조립(순수·D4) — wpVerify→verifyEnabled 스레딩을 행동 단언 가능하게 분리.
  *  instanceOf 단언만으로는 이 한 줄의 누락(undefined→off)이 무음 fail-open 퇴행이 되는 것을 잡지 못한다. */
 export function buildWorkerConsumerDeps(
-  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs' | 'releaseStore' | 'riskStore' | 'budget' | 'provider' | 'isProviderFailure' | 'decisionStore'>
+  deps: Pick<SupervisorDeps, 'repo' | 'publish' | 'oracleStore' | 'leaseStore' | 'advisoryStore' | 'claude' | 'model' | 'timeoutMs' | 'releaseStore' | 'riskStore' | 'budget' | 'provider' | 'isProviderFailure' | 'decisionStore' | 'failureStore'>
     & { handlers: Record<string, AgentExecutor> },
   config: SupervisorConfig,
 ): WorkerDeps {
@@ -378,6 +382,9 @@ export function buildWorkerConsumerDeps(
     // P5-1 릴리스 게이트: flag + releaseStore 둘 다 있어야 활성(검증 우회 무음 방지·행동 단언). oracle 미소비.
     releaseGateEnabled: config.releaseGate === true && deps.releaseStore != null,
     ...(deps.releaseStore && { releaseStore: deps.releaseStore }),
+    // S7.1: 플래그 없이 주입만으로 배선한다 — 새 동작을 켜는 것이 아니라 이미 나던 실패 사유를
+    // 사람이 읽는 브리프까지 잇는 것이다. 미주입이면 사유가 소비자 0 스트림에만 남는다(기존 동작).
+    ...(deps.failureStore && { failureStore: deps.failureStore }),
     // D5: 모델 라우팅 — flag + riskStore + ids 주입 시 워커가 디스패치 시 모델 해석.
     // riskStore.approvedForWorkflow가 Partial<Record<RoutedAgent,ModelTier>>를 반환하나 resolveWpModel이
     // undefined tier를 폴백으로 처리하므로 WorkerDeps 포트(Record 요구)로 안전하게 캐스트.
@@ -459,7 +466,14 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
     {
       store: deps.leaseStore, maxAttempts: config.maxAttempts, visibilityMs: config.visibilityMs,
       ...(workerActive && { publish: deps.publish }),
-      ...(briefStore && { onEscalated: makeEscalationBrief(briefStore, briefOpts) }),
+      // S7.1: 브리프가 검증 실패 사유를 읽어 싣는다. failureStore 미주입이면 조회가 빈 배열이라
+      // 이전과 같은 모양의 브리프가 나온다(회귀 0).
+      ...(briefStore && {
+        onEscalated: makeEscalationBrief(briefStore, {
+          ...briefOpts,
+          ...(deps.failureStore && { failureStore: deps.failureStore }),
+        }),
+      }),
       ...(briefStore && { graphStore: deps.repo }),
     },
     config.sweepMs,
@@ -494,30 +508,21 @@ export function createSupervisor(makeRedis: () => Redis, deps: SupervisorDeps, c
   // P4-1: 워커 소비자는 taskWorker+handlers 주입 시만 배선. 완료 발행 스트림을 completionConsumer 구독 스트림과
   // 단일 출처(COMPLETION_PREFIX:DEFAULT_CHANNEL)로 일치(드리프트 0). makeRedis()를 워커용으로 1회 더 호출
   // (소비자별 전용 연결·BLOCK 직렬화 회피·기존 패턴).
-  const workerConsumer = workerActive && deps.handlers
+  const handlers = deps.handlers
+  const workerConsumer = workerActive && handlers
     ? new WorkerConsumer(
         makeRedis(),
-        buildWorkerConsumerDeps(
-          // exactOptionalPropertyTypes: 미주입 deps는 키 생략(undefined 명시 불가). 기존 dispatch deps 조립 idiom.
-          {
-            repo: deps.repo, publish: deps.publish, handlers: deps.handlers, leaseStore: deps.leaseStore,
-            ...(deps.oracleStore && { oracleStore: deps.oracleStore }),
-            ...(deps.advisoryStore && { advisoryStore: deps.advisoryStore }),
-            ...(deps.claude && { claude: deps.claude }),
-            ...(deps.model !== undefined && { model: deps.model }),
-            ...(deps.timeoutMs !== undefined && { timeoutMs: deps.timeoutMs }),
-            ...(deps.releaseStore && { releaseStore: deps.releaseStore }),
-            // D5: riskStore 전달(buildWorkerConsumerDeps가 modelRouting flag 게이트로 worker deps에 조건부 주입).
-            ...(deps.riskStore && { riskStore: deps.riskStore }),
-            // Slice 1: decisionStore 전달(buildWorkerConsumerDeps가 goldenSignoff flag 게이트로 worker hook에 조건부 주입).
-            ...(deps.decisionStore && { decisionStore: deps.decisionStore }),
-            // G1: §13 서킷(advisory 경로 보호·러너·decompose와 동일 인스턴스). 미주입이면 무보호(회귀 0).
-            ...(deps.budget && { budget: deps.budget }),
-            ...(deps.provider && { provider: deps.provider }),
-            ...(deps.isProviderFailure && { isProviderFailure: deps.isProviderFailure }),
-          },
-          config,
-        ),
+        // ⚠️ **여기서 키를 손으로 나열하지 않는다**(S7.1 에서 실제로 사고가 났다).
+        //
+        // 이전에는 `{ repo, publish, ..., releaseStore, riskStore, ... }` 로 하나씩 옮겨 담았다.
+        // `buildWorkerConsumerDeps` 의 인자는 전부 **옵셔널**이라 새 의존을 추가하면서 이 목록에
+        // 넣는 것을 잊어도 tsc 가 아무 말도 하지 않는다 — `failureStore` 가 정확히 그렇게
+        // `SupervisorDeps`·Pick·내부 스프레드까지 다 갖춘 채 **호출부 한 곳에서만 빠져** 죽었다.
+        // 유닛은 전부 초록이었다(빌더 함수와 워커 핸들러를 각각 직접 호출해 테스트하므로).
+        //
+        // 통째로 넘기면 목록이 사라지고 **`Pick<>` 이 유일한 계약**이 된다 — Pick 에서 키를 빼면
+        // 함수 본문의 `deps.X` 가 tsc 에러가 되므로 릴레이 전체가 타입으로 강제된다.
+        buildWorkerConsumerDeps({ ...deps, handlers }, config),
       )
     : undefined
 

@@ -1,5 +1,8 @@
 import type { DecisionRequest, FaultAttribution } from '../db/decision.types.js'
 
+/** 브리프 한 줄에 실을 사유 상한(S7.1) — 에이전트 오류 전문이 사람이 읽을 브리프를 잠식하지 않게. */
+const REASON_LINE_MAX = 300
+
 /** lease 상한 초과로 ESCALATED된 WP 정보(handleLeaseSweep이 전달). */
 export interface EscalationInfo {
   workflowId: string
@@ -10,6 +13,11 @@ export interface EscalationInfo {
   projectId?: string | null
   /** G11 Slice 4: 생성 시점 테넌트 스코프(graph_dag.userContext.tenantId, lease.ts resolveScope 경유). 미해석은 null. */
   tenantId?: string | null
+  /**
+   * S7.1: 이 WP 의 **검증 실패 사유**(attempt 오름차순). `makeEscalationBrief` 가 조회해 얹는다 —
+   * 순수 빌더는 받은 것만 쓴다. 조회 실패·미배선이면 빈 배열이고 브리프는 이전과 같은 모양이 된다.
+   */
+  failures?: { attempt: number; reason: string }[]
 }
 
 /** `DecisionRepo.createRequest` 입력의 구조적 부분집합 — repo 직접 결합 회피(M3). */
@@ -39,6 +47,11 @@ export interface DecisionBriefStore {
   createRequest(req: DecisionRequestInput & { tenantId: string | null }): Promise<{ eventId: string } | null>
 }
 
+/** `VerificationFailureRepo` 의 구조적 부분집합(M3 — repo 직접 결합 회피). S7.1. */
+export interface VerificationFailureLookup {
+  recentForWp(workflowId: string, wpId: string): Promise<{ attempt: number; reason: string }[]>
+}
+
 /** B1: now(ms)+ttlMs → ISO 만료 시각. ttlMs 미설정/비양수면 undefined(만료 없음·회귀 0). 순수. */
 export function expiresAtFrom(now: number, ttlMs: number | undefined): string | undefined {
   if (!ttlMs || ttlMs <= 0) return undefined
@@ -63,6 +76,9 @@ export function buildDefectBrief(info: EscalationInfo): DecisionRequestInput {
   // attribution을 단일 출처로 산출하고 시도 횟수(tries)는 거기서 파생 — attempt+1을 한 곳에서만 계산.
   const attribution = localizeFault(info)
   const tries = attribution.counters.impl
+  // S7.1: 사유는 사람이 읽는 텍스트라 길이를 자른다(에이전트 오류 전문이 브리프를 잠식하지 않게).
+  const failures = info.failures ?? []
+  const failureLines = failures.map((f) => `- attempt ${f.attempt}: ${f.reason.slice(0, REASON_LINE_MAX)}`)
   return {
     requestId: `${workflowId}:${wpId}:${attempt}`,
     type: 'defect_brief',
@@ -73,9 +89,17 @@ export function buildDefectBrief(info: EscalationInfo): DecisionRequestInput {
     projectId: info.projectId ?? null,
     context: {
       location: `WP ${wpId} (step ${stepN})`,
-      expectedVsActual: `구현 계층에서 ${tries}회 정직 재시도 모두 검증 실패 — 구현으로 해소 불가. 계약 사슬상 Task(스펙 모호/불가능) 또는 plan(기획 모순) 검토 필요.`,
+      // S7.1: 사유가 있으면 **그것이 본문**이다. 이전에는 아래 일반 문구뿐이라 사람이 브리프를 읽어도
+      // 무엇이 왜 실패했는지 알 수 없었다 — 사유는 소비자 0인 스트림으로만 갔다.
+      expectedVsActual: failureLines.length > 0
+        ? `구현 계층에서 ${tries}회 정직 재시도 모두 검증 실패 — 구현으로 해소 불가. 검증이 거부한 사유:\n${failureLines.join('\n')}`
+        : `구현 계층에서 ${tries}회 정직 재시도 모두 검증 실패 — 구현으로 해소 불가. 계약 사슬상 Task(스펙 모호/불가능) 또는 plan(기획 모순) 검토 필요.`,
       impact: ['이 WP에 의존하는 후행 작업이 차단됨(lease escalated).'],
-      evidenceRefs: [`wp.escalated@${workflowId}/${wpId}`, `attempt=${tries}`],
+      evidenceRefs: [
+        `wp.escalated@${workflowId}/${wpId}`,
+        `attempt=${tries}`,
+        ...failures.map((f) => `wp.verification.failed@attempt=${f.attempt}`),
+      ],
       // D10: decision-consumer는 defect_brief에서 fix_reverify만 능동 처리한다(escalated lease reopen→재디스패치).
       // spec_fix(재분해)·accept_known(수용)·reject(saga)는 핸들러가 없어 RESOLVED만 남기는 무음 no-op이므로
       // 거짓 affordance를 제거하기 위해 핸들 가능한 choice만 노출한다(미구현 동작 버튼 비표시).
@@ -93,11 +117,23 @@ export function buildDefectBrief(info: EscalationInfo): DecisionRequestInput {
  */
 export function makeEscalationBrief(
   store: DecisionBriefStore,
-  opts?: { now?: () => number; ttlMs?: number },
+  opts?: { now?: () => number; ttlMs?: number; failureStore?: VerificationFailureLookup },
 ): (info: EscalationInfo) => Promise<void> {
   return async (info) => {
     const nowFn = opts?.now ?? Date.now
     const expiresAt = expiresAtFrom(nowFn(), opts?.ttlMs)
-    await store.createRequest({ ...buildDefectBrief(info), tenantId: info.tenantId ?? null, ...(expiresAt && { expiresAt }) })
+    // S7.1: 사유 조회 실패가 브리프 자체를 없애면 안 된다 — 사유 없는 브리프가 브리프 없는 것보다 낫다.
+    // 미배선(포트 미주입)도 같은 경로로 빈 배열이 되어 이전과 바이트 동일한 브리프가 나온다(회귀 0).
+    let failures: { attempt: number; reason: string }[] = []
+    try {
+      failures = (await opts?.failureStore?.recentForWp(info.workflowId, info.wpId)) ?? []
+    } catch (err) {
+      console.error('[decision-brief] 검증 실패 사유 조회 실패(사유 없이 브리프 발행):', err)
+    }
+    await store.createRequest({
+      ...buildDefectBrief({ ...info, failures }),
+      tenantId: info.tenantId ?? null,
+      ...(expiresAt && { expiresAt }),
+    })
   }
 }
