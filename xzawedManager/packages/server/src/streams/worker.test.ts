@@ -270,7 +270,7 @@ describe('handleWpDispatchSignal — mutation threading (P4)', () => {
     const d = deps({
       verifyEnabled: true,
       mutationEnabled: true,
-      mutationTheta: 0.7,
+      mutationThetaByRisk: { LOW: 0.3, MEDIUM: 0.5, HIGH: 0.7 },
       mutationMinRisk: 'HIGH' as never,
       mutationMaxMutants: 10,
       repo: repoMock({ workPackages: [wp()], eventId: null, version: 1, userContext: uc }),
@@ -283,6 +283,37 @@ describe('handleWpDispatchSignal — mutation threading (P4)', () => {
     // mutation 채널은 oracle 미소비 — 통과 경로로 completed가 발행돼야 함
     const out = await handleWpDispatchSignal(sig(), d)
     expect(out.status).toBe('completed')
+  })
+
+  /**
+   * **이 릴레이 한 줄이 빠져도 tsc 도 다른 테스트도 못 잡는다**(S5.4 실측).
+   * `worker → verifyWp` 전달이 조건부 spread 라 초과 속성 검사가 안 걸리고, 위 테스트는
+   * "mutation 이 돌았는가"만 보지 "어떤 θ 로 돌았는가"는 안 본다. 그래서 등급별 θ 가 통째로
+   * 증발해도 조용히 기본값(0.6)으로 돌아간다 — `S7.1` 의 릴레이 누락과 같은 모양이라 못을 박는다.
+   */
+  it('mutationThetaByRisk 가 verifyWp 까지 도달한다(등급별 θ 가 하니스 plan 에 박힌다)', async () => {
+    const uc = { userId: 'u1', projectId: 'p1', workspaceRoot: '/ws' }
+    const author = vi.fn().mockResolvedValue({ artifacts: ['f.ts'] })
+    const d = deps({
+      verifyEnabled: true,
+      mutationEnabled: true,
+      // MEDIUM WP 이므로 0.22 만 plan 에 박혀야 한다.
+      mutationThetaByRisk: { LOW: 0.11, MEDIUM: 0.22, HIGH: 0.33 },
+      mutationMinRisk: 'LOW' as never,
+      // `wp()` 팩토리는 risk 를 안 채운다(런타임 undefined) — mutation 은 min-risk 비교에서
+      // 먼저 걸러지므로 등급을 명시해야 이 경로에 들어간다.
+      repo: repoMock({ workPackages: [{ ...wp(), risk: 'MEDIUM' }], eventId: null, version: 1, userContext: uc }),
+      handlers: {
+        develop_code: { execute: author },
+        build_project: { execute: vi.fn().mockResolvedValue({ success: true }) },
+        run_tests: { execute: vi.fn().mockResolvedValue({ success: true, failed: 0, passed: 1 }) },
+      },
+    })
+    await handleWpDispatchSignal(sig(), d)
+    const seen = JSON.stringify(author.mock.calls)
+    expect(seen, '등급별 θ 가 verifyWp 에 도달하지 못했다(릴레이 절단)').toContain('0.22')
+    expect(seen, '맵이 빠져 기본 θ 로 돌아갔다').not.toContain('0.6')
+    expect(seen, '다른 등급의 θ 가 새어 들어왔다').not.toContain('0.33')
   })
 
   it('mutationEnabled=false이면 해당 필드가 verifyWp에 false로 전달(회귀 0)', async () => {

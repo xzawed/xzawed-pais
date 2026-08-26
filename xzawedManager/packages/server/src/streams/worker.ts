@@ -60,7 +60,8 @@ export interface WorkerDeps {
   propertyEnabled?: boolean
   /** P4 mutation θ_risk 채널 활성(=MANAGER_WP_MUTATION). oracle 미소비. verifyWp로 전달. */
   mutationEnabled?: boolean
-  mutationTheta?: number
+  /** 등급별 mutation θ(S5.4). 완전한 맵 — 기동 시 한 번 해석된다. */
+  mutationThetaByRisk?: Record<WpRisk, number>
   mutationMinRisk?: WpRisk
   mutationMaxMutants?: number
   /** P4 4d security 채널 활성(=MANAGER_WP_SECURITY). oracle 미소비. verifyWp로 전달. */
@@ -293,7 +294,7 @@ async function runVerifyGate(
     impactEnabled: deps.impactEnabled === true,
     propertyEnabled: deps.propertyEnabled === true,
     mutationEnabled: deps.mutationEnabled === true,
-    ...(deps.mutationTheta !== undefined && { mutationTheta: deps.mutationTheta }),
+    ...(deps.mutationThetaByRisk !== undefined && { mutationThetaByRisk: deps.mutationThetaByRisk }),
     ...(deps.mutationMinRisk !== undefined && { mutationMinRisk: deps.mutationMinRisk }),
     ...(deps.mutationMaxMutants !== undefined && { mutationMaxMutants: deps.mutationMaxMutants }),
     securityEnabled: deps.securityEnabled === true,

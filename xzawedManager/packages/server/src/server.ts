@@ -32,6 +32,7 @@ import { createSwitchProjectHandler } from './tools/switch-project.js'
 import { createDeployProjectHandler } from './tools/deploy-project.js'
 import { ReleaseDeployGate } from './tools/deploy-gate.js'
 import { SessionGatewayConsumer } from './streams/session-gateway.js'
+import { resolveThetaByRisk, nonMonotonicThetaTiers, meetsMinRisk } from './streams/verify.js'
 import { WatcherEventConsumer } from './streams/watcher-event-consumer.js'
 import { getRedisClient, createRedisClient } from './streams/redis.client.js'
 import { RedisEventBus, BudgetCircuitBreaker, ProviderCircuitBreaker, Bulkhead } from '@xzawed/agent-streams'
@@ -416,6 +417,42 @@ export async function buildServer(
       'MANAGER_WP_MUTATION=true·MANAGER_MUTATION_MIN_RISK=HIGH 인데 risk write-back 체인(MANAGER_RISK_CLASSIFY+MANAGER_RISK_ROUTING)이 불완전해 wp.risk가 기본 MEDIUM에 머물러 mutation이 항상 skip됩니다(무음 no-op). risk 체인을 켜 HIGH 승인·write-back하거나, MANAGER_MUTATION_MIN_RISK를 MEDIUM/LOW로 낮추세요.',
     )
   }
+  // S5.4: per-tier θ 를 설정했는데 min-risk 가 그 등급을 애초에 걸러 내면 그 값은 **닿지 않는다.**
+  // 켜 놓고 아무 일도 안 일어나는 것이 이 채널의 상습 함정이라(위 경고와 같은 이유) 표면화한다.
+  const thetaTiers = resolveThetaByRisk(config.MANAGER_MUTATION_THETA, {
+    LOW: config.MANAGER_MUTATION_THETA_LOW,
+    MEDIUM: config.MANAGER_MUTATION_THETA_MEDIUM,
+    HIGH: config.MANAGER_MUTATION_THETA_HIGH,
+  })
+  if (config.MANAGER_WP_MUTATION && config.MANAGER_WP_VERIFY) {
+    const unreachable = (['LOW', 'MEDIUM'] as const).filter(
+      (t) => config[`MANAGER_MUTATION_THETA_${t}`] !== undefined
+        && !meetsMinRisk(t, config.MANAGER_MUTATION_MIN_RISK),
+    )
+    if (unreachable.length > 0) {
+      app.log.warn(
+        `MANAGER_MUTATION_THETA_${unreachable.join('·')} 를 설정했지만 MANAGER_MUTATION_MIN_RISK=${config.MANAGER_MUTATION_MIN_RISK} 가 그 등급을 mutation 대상에서 제외해 이 θ 는 적용되지 않습니다. min-risk 를 낮추거나 해당 θ 설정을 제거하세요.`,
+      )
+    }
+    // 위 G7 경고는 min-risk=HIGH 만 본다. 그런데 **리스크 체인이 꺼져 있으면 min-risk 와 무관하게
+    // 전 WP 가 분해 기본값 MEDIUM 에 머문다** — 그러면 LOW·HIGH 티어의 θ 는 영원히 닿지 않는다.
+    // min-risk 를 MEDIUM 으로 낮춰 mutation 이 *돌기는 하는* 구성에서는 G7 이 침묵하므로 별도로 알린다
+    // (Grok 반증이 짚은 사각지대 — 켜 놓고 아무 일도 안 일어나는 것이 이 채널의 상습 함정이다).
+    const chainIncomplete = !config.MANAGER_RISK_CLASSIFY || !config.MANAGER_RISK_ROUTING
+    const deadTiers = (['LOW', 'HIGH'] as const).filter((t) => config[`MANAGER_MUTATION_THETA_${t}`] !== undefined)
+    if (chainIncomplete && deadTiers.length > 0) {
+      app.log.warn(
+        `MANAGER_MUTATION_THETA_${deadTiers.join('·')} 를 설정했지만 risk 분류·라우팅 체인(MANAGER_RISK_CLASSIFY+MANAGER_RISK_ROUTING)이 불완전해 모든 WP 의 risk 가 기본 MEDIUM 에 머뭅니다 — 이 θ 는 적용되지 않습니다. risk 체인을 켜세요.`,
+      )
+    }
+    // 저위험 WP 에 고위험보다 엄격한 바닥을 요구하는 것은 거의 항상 오타다. 다만 보안 불변식이
+    // 아니라 캘리브레이션 취향이라 거부하지 않고 알리기만 한다.
+    if (nonMonotonicThetaTiers(thetaTiers)) {
+      app.log.warn(
+        `mutation θ 가 등급 순서를 거스릅니다(LOW=${thetaTiers.LOW}·MEDIUM=${thetaTiers.MEDIUM}·HIGH=${thetaTiers.HIGH}). 저위험 WP 에 고위험보다 엄격한 바닥을 요구하고 있는지 확인하세요.`,
+      )
+    }
+  }
 
   // P4 4d: security는 verifyWp 안 develop_code 경로에서만 동작하므로 MANAGER_WP_VERIFY off면 무음 no-op. 오진 방지 경고.
   if (config.MANAGER_WP_SECURITY && !config.MANAGER_WP_VERIFY) {
@@ -550,7 +587,13 @@ export async function buildServer(
         wpProperty: config.MANAGER_WP_PROPERTY,
         // P4 mutation θ_risk 채널(=MANAGER_WP_MUTATION). off면 property까지와 동일(회귀 0). oracle 미소비.
         wpMutation: config.MANAGER_WP_MUTATION,
-        mutationTheta: config.MANAGER_MUTATION_THETA,
+        // S5.4: 등급별 θ 를 기동 시 한 번 완전한 맵으로 해석한다. 미설정 등급은 공통 θ 를
+        //       그대로 받으므로 아무것도 설정하지 않으면 동작이 변하지 않는다(회귀 0).
+        mutationThetaByRisk: resolveThetaByRisk(config.MANAGER_MUTATION_THETA, {
+          LOW: config.MANAGER_MUTATION_THETA_LOW,
+          MEDIUM: config.MANAGER_MUTATION_THETA_MEDIUM,
+          HIGH: config.MANAGER_MUTATION_THETA_HIGH,
+        }),
         mutationMinRisk: config.MANAGER_MUTATION_MIN_RISK,
         mutationMaxMutants: config.MANAGER_MUTATION_MAX_MUTANTS,
         // P4 4d security 채널(=MANAGER_WP_SECURITY). off면 mutation까지와 동일(회귀 0). oracle 미소비.

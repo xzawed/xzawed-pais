@@ -287,9 +287,16 @@ describe('buildWorkerConsumerDeps mutation (P4)', () => {
     expect(buildWorkerConsumerDeps(base as never, cfg).mutationEnabled).toBe(false)
   })
 
-  it('theta/minRisk/maxMutants를 워커 deps에 스레딩', () => {
-    const w = buildWorkerConsumerDeps(base as never, { ...cfg, wpMutation: true, mutationTheta: 0.8, mutationMinRisk: 'MEDIUM', mutationMaxMutants: 5 })
-    expect(w.mutationTheta).toBe(0.8)
+  /**
+   * **이 스레딩이 끊기면 per-tier θ 는 조용히 단일 θ 로 돌아간다**(S5.4).
+   * 키를 `mutationTheta`(number)에서 `mutationThetaByRisk`(맵)로 바꿨을 때 `tsc --noEmit` 이
+   * **아무 오류도 내지 않았다** — 릴레이가 조건부 spread 라 초과 속성 검사가 안 걸린다.
+   * 타입이 못 잡는 자리를 테스트가 잡는다.
+   */
+  it('theta 맵/minRisk/maxMutants를 워커 deps에 스레딩', () => {
+    const theta = { LOW: 0.3, MEDIUM: 0.5, HIGH: 0.8 }
+    const w = buildWorkerConsumerDeps(base as never, { ...cfg, wpMutation: true, mutationThetaByRisk: theta, mutationMinRisk: 'MEDIUM', mutationMaxMutants: 5 })
+    expect(w.mutationThetaByRisk, '릴레이가 끊겨 등급별 θ 가 워커에 닿지 않는다').toEqual(theta)
     expect(w.mutationMinRisk).toBe('MEDIUM')
     expect(w.mutationMaxMutants).toBe(5)
   })

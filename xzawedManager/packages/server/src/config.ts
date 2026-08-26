@@ -134,8 +134,15 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
-    // mutation 통과 floor(killed/total ≥ θ). 캘리브레이션 잠정값 0.6.
+    // mutation 통과 floor(killed/total ≥ θ). 캘리브레이션 잠정값 0.6. **전 등급 공통 바닥값**이고
+    // 아래 per-tier 키가 등급별로 덮는다(S5.4).
     MANAGER_MUTATION_THETA: z.coerce.number().min(0).max(1).default(0.6),
+    // per-tier θ(S5.4). **기본값을 두지 않는다** — 미설정이면 위 공통 θ 를 그대로 쓴다.
+    // 등급별 숫자를 여기서 지어내면 운영 데이터 없는 캘리브레이션을 기본값으로 출하하는 것이다
+    // (설계 문서 D2 가 per-tier 를 "운영 데이터 후"로 미룬 이유). 켜는 것은 운영자의 판단이다.
+    MANAGER_MUTATION_THETA_LOW: z.coerce.number().min(0).max(1).optional(),
+    MANAGER_MUTATION_THETA_MEDIUM: z.coerce.number().min(0).max(1).optional(),
+    MANAGER_MUTATION_THETA_HIGH: z.coerce.number().min(0).max(1).optional(),
     // mutation 최소 실행 risk 등급(이 등급 이상 WP만). 기본 HIGH(비용 bound). 불량값은 HIGH로 폴백.
     MANAGER_MUTATION_MIN_RISK: z.enum(['LOW', 'MEDIUM', 'HIGH']).catch('HIGH').default('HIGH'),
     // mutation 하니스가 생성할 최대 mutant 수(비용 캡).
