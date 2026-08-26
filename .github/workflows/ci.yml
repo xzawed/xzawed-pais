@@ -389,6 +389,11 @@ jobs:
     env:
       REDIS_URL: redis://localhost:6379
       TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
+      # **skip 을 통과로 세지 않는다.** vitest 는 전부 skip 돼도 exit 0 이라, 인프라를 붙여 놓고
+      # env 를 빠뜨리면 이 잡이 **아무것도 안 돌고 초록**이 된다 — `redis-contract` 가 CI 어디서도
+      # 실행되지 않은 채 오래 있었던 것이 정확히 그 모양이었다. globalSetup 이 게이트가 닫혀 있으면
+      # throw 한다(위 두 env 가 그것을 연다).
+      REQUIRE_INTEGRATION: "1"
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -424,6 +429,14 @@ jobs:
       - name: Run Redis metrics integration
         working-directory: xzawedManager/packages/server
         run: pnpm vitest run src/test/redis-metrics.integration.test.ts
+
+      # 서비스 간 메시지 계약 — Manager 가 발행한 plan_request 가 **Planner 의 Zod 스키마**를
+      # 통과하는지 본다. 루트 CLAUDE.md 가 "tsc 가 이 경계를 교차검증하지 못한다"고 경고하는
+      # 바로 그 자리인데 **CI 어디서도 실행되지 않고 있었다** — turborepo 잡은 파일을 로드하지만
+      # REDIS_URL 을 주지 않아 3건 전부 skip 됐고, 키를 주는 이 잡은 다른 파일만 지정 실행했다.
+      - name: Run Manager→Planner Redis contract
+        working-directory: xzawedManager/packages/server
+        run: pnpm vitest run test/redis-contract.integration.test.ts
 
   # ── Playwright E2E (Electron) ─────────────────────────────────────────────
   playwright-e2e:

@@ -92,7 +92,7 @@ Watcher는 Claude API를 쓰지 않아 API 키가 불필요하다. 서비스별 
 - **자기 ioredis 클라이언트를 만드는 서비스는 테스트에서 재연결을 꺼야 한다.** `retryStrategy: process.env['VITEST'] === 'true' ? () => null : undefined`. 안 그러면 무한 재연결이 이벤트 루프를 살려둔다. 현재 해당하는 것은 **Manager·Orchestrator 둘뿐**이고, 에이전트 7종은 자기 클라이언트 없이 shared `BaseConsumer`를 쓴다.
 - **E2E 선택자는 `data-testid` 전용이다.** i18n 적용 후 텍스트 기반 선택자는 로케일이 바뀌면 깨진다.
 - **`.count()`는 auto-wait가 없다.** 즉시 스냅샷이라 렌더 전 0을 읽는다. **열린 Dependabot PR 15건을 전부 red로 만든 CI 상시 실패의 원인이었다.** 재시도가 걸리는 `expect(...).not.toHaveCount(0)`을 쓴다.
-- **통합 테스트는 DB·Redis가 없으면 skip된다.** 로컬 그린이 CI 그린이 아니다 — skip 수를 항상 확인한다.
+- **통합 테스트는 DB·Redis가 없으면 skip된다.** 로컬 그린이 CI 그린이 아니다 — skip 수를 항상 확인한다. **CI에서는 `REQUIRE_INTEGRATION=1`로 게이트를 fail-closed로 만든다** — vitest는 전부 skip돼도 **exit 0**이라, 인프라 컨테이너를 붙여 놓고 env를 빠뜨리면 그 잡이 아무것도 안 돌고 초록이 된다(Manager→Planner 메시지 계약 테스트가 CI 어디서도 실행되지 않은 채 오래 있었다). Manager `test/vitest-global-setup.ts`가 게이트가 닫히면 throw한다. 게이트의 env 목록은 **"하나라도 있으면 그 게이트의 테스트가 전부 돈다"**를 만족해야 한다 — 관대하면 경고는 침묵하는데 테스트는 skip된다.
 
 ## 보안 불변식
 
