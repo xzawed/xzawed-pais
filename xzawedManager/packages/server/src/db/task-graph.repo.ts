@@ -1,6 +1,6 @@
 import type { Pool } from 'pg'
 import { z } from 'zod'
-import { WorkPackageSchema, assertWpTransition, type WorkPackage, type WpRisk, type WpStatus } from '@xzawed/agent-streams'
+import { WorkPackageSchema, WpRiskSchema, assertWpTransition, type WorkPackage, type WpRisk, type WpStatus } from '@xzawed/agent-streams'
 import { AbsoluteUserContextSchema, type UserContext } from '../types/user-context.js'
 import { normalizeIntent } from '../decompose/intent.js'
 
@@ -194,34 +194,69 @@ export class TaskGraphRepo {
   }
 
   /**
-   * P2r-4: graph의 모든 WP risk를 갱신. version 불변(재분해 아님)·WP id 불변
+   * P2r-4: **WP 별로** risk 를 갱신한다. version 불변(재분해 아님)·WP id 불변
    * (content-hash가 risk 제외·N4)·`userContext` 등 `graph_dag` 형제 키 보존.
    * 그래프 없으면 no-op. risk.approved 소비자가 호출.
+   *
+   * **맵을 받는다 — 예전에는 등급 하나를 전 WP 에 균일하게 찍었다(결함 F2 · `S5.3b`).**
+   * 그러면 `wp.risk` 는 WP 판정이 아니라 프로젝트 최댓값의 사본이고, 그것을 읽는 mutation
+   * θ_risk 게이트(`verify.ts`)와 DEGRADED 서명 게이트(`dispatch.ts`)는 판단하는 척만 한다.
+   * per-tier θ(`S5.4`)도 전 WP 가 같은 등급이면 단일 θ 로 퇴화한다.
+   *
+   * **맵에 없는 WP 는 `fallbackRisk` 를 받는다 — 방치하지 않는다.** 처음에는 "판정 없으면 안 쓴다"로
+   * 만들었는데 그게 fail-open 이었다(Grok 반증). 변경 전에 영속된 pending 아티팩트에는 WP 판정이
+   * 없어서, 사람이 HIGH 로 승인해도 전 WP 가 분해 기본값 MEDIUM 에 머물고 mutation 게이트가
+   * **조용히 꺼진다.** F2 는 "보수적이지만 무의미"한 결함이었지 위험한 결함이 아니었다 —
+   * 그것을 없애면서 "조용하지만 위험"으로 바꾸면 안 된다. 판정이 있으면 그것을, 없으면 프로젝트
+   * 종합 등급을(보수적) 쓴다. 지목 상한(`MAX_WP_HINTS`) 밖 WP 도 같은 이유로 폴백을 받는다.
    *
    * **단일 UPDATE 로 원자화한다(S6.2).** 예전에는 `getGraph` → JS 로 재조립 → 전체 교체였는데,
    * 읽기와 쓰기 사이에 재분해가 끼면 그 결과를 **통째로 되돌렸다**(lost update). `graph_dag` 를
    * 쓰는 곳이 이 메서드와 `upsertGraph` 둘뿐이라 눈에 잘 띄지 않았고, 재분해가 원래 전량 교체라
    * 증상도 없었다 — 재진입 병합이 들어오면서 **보존한 진행 중 WP 를 되살려 덮는 경로**가 된다.
    * 버전 검사로 탐지하는 대신 창 자체를 없앤다(재시도 루프라는 새 실패 모드도 생기지 않는다).
+   * 맵으로 바뀌어도 그 성질은 유지한다 — 갱신 값은 SQL 안에서 WP id 로 조회한다.
+   *
+   * @returns `updated` 는 등급이 쓰인 WP 총수, `judged` 는 그중 **WP 별 판정을 받은** 수다.
+   *   `judged === 0` 이면 전부 폴백으로 채워졌다는 뜻 — 호출자가 그 사실을 알 수 있어야 한다
+   *   (그 상태를 무음으로 두면 "리스크 체인을 켰는데 등급이 안 갈린다"가 진단 불가가 된다).
    */
-  async updateWpRisks(workflowId: string, risk: WpRisk): Promise<{ updated: number }> {
-    const { rows } = await this.pool.query<{ n: number | string }>(
+  async updateWpRisks(
+    workflowId: string, risks: Readonly<Record<string, WpRisk>>, fallbackRisk: WpRisk,
+  ): Promise<{ updated: number; judged: number }> {
+    // **등급이 아닌 값은 여기서 버린다.** `COALESCE` 는 JSON null 을 SQL NULL 로 보지 않으므로
+    // `{a: null}` 이 그대로 `graph_dag` 에 박히고, 그 뒤 `getGraph` 의 Zod 가 **그래프 전체를**
+    // 거부해 워크플로가 벽돌이 된다. 오늘은 타입과 `RiskApprovedSchema` 가 이중으로 막지만,
+    // 먼 호출자에만 걸린 불변식은 tsc 가 못 보고 새 호출자가 깬다(Grok 반증이 지목한 잔여).
+    // 버린 자리는 판정 없음으로 취급돼 폴백을 받는다 — 보수적 방향이다.
+    const safe: Record<string, WpRisk> = {}
+    for (const [id, r] of Object.entries(risks)) {
+      if (WpRiskSchema.safeParse(r).success) safe[id] = r
+    }
+    const { rows } = await this.pool.query<{ n: number | string; j: number | string }>(
       `UPDATE task_graphs
           SET graph_dag = jsonb_set(
                 graph_dag,
                 '{workPackages}',
                 (
-                  SELECT COALESCE(jsonb_agg(jsonb_set(wp, '{risk}', to_jsonb($2::text)) ORDER BY ord), '[]'::jsonb)
+                  SELECT COALESCE(jsonb_agg(
+                           jsonb_set(wp, '{risk}', COALESCE($2::jsonb -> (wp->>'id'), to_jsonb($3::text)))
+                           ORDER BY ord), '[]'::jsonb)
                     FROM jsonb_array_elements(graph_dag->'workPackages') WITH ORDINALITY AS t(wp, ord)
                 )
               ),
               updated_at = NOW()
         WHERE workflow_id = $1
           AND jsonb_typeof(graph_dag->'workPackages') = 'array'
-        RETURNING jsonb_array_length(graph_dag->'workPackages') AS n`,
-      [workflowId, risk],
+        RETURNING
+          jsonb_array_length(graph_dag->'workPackages') AS n,
+          (
+            SELECT COUNT(*) FROM jsonb_array_elements(graph_dag->'workPackages') AS e(wp)
+             WHERE $2::jsonb ? (wp->>'id')
+          ) AS j`,
+      [workflowId, JSON.stringify(safe), fallbackRisk],
     )
     const row = rows[0]
-    return { updated: row ? Number(row.n) : 0 }
+    return { updated: row ? Number(row.n) : 0, judged: row ? Number(row.j) : 0 }
   }
 }

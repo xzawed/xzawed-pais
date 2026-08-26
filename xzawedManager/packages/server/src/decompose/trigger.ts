@@ -28,10 +28,12 @@ export async function handleDecomposeRequest(
     if (userContext !== undefined) {
       await ensureWs(userContext)
     }
-    const { emitted, escalated } = await produceDecomposition(intent, sessionId, decompose, userContext)
-    // P2r-3: 프로젝트 리스크 분류(best-effort·never-throw). decompose 결과와 무관.
+    const { emitted, escalated, workPackages } = await produceDecomposition(intent, sessionId, decompose, userContext)
+    // P2r-3: 프로젝트 리스크 분류(best-effort·never-throw). decompose **실패** 와는 무관하지만
+    // **결과물과는 무관하지 않다** — 방금 나온 WP 를 넘겨야 claim 을 WP 에 지목할 수 있고,
+    // 그래야 write-back 이 WP 별로 간다(결함 F2 · `S5.3b`). 예전에는 개수만 받아 넘길 게 없었다.
     if (riskClassify !== undefined) {
-      await produceRiskClassification(intent, sessionId, riskClassify, userContext).catch((err: unknown) =>
+      await produceRiskClassification(intent, sessionId, riskClassify, userContext, workPackages).catch((err: unknown) =>
         // best-effort·분해 비차단이나 무로그 swallow는 상시 실패(전 워크플로 MEDIUM 고정 열화)를 감지 불가로 만든다.
         console.warn('[decompose] 리스크 분류 실패(best-effort·분해 비차단):', err),
       )

@@ -6,10 +6,12 @@ import {
   routeModels,
   evaluateHumanGate,
   scoreClassification,
+  scoreWpRisks,
   RiskClassificationSchema,
   RISK_DIMENSIONS,
   FULL_CONFIDENCE_SUPPORT,
 } from '../risk/risk-classification.js'
+import type { RiskDimension } from '../risk/risk-classification.js'
 
 describe('confidenceFromSupport', () => {
   it('support 0이면 0(증거 없음)', () => {
@@ -120,5 +122,115 @@ describe('scoreClassification (P4–P5 결정론 조립)', () => {
     expect(result.dimensionScores.domain).toEqual({ score: 0, confidence: 0 })
     expect(result.humanGate.required).toBe(false) // 위험 신호 0 → 게이트 불필요
 
+  })
+})
+
+/**
+ * **WP 별 등급**(결함 F2 · `S5.3b`).
+ *
+ * write-back 이 프로젝트 종합 등급 하나를 전 WP 에 균일하게 찍는 한 `wp.risk` 는 WP 판정이 아니라
+ * 프로젝트 최댓값의 사본이다. 그것을 읽는 mutation θ_risk 게이트와 DEGRADED 서명 게이트는
+ * 판단하는 척만 하고, per-tier θ(`S5.4`)는 전 WP 가 같은 등급이라 단일 θ 로 퇴화한다.
+ */
+describe('scoreWpRisks — WP 별 등급', () => {
+  const claim = (dimension: RiskDimension, confidence: number, wpIds: string[] = []) =>
+    ({ text: 't', dimension, support: 3, confidence, citations: ['c'], wpIds })
+
+  /** 핵심 정의: 지목되지 않은 claim 은 전 WP 공통이다. 그래서 판단이 없으면 회귀가 0이다. */
+  it('지목 없는 claim 은 전 WP 에 걸린다(회귀 0·fail-closed)', () => {
+    const out = scoreWpRisks([claim('compliance', 1)], ['a', 'b', 'c'])
+    expect(out).toEqual({ a: 'HIGH', b: 'HIGH', c: 'HIGH' })
+  })
+
+  /** 이것이 슬라이스의 값이다 — 좁히는 것은 분류기의 적극적 행위다. */
+  it('지목된 WP 만 그 위험을 받는다', () => {
+    const out = scoreWpRisks([claim('compliance', 1, ['a'])], ['a', 'b'])
+    expect(out.a).toBe('HIGH')
+    expect(out.b, '지목 안 된 WP 가 프로젝트 최댓값을 물려받았다(F2)').toBe('LOW')
+  })
+
+  /** 증거가 적어서 더 안전해지는 역설이 없어야 한다. */
+  it('공통 claim 과 지목 claim 이 함께 걸린다', () => {
+    const out = scoreWpRisks([claim('complexity', 0.5), claim('compliance', 1, ['a'])], ['a', 'b'])
+    expect(out.a, '공통+지목 둘 다 받아야 한다').toBe('HIGH')
+    expect(out.b, '공통만 받아 MEDIUM').toBe('MEDIUM')
+  })
+
+  /**
+   * 프로젝트 채점과 같은 임계를 쓴다 — WP 용 상수를 따로 두면 캘리브레이션이 갈린다.
+   * confidence 를 `confidenceFromSupport` 로 만들어 두 경로에 **같은 입력**을 준다
+   * (support 2 → 2/3 ≈ 0.667 로 HIGH 임계 0.67 바로 아래 — 경계라 임계가 갈리면 값이 달라진다).
+   */
+  it('프로젝트 종합과 같은 임계·산식을 쓴다', () => {
+    const support = 2
+    const input = { text: 't', dimension: 'domain' as RiskDimension, support, citations: ['c'], wpIds: ['a'] }
+    const project = scoreClassification({ projectId: 'p', claims: [input] })
+    const wp = scoreWpRisks([{ ...input, confidence: confidenceFromSupport(support) }], ['a'])
+    expect(wp.a).toBe(project.risk)
+    expect(project.risk, '경계값이 아니면 이 테스트는 임계 차이를 못 잡는다').toBe('MEDIUM')
+  })
+
+  /** 컴플라이언스 바닥은 프로젝트 판정이므로 WP 에도 그대로 건다(fail-closed). */
+  it('컴플라이언스 프레임워크 감지 시 WP 도 LOW 로 두지 않는다', () => {
+    const out = scoreWpRisks([claim('domain', 0.1, ['a'])], ['a', 'b'], { complianceFrameworks: ['HIPAA'] })
+    expect(out.b).toBe('MEDIUM')
+  })
+
+  it('WP 목록이 비면 빈 맵이다(모른다 ≠ 전부 프로젝트 등급)', () => {
+    expect(scoreWpRisks([claim('domain', 1)], [])).toEqual({})
+  })
+
+  it('claim 이 없으면 전 WP LOW 다', () => {
+    expect(scoreWpRisks([], ['a', 'b'])).toEqual({ a: 'LOW', b: 'LOW' })
+  })
+
+  /**
+   * **없는 id 만 적힌 지목은 지목이 없는 것이다.** "해당 WP 없음"으로 읽으면 그 위험 신호가
+   * 증발해 전 WP 가 실제보다 낮아진다 — 게이트가 풀리는 방향이라 가장 위험하다.
+   * 생산자도 같은 정리를 하지만 그 불변식은 **코어에서** 성립해야 한다(먼 호출자에만 걸면
+   * tsc 가 못 보고 새 호출자가 깬다). Grok 반증이 잡은 자리다.
+   */
+  it('아무 WP 도 못 맞히는 지목은 전 WP 공통으로 본다(증발 금지)', () => {
+    const out = scoreWpRisks([claim('compliance', 1, ['없는-WP'])], ['a', 'b'])
+    expect(out, '위험 신호가 증발해 전 WP 가 LOW 로 떨어졌다').toEqual({ a: 'HIGH', b: 'HIGH' })
+  })
+
+  it('일부만 맞히면 맞힌 WP 만 받는다', () => {
+    const out = scoreWpRisks([claim('compliance', 1, ['a', '없는-WP'])], ['a', 'b'])
+    expect(out).toEqual({ a: 'HIGH', b: 'LOW' })
+  })
+})
+
+describe('scoreClassification — wpRisks 연결', () => {
+  const c = { text: 't', dimension: 'compliance' as RiskDimension, support: 3, citations: ['x'] }
+
+  it('workPackageIds 를 주면 wpRisks 를 채운다', () => {
+    const out = scoreClassification({ projectId: 'p', claims: [{ ...c, wpIds: ['a'] }], workPackageIds: ['a', 'b'] })
+    expect(out.wpRisks).toEqual({ a: 'HIGH', b: 'LOW' })
+  })
+
+  /** 모른다는 것을 "전부 프로젝트 등급"으로 바꾸면 그게 F2 다. */
+  it('workPackageIds 가 없으면 wpRisks 는 빈 맵이다', () => {
+    const out = scoreClassification({ projectId: 'p', claims: [{ ...c, wpIds: [] }] })
+    expect(out.wpRisks).toEqual({})
+    expect(out.risk, '프로젝트 종합은 그대로 나온다').toBe('HIGH')
+  })
+
+  it('wpIds 없는 구형 ClaimInput 도 받는다(전 WP 공통)', () => {
+    const out = scoreClassification({ projectId: 'p', claims: [c], workPackageIds: ['a'] })
+    expect(out.wpRisks).toEqual({ a: 'HIGH' })
+    expect(out.claims[0]!.wpIds).toEqual([])
+  })
+
+  it('아티팩트가 스키마를 통과한다', () => {
+    const out = scoreClassification({ projectId: 'p', claims: [{ ...c, wpIds: ['a'] }], workPackageIds: ['a'] })
+    expect(RiskClassificationSchema.safeParse(out).success).toBe(true)
+  })
+
+  /** 과거 아티팩트에는 이 키가 없다 — 기본값이 "판정 없음"을 준다. */
+  it('wpRisks 없는 구 아티팩트는 빈 맵으로 파싱된다', () => {
+    const out = scoreClassification({ projectId: 'p', claims: [c], workPackageIds: ['a'] })
+    const { wpRisks: _drop, ...legacy } = out
+    expect(RiskClassificationSchema.parse(legacy).wpRisks).toEqual({})
   })
 })

@@ -5,6 +5,7 @@ export {
   routeModels,
   evaluateHumanGate,
   scoreClassification,
+  scoreWpRisks,
   RISK_DIMENSIONS,
   ROUTED_AGENTS,
   FULL_CONFIDENCE_SUPPORT,
