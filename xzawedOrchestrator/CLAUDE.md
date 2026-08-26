@@ -58,6 +58,7 @@ cd packages/app && pnpm test:e2e    # Playwright + Electron
 
 - **`health/readiness.ts` 는 shared 사본이다.** Orchestrator 만 `@xzawed/agent-streams` 를 의존하지 않아(소비처 8곳 중 유일) 복제가 유일한 선택이고, 동일성은 `scripts/check-replicated-blocks.js` 가 `readiness-core` 로 강제한다. 고칠 것이 생기면 **shared 원본을 먼저** 고치고 마커 구간을 그대로 옮긴다 — 손으로 다시 쓰면 반드시 어긋난다
 - **`projectGateway` 는 DB 풀이 없으면 생성조차 되지 않는다**(`server.ts` 의 `if (dbPool)` 안). 그래서 접근자가 `undefined` 를 돌려주고 그것은 장애가 아니라 미구성이다 — `server.ts` 는 `projectGatewayRef` 를 라우트 등록보다 먼저 선언해 두고 생성 시점에 채운다
+- **readiness 의 Redis ping 은 전용 연결을 써야 한다(S4.3 실측).** 공유 클라이언트는 `StreamConsumer` 가 `XREADGROUP ... BLOCK 2000` 으로 점유하는데, ioredis 는 한 연결에서 명령을 **직렬화**하므로 그 위의 `ping()` 은 블록이 풀릴 때까지 큐에 선다 — readiness 예산 1000ms 보다 블록 2000ms 가 길어 **항상** 초과한다. 증상은 조용하고 치명적이다: 세션이 없을 때는 200 이다가 **첫 세션이 생기는 순간 영구 503**(실측 — 재시작 직후 6/6 → 세션 1개 후 0/6 → 전용 연결로 고친 뒤 10/10). compose healthcheck 는 30초×3 이라 **첫 대화 ~90초 뒤** 컨테이너가 unhealthy 로 뒤집히고 Launcher 는 그걸로 `running` 을 판정한다 — 정상 동작 중인 스택이 사용자에게 "죽었다"고 보고된다. `getProbeRedisClient` 가 그 전용 연결이고, **readiness 가 물어야 하는 것은 "Redis 가 닿는가"이지 "공유 연결이 지금 한가한가"가 아니다** — 소비 루프 생존은 `loopProbe` 가 따로 본다
 - **Redis ping 만으로는 부족하다.** 기동 시 Redis 가 죽어 있으면 `xgroup CREATE` 가 소비 루프 **밖**에서 throw 해 게이트웨이가 영구 정지하는데 ioredis 재연결은 계속되므로 `ping()` 은 나중에 PONG 을 준다
 
 ## 함정

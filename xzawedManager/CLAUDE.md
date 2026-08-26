@@ -121,6 +121,7 @@ cd packages/server && pnpm test <파일>
 
 - **프로브 재료는 값이 아니라 접근자로 넘긴다.** `healthRoute` 등록이 `sessionGateway` 생성보다 **앞**이라 값을 직접 주면 그 시점에 아직 없다. 접근자는 요청 시점에 평가되므로 등록 순서 문제가 사라진다
 - **`HealthDeps` 필드는 전부 선택이다.** 주지 않은 것은 검사 대상이 아니고, 하나도 주지 않으면 항상 ready 다(기존 호출부 호환). DB 프로브는 `pool()` 이 null 이면 `not_configured` — prod compose 가 `DATABASE_URL` 을 주지 않으므로 이것을 실패로 세면 배포가 영구 unhealthy 다
+- **readiness 의 Redis ping 은 전용 연결을 써야 한다(S4.3 실측).** 공유 클라이언트는 `StreamConsumer` 가 `XREADGROUP ... BLOCK 2000` 으로 점유하는데, ioredis 는 한 연결에서 명령을 **직렬화**하므로 그 위의 `ping()` 은 블록이 풀릴 때까지 큐에 선다 — readiness 예산 1000ms 보다 블록 2000ms 가 길어 **항상** 초과한다. 증상은 조용하고 치명적이다: 세션이 없을 때는 200 이다가 **첫 세션이 생기는 순간 영구 503**(실측 — 재시작 직후 6/6 → 세션 1개 후 0/6 → 전용 연결로 고친 뒤 10/10). compose healthcheck 는 30초×3 이라 **첫 대화 ~90초 뒤** 컨테이너가 unhealthy 로 뒤집히고 Launcher 는 그걸로 `running` 을 판정한다 — 정상 동작 중인 스택이 사용자에게 "죽었다"고 보고된다. `getProbeRedisClient` 가 그 전용 연결이고, **readiness 가 물어야 하는 것은 "Redis 가 닿는가"이지 "공유 연결이 지금 한가한가"가 아니다** — 소비 루프 생존은 `loopProbe` 가 따로 본다
 - **판정 코어는 `@xzawed/agent-streams` 의 `health/readiness.ts`** 다. Orchestrator 는 그 라이브러리를 의존하지 않아 복제본을 쓴다(`replicated-block: readiness-core`)
 
 ## 테넌트 태깅 — 격리가 아니다
