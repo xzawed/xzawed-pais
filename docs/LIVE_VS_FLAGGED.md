@@ -38,14 +38,18 @@
 | 리스크 분류·라우팅·승인 | `MANAGER_RISK_CLASSIFY`·`_ROUTING`·`_DECISION` | off |
 | 모델 라우팅(opus/sonnet) | `MANAGER_MODEL_ROUTING` | off |
 | 릴리스 게이트·사인오프·**배포 게이팅** | `MANAGER_RELEASE_GATE`·`_SIGNOFF`·`MANAGER_DEPLOY_GATE` | off |
+| 배포 게이트 **fail-closed 전환** | `MANAGER_DEPLOY_GATE_STRICT` | off — 켜면 **fail-open 3지점이 차단으로** 뒤집힌다(`tools/deploy-gate.ts`): 게이트 미생성(`gate === null`) · projectId 식별 불가 · 게이트 조회 오류. `MANAGER_DEPLOY_GATE`+`MANAGER_RELEASE_GATE`+DB 풀이 없으면 게이트 자체가 안 만들어져 이 플래그만으로는 아무 일도 안 한다 |
 | Golden freeze 사인오프 | `MANAGER_GOLDEN_SIGNOFF` | off |
 | 강등 모드(추적·enforce·사인오프) | `MANAGER_DEGRADED_MODE`·`_ENFORCE`·`_SIGNOFF` | off |
 | 세션 이벤트소싱(replay 복원) | `EVENT_SOURCED_SESSION` | off |
-| §13 서킷(budget·provider·bulkhead) | `MANAGER_BUDGET_*`·`MANAGER_PROVIDER_CIRCUIT`·`MANAGER_BULKHEAD_*` | off(0) |
+| §13 서킷(budget·provider·bulkhead) | `MANAGER_BUDGET_*`·`MANAGER_BULKHEAD_*` | off(**0** — 수치라 0이 곧 비활성) |
+| §13 provider 서킷 | `MANAGER_PROVIDER_CIRCUIT` | off(**false** — 불리언이다. 임계·쿨다운은 `_THRESHOLD`·`_COOLDOWN_MS`가 따로 갖는다) |
 
 ## `PAIS_PROFILE=autonomous`가 켜는 것 (검증된 floor)
 
-`TASK_MANAGER_ENABLED`·`MANAGER_DECOMPOSE_ENABLED`·`MANAGER_TASK_WORKER`·`MANAGER_WP_VERIFY`=true + 비용 캡(`MANAGER_BUDGET_PER_WORKFLOW_USD=5`·`DAILY=50`) + **`SERVICE_JWT_SECRET`(≥32)·`DATABASE_URL` 하드요구**(없으면 기동 거부). Orchestrator엔 `ORCHESTRATOR_DECOMPOSE_ENABLED=true`. (lease 가시성은 G8 auto-tune이 활성 채널에 맞춰 자동 상향 — 수동 `MANAGER_LEASE_VISIBILITY_MS=600000` 불필요.)
+`TASK_MANAGER_ENABLED`·`MANAGER_DECOMPOSE_ENABLED`·`MANAGER_TASK_WORKER`·`MANAGER_WP_VERIFY`=true + 비용 캡(`MANAGER_BUDGET_PER_WORKFLOW_USD=5`·`DAILY=50`) + **`SERVICE_JWT_SECRET`(≥32)·`DATABASE_URL` 하드요구**(없으면 기동 거부). Orchestrator엔 `ORCHESTRATOR_DECOMPOSE_ENABLED=true`.
+
+**`MANAGER_LEASE_VISIBILITY_MS=600000`도 프로필이 명시적으로 넣고, 그것이 실제로 일한다.** 예전에는 "G8 auto-tune이 자동 상향하니 수동 설정은 불필요"라고 적혀 있었는데 **틀렸다** — auto-tune의 바닥값은 켜진 채널이 정한다(`streams/lease-visibility.ts`). 이 프로필이 켜는 검증 채널은 `MANAGER_WP_VERIFY` **하나뿐**이라 바닥은 `VERIFY_FLOOR_MS`=**360s**이고, `HEAVY_FLOOR_MS`=600s는 conformance·impact·property·mutation이 켜졌을 때만 걸린다. 즉 그 줄을 지우면 lease 가시성이 600s가 아니라 360s가 된다.
 
 **의도적 미포함**(정직성): 고급 검증 채널·decision/oracle/risk 체인은 사람 시드 데이터가 있어야 의미가 있어 **opt-in**으로 남긴다 — 프로필은 "돌아가고 + 기본 검증"까지만 켠다.
 
