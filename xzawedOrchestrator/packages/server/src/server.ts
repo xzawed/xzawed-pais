@@ -17,7 +17,7 @@ import { createRunner } from './claude/runner.factory.js'
 import { StreamProducer } from './streams/producer.js'
 import { StreamConsumer } from './streams/consumer.js'
 import { healthRoutes } from './api/health.route.js'
-import { getRedisClient } from './streams/redis.client.js'
+import { getRedisClient, getProbeRedisClient } from './streams/redis.client.js'
 import { knowledgeRoutes } from './api/knowledge.route.js'
 import { decisionsRoutes } from './api/decisions.route.js'
 import { sessionsRoutes } from './api/sessions.route.js'
@@ -175,7 +175,9 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
   // projectGateway 는 dbPool 이 있을 때만 아래에서 생성된다 — 접근자가 undefined 를
   // 돌려주면 미구성이고, 그것은 장애가 아니다.
   await app.register(healthRoutes, {
-    redis: () => getRedisClient(config.redisUrl),
+    // S4.3: probe 전용 연결. 공유 클라이언트는 블로킹 소비(XREADGROUP BLOCK 2000)가 점유해
+    //       ping 이 readiness 예산(1000ms)을 항상 넘긴다 — 첫 세션 이후 영구 503 이었다.
+    redis: () => getProbeRedisClient(config.redisUrl),
     gatewayRunning: () => projectGatewayRef.current?.isRunning(),
     pool: () => getPool(),
   })
