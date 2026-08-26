@@ -180,6 +180,9 @@ const deployGate =
     ? new ReleaseDeployGate(
         releaseStore ?? new ReleaseGateRepo(pool),
         decisionStore ?? new DecisionRepo(pool),
+        // `strict` 는 **필수 인자다**(기본값 없음). 빠뜨리면 `undefined`=falsy=fail-open 이 되는데,
+        // config 기본값은 true 라 두 태세가 갈린다 — 그래서 생성자가 값을 요구한다.
+        config.MANAGER_DEPLOY_GATE_STRICT,
       )
     : undefined
 // ... if (config.GITHUB_TOKEN) { ... registry.register(createDeployProjectHandler(config.GITHUB_TOKEN, config.REDIS_URL, deployGate)) }

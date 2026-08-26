@@ -203,12 +203,20 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
-    // G6: deploy-gate strict 모드. true면 게이트 부재·projectless·조회 오류를 fail-open 대신 차단
-    // (프리미엄 "차단=차단"). off→현행 fail-open 바이트 동일. 전제: MANAGER_DEPLOY_GATE.
+    // G6: deploy-gate strict 모드 — **기본 true**. 게이트 부재·projectless·조회 오류를 fail-open 대신
+    // 차단한다(프리미엄 "차단=차단").
+    //
+    // **기본값을 뒤집은 근거(2026-08-26).** 이 게이트는 `MANAGER_DEPLOY_GATE`+`MANAGER_RELEASE_GATE`
+    // +DB 풀이 **전부 있을 때만 생성된다**(`server.ts`) — 즉 운영자가 "릴리스 게이트를 통과하지 않으면
+    // 배포하지 마라"를 명시적으로 켠 경우다. 그 상태에서 "게이트가 안 돌았다"를 통과로 처리하는 것은
+    // 요구한 증명 없이 배포를 허용하는 것이라, 켜 놓은 의도와 정반대다. 미증명은 통과가 아니다.
+    //
+    // 되돌리려면 `MANAGER_DEPLOY_GATE_STRICT=false`. 게이트 자체가 꺼져 있으면(기본) 이 값은
+    // 어떤 경로에도 닿지 않는다 — 즉 **기본 구성의 동작은 바이트 동일**하다.
     MANAGER_DEPLOY_GATE_STRICT: z
       .string()
       .optional()
-      .transform((v) => v === 'true'),
+      .transform((v) => v !== 'false'),
     // B1: 결정 만료 sweep(=true). off면 expiresAt 미설정+sweep 미배선=현재 동작. 전제 TASK_MANAGER_ENABLED+DATABASE_URL.
     MANAGER_DECISION_EXPIRY: z.string().optional().transform((v) => v === 'true'),
     // B1: 결정 TTL(시간). server가 *3_600_000(ms)로 변환해 주입. 사람 대면이라 기본 72h.
