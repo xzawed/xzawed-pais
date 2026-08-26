@@ -76,7 +76,7 @@ interface BuildError { file?: string; line?: number; message: string; suggestion
 - `validateBuildCommand()`: `ALLOWED_PREFIXES`(`pnpm`, `npm`, `npx`, `yarn`, `cargo build`, `make`, `cmake`, `gradle`, `mvn`, `go build`, `tsc`, `webpack`, `vite build`) + 셸 메타문자·개행(`\n\r`) 이중 차단. ⚠️ allowlist는 **의도적으로 관용적**(빌드=임의 코드 실행이 빌드 에이전트의 본질) — 진짜 방어는 `executor.ts`의 `spawn(shell:false)`(셸 미경유)이고 allowlist+메타문자 차단은 defense-in-depth. 프리픽스 축소는 legit 빌드(`npx vite build` 등)를 깨므로 하지 않음
 - `detector.ts`: `package.json scripts.build`는 신뢰하지 않음 — 의존성 기반 하드코딩 명령어만 반환
 - `executor.ts`: `spawn(bin, args, {shell:false})` 고정. `bin`이 빈 문자열이면 즉시 throw
-- `validatePath()`: `validateWorkspaceRoot()` 후 `fs.realpath`로 심볼릭 링크 우회 차단
+- `validatePath()`: `validateWorkspaceRoot()` → **`workspaceRoot` 기준 앵커** → `fs.realpath`로 심볼릭 링크 우회 차단. **상대경로는 cwd 가 아니라 `workspaceRoot` 기준으로 푼다** — 계약(루트 CLAUDE.md)이 그렇게 못박고 있는데 예전엔 원시 인자를 그대로 realpath 해 서버 프로세스 cwd 기준이었다. 절대경로는 손대지 않는다(`path.resolve(root, abs)` 는 win32 에서 POSIX 절대경로를 드라이브 상대로 재해석해 로컬↔CI 를 갈라놓는다)
 
 **전처리 단계 (builder.ts)**
 - `stripPackageManagerField()`: Corepack 충돌 방지를 위해 빌드 전 `package.json`의 `packageManager` 필드 제거

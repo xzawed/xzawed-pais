@@ -16,7 +16,7 @@ src/
 ├── server.ts             # Fastify HTTP 서버 ((/health · /health/ready, PORT=3007))
 ├── watcher.ts            # chokidar 감시 로직 — per-file 디바운스, safeTriggers 이중 필터
 ├── watcher-store.ts      # WatcherStore — sessionId → WatchEntry Map 관리
-├── executor.ts           # validatePath() — WORKSPACE_ROOT 경로 검증 (claude/ 없음)
+├── executor.ts           # validatePath() — workspaceRoot 앵커 + 경로 검증 (claude/ 없음)
 ├── types.ts              # FileEvent, ManagerToWatcherMessageSchema, WatcherToManagerMessage
 ├── streams/
 │   ├── consumer.ts       # BaseConsumer 확장 — manager:to-watcher:{sessionId}
