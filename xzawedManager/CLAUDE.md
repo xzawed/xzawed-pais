@@ -65,20 +65,22 @@ cd packages/server && pnpm test <파일>
 | 릴리스 게이트 (증거 부재) | **fail-closed** — `status:'blocked'` |
 | **릴리스 게이트 (채널 결과)** | `passed`·`not_applicable` 만 통과. **그 외는 전부 차단**(미지 종류 포함). `not_applicable`=설정상 비대상 또는 이 WP 가 대상 아님, `skipped`=대상인데 미증명 |
 | 오라클 승인 tx 중 bad JSON | **fail-closed** — ROLLBACK |
-| **배포 게이트 (게이트 부재·`'default'` sentinel·조회 오류)** | **fail-open — 허용한다.** `MANAGER_DEPLOY_GATE_STRICT`를 켜야 차단으로 바뀐다. **기본값을 지금 뒤집지 않는다** — 아래 근거 |
+| **배포 게이트 (게이트 부재·`'default'` sentinel·조회 오류)** | **fail-closed — 차단한다**(`MANAGER_DEPLOY_GATE_STRICT` 기본 true). 되돌리려면 `=false`. 단 게이트 자체가 기본 off라 기본 태세에서는 이 값이 어떤 경로에도 닿지 않는다 — 아래 근거 |
 | advisory 채널 | **비차단** — 구조적으로 verdict 경로에 유입되지 않는다 |
 | 리스크·오라클·골든 미승인 | **skip** — 미승인 산출물은 라우팅도 게이트도 바꾸지 않는다 |
 
 무음 통과·무음 소멸·무음 drop은 금지다. 처리할 수 없는 메시지는 조용히 ack하지 말고 error를 발행하거나 사람에게 올린다.
 
-**`MANAGER_DEPLOY_GATE_STRICT` 기본값을 지금 뒤집지 않는 이유.** 둘이다.
+**`MANAGER_DEPLOY_GATE_STRICT` 기본값은 true 다 — 뒤집은 것이다.** 이 문서는 오래 "지금 뒤집지 않는다"고 적고 있었다 — 그때 적어 둔 **뒤집는 조건이 충족됐다.**
 
-1. **기본 태세에서 무의미하다.** `MANAGER_DEPLOY_GATE` 자체가 기본 off라 게이트가 돌지 않는다. STRICT는 그 위에 얹히는 값이다.
-2. **fail-open이 무방비가 아니다.** `deploy_project`는 `DEPLOY_TOOLS`라 **실행 전 사람 승인**이 강제되고 `effectiveMode`가 auto override를 무시한다. 게이트 판정이 없어도 사람이 카드를 보고 승인해야 배포가 나간다.
+- **기록된 선행은 per-WP 재채점(S5.3)이었고 착륙했다**(`S5.3a` 채널 결과 의미론 · `S5.3b` WP별 등급). 셋째 이유였던 "지금 켜면 배포가 영구 차단된다"는 그 전에 이미 사라졌다 — `design_ui`·`security_audit` WP가 자기검증으로 각각 `design`·`security` 증거를 남기고(`streams/verify.ts`) 게이트의 요구 채널이 `owningRole`에서 파생된다(`streams/release-gate.ts`).
+- **"릴리스 게이트 하드 닫기와 같은 시점에"라는 결합은 풀었다.** 그 결합은 둘 다 미결일 때의 순서 선호였지 기술적 선행이 아니다. 블라스트 반경이 전혀 다르다 — `MANAGER_RELEASE_GATE`를 기본 on으로 하면 **모든** 워크플로가 게이트를 타지만, STRICT는 `MANAGER_DEPLOY_GATE`+`MANAGER_RELEASE_GATE`+DB 풀을 **이미 다 켠** 운영자에게만 닿는다.
 
-**셋째 이유였던 "지금 켜면 배포가 영구 차단된다"는 사라졌다.** `design_ui`·`security_audit` WP가 자기검증으로 각각 `design`·`security` 증거를 남기고(`streams/verify.ts`), 게이트의 요구 채널이 `owningRole`에서 파생된다(`streams/release-gate.ts`). **역할을 요구 맵에 넣기 전에 그 역할이 증거를 남기는지 먼저 확인한다** — 순서를 뒤집으면 그 워크플로가 영구 blocked(증거 없음)이거나 무음 통과(요구 없음)가 된다.
+**왜 fail-closed가 맞나.** 그 셋을 켠 운영자는 "릴리스 게이트를 통과하지 않으면 배포하지 마라"를 명시적으로 요구한 것이다. 그 상태에서 "게이트가 안 돌았다"를 통과로 처리하면 **요구한 증명 없이 배포**가 나간다 — 켜 놓은 의도와 정반대다. 미증명은 통과가 아니다.
 
-**뒤집는 조건.** 남은 선행은 **per-WP 재채점(S5.3)** 이고, 릴리스 게이트 하드 닫기와 **같은 시점**에 함께 판단한다. 상세는 [완성 실행계획](../docs/superpowers/specs/2026-08-22-completion-plan-autonomous-factory.md).
+**남아 있는 사실 둘.** (1) **기본 태세는 바이트 동일하다** — `MANAGER_DEPLOY_GATE`가 기본 off라 게이트 객체 자체가 생성되지 않고(`server.ts`), 이 값은 어떤 경로에도 닿지 않는다. (2) **fail-open이 무방비였던 것은 아니다** — `deploy_project`는 `DEPLOY_TOOLS`라 실행 전 사람 승인이 강제되고 `effectiveMode`가 auto override를 무시한다. 그래서 이 전환의 위험은 "게이트를 켠 운영자의 배포가 더 자주 막힌다"이지 가용성 붕괴가 아니다.
+
+**`ReleaseDeployGate` 생성자의 `strict`는 필수 인자다.** 기본값을 두면 config 기본값(true)과 생성자 기본값이 서로 다른 태세를 말하고, 인자를 빠뜨린 호출자가 조용히 fail-open을 얻는다. 다만 **tsc가 강제하는 범위는 `src/`까지다** — `tsconfig`가 `**/*.test.ts`를 제외하므로 테스트는 손으로 명시한다.
 
 ## 함정
 

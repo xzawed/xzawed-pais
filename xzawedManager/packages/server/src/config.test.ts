@@ -892,3 +892,36 @@ describe('config ANTHROPIC_API_KEY_FILE', () => {
     expect(() => loadConfig()).toThrow(/ANTHROPIC_API_KEY_FILE/)
   })
 })
+
+/**
+ * **deploy-gate strict 는 기본 true 다**(2026-08-26 전환).
+ *
+ * 이 게이트는 `MANAGER_DEPLOY_GATE`+`MANAGER_RELEASE_GATE`+DB 풀이 전부 있을 때만 생성된다 —
+ * 즉 운영자가 "릴리스 게이트를 통과하지 않으면 배포하지 마라"를 명시적으로 켠 경우다. 그 상태에서
+ * "게이트가 안 돌았다"를 통과로 처리하면 요구한 증명 없이 배포를 허용하는 것이라 의도와 정반대다.
+ *
+ * 기본값이 조용히 되돌아가는 것을 막는다 — 이 플래그에는 테스트가 **하나도 없었다.**
+ */
+describe('MANAGER_DEPLOY_GATE_STRICT — fail-closed 기본', () => {
+  withBaseEnv(['MANAGER_DEPLOY_GATE_STRICT'])
+
+  it('미설정이면 true 다(미증명은 통과가 아니다)', () => {
+    delete process.env['MANAGER_DEPLOY_GATE_STRICT']
+    expect(loadConfig().MANAGER_DEPLOY_GATE_STRICT).toBe(true)
+  })
+
+  it("'false' 로만 끌 수 있다(가역)", () => {
+    process.env['MANAGER_DEPLOY_GATE_STRICT'] = 'false'
+    expect(loadConfig().MANAGER_DEPLOY_GATE_STRICT).toBe(false)
+    delete process.env['MANAGER_DEPLOY_GATE_STRICT']
+  })
+
+  /** 오타로 꺼지면 안 된다 — `MANAGER_GATE_FAILSAFE` 와 같은 의미론. */
+  it("'0'·'no'·빈 문자열은 끄지 못한다", () => {
+    for (const v of ['0', 'no', '', 'FALSE']) {
+      process.env['MANAGER_DEPLOY_GATE_STRICT'] = v
+      expect(loadConfig().MANAGER_DEPLOY_GATE_STRICT, `${v} 로 꺼졌다`).toBe(true)
+    }
+    delete process.env['MANAGER_DEPLOY_GATE_STRICT']
+  })
+})

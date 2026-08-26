@@ -38,7 +38,7 @@
 | 리스크 분류·라우팅·승인 | `MANAGER_RISK_CLASSIFY`·`_ROUTING`·`_DECISION` | off |
 | 모델 라우팅(opus/sonnet) | `MANAGER_MODEL_ROUTING` | off |
 | 릴리스 게이트·사인오프·**배포 게이팅** | `MANAGER_RELEASE_GATE`·`_SIGNOFF`·`MANAGER_DEPLOY_GATE` | off |
-| 배포 게이트 **fail-closed 전환** | `MANAGER_DEPLOY_GATE_STRICT` | off — 켜면 **fail-open 3지점이 차단으로** 뒤집힌다(`tools/deploy-gate.ts`): 게이트 미생성(`gate === null`) · projectId 식별 불가 · 게이트 조회 오류. `MANAGER_DEPLOY_GATE`+`MANAGER_RELEASE_GATE`+DB 풀이 없으면 게이트 자체가 안 만들어져 이 플래그만으로는 아무 일도 안 한다 |
+| 배포 게이트 fail-closed | `MANAGER_DEPLOY_GATE_STRICT` | **on(기본 true)** — **fail-open 3지점이 차단**이다(`tools/deploy-gate.ts`): 게이트 미생성(`gate === null`) · projectId 식별 불가 · 게이트 조회 오류. **단 게이트 자체가 기본 off** 라 기본 구성에서는 이 값이 어떤 경로에도 닿지 않는다 — `MANAGER_DEPLOY_GATE`+`MANAGER_RELEASE_GATE`+DB 풀이 다 있어야 게이트가 생성된다. 되돌리려면 `=false` |
 | Golden freeze 사인오프 | `MANAGER_GOLDEN_SIGNOFF` | off |
 | 강등 모드(추적·enforce·사인오프) | `MANAGER_DEGRADED_MODE`·`_ENFORCE`·`_SIGNOFF` | off |
 | 세션 이벤트소싱(replay 복원) | `EVENT_SOURCED_SESSION` | off |

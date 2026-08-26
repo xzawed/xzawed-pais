@@ -62,8 +62,19 @@ export class ReleaseDeployGate implements DeployGatePort {
   constructor(
     private readonly gates: ReleaseGateRepo,
     private readonly decisions: DecisionRepo,
-    /** G6 strict 모드(MANAGER_DEPLOY_GATE_STRICT). 게이트 식별 불가·조회 오류를 차단으로. 기본 false=현행. */
-    private readonly strict = false,
+    /**
+     * G6 strict 모드(`MANAGER_DEPLOY_GATE_STRICT`, **기본 true**). 게이트 부재·식별 불가·조회
+     * 오류를 통과 대신 차단으로.
+     *
+     * **기본값을 두지 않는다 — 필수 인자다.** 예전에는 `= false` 였는데, 그러면 config 기본값
+     * (true)과 생성자 기본값(false)이 **서로 다른 태세**를 말하고 인자를 빠뜨린 호출자는 조용히
+     * fail-open 을 얻는다. 이 저장소가 반복해서 물린 "먼 호출자에만 걸린 불변식"이라 값을 명시하게 한다.
+     *
+     * ⚠️ **tsc 가 강제하는 범위는 `src/` 프로덕션 코드까지다** — `tsconfig` 의 `exclude` 가 테스트
+     * 파일을 빼므로, 테스트에서 인자를 빠뜨려도 컴파일 오류가 나지 않고 런타임에
+     * `undefined`(=fail-open)가 된다. 테스트는 의도를 **명시적으로** 적는다.
+     */
+    private readonly strict: boolean,
   ) {}
 
   async checkDeploy(projectId: string | undefined): Promise<DeployGateVerdict> {

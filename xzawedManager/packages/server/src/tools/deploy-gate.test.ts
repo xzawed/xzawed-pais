@@ -24,8 +24,14 @@ describe('evaluateDeployGate (순수 4분기)', () => {
 // 좁은 stub — 실제 repo 대신 필요한 메서드만
 type GateStub = { latestGateByProject: (p: string) => Promise<{ status: 'passed' | 'blocked'; workflowId: string } | null> }
 type DecStub = { hasApprovedReleaseSignoff: (wf: string) => Promise<boolean> }
+/**
+ * **`strict: false` 를 명시한다.** 예전에는 인자를 생략해 생성자 기본값에 기댔는데, 그 기본값이
+ * 사라지면(필수 인자로 바뀌면) 테스트는 `undefined`(=falsy=fail-open)로 조용히 같은 동작을 하고
+ * **무엇을 시험하는지가 코드에서 사라진다.** `tsconfig` 가 테스트를 타입검사에서 제외하므로
+ * tsc 도 잡아 주지 않는다 — 그래서 손으로 적는다.
+ */
 function make(gate: GateStub, dec: DecStub): ReleaseDeployGate {
-  return new ReleaseDeployGate(gate as never, dec as never)
+  return new ReleaseDeployGate(gate as never, dec as never, false)
 }
 
 describe('ReleaseDeployGate.checkDeploy (구현체 2케이스 + 위임)', () => {
