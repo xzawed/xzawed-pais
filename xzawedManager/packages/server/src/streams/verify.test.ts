@@ -3,7 +3,7 @@ import type { WorkPackage } from '@xzawed/agent-streams'
 import type { UserContext } from '../types/user-context.js'
 import {
   judgePrimaryResult, planVerificationChecks, verifyWp, publishVerificationFailed, verifySessionId,
-  WP_VERIFICATION_FAILED, meetsMinRisk, type VerifyDeps,
+  WP_VERIFICATION_FAILED, meetsMinRisk, resolveThetaByRisk, nonMonotonicThetaTiers, type VerifyDeps,
 } from './verify.js'
 import type { ChannelName, ChannelOutcomeKind } from '../db/release-gate.types.js'
 
@@ -280,5 +280,47 @@ describe('publishVerificationFailed — 관측 이벤트', () => {
     expect(msg.envelope.attemptId).toBe(2)
     expect(msg.payload.wpId).toBe('a')
     expect(msg.payload.reason.length).toBeLessThanOrEqual(500)
+  })
+})
+
+/**
+ * **등급별 θ 해석**(S5.4). 미설정 등급은 공통 θ 를 그대로 받는다 — 등급별 기본값을 지어내지
+ * 않는 것이 이 함수의 계약이다(설계 문서 D2 가 per-tier 를 "운영 데이터 후"로 미뤘다).
+ */
+describe('resolveThetaByRisk', () => {
+  it('아무 오버라이드도 없으면 세 등급이 같다(회귀 0)', () => {
+    expect(resolveThetaByRisk(0.6)).toEqual({ LOW: 0.6, MEDIUM: 0.6, HIGH: 0.6 })
+  })
+
+  it('설정한 등급만 덮는다', () => {
+    expect(resolveThetaByRisk(0.6, { HIGH: 0.9 })).toEqual({ LOW: 0.6, MEDIUM: 0.6, HIGH: 0.9 })
+  })
+
+  it('undefined 오버라이드는 없는 것과 같다', () => {
+    expect(resolveThetaByRisk(0.6, { LOW: undefined, MEDIUM: 0.4, HIGH: undefined }))
+      .toEqual({ LOW: 0.6, MEDIUM: 0.4, HIGH: 0.6 })
+  })
+
+  /** 0 은 유효한 바닥이다(사실상 무조건 통과) — falsy 라고 기본값으로 덮으면 안 된다. */
+  it('0 을 기본값으로 덮지 않는다', () => {
+    expect(resolveThetaByRisk(0.6, { LOW: 0 }).LOW).toBe(0)
+  })
+})
+
+describe('nonMonotonicThetaTiers', () => {
+  it('오름차순이면 거짓', () => {
+    expect(nonMonotonicThetaTiers({ LOW: 0.3, MEDIUM: 0.5, HIGH: 0.9 })).toBe(false)
+  })
+
+  it('전부 같아도 거짓(기본 상태를 경고하지 않는다)', () => {
+    expect(nonMonotonicThetaTiers({ LOW: 0.6, MEDIUM: 0.6, HIGH: 0.6 })).toBe(false)
+  })
+
+  it('저위험이 더 엄하면 참', () => {
+    expect(nonMonotonicThetaTiers({ LOW: 0.9, MEDIUM: 0.5, HIGH: 0.6 })).toBe(true)
+  })
+
+  it('중간만 튀어도 참', () => {
+    expect(nonMonotonicThetaTiers({ LOW: 0.3, MEDIUM: 0.9, HIGH: 0.5 })).toBe(true)
   })
 })

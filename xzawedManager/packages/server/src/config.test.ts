@@ -355,6 +355,23 @@ describe('MANAGER_WP_MUTATION flag + mutation env', () => {
     process.env['MANAGER_MUTATION_THETA'] = '0.8'
     expect(loadConfig().MANAGER_MUTATION_THETA).toBe(0.8)
   })
+  /** per-tier θ 는 **기본값이 없다** — 미설정이면 공통 θ 를 쓰므로 동작이 안 바뀐다(S5.4). */
+  it('MANAGER_MUTATION_THETA_* 는 기본 undefined·설정 시 파싱', () => {
+    for (const t of ['LOW', 'MEDIUM', 'HIGH']) delete process.env['MANAGER_MUTATION_THETA_' + t]
+    const c = loadConfig()
+    expect(c.MANAGER_MUTATION_THETA_LOW).toBeUndefined()
+    expect(c.MANAGER_MUTATION_THETA_MEDIUM).toBeUndefined()
+    expect(c.MANAGER_MUTATION_THETA_HIGH).toBeUndefined()
+    process.env['MANAGER_MUTATION_THETA_HIGH'] = '0.9'
+    expect(loadConfig().MANAGER_MUTATION_THETA_HIGH).toBe(0.9)
+    delete process.env['MANAGER_MUTATION_THETA_HIGH']
+  })
+
+  it('범위 밖 per-tier θ 는 거부한다', () => {
+    process.env['MANAGER_MUTATION_THETA_LOW'] = '1.5'
+    expect(() => loadConfig()).toThrow()
+    delete process.env['MANAGER_MUTATION_THETA_LOW']
+  })
   it('MANAGER_MUTATION_MIN_RISK 기본 HIGH·불량값 catch', () => {
     delete process.env['MANAGER_MUTATION_MIN_RISK']
     expect(loadConfig().MANAGER_MUTATION_MIN_RISK).toBe('HIGH')

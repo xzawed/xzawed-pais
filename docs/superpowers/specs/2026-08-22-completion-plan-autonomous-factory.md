@@ -141,14 +141,16 @@
 | S5.3a | [#624](https://github.com/xzawed/xzawed-pais/pull/624) | 2026-08-25 | 채널 결과 의미론 — `not_applicable` 도입. **경계선은 "누가 범위를 정했는가"** 다 |
 | S7.1 | [#625](https://github.com/xzawed/xzawed-pais/pull/625) | 2026-08-25 | 검증 실패 사유 → 에스컬레이션 브리프. 스트림 소비자 대신 **이미 사람이 읽는 표면**에 실었다 |
 | S6.3 | [#626](https://github.com/xzawed/xzawed-pais/pull/626) | 2026-08-25 | WP 산출물 런타임 포착 → 후행 입력. **예측이 아니라 포착**이라 프롬프트 변경이 없다 |
+| S5.3b | [#631](https://github.com/xzawed/xzawed-pais/pull/631) | 2026-08-26 | risk 등급을 WP 별로 — 선행은 SQL 이 아니라 **재료**였다. 판정 없는 WP 를 방치하는 것도 fail-open 이라 보수적 폴백을 남긴다 |
+| S5.4 | [#632](https://github.com/xzawed/xzawed-pais/pull/632) | 2026-08-26 | per-tier θ. **타입 교체가 배선 누락을 안 잡는다** — 조건부 spread 가 tsc 사각지대라 릴레이를 테스트로 봉인 |
 | S7.2 | [#628](https://github.com/xzawed/xzawed-pais/pull/628)·[#629](https://github.com/xzawed/xzawed-pais/pull/629) | 2026-08-25 | `spec_fix` 재분해 — 선행은 분기가 아니라 **재료**(intent)였다. 공백 intent 경계 5곳을 `normalizeIntent` 로 단일화 |
 | S3.3 | [#630](https://github.com/xzawed/xzawed-pais/pull/630) | 2026-08-26 | `GET /metrics` — DLQ·PEL 을 `SCAN` 으로 훑는다. **잘라내면 그 사실도 지표로** 낸다 |
 
 슬라이스가 아닌 동반 PR: [#584](https://github.com/xzawed/xzawed-pais/pull/584)(Launcher CLAUDE.md 자기모순), [#585](https://github.com/xzawed/xzawed-pais/pull/585)(단일 인스턴스 잠금 — 고아 워크트리에서 건진 미머지 작업).
 
-**남은 슬라이스는 2건이다**(2026-08-26): `S4.3` · `S5.4`.
+**남은 슬라이스는 1건이다**(2026-08-26): `S4.3` 뿐이다.
 
-**사슬은 전부 풀렸다** — `S5.4` 의 유일한 선행이던 `S5.3b` 가 착륙해 둘 다 즉시 착수 가능하다. `S4.3`(실 왕복 스모크)만 CI 에 실 `ANTHROPIC_API_KEY` 를 넣을지에 대한 **비용·비밀 판단**이 걸려 있다.
+**사슬은 전부 풀렸고 남은 것은 판단 대기 하나뿐이다.** `S4.3`(실 왕복 스모크)은 CI 에 실 `ANTHROPIC_API_KEY` 를 넣을지에 대한 **비용·비밀 판단**이 선행이라 기술적 선행이 아니다 — 사용자 결정 전까지 착수하지 않는다.
 
 > **`S6.2` 는 "순수 배선"이 아니었다(2026-08-24 실측).** `mergeKeepInflight` 를 그냥 부르는 것으로는 아무 효과가 없다 — 기본 in-flight 술어는 `wp.status` 를 읽는데 `graph_dag` 의 status 는 **S6.1 이후에도 영원히 `DRAFTED`** 다(`decompose/map.ts` 가 유일한 writer 이고 아무도 바꾸지 않는다). 실제 진행 상태는 `wp_state_log` 에만 있으므로 술어를 `latestStates` 에서 파생해야 실효가 생긴다. 계획서가 이 슬라이스에만 "유닛은 위음성 · pg 통합 필수"를 적어 둔 이유가 이것이었고, 실측해 보니 그 이유가 S6.1 로도 사라지지 않았다.
 >
@@ -202,7 +204,7 @@
 | S5.2b | `design_ui` WP 자기검증 | S5.2a | 10~14 / +300~500 | verify |
 | S5.3a | 채널 결과 의미론(비대상 ≠ 미증명) — **데드락 해소** | — | 4~7 / +150~300 | risk |
 | ~~S5.3b~~ | ~~per-WP 재채점(risk write-back·F2)~~ **착륙** | — | 12~18 / +400~700 | risk |
-| S5.4 | per-tier θ | S5.3b | 5~9 / +100~250 | verify |
+| ~~S5.4~~ | ~~per-tier θ~~ **착륙** | S5.3b | 5~9 / +100~250 | verify |
 
 > **`S5.3` 을 둘로 쪼갠 이유 — 계획서의 인과 모델이 틀렸다(2026-08-25 실측).** 원래 한 줄은
 > "per-WP 재채점(mutation 데드락 해소)"이었다. **per-WP 재채점은 데드락을 풀지 못한다.**

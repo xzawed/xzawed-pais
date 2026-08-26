@@ -340,8 +340,19 @@ export interface VerifyDeps {
   propertyEnabled?: boolean
   /** P4 mutation θ_risk 채널 활성(=MANAGER_WP_MUTATION). oracle 미소비. */
   mutationEnabled?: boolean
-  /** mutation 통과 floor(killed/total ≥ θ). 미설정 시 DEFAULT_MUTATION_THETA. */
-  mutationTheta?: number
+  /**
+   * mutation 통과 floor(killed/total ≥ θ) — **등급별**(S5.4). 미설정 시 전 등급 DEFAULT_MUTATION_THETA.
+   *
+   * 단일 `number` 가 아니라 완전한 맵인 것이 의도다 — 소비 지점에서 `?? 기본값` 을 등급마다
+   * 흘리면 맵이 통째로 빠져도 조용히 단일 θ 로 돌아간다.
+   *
+   * ⚠️ **타입 교체가 배선 누락을 잡아 주지 않는다(실측).** 이 키를 옮기면서 옛 `mutationTheta` 를
+   * 지웠는데 `tsc --noEmit` 이 **아무 오류도 내지 않았다** — 릴레이가 `...(x !== undefined && { x })`
+   * 조건부 spread 라 초과 속성 검사가 적용되지 않기 때문이다. 그래서 배선 3곳이 옛 이름을 그대로
+   * 넘기고 있었고 per-tier θ 는 도달조차 못 했다(`S7.1` 의 릴레이 누락과 같은 모양). 이 파일의
+   * 키를 바꿀 때는 `server`→`supervisor`→`worker` 를 **grep 으로** 확인한다.
+   */
+  mutationThetaByRisk?: Record<WpRisk, number>
   /** mutation 최소 실행 risk 등급(이 등급 이상만 실행). 미설정 시 'HIGH'. */
   mutationMinRisk?: WpRisk
   /** mutation 하니스가 생성할 최대 mutant 수. 미설정 시 DEFAULT_MUTATION_MAX_MUTANTS. */
@@ -487,6 +498,38 @@ export function meetsMinRisk(wpRisk: WpRisk, minRisk: WpRisk): boolean {
   return RISK_RANK[wpRisk] >= RISK_RANK[minRisk]
 }
 
+/**
+ * **등급별 mutation θ**(S5.4). 세 등급이 모두 채워진 완전한 맵을 만든다.
+ *
+ * 왜 완전한 맵인가 — `verify.ts` 가 `?? 기본값` 으로 흘리면 배선 어딘가에서 맵이 통째로
+ * 빠져도 조용히 단일 θ 로 돌아간다(`S7.1` 의 릴레이 누락과 같은 모양). 해석은 기동 시 한 번,
+ * 소비는 조회 하나로 끝낸다.
+ *
+ * **미설정 등급은 공통 θ 를 그대로 받는다 — 등급별 기본값을 지어내지 않는다.** 설계 문서 D2 가
+ * per-tier 를 "운영 데이터 후"로 미룬 이유가 그것이다. 즉 아무것도 설정하지 않으면 세 등급이
+ * 같은 값이라 **동작이 변하지 않는다**(회귀 0). 이 슬라이스가 주는 것은 값이 아니라 손잡이다.
+ */
+export function resolveThetaByRisk(
+  base: number, overrides: Partial<Record<WpRisk, number | undefined>> = {},
+): Record<WpRisk, number> {
+  return {
+    LOW: overrides.LOW ?? base,
+    MEDIUM: overrides.MEDIUM ?? base,
+    HIGH: overrides.HIGH ?? base,
+  }
+}
+
+/**
+ * θ 가 등급 순서를 거스르는지(낮은 등급에 더 높은 바닥). 기동 경고용 — 거부하지는 않는다.
+ *
+ * 저위험 WP 에 고위험보다 **엄격한** 바닥을 요구하는 것은 거의 항상 오타다. 다만 이것은 보안
+ * 불변식이 아니라 캘리브레이션 취향이라 하드페일 대상이 아니다 — 같은 채널의 기존 기동 경고와
+ * 같은 급으로 다룬다.
+ */
+export function nonMonotonicThetaTiers(theta: Record<WpRisk, number>): boolean {
+  return theta.LOW > theta.MEDIUM || theta.MEDIUM > theta.HIGH
+}
+
 /** P4 mutation θ_risk 채널(N8 강화): HIGH-risk WP의 스위트 강도를 자가단언 하니스로 검증.
  *  oracle 미소비 — 자체 guard 후 executeAuthoredTest 재사용(CPD0). score<θ면 하니스가 fail→fail(blocking). never-throw. */
 function runMutationCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
@@ -503,8 +546,9 @@ function runMutationCheck(wp: WorkPackage, deps: VerifyDeps): Promise<Verificati
   if (!deps.handlers['develop_code'] || !deps.handlers['run_tests']) {
     return Promise.resolve({ ok: false, reason: `${MUTATION_DIR}: develop_code/run_tests 핸들러 미주입` })
   }
+  // S5.4: 바닥값이 이 WP 의 등급에서 나온다. min-risk 는 **돌릴지**를, θ 는 **얼마나 엄하게**를 정한다.
   const plan = buildMutationHarnessPlan(wp, {
-    theta: deps.mutationTheta ?? DEFAULT_MUTATION_THETA,
+    theta: deps.mutationThetaByRisk?.[wp.risk] ?? DEFAULT_MUTATION_THETA,
     maxMutants: deps.mutationMaxMutants ?? DEFAULT_MUTATION_MAX_MUTANTS,
   })
   return executeAuthoredTest(wp, deps, plan, MUTATION_DIR, 'mut-author', 'mut-run').then((v) => {

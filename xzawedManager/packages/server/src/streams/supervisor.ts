@@ -265,7 +265,8 @@ export interface SupervisorConfig {
   wpProperty?: boolean
   /** P4 mutation θ_risk 채널 활성(=MANAGER_WP_MUTATION). oracle 미소비. */
   wpMutation?: boolean
-  mutationTheta?: number
+  /** 등급별 mutation θ(S5.4). 완전한 맵 — server.ts 가 resolveThetaByRisk 로 만든다. */
+  mutationThetaByRisk?: Record<WpRisk, number>
   mutationMinRisk?: WpRisk
   mutationMaxMutants?: number
   /** P6: 결함 의사결정 브리프(escalation→DecisionRequest) 활성(=MANAGER_DECISION_BRIEF). decisionStore 동반 필요. */
@@ -394,7 +395,7 @@ export function buildWorkerConsumerDeps(
     propertyEnabled: config.wpProperty === true && deps.oracleStore != null,
     // P4 mutation: flag만으로 활성(oracle 미소비). handler 부재는 runMutationCheck가 fail-closed.
     mutationEnabled: config.wpMutation === true,
-    ...(config.mutationTheta !== undefined && { mutationTheta: config.mutationTheta }),
+    ...(config.mutationThetaByRisk !== undefined && { mutationThetaByRisk: config.mutationThetaByRisk }),
     ...(config.mutationMinRisk !== undefined && { mutationMinRisk: config.mutationMinRisk }),
     ...(config.mutationMaxMutants !== undefined && { mutationMaxMutants: config.mutationMaxMutants }),
     // P4 4d security: flag만으로 활성(oracle 미소비·mutation 동형). handler 부재는 runSecurityCheck가 fail-closed.
