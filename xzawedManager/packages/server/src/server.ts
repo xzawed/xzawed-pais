@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { Config } from './config.js'
 import { registerJwt, verifyServiceToken } from './auth/jwt.plugin.js'
 import { healthRoute } from './api/health.route.js'
+import { metricsRoute } from './api/metrics.route.js'
 import { knowledgeRoute } from './api/knowledge.route.js'
 import { sessionsRoute, makeSessionStarter } from './api/sessions.route.js'
 import { adminRoute } from './api/admin.route.js'
@@ -698,6 +699,10 @@ export async function buildServer(
     gatewayRunning: () => sessionGateway.isRunning(),
     pool: () => getPool(),
   })
+  // S3.3: `/metrics` — DLQ 적재량·PEL 깊이(결함 O1). 전 서비스가 한 Redis 를 공유하므로
+  // 여기 한 곳에서 훑으면 시스템 전체가 보인다(서비스별 배선 복제 없음).
+  // `healthRoute` 와 같은 이유로 접근자다 — 등록이 Redis 배선보다 앞설 수 있다.
+  await app.register(metricsRoute, { redis: () => getRedisClient(config.REDIS_URL) })
   // 관측성: knowledge/oracle/risk 라우트는 admin/decision(authHook 없으면 미등록·fail-closed)과 달리
   // 의도적으로 authHook 없이도 등록된다(oracleRoute·riskRoute 코멘트 참조 — oracle-tier·로컬/데모 개방).
   // 다만 SERVICE_JWT_SECRET 미설정 시 이들의 쓰기(PATCH/DELETE·approve)가 무인증 노출되므로,
