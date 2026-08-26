@@ -7,9 +7,16 @@ on:
     branches: [master]
   workflow_dispatch: {}
 
+# **master 런은 취소하지 않는다.** PR 브랜치는 새 푸시가 오면 이전 런이 무의미하므로 취소가 맞지만,
+# master 는 릴리스 라인이라 **커밋마다 검증이 남아야 한다**. 연달아 머지하면 앞 커밋의 런이 취소돼
+# 그 커밋은 검증이 0 이 된다 — 루트 CLAUDE.md 의 "PR 초록은 master 초록이 아니다. 머지 후 master
+# 런을 확인한다"가 구조적으로 만족 불가능해진다. 실측: 최근 master push 런 30건 중 2건이 이 이유로
+# cancelled 였고(`62a7332`=S5.3b·`7aee983`), 둘 다 남은 검증이 없다.
+#
+# PR 은 `github.ref` 가 `refs/pull/<N>/merge` 라 PR 마다 그룹이 갈린다 — 취소 동작은 그대로다.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # ── Turborepo services ─────────────────────────────────────────────────────
