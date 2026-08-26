@@ -154,7 +154,11 @@ describe('handleDecomposeRequest', () => {
       vi.fn().mockResolvedValue(undefined), // mock ensureWs — 실제 mkdir('/ws') 회피(CI EACCES)
     )
     // 1) riskClassify가 있으면 produceRiskClassification이 실제로 호출됨(인자 순서 단언)
-    expect(vi.mocked(produceRiskClassification)).toHaveBeenCalledWith('intent', 'sess-risk', riskClassify, expect.objectContaining({ projectId: 'p' }))
+    //    5번째는 방금 분해된 WP — 이게 없으면 claim 을 WP 에 지목할 수 없어 write-back 이
+    //    다시 균일해진다(결함 F2 · `S5.3b`).
+    expect(vi.mocked(produceRiskClassification)).toHaveBeenCalledWith(
+      'intent', 'sess-risk', riskClassify, expect.objectContaining({ projectId: 'p' }), expect.any(Array),
+    )
     // 2) decompose·publish·cleanup 경로는 risk 호출에 무관하게 유지
     expect(cleanup).toHaveBeenCalledTimes(1)
     expect(producerPublish).toHaveBeenCalledWith(expect.objectContaining({ type: 'task_complete' }))

@@ -37,6 +37,17 @@ export interface ProduceDeps {
 export interface ProduceResult {
   emitted: number
   escalated: boolean
+  /**
+   * 방금 발행한 WP(id·담당 역할만). 리스크 분류가 claim 을 WP 에 지목하려면 필요하다
+   * (결함 F2 · `S5.3b`) — 예전에는 개수만 돌려줘 분류기가 WP 를 **볼 수가 없었다.**
+   * escalated 경로는 발행한 WP 가 없으므로 빈 배열이다.
+   */
+  workPackages: { id: string; owningRole: string }[]
+}
+
+/** 리스크 분류 지목용 WP 요약 — id·역할만(본문은 조사 토큰을 잠식한다). */
+function wpHints(wps: ReadonlyArray<{ id: string; owningRole: string }>): { id: string; owningRole: string }[] {
+  return wps.map((w) => ({ id: w.id, owningRole: w.owningRole }))
 }
 
 /** decomposition.emitted 발행(ok·fallback 공용). oracleDrafts는 ok 경로만 채움(기본 []·additive).
@@ -94,7 +105,7 @@ export async function produceDecomposition(
     })
     const workPackages = fallbackWorkPackages(intent)
     await emitWorkPackages(deps, workflowId, workPackages, [], userContext, intent)
-    return { emitted: workPackages.length, escalated: false }
+    return { emitted: workPackages.length, escalated: false, workPackages: wpHints(workPackages) }
   }
 
   if (result.status === 'inconsistent') {
@@ -114,7 +125,7 @@ export async function produceDecomposition(
       type: 'decomposition.inconsistent',
       payload: { reason, gaps: result.coverage.gaps, overlaps: result.coverage.overlaps },
     })
-    return { emitted: 0, escalated: true }
+    return { emitted: 0, escalated: true, workPackages: [] }
   }
 
   deps.log?.('[decompose] coverage', {
@@ -125,5 +136,5 @@ export async function produceDecomposition(
   })
   // ok 경로만 oracleDrafts 전달 — inconsistent/기술 fallback 경로는 기본 [](degraded·blocker#5).
   await emitWorkPackages(deps, workflowId, result.workPackages, result.oracleDrafts, userContext, intent)
-  return { emitted: result.workPackages.length, escalated: false }
+  return { emitted: result.workPackages.length, escalated: false, workPackages: wpHints(result.workPackages) }
 }

@@ -42,6 +42,7 @@ export { desiredMode, nextMode } from './resilience/index.js'
 export type { OperationalMode, ModeSignals, ModeTransitionInput, ModeTransitionResult } from './resilience/index.js'
 export {
   confidenceFromSupport, aggregateDimension, combineRisk, routeModels, evaluateHumanGate, scoreClassification,
+  scoreWpRisks,
   RISK_DIMENSIONS, ROUTED_AGENTS, RiskClassificationSchema, ClaimSchema, DimensionScoreSchema,
 } from './risk/index.js'
 export type {

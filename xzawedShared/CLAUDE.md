@@ -58,7 +58,7 @@ Manager는 경로가 다르지만(`file:../../../xzawedShared`) **같은 함정�
 | `decomposition/` | `coverageMatrix`·`contentHashId`·`mergeKeepInflight` |
 | `budget/` | `costOf`(usage→USD)·`BudgetCircuitBreaker`·`MODEL_PRICING` |
 | `resilience/` | `ProviderCircuitBreaker`·`Bulkhead`·운영 모드 FSM(`desiredMode`·`nextMode`) |
-| `risk/` | 리스크 분류 채점 코어(`scoreClassification`·`combineRisk`·`routeModels`·`evaluateHumanGate`) |
+| `risk/` | 리스크 분류 채점 코어(`scoreClassification`·`scoreWpRisks`·`combineRisk`·`routeModels`·`evaluateHumanGate`) |
 
 ## 순수 코어 경계
 
@@ -103,6 +103,7 @@ Manager는 경로가 다르지만(`file:../../../xzawedShared`) **같은 함정�
 - **`collaborationPayloadFields`는 4개 필드다** — `clarificationContext`·`query`·`queryKind`·`model`. `model`은 Manager가 WP별 라우팅 모델 id를 주입하는 통로라 빠뜨리면 모델 라우팅이 조용히 죽는다.
 - **`CollabMessage`는 TypeScript 타입일 뿐 강제되지 않는다.** 각 서비스가 자기 `types.ts`에 Zod로 다시 선언하므로 tsc가 이 경계를 교차검증하지 못한다. 봉투를 바꾸면 `/contract-drift-check`로 대조한다.
 - **`EventEnvelopeSchema`를 스트림 봉투로 착각하지 않는다.** 전자는 이벤트소싱 인과 추적용(Manager 전용)이고, 서비스 간 메시지 봉투는 `CollabMessage` 쪽이다.
+- **`scoreWpRisks`의 빈 `wpIds`는 "해당 없음"이 아니라 "전 WP 공통"이다.** 지목은 WP 등급을 프로젝트 등급 **아래로 낮추는 유일한 수단**이라, 판단이 없으면 낮아지지 않아야 회귀가 0이고 fail-closed다. 같은 이유로 **아무 WP도 못 맞히는 지목은 지목이 없는 것으로 정규화한다** — 없는 id만 적힌 claim을 "해당 WP 없음"으로 읽으면 그 위험 신호가 증발해 전 WP가 실제보다 낮아진다(게이트가 풀리는 방향). 이 정규화는 생산자에도 있지만 **코어에서 성립해야 한다** — 먼 호출자에만 걸린 불변식은 tsc가 못 보고 새 호출자가 깬다
 - **`WorkPackage`의 id는 content-hash 파생이라 `risk`를 포함하지 않는다.** 리스크 등급이 바뀌어도 id가 유지되고 재진입이 안정적이다. 해시 입력을 바꾸면 기존 그래프의 모든 id가 갈린다.
 - **Watcher는 협업 헬퍼를 쓰지 않는다.** Claude를 호출하지 않으므로 `createCollaborativeHandler`·`collaborationPayloadFields`·`answerViaClaude` 셋 다 빠진다. Manager가 교차질의 라우팅 대상에서 watcher를 제외하는 것과 같은 사실이다.
 - **peer 범위가 실제보다 넓다.** `zod >=3`·`ioredis >=5`인데 shared 자신은 둘 다 devDependency로만 갖는다. 한 소비자가 zod 4로 올려도 peer 경고 없이 통과하면서 여기 Zod 3 스키마와 런타임에서 어긋날 수 있다.

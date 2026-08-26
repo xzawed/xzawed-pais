@@ -52,7 +52,7 @@ d('graph_dag 동시 쓰기 (pg)', () => {
     // 재분해가 병합 결과를 영속 — b 가 빠지고 c 가 들어온다.
     await repo.upsertGraph({ workflowId: wfId, workPackages: [wp('a', ['원본']), wp('c')] })
 
-    const res = await repo.updateWpRisks(wfId, 'HIGH')
+    const res = await repo.updateWpRisks(wfId, { a: 'HIGH', c: 'HIGH' }, 'HIGH')
 
     const after = await repo.getGraph(wfId)
     expect(after?.workPackages.map((w) => w.id).sort(), 'b 가 되살아났다(lost update)').toEqual(['a', 'c'])
@@ -65,7 +65,7 @@ d('graph_dag 동시 쓰기 (pg)', () => {
     await repo.upsertGraph({ workflowId: wfId, workPackages: [wp('a', ['AC-A']), wp('b', ['AC-B'])] })
     const before = await repo.getGraph(wfId)
 
-    const res = await repo.updateWpRisks(wfId, 'HIGH')
+    const res = await repo.updateWpRisks(wfId, { a: 'HIGH', b: 'HIGH' }, 'HIGH')
 
     expect(res.updated).toBe(2)
     const after = await repo.getGraph(wfId)
@@ -81,14 +81,14 @@ d('graph_dag 동시 쓰기 (pg)', () => {
     const userContext = { userId: 'u1', projectId: 'p1', workspaceRoot: '/ws', tenantId: 't1' }
     await repo.upsertGraph({ workflowId: wfId, workPackages: [wp('a')], userContext })
 
-    await repo.updateWpRisks(wfId, 'HIGH')
+    await repo.updateWpRisks(wfId, { a: 'HIGH' }, 'HIGH')
 
     const after = await repo.getGraph(wfId)
     expect(after?.userContext).toMatchObject({ projectId: 'p1', tenantId: 't1' })
   })
 
   it('그래프가 없으면 no-op', async () => {
-    const res = await repo.updateWpRisks(`wf-lu-${Date.now()}-none`, 'HIGH')
+    const res = await repo.updateWpRisks(`wf-lu-${Date.now()}-none`, { a: 'HIGH' }, 'HIGH')
     expect(res.updated).toBe(0)
   })
 })

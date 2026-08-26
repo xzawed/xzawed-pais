@@ -73,3 +73,48 @@ it('decisionStore 미주입이면 발행 skip(never-throw)', async () => {
   const r = await produceRiskClassification('intent', 'wf-3', { claude: client as never, model: 'm', timeoutMs: 50, repo } as never, uc as never)
   expect(r.classified).toBe(true)
 })
+
+/**
+ * **WP 를 받아 지목까지 흘리는가**(결함 F2 · `S5.3b`).
+ *
+ * 예전에는 생산자가 intent 만 받아 WP 를 **볼 수가 없었다**. 그래서 `wpRisks` 가 만들어질 수 없었고
+ * write-back 은 프로젝트 등급을 전 WP 에 찍는 것 외에 선택지가 없었다.
+ */
+describe('produceRiskClassification — WP 지목', () => {
+  const WPS = [{ id: 'wp-a', owningRole: 'Developer' }, { id: 'wp-b', owningRole: 'Designer' }]
+  /** 조사 응답을 그대로 돌려주는 Claude 목. */
+  const claudeReturning = (body: unknown) => okClient(JSON.stringify(body))
+
+  it('WP 를 주면 wpRisks 를 채워 upsert 한다', async () => {
+    const repo = { upsert: vi.fn().mockResolvedValue({ version: 1 }) }
+    const client = claudeReturning({
+      claims: [{ text: 'PHI', dimension: 'compliance', support: 3, citations: ['a', 'b', 'c'], wpIds: ['wp-a'] }],
+      complianceFrameworks: ['HIPAA'],
+    })
+    await produceRiskClassification('intent', 'wf', baseDeps(repo, client) as never, uc as never, WPS)
+    const artifact = repo.upsert.mock.calls[0]![0].classification
+    expect(artifact.wpRisks).toEqual({ 'wp-a': 'HIGH', 'wp-b': 'MEDIUM' })
+  })
+
+  /** WP 없이 도는 기존 경로 — 판정이 없다는 사실이 그대로 남아야 한다(회귀 0). */
+  it('WP 를 안 주면 wpRisks 는 빈 맵이다', async () => {
+    const repo = { upsert: vi.fn().mockResolvedValue({ version: 1 }) }
+    const client = claudeReturning({
+      claims: [{ text: 'PHI', dimension: 'compliance', support: 3, citations: ['a', 'b', 'c'] }],
+      complianceFrameworks: [],
+    })
+    await produceRiskClassification('intent', 'wf', baseDeps(repo, client) as never, uc as never)
+    expect(repo.upsert.mock.calls[0]![0].classification.wpRisks).toEqual({})
+  })
+
+  /** 없는 id 만 지목되면 위험 신호가 아무 WP 에도 안 걸려 증발한다 — 넓히는 쪽으로 되돌린다. */
+  it('환각 지목은 전 WP 공통으로 되돌아간다', async () => {
+    const repo = { upsert: vi.fn().mockResolvedValue({ version: 1 }) }
+    const client = claudeReturning({
+      claims: [{ text: 'PHI', dimension: 'compliance', support: 3, citations: ['a', 'b', 'c'], wpIds: ['없는-WP'] }],
+      complianceFrameworks: [],
+    })
+    await produceRiskClassification('intent', 'wf', baseDeps(repo, client) as never, uc as never, WPS)
+    expect(repo.upsert.mock.calls[0]![0].classification.wpRisks).toEqual({ 'wp-a': 'HIGH', 'wp-b': 'HIGH' })
+  })
+})

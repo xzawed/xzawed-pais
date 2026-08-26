@@ -492,9 +492,10 @@ export function meetsMinRisk(wpRisk: WpRisk, minRisk: WpRisk): boolean {
 function runMutationCheck(wp: WorkPackage, deps: VerifyDeps): Promise<VerificationVerdict> {
   if (deps.mutationEnabled !== true) { deps.recordOutcome?.('mutation', 'not_applicable'); return Promise.resolve({ ok: true }) }
   // 이 WP 는 mutation 대상 등급이 아니다 — 설계상 범위 밖이지 미증명이 아니다(S5.3a).
-  // ⚠️ 이 비대상 판정은 `wp.risk` 만큼만 믿을 수 있는데, risk write-back 이 전 WP 를 균일하게
-  //    덮어쓰는 한 등급은 분해 기본값(MEDIUM)에 머문다(결함 F2 · `S5.3b`). 그것이 고쳐져야
-  //    "이 WP 는 mutation 대상이 아니다"가 실제 판단이 된다.
+  // 이 판정은 `wp.risk` 만큼만 믿을 수 있는데, `S5.3b` 로 그 등급이 **WP 별 판정**이 됐다
+  // (결함 F2 해소 — 예전에는 프로젝트 종합 등급의 사본이라 판단하는 척만 했다).
+  // 단, 리스크 체인이 꺼져 있으면 등급은 분해 기본값 MEDIUM 에 머문다 — 그 조합은
+  // `server.ts` 의 기동 경고가 표면화한다(무음 no-op 금지).
   if (!meetsMinRisk(wp.risk, deps.mutationMinRisk ?? 'HIGH')) { deps.recordOutcome?.('mutation', 'not_applicable'); return Promise.resolve({ ok: true }) }
   if (!deps.userContext?.workspaceRoot) {
     return Promise.resolve({ ok: false, reason: `${MUTATION_DIR}: workspaceRoot 미영속 — 검증 대상 경로 불명(fail-closed)` })

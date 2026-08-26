@@ -63,7 +63,12 @@ export class RiskClassificationRepo {
         { correlationId: workflowId, causationId: null, workflowId, stepId: `${RISK_APPROVED_EVENT}:${workflowId}`, attemptId: row.version },
         this.now(),
       )
-      const payload = { workflowId, projectId: row.project_id, risk: artifact.risk, version: row.version, modelRouting: artifact.modelRouting }
+      // `risk` 는 프로젝트 종합(모델 라우팅 입력), `wpRisks` 가 WP 판정이다 — 후자가 write-back 대상(F2·S5.3b).
+      // 과거 아티팩트에는 `wpRisks` 가 없어 스키마 기본값 `{}` 가 실리고, 소비자는 그때 아무것도 쓰지 않는다.
+      const payload = {
+        workflowId, projectId: row.project_id, risk: artifact.risk,
+        wpRisks: artifact.wpRisks, version: row.version, modelRouting: artifact.modelRouting,
+      }
       await client.query(
         `INSERT INTO manager_events
            (event_id, session_id, event_type, payload, correlation_id, causation_id, idempotency_key, actor, occurred_at)

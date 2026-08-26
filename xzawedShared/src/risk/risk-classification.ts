@@ -38,12 +38,21 @@ export function confidenceFromSupport(support: number): number {
   return Math.min(1, support / FULL_CONFIDENCE_SUPPORT)
 }
 
-/** 입력 claim(생산자가 추출·인용 검증 완료). confidence는 코어가 support에서 산정. */
+/**
+ * 입력 claim(생산자가 추출·인용 검증 완료). confidence는 코어가 support에서 산정.
+ *
+ * `wpIds` 는 **이 위험 신호가 실제로 걸리는 Work Package** 다(결함 F2 · `S5.3b`).
+ * **빈 배열은 "전 WP 공통"이지 "해당 없음"이 아니다** — 분류기가 좁히지 못했다는 뜻이고,
+ * 그 경우 이 claim 은 모든 WP 에 걸린다. 즉 **좁히는 것은 분류기의 적극적 행위**이고,
+ * 아무 판단도 없으면 WP 등급은 프로젝트 등급 그대로다(fail-closed).
+ */
 export interface ClaimInput {
   text: string
   dimension: RiskDimension
   support: number
   citations: string[]
+  /** 이 claim 이 걸리는 WP id. 비면 전 WP 공통(좁히지 못함). */
+  wpIds?: string[]
 }
 
 export const DimensionScoreSchema = z.object({
@@ -58,6 +67,8 @@ export const ClaimSchema = z.object({
   support: z.number().int().nonnegative(),
   confidence: z.number().min(0).max(1),
   citations: z.array(z.string()).default([]),
+  /** 이 claim 이 걸리는 WP id. 비면 전 WP 공통 — 과거 아티팩트는 이 키가 없어 기본값이 그 의미를 준다. */
+  wpIds: z.array(z.string()).default([]),
 })
 export type Claim = z.infer<typeof ClaimSchema>
 
@@ -68,6 +79,12 @@ export const RiskClassificationSchema = z.object({
   complianceFrameworks: z.array(z.string()).default([]),
   claims: z.array(ClaimSchema).default([]),
   modelRouting: z.record(z.enum(ROUTED_AGENTS), z.enum(['opus', 'sonnet'])),
+  /**
+   * WP id → 등급(결함 F2 · `S5.3b`). **`risk` 는 프로젝트 종합이고 이것이 WP 판정이다.**
+   * 비면 WP 별 판정이 없다는 뜻이고, 그때 write-back 은 **아무것도 쓰지 않는다** —
+   * 프로젝트 등급을 전 WP 에 찍는 것이 바로 F2 였다.
+   */
+  wpRisks: z.record(z.string(), WpRiskSchema).default({}),
   humanGate: z.object({ required: z.boolean(), reason: z.string() }),
   classifierModel: z.literal('opus'), // Wiki Agent 자신은 항상 Opus(§4·§5)
   audit: z.object({
@@ -155,12 +172,60 @@ export function evaluateHumanGate(
   return { required: false, reason: '' }
 }
 
+/**
+ * **WP 별 등급**(결함 F2 · `S5.3b`).
+ *
+ * 지금까지 write-back 은 프로젝트 종합 등급 하나를 전 WP 에 균일하게 찍었다. 그러면 `wp.risk` 는
+ * WP 판정이 아니라 프로젝트 최댓값의 사본이고, 그것을 읽는 mutation θ_risk 게이트와 DEGRADED
+ * 서명 게이트는 **판단하는 척만** 한다. per-tier θ(`S5.4`)도 전 WP 가 같은 등급이면 단일 θ 로
+ * 퇴화한다 — 그래서 이것이 `S5.4` 의 선행이다.
+ *
+ * **한 WP 에 걸리는 claim = 전 WP 공통(`wpIds` 빈 것) + 그 WP 를 지목한 것.** 이 정의가 핵심이다:
+ * 분류기가 아무 판단도 못 하면 모든 claim 이 공통이 되어 WP 등급 = 프로젝트 등급(회귀 0·fail-closed),
+ * **프로젝트 등급보다 낮아지는 유일한 길은 분류기가 그 claim 을 다른 WP 로 좁힌 것**이다.
+ * 증거가 적어서 안전해지는 역설이 생기지 않는다.
+ *
+ * 임계·산식은 프로젝트 채점과 **같은 것을 그대로 쓴다**(`aggregateDimension`·`combineRisk`) —
+ * WP 용 상수를 따로 두면 캘리브레이션이 둘로 갈린다.
+ */
+export function scoreWpRisks(
+  claims: ReadonlyArray<Claim>,
+  workPackageIds: ReadonlyArray<string>,
+  opts: CombineOptions = {},
+): Record<string, WpRisk> {
+  const known = new Set(workPackageIds)
+  // **지목이 아무 WP 도 못 맞히면 지목이 없는 것으로 본다.** 없는 id 만 적힌 claim 을 "해당 WP
+  // 없음"으로 읽으면 그 위험 신호가 **증발**해 전 WP 가 실제보다 낮아진다 — 게이트가 풀리는
+  // 방향이라 가장 위험하다. 생산자도 같은 정리를 하지만(`verifyCitations`), 그 불변식은 **여기서**
+  // 성립해야 한다. 먼 호출자에만 걸린 불변식은 tsc 가 못 보고 결국 새 호출자가 깬다(Grok 반증).
+  const narrowed = claims.map((c) => {
+    const named = c.wpIds.filter((id) => known.has(id))
+    return { claim: c, named }
+  })
+  const out: Record<string, WpRisk> = {}
+  for (const wpId of workPackageIds) {
+    const applicable = narrowed
+      .filter(({ named }) => named.length === 0 || named.includes(wpId))
+      .map(({ claim }) => claim)
+    const dimensionScores = Object.fromEntries(
+      RISK_DIMENSIONS.map((d) => [d, aggregateDimension(applicable, d)]),
+    ) as Record<RiskDimension, DimensionScore>
+    out[wpId] = combineRisk(dimensionScores, opts)
+  }
+  return out
+}
+
 export interface ScoreInput {
   projectId: string
   /** 생산자가 추출·인용 검증 완료한 claim(confidence는 코어가 support에서 산정). */
   claims: ClaimInput[]
   /** 컴플라이언스 차원 조사에서 감지한 프레임워크(HIPAA 등). */
   complianceFrameworks?: string[]
+  /**
+   * 이 워크플로의 WP id(결함 F2 · `S5.3b`). 주면 `wpRisks` 를 채운다.
+   * **안 주면 빈 채로 둔다** — 모른다는 뜻이고, write-back 이 아무것도 안 쓰는 것이 옳다.
+   */
+  workPackageIds?: string[]
 }
 
 /**
@@ -175,6 +240,7 @@ export function scoreClassification(input: ScoreInput): RiskClassification {
     support: c.support,
     confidence: confidenceFromSupport(c.support),
     citations: c.citations,
+    wpIds: c.wpIds ?? [],
   }))
 
   const dimensionScores = Object.fromEntries(
@@ -192,6 +258,8 @@ export function scoreClassification(input: ScoreInput): RiskClassification {
     complianceFrameworks,
     claims,
     modelRouting,
+    // WP 목록을 못 받았으면 빈 채로 둔다 — "모른다"와 "전부 프로젝트 등급"은 다르다(F2).
+    wpRisks: scoreWpRisks(claims, input.workPackageIds ?? [], { complianceFrameworks }),
     humanGate,
     classifierModel: 'opus',
     audit: { approvedBy: null, approvedAt: null, version: 1 },
