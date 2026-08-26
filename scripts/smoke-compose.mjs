@@ -75,6 +75,47 @@ function run(bin, args, opts = {}) {
 
 const log = (...a) => console.log('[smoke]', ...a)
 
+/** 스모크 기동용 자리표시자. 실 호출을 하지 않는 부팅 단계 전용이고, 형식 검사만 통과하면 된다. */
+const PLACEHOLDER_KEY = 'sk-ant-smoke-placeholder-not-a-real-key'
+
+/**
+ * `.env.example` 을 **기동 가능한 형태로 정규화**한다.
+ *
+ * **`.env.example` 을 그대로 복사하면 스택이 뜨지 않는다(CI 실측).** 두 가지 때문이다:
+ *
+ * 1. **빈 값은 미설정과 다르다.** `REMOTE_CLI_URL=` 은 "설정됐는데 빈 문자열"이라
+ *    `z.string().url().optional()` 의 `.url()` 이 **실패**한다(`Invalid url`). 키 자체가 없으면
+ *    `.optional()` 이 통과시킨다 — 그래서 값이 빈 줄은 **지운다.**
+ * 2. **Orchestrator 의 `ANTHROPIC_API_KEY` 는 예시 파일에서 비어 있다**(다른 서비스는 10자
+ *    자리표시자가 들어 있다). `CLAUDE_MODE=api` 가 키를 요구하므로 기동이 거부된다.
+ *    부팅 단계는 실 호출을 하지 않으므로 자리표시자를 채운다.
+ *
+ * **이미 있는 `.env` 는 절대 건드리지 않는다** — 개발자의 실 설정이다. 그래서 로컬에서는 이 경로가
+ * 한 번도 돌지 않았고, `.env.example` 기준선이 기동되지 않는다는 사실이 CI 에서야 드러났다.
+ */
+function normalizeEnv(text) {
+  const out = []
+  let sawKey = false
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trimEnd()
+    if (line.length === 0 || line.startsWith('#')) { out.push(line); continue }
+    const i = line.indexOf('=')
+    if (i < 0) { out.push(line); continue }
+    const key = line.slice(0, i)
+    const value = line.slice(i + 1)
+    if (key === 'ANTHROPIC_API_KEY') {
+      sawKey = true
+      out.push(`${key}=${value.length > 0 ? value : PLACEHOLDER_KEY}`)
+      continue
+    }
+    // 빈 값은 "설정됐지만 비어 있음"이라 `.url()` 같은 검사에 걸린다 — 아예 지워 미설정으로 만든다.
+    if (value.length === 0) continue
+    out.push(line)
+  }
+  if (!sawKey) out.push(`ANTHROPIC_API_KEY=${PLACEHOLDER_KEY}`)
+  return out.join('\n')
+}
+
 /**
  * `.env` 를 `.env.example` 에서 만든다(없을 때만 — 로컬 실 설정을 덮지 않는다).
  *
@@ -88,7 +129,7 @@ function ensureEnvFiles() {
     const example = join(ROOT, svc, '.env.example')
     if (existsSync(env)) continue
     if (!existsSync(example)) throw new Error(`${svc}/.env.example 이 없다 — compose env_file 을 만들 수 없다`)
-    copyFileSync(example, env)
+    writeFileSync(env, normalizeEnv(readFileSync(example, 'utf8')))
     made.push(svc)
   }
   return made
@@ -216,7 +257,46 @@ async function chatRoundTrip() {
   return { frames: frames.length }
 }
 
+/**
+ * `--self-test` — 순수 함수 회귀 가드.
+ *
+ * `scripts/` 에는 테스트 러너가 없다(루트 `package.json` 자체가 없다). 그래도 `normalizeEnv` 는
+ * **CI 에서만 도는 경로**라 회귀가 조용히 들어온다 — 실제로 `.env.example` 기준선이 기동되지
+ * 않는다는 사실이 로컬에서 한 번도 안 드러났다(개발자 머신엔 이미 `.env` 가 있어 복사 경로가
+ * 돌지 않는다). 스택을 띄우지 않고 1초 안에 끝나므로 CI 가 매번 부른다.
+ */
+function selfTest() {
+  const cases = [
+    ['빈 값 키는 지운다(미설정으로 만든다)', 'REMOTE_CLI_URL=\nMODE=local', (o) => !o.includes('REMOTE_CLI_URL')],
+    ['값 있는 키는 보존한다', 'REDIS_URL=redis://redis:6379', (o) => o.includes('REDIS_URL=redis://redis:6379')],
+    ['빈 API 키는 자리표시자로 채운다', 'ANTHROPIC_API_KEY=', (o) => o.includes(`ANTHROPIC_API_KEY=${PLACEHOLDER_KEY}`)],
+    ['있는 API 키는 덮지 않는다', 'ANTHROPIC_API_KEY=sk-ant-existing', (o) => o.includes('ANTHROPIC_API_KEY=sk-ant-existing')],
+    ['API 키 줄이 아예 없으면 추가한다', 'MODE=local', (o) => o.includes(`ANTHROPIC_API_KEY=${PLACEHOLDER_KEY}`)],
+    ['주석과 빈 줄은 보존한다', '# c\n\nMODE=local', (o) => o.startsWith('# c\n\n')],
+    ['= 없는 줄은 건드리지 않는다', 'BARE\nMODE=local', (o) => o.includes('BARE')],
+    ['값에 = 가 있어도 자르지 않는다', 'DATABASE_URL=postgres://a:b=c@h/d', (o) => o.includes('b=c@h/d')],
+  ]
+  let failed = 0
+  for (const [name, input, ok] of cases) {
+    if (ok(normalizeEnv(input))) { console.log(`  ✓ ${name}`) } else { console.error(`  ✗ ${name}`); failed += 1 }
+  }
+  const keyCases = [
+    ['빈 문자열은 실 키가 아니다', '', false],
+    ['자리표시자는 실 키가 아니다', PLACEHOLDER_KEY.slice(0, 10), false],
+    ['... 가 든 예시는 실 키가 아니다', 'sk-ant-...............................', false],
+    ['접두가 다르면 실 키가 아니다', 'x'.repeat(50), false],
+    ['충분히 긴 sk-ant 는 실 키다', `sk-ant-${'a'.repeat(50)}`, true],
+  ]
+  for (const [name, input, want] of keyCases) {
+    if (looksLikeRealKey(input) === want) { console.log(`  ✓ ${name}`) } else { console.error(`  ✗ ${name}`); failed += 1 }
+  }
+  if (failed > 0) throw new Error(`self-test 실패 ${failed}건`)
+  console.log(`[smoke] RESULT self-test only — ${cases.length + keyCases.length}건 통과. 스택은 띄우지 않았다.`)
+}
+
 async function main() {
+  if (process.argv.includes('--self-test')) { selfTest(); return }
+
   // `--prepare-env` 는 `.env` 생성만 하고 끝낸다. CI 의 **빌드 스텝**이 먼저 부른다 —
   // compose 는 `env_file:` 이 없으면 `build` 단계에서도 설정을 못 읽어 실패한다.
   // YAML 안에 node 한 줄을 인라인하면 따옴표가 겹쳐 깨지므로 플래그로 뺐다.

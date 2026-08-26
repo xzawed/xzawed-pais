@@ -916,6 +916,11 @@ jobs:
 
       # compose 의 env_file 은 gitignore 된 <서비스>/.env 를 가리킨다 — 신선 체크아웃엔 9개 전부
       # 없어 build 단계부터 실패한다. 스크립트가 .env.example 에서 만든다.
+      # normalizeEnv 는 CI 에서만 도는 경로다(개발자 머신엔 .env 가 이미 있어 복사 경로가 안 돈다).
+      # 스택을 띄우지 않고 1초에 끝나므로 회귀 가드로 매번 부른다.
+      - name: Self-test env normalization
+        run: node scripts/smoke-compose.mjs --self-test
+
       - name: Prepare service .env files
         run: node scripts/smoke-compose.mjs --prepare-env
 
