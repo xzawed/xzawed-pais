@@ -1,0 +1,37 @@
+# 스모크 전용 오버레이(S4.3). `docker compose -f docker-compose.yml -f docker-compose.smoke.yml` 로 얹는다.
+#
+# **왜 필요한가 — 스모크가 머신의 `.env` 에 좌우되면 안 된다.**
+# compose 의 `env_file:` 은 gitignore 된 `./<서비스>/.env` 를 가리킨다. 신선 체크아웃(CI)에는 그
+# 파일이 없어 스모크가 `.env.example` 에서 만들지만, **개발자 머신에는 이미 자기 설정이 있다.**
+# 실측으로 물렸다: `.env.example` 은 `AUTH=none` 인데 내 로컬 `.env` 는 `AUTH=jwt` 라 같은
+# 스크립트가 CI 에서는 통과하고 로컬에서는 `401 Missing token` 으로 죽었다. 그 상태로 두면
+# **CI 결과와 로컬 결과가 서로 다른 것을 검증**하고, 그것이 이 저장소가 반복해서 물린 오염원이다.
+#
+# `environment:` 는 `env_file:` 보다 우선하므로 여기 적은 값이 항상 이긴다.
+#
+# **사용자 인증 게이트는 `AUTH` 가 아니다.** `server.ts:187` 이 `(dbPool && config.userJwtSecret)`
+# 로 훅을 켠다 — `AUTH=none` 을 넣어도 이 둘이 있으면 `401 Missing token` 이 난다(실측으로 물렸다).
+# `.env.example` 에는 `USER_JWT_SECRET`·`DATABASE_URL` 이 **둘 다 없어** CI 는 인증이 꺼진 채 돌고,
+# 개발자 머신에는 보통 둘 다 있어 켜진 채 돈다. 그래서 **실제 게이트를 직접 끈다.**
+#
+# ⚠️ 여기서 고정하는 것은 **스모크가 성립하기 위한 최소한**이지 프로덕션 태세가 아니다.
+#    인증 경로 자체는 유닛·Playwright E2E 가 덮는다. 이 스모크가 보는 것은
+#    "컨테이너 11개가 뜨고 서로 말이 통하는가"다 — 그 하나를 확실히 본다.
+# **오버레이의 일은 모든 머신을 `.env.example` 기준선으로 되돌리는 것**이다. 그 기준선이 CI 가
+# 받는 것이고, 그래야 로컬에서 통과한 것이 CI 에서도 같은 것을 검증한다.
+#
+# 인증만 끄고 DB 는 남겨 봤더니 `POST /sessions` 가 **500** 이었다 — DB 스토어에 `projectId=null`
+# 세션을 만드는 조합은 CI 에도 개발 머신에도 없는, 오버레이가 만들어 낸 구성이었다. 기준선을
+# 재현한다는 것은 **둘 다** 되돌린다는 뜻이다.
+services:
+  orchestrator:
+    environment:
+      MODE: local
+      AUTH: none
+      # 빈 문자열이면 falsy → userAuthHook·dbPool 둘 다 미배선(`server.ts:55`·`:187`).
+      # `z.string().optional()` 이라 파싱은 통과한다. `.env.example` 에는 두 키가 아예 없다.
+      USER_JWT_SECRET: ""
+      DATABASE_URL: ""
+  manager:
+    environment:
+      MODE: local

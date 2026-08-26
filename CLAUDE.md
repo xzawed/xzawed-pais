@@ -187,6 +187,7 @@ node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200�
 
 - **Docker**: `docker-compose.yml` — postgres + redis + 9개 앱 서비스(총 11개). 전 서비스 `context: .` + `dockerfile: <서비스>/Dockerfile`. 에이전트 7개에 `WORKSPACE_ROOT=/workspace`, orchestrator에 `MANAGER_URL` 주입. Shared·Launcher는 compose 서비스가 아니다
 - **CPD는 경로를 주지 않으면 0개 파일을 스캔한다**(로컬). 서비스별로 좁혀 돌리면 **교차 서비스 클론이 구조적으로 안 보인다** — 저장소 전체를 한 번에 넘겨야 CI와 같은 결과가 나온다. 서비스끼리 import할 수 없어 복제가 유일한 선택인 블록은 `jscpd:ignore-start` + `replicated-block: <id>` 마커로 표시하고, 동일성은 `scripts/check-replicated-blocks.js`가 강제한다
+- **compose 스택을 실제로 띄우는 검사는 `compose-smoke` 잡 하나뿐이다(S4.3).** 다른 잡은 Actions `services:` 로 pg·redis 만 붙이고 앱은 in-process 로 돈다 — Dockerfile·compose 배선·서비스 간 실 네트워크 경로는 여기서만 검증된다. **부팅·readiness 는 항상 돌고**(config 의 API 키 검사가 `min(1)` 이라 자리표시자로 기동된다), **챗 1왕복은 `ANTHROPIC_API_KEY` 시크릿이 있을 때만** 돈다. 없으면 요약이 `roundtrip=skipped` 를 말한다 — skip 을 통과로 세지 않는다. `docker-compose.smoke.yml` 오버레이가 머신의 `.env` 차이를 지운다(로컬은 보통 인증 on, `.env.example` 은 off 라 같은 스크립트가 서로 다른 것을 검증했다)
 - **CI**: `.github/workflows/ci.yml`이 잡 목록의 정본이다 — 여기 숫자를 복사하지 않는다(복사본은 반드시 어긋난다). `all-checks-pass`의 `needs`가 **필수 잡** 집합이고, PR 전용 잡은 push에서 `skipped`가 정상이라 허용된다
 - **Dependabot**: `.github/dependabot.yml` — npm 13개 디렉토리 + github-actions 1개
 

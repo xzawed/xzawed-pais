@@ -34,7 +34,7 @@ import { ReleaseDeployGate } from './tools/deploy-gate.js'
 import { SessionGatewayConsumer } from './streams/session-gateway.js'
 import { resolveThetaByRisk, nonMonotonicThetaTiers, meetsMinRisk } from './streams/verify.js'
 import { WatcherEventConsumer } from './streams/watcher-event-consumer.js'
-import { getRedisClient, createRedisClient } from './streams/redis.client.js'
+import { getRedisClient, createRedisClient, getProbeRedisClient } from './streams/redis.client.js'
 import { RedisEventBus, BudgetCircuitBreaker, ProviderCircuitBreaker, Bulkhead } from '@xzawed/agent-streams'
 import { TaskGraphRepo } from './db/task-graph.repo.js'
 import { DispatchStore } from './db/dispatch.repo.js'
@@ -737,7 +737,9 @@ export async function buildServer(
   watcherEventConsumer.start()
 
   await app.register(healthRoute, {
-    redis: () => getRedisClient(config.REDIS_URL),
+    // S4.3: probe 전용 연결. 공유 클라이언트는 블로킹 소비(`XREADGROUP BLOCK 2000`)가 점유해
+    //       ping 이 readiness 예산(1000ms)을 항상 넘긴다 — 첫 세션 이후 영구 503 이었다.
+    redis: () => getProbeRedisClient(config.REDIS_URL),
     // sessionGateway 는 아래에서 생성된다. 접근자라 요청 시점에 평가된다.
     gatewayRunning: () => sessionGateway.isRunning(),
     pool: () => getPool(),
@@ -745,7 +747,7 @@ export async function buildServer(
   // S3.3: `/metrics` — DLQ 적재량·PEL 깊이(결함 O1). 전 서비스가 한 Redis 를 공유하므로
   // 여기 한 곳에서 훑으면 시스템 전체가 보인다(서비스별 배선 복제 없음).
   // `healthRoute` 와 같은 이유로 접근자다 — 등록이 Redis 배선보다 앞설 수 있다.
-  await app.register(metricsRoute, { redis: () => getRedisClient(config.REDIS_URL) })
+  await app.register(metricsRoute, { redis: () => getProbeRedisClient(config.REDIS_URL) })
   // 관측성: knowledge/oracle/risk 라우트는 admin/decision(authHook 없으면 미등록·fail-closed)과 달리
   // 의도적으로 authHook 없이도 등록된다(oracleRoute·riskRoute 코멘트 참조 — oracle-tier·로컬/데모 개방).
   // 다만 SERVICE_JWT_SECRET 미설정 시 이들의 쓰기(PATCH/DELETE·approve)가 무인증 노출되므로,

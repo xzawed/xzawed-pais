@@ -143,14 +143,15 @@
 | S6.3 | [#626](https://github.com/xzawed/xzawed-pais/pull/626) | 2026-08-25 | WP 산출물 런타임 포착 → 후행 입력. **예측이 아니라 포착**이라 프롬프트 변경이 없다 |
 | S5.3b | [#631](https://github.com/xzawed/xzawed-pais/pull/631) | 2026-08-26 | risk 등급을 WP 별로 — 선행은 SQL 이 아니라 **재료**였다. 판정 없는 WP 를 방치하는 것도 fail-open 이라 보수적 폴백을 남긴다 |
 | S5.4 | [#632](https://github.com/xzawed/xzawed-pais/pull/632) | 2026-08-26 | per-tier θ. **타입 교체가 배선 누락을 안 잡는다** — 조건부 spread 가 tsc 사각지대라 릴레이를 테스트로 봉인 |
+| S4.3 | [#633](https://github.com/xzawed/xzawed-pais/pull/633) | 2026-08-26 | compose 기동 + 챗 1왕복 스모크. **첫 실행에서 게이트웨이 2곳의 readiness 결함을 잡았다** — 첫 세션 이후 영구 503 |
 | S7.2 | [#628](https://github.com/xzawed/xzawed-pais/pull/628)·[#629](https://github.com/xzawed/xzawed-pais/pull/629) | 2026-08-25 | `spec_fix` 재분해 — 선행은 분기가 아니라 **재료**(intent)였다. 공백 intent 경계 5곳을 `normalizeIntent` 로 단일화 |
 | S3.3 | [#630](https://github.com/xzawed/xzawed-pais/pull/630) | 2026-08-26 | `GET /metrics` — DLQ·PEL 을 `SCAN` 으로 훑는다. **잘라내면 그 사실도 지표로** 낸다 |
 
 슬라이스가 아닌 동반 PR: [#584](https://github.com/xzawed/xzawed-pais/pull/584)(Launcher CLAUDE.md 자기모순), [#585](https://github.com/xzawed/xzawed-pais/pull/585)(단일 인스턴스 잠금 — 고아 워크트리에서 건진 미머지 작업).
 
-**남은 슬라이스는 1건이다**(2026-08-26): `S4.3` 뿐이다.
+**27슬라이스 전부 착륙했다**(2026-08-26).
 
-**사슬은 전부 풀렸고 남은 것은 판단 대기 하나뿐이다.** `S4.3`(실 왕복 스모크)은 CI 에 실 `ANTHROPIC_API_KEY` 를 넣을지에 대한 **비용·비밀 판단**이 선행이라 기술적 선행이 아니다 — 사용자 결정 전까지 착수하지 않는다.
+`S4.3` 의 선행이던 비용·비밀 판단은 **"키 없으면 skip"** 으로 결정됐다 — 부팅·readiness 는 항상 돌고 챗 왕복만 시크릿이 있을 때 돈다. 시크릿을 넣지 않으면 CI 는 영원히 왕복을 건너뛰므로, 스크립트가 요약 줄에 `roundtrip=skipped` 를 명시한다(skip 을 통과로 세지 않는다).
 
 > **`S6.2` 는 "순수 배선"이 아니었다(2026-08-24 실측).** `mergeKeepInflight` 를 그냥 부르는 것으로는 아무 효과가 없다 — 기본 in-flight 술어는 `wp.status` 를 읽는데 `graph_dag` 의 status 는 **S6.1 이후에도 영원히 `DRAFTED`** 다(`decompose/map.ts` 가 유일한 writer 이고 아무도 바꾸지 않는다). 실제 진행 상태는 `wp_state_log` 에만 있으므로 술어를 `latestStates` 에서 파생해야 실효가 생긴다. 계획서가 이 슬라이스에만 "유닛은 위음성 · pg 통합 필수"를 적어 둔 이유가 이것이었고, 실측해 보니 그 이유가 S6.1 로도 사라지지 않았다.
 >
@@ -193,7 +194,7 @@
 | S4.1 | 문서 수치·상태 정산 + `check-docs` 규칙 추가 | — | 5~8 / +40~120 | 병렬 |
 | S4.2 | CI 게이트 봉합(실패 삼킴 제거 · sonar 토큰 부재 가시화 · 판정 로직) | — | 4~6 / +40~120 | 병렬 |
 | S4.4 | 교차 서비스 클론 6건 정리 + `cpd` 필수 승격 | — | 실측치는 PR 참조 | 별도 |
-| S4.3 | 실 왕복 스모크(compose 기동) | S1.3, S3.2 | 3~6 / +150~350 | 불가 |
+| ~~S4.3~~ | ~~실 왕복 스모크(compose 기동)~~ **착륙** | S1.3, S3.2 | 3~6 / +150~350 | 불가 |
 
 ### E5 — 검증 채널 신뢰성
 
