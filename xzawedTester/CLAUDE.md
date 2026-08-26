@@ -74,7 +74,7 @@ interface TestFailure { file: string; testName: string; message: string; suggest
 **보안 패턴**
 - `validateTestCommand()`: `ALLOWED_PREFIXES`(`pnpm`, `npm`, `npx`, `yarn`, `vitest`, `jest`, `mocha`, `pytest`, `cargo test`, `go test`, `make test`) + 셸 메타문자(`;&|`$><`) 이중 차단
 - `detectTestCommand()`: `package.json scripts.test`는 신뢰하지 않음 — 의존성(`vitest`, `jest`, `mocha`) 기반 하드코딩 명령어만 반환
-- `validatePath()`: `validateWorkspaceRoot()` 호출 후 `fs.realpath`로 심볼릭 링크 우회 차단
+- `validatePath()`: `validateWorkspaceRoot()` → **`workspaceRoot` 기준 앵커** → `fs.realpath`로 심볼릭 링크 우회 차단. **상대경로는 cwd 가 아니라 `workspaceRoot` 기준으로 푼다** — 계약(루트 CLAUDE.md)이 그렇게 못박고 있는데 예전엔 원시 인자를 그대로 realpath 해 서버 프로세스 cwd 기준이었다. 절대경로는 손대지 않는다(`path.resolve(root, abs)` 는 win32 에서 POSIX 절대경로를 드라이브 상대로 재해석해 로컬↔CI 를 갈라놓는다)
 - `testFiles` 경로도 개별 `validatePath()` 적용
 
 **동작 특이사항**

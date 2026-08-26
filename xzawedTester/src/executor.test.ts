@@ -4,6 +4,7 @@ vi.mock('node:fs/promises')
 
 import { validatePath, exec } from './executor.js'
 import * as fsp from 'node:fs/promises'
+import path from 'node:path'
 
 const mockRealpath = vi.mocked(fsp.realpath)
 
@@ -156,4 +157,31 @@ test('exec: SIGTERM으로 프로세스 종료 시 SIGKILL 타이머가 정리된
   expect(killCallsAfter).toBe(killCallsBefore)
 
   vi.useRealTimers()
+})
+
+/**
+ * **상대경로는 workspaceRoot 기준이다.** 계약(루트 CLAUDE.md)이 "LLM 생성 경로는 절대경로 금지,
+ * workspaceRoot 기준 상대경로"인데 예전에는 원시 인자를 그대로 realpath 해 **서버 프로세스의 cwd**
+ * 기준으로 풀었다 — 계약대로 보낸 경로가 엉뚱한 곳을 가리켰다. xzawedSecurity 는 처음부터 이랬다.
+ */
+test('validatePath: 상대경로를 workspaceRoot 기준으로 푼다(cwd 아님)', async () => {
+  mockRealpath.mockImplementation(async (p) => String(p))
+  await expect(validatePath('unit/helper.ts', '/test-workspace'))
+    .resolves.toBe(path.resolve('/test-workspace', 'unit/helper.ts'))
+})
+
+/** 앵커를 바꿔도 봉쇄는 그대로여야 한다 — 넓힌 게 아니라 기준을 고친 것이다. */
+test('validatePath: 상대 traversal 은 여전히 거부한다', async () => {
+  mockRealpath.mockImplementation(async (p) => String(p))
+  await expect(validatePath('../../etc/passwd', '/test-workspace')).rejects.toThrow('경로 거부')
+})
+
+/**
+ * **절대경로는 바이트 그대로여야 한다.** `path.resolve(root, abs)` 를 쓰면 win32 가 POSIX
+ * 절대경로를 드라이브 상대로 재해석해 로컬만 빨개진다 — 실제로 그렇게 물렸다.
+ */
+test('validatePath: 절대경로 동작은 플랫폼 무관하게 불변이다', async () => {
+  mockRealpath.mockImplementation(async (p) => String(p))
+  await expect(validatePath('/test-workspace/abs.ts', '/test-workspace'))
+    .resolves.toBe('/test-workspace/abs.ts')
 })
