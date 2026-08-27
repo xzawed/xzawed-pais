@@ -10,7 +10,9 @@ cd packages/server && pnpm dev      # tsx watch
 cd packages/server && pnpm test <파일>
 ```
 
-`*.integration.test.ts` 33개는 DB가 없으면 **skip된다**(`TEST_DATABASE_URL ?? DATABASE_URL` 기준, 31개). `REDIS_URL`까지 보는 것은 2개뿐이다. globalSetup이 경고를 한 번 찍지만 스위트는 초록으로 끝나므로, **로컬 그린을 CI 그린으로 착각하지 말 것** — `pnpm test` 출력의 skip 수를 항상 확인한다.
+`*.integration.test.ts` 39개는 인프라가 없으면 **skip된다** — pg 게이트(`TEST_DATABASE_URL ?? DATABASE_URL`)가 36개, `REDIS_URL`까지 보는 것이 3개다. globalSetup이 경고를 한 번 찍지만 스위트는 초록으로 끝나므로, **로컬 그린을 CI 그린으로 착각하지 말 것** — `pnpm test` 출력의 skip 수를 항상 확인한다.
+
+**CI에서는 `REQUIRE_INTEGRATION`이 게이트를 fail-closed로 만든다 — 값이 게이트 이름이다.** `1`은 전 게이트, `pg`·`redis`·`pg,redis`는 그것만 요구하고, 요구한 게이트가 닫혀 있으면 globalSetup이 **throw해서 런을 죽인다**(모르는 이름도 오타로 보고 throw — 오타가 "요구 없음"으로 떨어지면 이 장치 자체가 위장 초록이다). 이름 지정이 필요했던 이유가 실측이다: pg 파일 36개가 도는 곳은 `turborepo` 잡인데 **거기엔 Redis가 없어 `=1`을 붙이면 항상 throw**했고, 그래서 붙이지 못한 채 **통합 커버리지의 대부분이 fail-closed 보호 밖**에 있었다. 지금은 `turborepo`가 `=pg`, `manager-redis-integration`이 `=1`이다.
 
 ## src/ 책임 지도
 
