@@ -44,6 +44,7 @@
 
 | 문서 | 설명 |
 |---|---|
+| [**작업 방법론**](development/methodology.md) | **기획→개발→테스트→실측→검토 파이프라인 · Claude·Grok 분담 · 문서 3종과 수명.** 프로세스 규칙의 정본 |
 | [기여 가이드](development/contributing.md) | 개발 환경, 브랜치 전략, 커밋 컨벤션, PR 기준 |
 | [코딩 컨벤션](development/conventions.md) | 전 서비스 공통 패턴 |
 | [불변식 M1~M9·N1~N8](development/invariants.md) | 코드 주석이 `M8`·`N6` 라벨로 가리키는 것들의 **정본 정의** + 각각이 실제로 강제되는 지점. **열려 있는 사람 결정**(현재 M9 권한 절 1건)은 별도 pre-code 저장소 `xzawed/xzawed-pais-senario` 의 `OPEN_DECISIONS.md` 가 갖는다 |

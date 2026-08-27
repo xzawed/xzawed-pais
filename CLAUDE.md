@@ -139,43 +139,25 @@ node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200�
 
 **Dependabot PR의 SonarCloud 실패는 코드 문제가 아니다** — bot PR은 `SONAR_TOKEN`에 접근할 수 없어 구조적으로 실패한다. 로컬 일괄 반영 후 사람 브랜치 단일 PR로 우회한다.
 
-같은 실패를 3회 반복하면 계속하기 전에 정리한다 — 시도한 것 / 각각 실패한 이유 / 아직 확인 못 한 가설. CI 로그와 도구 실제 출력을 코드 추론보다 우선한다.
-
 ## 실측 규칙
 
-수행도 검토도 실제 측정값으로만 판단한다. 아래는 이 저장소에서 실제로 대가를 치른 것들이다.
+**수행도 검토도 실제 측정값으로만 판단한다.** 방법(무엇을 언제 어떻게 재는가)은
+[작업 방법론](docs/development/methodology.md)이 정본이다. 여기에는 **이 저장소에서만 참인 것**만 남긴다.
 
-1. **문서의 주장은 코드 대조로 판정한다.** 그럴듯함은 근거가 아니다. 코드를 복사한 문서는 반드시 어긋나므로, 복사 대신 정본을 가리킨다 — 파일 트리·env 키 목록·타입 정의가 대표적이다.
-2. **바이트는 blob으로 잰다.** `git cat-file -s $(git rev-parse HEAD:<path>)`. 이 저장소는 `core.autocrlf=true`라 `wc -c`가 줄 수만큼 부풀려진 값을 준다.
-3. **자기 산출물도 반증 대상이다.** 내가 쓴 문서·커밋 메시지·PR 본문도 남이 쓴 것과 같은 기준으로 검증한다. 틀리면 조용히 고치지 말고 어디가 왜 틀렸는지 적는다.
-4. **반증을 한 방향만 걸면 결론이 못 된다.** "남겨야 한다"만 반증하고 "지워도 된다"를 반증하지 않으면, 낮은 잔존율은 삭제 근거가 아니라 미검증 상태다.
-5. **PR 초록은 master 초록이 아니다.** 머지 후 master 런을 확인한다. 저빈도 flake는 PR에서 통과하고 master에서 터진다.
-6. **재현 실패는 숨기지 않고 적는다.** 몇 회 시도했고 왜 재현되지 않는지(환경 차이)까지 남겨야 다음 사람이 같은 벽에 다시 부딪히지 않는다.
-
+1. **바이트는 blob 으로 잰다.** `git cat-file -s $(git rev-parse HEAD:<path>)` — `core.autocrlf=true` 라
+   `wc -c` 는 줄 수만큼 부풀려진 값을 준다.
+2. **문서가 코드 사실을 복사하면 반드시 어긋난다.** 복사 대신 정본을 가리킨다 — 파일 트리·env 키
+   목록·타입 정의·CI 잡 개수가 대표적이다.
+3. **PR 초록은 master 초록이 아니다.** 머지 후 master 런을 확인한다 — 저빈도 flake 는 PR 에서
+   통과하고 master 에서 터진다.
 ## AI 협업 규약
 
 역할이 겹치면 둘 다 안 쓰게 되므로 경계를 고정한다.
 
-| 협력자 | 역할 | 산출물 |
-|---|---|---|
-| **Claude** | 아키텍트·통합·머지 결정·정직성 판단 | 설계·PR·최종 판단 |
-| **Grok** | 실행·증거·2차 검증 | 후보 diff · 명령 로그 · 반증 판정 |
-| **CodeRabbit** | PR 리뷰 의견 | 리뷰 코멘트 |
+**역할 표와 위임 경계, 위임 크기, 결과를 받는 법**은
+[작업 방법론](docs/development/methodology.md#claude--grok-분담)이 정본이다 — 여기 복제하지 않는다.
 
-**Grok에 위임 가능** — 스펙이 고정됐거나 판단 없이 증거만 필요한 일: 3개 이상 파일의 기계적 편집 · 격리 워크트리 실증 · 읽기 전용 인벤토리.
-
-**Grok에 위임 금지** — Grok 스스로 자기 실패 지점으로 지목한 영역: 서비스 간 계약(tsc 사각지대) · 플래그 정직성과 live/dormant 구분 · fail-open ↔ fail-closed 의미론 · 보안 표면 · 아키텍처와 슬라이스 순서 · 범위가 모호한 "개선" 리팩터.
-
-불변 규칙 셋.
-
-1. **Grok의 출력은 항상 후보다.** 머지 결정은 Claude가 한다. 요약이 아니라 diff를 직접 본다.
-2. **Grok에는 반증 가능한 형태로 넘긴다.** 의견을 물어도 되지만, 답이 "내가 다시 확인할 수 있는 것"으로 환원되지 않으면 근거로 쓰지 않는다. 판정에는 명령과 출력이 붙어야 한다.
-3. **PASS 주장에 명령 로그가 없으면 안 돌린 것으로 취급한다.** 통합 테스트는 pg/Redis 없이 skip되므로 skip 수를 별도 확인한다.
-
-실측 — **Grok 위임은 하위 검사 총합 6~8개 이내로 쪼갠다.** 블록 수가 아니라 검사 수가 기준이다(블록 3개여도 그 안이 11개×3종이면 33개라 600초 타임아웃이 재현된다). 단일 항목은 항상 성공하고, 판단을 뺀 순수 기계 추출이 가장 안정적이다.
-
-위험 신호는 `.claude/hooks/grok-risk-signal.mjs`가 알리고 정산은 `/pr-ready`에서 한다.
-
+위험 신호는 `.claude/hooks/grok-risk-signal.mjs` 가 알리고 정산은 [`/pr-ready`](.claude/commands/pr-ready.md)에서 한다.
 ## 인프라
 
 - **`/health` 는 liveness, `/health/ready` 는 readiness다. compose healthcheck 27줄이 전부 후자를 친다.** `/health` 는 정적 200이라 의존이 다 죽어도 healthy 를 보고하는데, Launcher 가 그 신호로 `running` 을 판정하고 마법사가 완료를 판정한다 — 기능적으로 죽은 스택이 "완료"로 통과했다. readiness 는 Redis·소비 루프·DB 를 실제로 친다
@@ -194,6 +176,7 @@ node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200�
 ## 문서
 
 - 전체 인덱스 → [docs/README.md](docs/README.md)
+- **작업 방법론(기획·개발·테스트·실측·검토, Claude·Grok 분담) → [docs/development/methodology.md](docs/development/methodology.md)**
 - 기본 실행 vs 플래그 게이트 → [docs/LIVE_VS_FLAGGED.md](docs/LIVE_VS_FLAGGED.md)
 - 테스트 패턴·E2E → [docs/development/testing-patterns.md](docs/development/testing-patterns.md)
 - 보안 패턴 → [docs/development/security-patterns.md](docs/development/security-patterns.md) · 코드 주석의 `M8`·`N6` 라벨 정본 → [invariants.md](docs/development/invariants.md)(전부 강제되는 것은 아니다 — 표의 "강제 지점" 열을 본다)

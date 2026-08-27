@@ -8,8 +8,8 @@ xzawedOrchestrator에 기여해주셔서 감사합니다. 이 문서는 개발 �
 
 ### Prerequisites
 
-- Node.js 20 이상
-- pnpm 9 이상 (`npm install -g pnpm`)
+- Node.js 22 이상
+- pnpm 10 이상 (`npm install -g pnpm`)
 - Redis 7 이상 (선택 사항 — 없으면 인메모리 폴백 사용)
 - Claude CLI (선택 사항 — `CLAUDE_MODE=cli` 사용 시 필요)
 
@@ -63,8 +63,7 @@ cd packages/server && pnpm test:watch
 
 | 브랜치 | 용도 |
 |--------|------|
-| `main` | 릴리스 준비 완료 코드. 직접 푸시 금지 |
-| `develop` | 통합 브랜치. PR 대상 기본 브랜치 |
+| `master` | 유일한 기본 브랜치. 직접 푸시 금지 · 모든 변경은 PR |
 | `feat/*` | 새 기능 개발 |
 | `fix/*` | 버그 수정 |
 | `docs/*` | 문서 변경 |
