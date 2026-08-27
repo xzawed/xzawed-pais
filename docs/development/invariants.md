@@ -28,7 +28,7 @@ WBS로 분해된 작업을 전문 에이전트가 나눠 수행하고, **사람�
 | **M6** | 모든 에이전트 작업은 `(workflow_id, step_id, attempt_id)` 로 **멱등** | `types/event-envelope.ts` `idempotencyKey` · shared `BaseConsumer` dedup | **상시**(shared 소비자 경로) |
 | **M7** | 모든 이벤트는 `correlationId` + `causationId` 로 **분산 트레이스**를 형성 | `types/event-envelope.ts` — `correlationId` 는 `.min(1)` 필수, **`causationId` 는 `.nullable()`**(루트 이벤트는 원인이 없다) | **강제**(Zod). 단 `causationId: null` 은 유효한 값이라 "인과가 항상 있다"로 읽으면 안 된다 |
 | **M8** | 모든 실패는 **에스컬레이션 사다리**를 따른다. 무음 실패·하드 크래시 금지, 항상 *알려진* 강등 모드 | 소비자 DLQ 격리 · `recordOutcome` · 기동 경고 | **상시** — 코드 14개 파일이 이 라벨을 인용 |
-| **M9** | 사람의 결정·사인오프는 **append-only·귀속·부인방지** 기록 | `migrations/011_decisions.sql` | **규약** — DB 에 `REVOKE`·트리거·룰 **없음**. 런타임 TypeScript 의 `UPDATE`/`DELETE` 는 0건이지만 **마이그레이션은 이미 한 번 고쳐 썼다**(아래 참조) |
+| **M9** | 사람의 결정·사인오프는 **append-only·귀속·부인방지** 기록이며 **권한(authority) 검증 하에서만** 효력 | `migrations/011_decisions.sql` · Orchestrator `api/decisions.route.ts` · Manager `api/decision.route.ts` | **세 조각이 서로 다르다** — 귀속은 **경로별**(Orchestrator 경유는 JWT `sub` 로 덮어쓰기, Manager 직행은 body 값 신뢰), append-only 는 **규약**(DB 에 `REVOKE`·트리거·룰 없음), **권한 검증은 없다**(아래) |
 
 ## MUST NOT
 
@@ -62,9 +62,52 @@ WBS로 분해된 작업을 전문 에이전트가 나눠 수행하고, **사람�
 grep 해서 `.sql` 을 놓친 것이고, Grok 반증이 잡았다. **불변식 문서가 코드보다 많이 주장하면
 그 문서가 곧 다음 사고의 원인이 된다.**
 
+## M9 의 권한 절 — 컬럼은 있고 검증은 없다
+
+이 문서 초판은 M9 에서 **"권한 검증 하에서만 효력"이라는 절을 통째로 빠뜨렸다.** 정본 파일이
+조항을 지우면 그 조항은 시야에서 사라지고, 지켜지지 않는다는 사실조차 남지 않는다. 복원하고
+실제 상태를 적는다.
+
+**`human_decisions.authority` 와 `sign_offs.authority_level` 은 죽은 컬럼이다**(2026-08-27 실측,
+Grok 반증 통과).
+
+- **값을 넣는 프로덕션 호출부가 0개다.** `recordDecision` 은 `api/decision.route.ts` 한 곳,
+  `recordSignOff` 는 `streams/decision-consumer.ts` 두 곳뿐이고 세 객체 리터럴 어디에도 그 키가
+  없다. Zod 기본값이 `null` 이라 **모든 행이 NULL 로 들어간다**
+- **읽고 판정하는 곳도 0개다.** 비교·분기·게이트 등장 0건. 릴리스·강등 사인오프 조회는
+  `scope` 와 요청 `type` 으로만 조인한다
+- `authority_level` 은 **행 매핑조차 없다**(`rowToSignOff` 부재)
+- `011`~`020` 마이그레이션에 `DEFAULT`·트리거·후속 채움 없음. 클라이언트 입력 경로도 없다
+
+**"귀속이 강제된다"도 경로를 봐야 한다.** 두 진입점의 신뢰 모델이 다르다.
+
+| 경로 | `decidedBy` 출처 | 게이트 |
+|---|---|---|
+| Orchestrator 프록시 | **인증 사용자의 JWT `sub`** — client 가 보낸 값은 버린다 | `userAuthHook`(= `dbPool` + `userJwtSecret`) 주입 시 사용자 JWT. 미주입이면 POST 가 무인증이고 `decidedBy` 는 `'local-user'` 로 떨어진다. 소유권 게이트는 `userAuthHook` **과** `pool` 이 둘 다 있을 때만 |
+| Manager 라우트 직행 | **요청 body 값을 그대로** (`z.string().min(1)`) | `shouldWireDecisionRoute(routing, hasPool, hasAuth)` 가 `'wire'` 일 때만 등록된다 — `MANAGER_DECISION_ROUTING` · DB pool · 서비스 JWT(`SERVICE_JWT_SECRET`) **셋 다** 필요. 셋째만 빠지면 `'warn'`(경고 후 미등록), 앞 둘이 빠지면 `'skip'`(조용히 미등록). **무인증 등록 경로는 없다** |
+
+즉 신원 위조 방어는 Orchestrator 경계에 있고, Manager 쪽 신뢰 경계는 **"서비스 토큰을 가진
+호출자는 신원을 주장할 수 있다"** 이다. 무인증 노출은 없지만(라우트 미등록), 문서가 "항상 JWT
+주체로 귀속된다"고 읽히면 틀린다.
+
+그리고 어느 경로든 막혀 있지 않은 것은 **"그 신원이 이 결정을 낼 자격이 있는가"** 다.
+
+**함정.** repo 타입은 이미 `authority?: string | null` 을 **받는다**. 누군가 값을 넘기기 시작하면
+스키마 변경 없이 조용히 채워지고, 그 순간 "권한이 기록되니까 검증된다"는 오독이 생긴다.
+**기록과 검증은 다르다.** 권한 모델을 도입할지, 아니면 "소유자=전권"을 명시적으로 수용하고 이
+절을 걷어낼지는 아직 **열린 사람 결정**이다 — 아래 "출처"의 `OPEN_DECISIONS.md` D-1 에 선택지와
+강제 지점 후보가 적혀 있다.
+
 ## 출처
 
-원문은 `xzawed/xzawed-pais-senario` 의 `xzawedPAIS_handoff_spec.md` §1(v5). 그 저장소의 로드맵
-기능은 끝났다 — Phase 0~6 산출물 24개 중 23개가 이 저장소에 구현돼 있고 유일한 미완은 saga 보상이다.
-설계 근거를 더 파려면 그쪽의 확정 문서 5종(`ORACLE_SCHEMA`·`VERIFICATION_ADVERSARIAL_STRATEGY`·
-`WIKI_AGENT_RISK_CLASSIFICATION`·`HUMAN_DECISION_PERSISTENCE`·`OPERATIONS_DECISIONS`)을 본다.
+원문은 `xzawed/xzawed-pais-senario` 의 `xzawedPAIS_handoff_spec.md` §1(v5). **비공개 저장소이고
+여기서 `docs/senario/` 로 gitignore 라 이 저장소를 clone 해도 없다** — 그래서 정본을 이 파일로
+옮겼다. 저쪽은 이제 **"아직 코드가 아닌 것"만** 두는 pre-code 저장소다(로드맵·상태 원장 제거됨).
+
+거기서 지금도 볼 것은 둘이다.
+
+- **`OPEN_DECISIONS.md`** — 열려 있는 사람 결정. 지금은 위의 **M9 권한 절(D-1)** 하나다.
+  **이 불변식들이 코드보다 많이 주장하게 되는 지점이 거기 모인다** — M9 를 손대기 전에 본다
+- 확정 설계 문서 5종 — `ORACLE_SCHEMA` · `VERIFICATION_ADVERSARIAL_STRATEGY` ·
+  `WIKI_AGENT_RISK_CLASSIFICATION` · `HUMAN_DECISION_PERSISTENCE` · `OPERATIONS_DECISIONS`.
+  **설계 근거**로만 읽는다(구현 여부는 코드에서 측정한다)
