@@ -40,9 +40,16 @@ function summarizeArtifacts(result: unknown): string {
 }
 
 /**
- * P4 advisory(optimization 렌즈) 최소 생산자. **best-effort never-throw** — 게이트(verifyWp)가 verdict.ok를
- * 낸 뒤 호출되며, 어떤 실패(LLM throw·파싱 실패·DB throw)도 삼켜 완료 결정에 영향 0(N3). findings 비면 no-op.
+ * P4 advisory(optimization 렌즈) 최소 생산자. **best-effort never-throw** — 어떤 실패(LLM throw·
+ * 파싱 실패·DB throw)도 삼켜 완료 결정에 영향 0(N3). findings 비면 no-op.
  * advisory는 비차단·정보성이라 LLM 판정 허용(N1/N6는 차단 게이트만 구속, spec §9).
+ *
+ * **호출 조건을 "verdict.ok 뒤"로 읽으면 안 된다.** 워커는 `runVerifyGate` 가 outcome 을 반환하지
+ * 않았을 때 이것을 부르는데, `verifyEnabled` 가 false 면 그 게이트는 **판정 없이 null(=계속)** 을
+ * 낸다. 즉 검증 게이트가 꺼져 있어도 advisory 는 생산된다(`worker.advisory.test.ts` N3-a 가
+ * `verifyEnabled:false` 로 그것을 단언한다). 실제 전제는 **실행 워커 배선 + advisoryStore + LLM seam**
+ * 이다. 이 주석이 원래 "verdict.ok 를 낸 뒤"라고 적고 있었고, 같은 오해가 기동 경고에도 복제돼
+ * 운영자에게 "advisory 가 동작하지 않는다"는 거짓을 알렸다 — 판정은 `startup-warnings.ts` 가 갖는다.
  */
 export async function produceAdvisory(
   workflowId: string, wp: WorkPackage, attempt: number, result: unknown, deps: AdvisoryProducerDeps,

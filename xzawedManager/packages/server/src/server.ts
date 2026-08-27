@@ -32,7 +32,7 @@ import { createSwitchProjectHandler } from './tools/switch-project.js'
 import { createDeployProjectHandler } from './tools/deploy-project.js'
 import { ReleaseDeployGate } from './tools/deploy-gate.js'
 import { SessionGatewayConsumer } from './streams/session-gateway.js'
-import { resolveThetaByRisk, nonMonotonicThetaTiers, meetsMinRisk } from './streams/verify.js'
+import { resolveThetaByRisk } from './streams/verify.js'
 import { WatcherEventConsumer } from './streams/watcher-event-consumer.js'
 import { getRedisClient, createRedisClient, getProbeRedisClient } from './streams/redis.client.js'
 import { RedisEventBus, BudgetCircuitBreaker, ProviderCircuitBreaker, Bulkhead } from '@xzawed/agent-streams'
@@ -45,8 +45,8 @@ import { AdvisoryRepo } from './db/advisory.repo.js'
 import { ReleaseGateRepo } from './db/release-gate.repo.js'
 import { VerificationFailureRepo } from './db/verification-failure.repo.js'
 import { WpOutputRepo } from './db/wp-output.repo.js'
-import { releaseGateWarnings } from './streams/server-release-gate.js'
 import { resolveLeaseVisibilityMs } from './streams/lease-visibility.js'
+import { startupWarnings } from './startup-warnings.js'
 import { oracleRoute } from './api/oracle.route.js'
 import { decisionRoute } from './api/decision.route.js'
 import { riskRoute } from './api/risk.route.js'
@@ -219,15 +219,6 @@ export async function buildServer(
         config.MANAGER_MODE_SWEEP_MS,
       )
     : undefined
-  if (config.MANAGER_DEGRADED_MODE && !budget && !providerCircuit) {
-    app.log.warn('MANAGER_DEGRADED_MODE=true 이지만 budget/provider 서킷이 둘 다 미구성 — 강등 신호원이 없습니다.')
-  }
-  if (config.MANAGER_DEGRADED_ENFORCE && !config.MANAGER_DEGRADED_MODE) {
-    app.log.warn('MANAGER_DEGRADED_ENFORCE=true 이지만 MANAGER_DEGRADED_MODE=false — 모드 추적 없이는 enforcement가 무력합니다.')
-  }
-  if (config.MANAGER_DEGRADED_ENFORCE && !config.TASK_MANAGER_ENABLED) {
-    app.log.warn('MANAGER_DEGRADED_ENFORCE=true 이지만 TASK_MANAGER_ENABLED=false — Supervisor가 없어 디스패치 보류/재개가 무력합니다.')
-  }
   const runner = new ClaudeRunner(client, config.CLAUDE_MODEL, registry, knowledgeRepo, undefined, budget, providerCircuit)
   const producer = new StreamProducer(config.REDIS_URL)
   const sessionStore = new SessionStore(sessionRepo, eventStore)
@@ -308,49 +299,6 @@ export async function buildServer(
     registry.register(createDeployProjectHandler(config.GITHUB_TOKEN, config.REDIS_URL, deployGate))
   }
 
-  // P5-2b: 전제 누락 시 오진 방지 경고.
-  if (config.MANAGER_DEPLOY_GATE && !config.MANAGER_RELEASE_GATE) {
-    app.log.warn('MANAGER_DEPLOY_GATE=true 이지만 MANAGER_RELEASE_GATE가 꺼져 있어 게이트가 기록되지 않아 deploy 검사가 항상 허용됩니다.')
-  }
-  if (config.MANAGER_DEPLOY_GATE && !pool) {
-    app.log.warn('MANAGER_DEPLOY_GATE=true 이지만 DATABASE_URL이 없어 게이트 조회 불가 — deploy 검사가 비활성입니다.')
-  }
-
-  // D5: 초안 영속은 decomposition consumer(=Supervisor)가 돌아야 하므로 TASK_MANAGER_ENABLED+DATABASE_URL이 전제다.
-  // DRAFT만 켜고 그 전제가 없으면 producer가 oracleDrafts를 emit해도 소비자 부재로 영속되지 않는다 — 오진 방지 경고.
-  if (config.MANAGER_ORACLE_DRAFT && !(config.TASK_MANAGER_ENABLED && pool)) {
-    app.log.warn(
-      'MANAGER_ORACLE_DRAFT=true 이지만 TASK_MANAGER_ENABLED+DATABASE_URL 전제가 없어 초안 오라클이 영속되지 않습니다(소비자 부재).',
-    )
-  }
-  // F5: invariant 초안 생성 오진 방지 — DRAFT off면 부착 대상 OracleDraft 자체가 없어 no-op,
-  // WP_PROPERTY off면 invariant가 생성·승인되나 검증 채널이 소비하지 않아 휴면.
-  if (config.MANAGER_ORACLE_INVARIANTS && !config.MANAGER_ORACLE_DRAFT) {
-    app.log.warn('[oracle] MANAGER_ORACLE_INVARIANTS=true이나 MANAGER_ORACLE_DRAFT off — 초안 파이프라인 부재로 invariant 초안이 생성되지 않습니다(no-op).')
-  }
-  if (config.MANAGER_ORACLE_INVARIANTS && !config.MANAGER_WP_PROPERTY) {
-    app.log.warn('[oracle] MANAGER_ORACLE_INVARIANTS=true이나 MANAGER_WP_PROPERTY off — invariant가 생성·승인되나 property 채널이 소비하지 않습니다(휴면).')
-  }
-
-  // P4-1 D5: 실행 워커는 Supervisor(decomposition·dispatch) + getGraph가 전제이므로 TASK_MANAGER_ENABLED+DATABASE_URL 필요.
-  // 전제 없이 MANAGER_TASK_WORKER만 켜면 워커가 배선되지 않아 dispatch된 WP가 실행되지 않는다 — 오진 방지 경고.
-  if (config.MANAGER_TASK_WORKER && !(config.TASK_MANAGER_ENABLED && pool)) {
-    app.log.warn(
-      'MANAGER_TASK_WORKER=true 이지만 TASK_MANAGER_ENABLED+DATABASE_URL 전제가 없어 실행 워커가 배선되지 않습니다(WP 미실행).',
-    )
-  }
-  // 역: Supervisor는 배선되나 실행 워커가 없으면 dispatch된 WP가 DISPATCHED에서 무음 정지한다
-  // (아무도 wp.dispatch_signal을 소비하지 않아 lease 만료→escalation으로만 드러남). 조용한 stall 오진 방지 경고.
-  if (config.TASK_MANAGER_ENABLED && pool && !config.MANAGER_TASK_WORKER) {
-    app.log.warn(
-      'TASK_MANAGER_ENABLED=true 이지만 MANAGER_TASK_WORKER=false — Supervisor가 WP를 DISPATCHED로 올리나 실행 워커가 없어 WP가 무음 정지합니다(lease 만료 시 escalation으로만 드러남).',
-    )
-  }
-
-  // P4b-1: 검증 게이트는 워커가 배선돼야 의미가 있다 — 전제 없이 켜면 무동작. 오진 방지 경고.
-  if (config.MANAGER_WP_VERIFY && !config.MANAGER_TASK_WORKER) {
-    app.log.warn('MANAGER_WP_VERIFY=true 이지만 MANAGER_TASK_WORKER가 꺼져 있어 검증 게이트가 동작하지 않습니다.')
-  }
   // G8: lease 가시성 auto-tune — 활성 검증 채널이 요구하는 가시성 바닥값을 계산해 configured가 낮으면 자동 상향한다
   // (올리기만·낮추진 않음). verify/security=360s(120s×3), heavy(conformance/impact/property/mutation)=600s.
   // 이전에는 채널별로 "가시성이 낮다"는 경고 4개를 냈으나(운영자가 수동 교정해야 함), 프리미엄 목표상 자동 교정한다.
@@ -369,142 +317,33 @@ export async function buildServer(
     )
   }
 
-  // P4b-2: conformance 채널은 verifyWp 안에서만 동작하므로 MANAGER_WP_VERIFY가 꺼져 있으면 무동작(무음 no-op).
-  // 전제 없이 켜면 사용자가 오라클 검증을 기대하나 아무 일도 일어나지 않으므로 오진 방지 경고(검증 게이트 패턴 연장).
-  if (config.MANAGER_WP_CONFORMANCE && !config.MANAGER_WP_VERIFY) {
-    app.log.warn('MANAGER_WP_CONFORMANCE=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 conformance 채널이 동작하지 않습니다(verifyWp 미경유).')
-  }
-  // P4b-2: conformance는 approvedOracleForStory(=OracleRepo)를 필요로 한다 — pool 없거나 oracleStore 부재면
-  // conformance가 항상 skip된다(설계 결정 #5: 채널 부재 ≠ 불확실, brick 안 함). 전역 설정 결함 가시화.
-  if (config.MANAGER_WP_CONFORMANCE && !oracleStore) {
-    app.log.warn('MANAGER_WP_CONFORMANCE=true 이지만 oracleStore(DATABASE_URL+OracleRepo)가 없어 conformance가 항상 skip됩니다.')
-  }
-  // (G8: conformance 가시성 하한 경고는 lease auto-tune으로 대체 — 위 resolveLeaseVisibilityMs가 600s로 자동 상향.)
-
-  // P4: impact는 verifyWp 안 develop_code 경로에서만 동작하므로 MANAGER_WP_VERIFY off면 무음 no-op. 오진 방지 경고.
-  if (config.MANAGER_WP_IMPACT && !config.MANAGER_WP_VERIFY) {
-    app.log.warn('MANAGER_WP_IMPACT=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 impact 채널이 동작하지 않습니다(verifyWp 미경유).')
-  }
-  // P4: impact는 approvedGoldensForStory(=OracleRepo)를 필요로 한다 — pool/oracleStore 부재면 항상 skip. 전역 결함 가시화.
-  if (config.MANAGER_WP_IMPACT && !oracleStore) {
-    app.log.warn('MANAGER_WP_IMPACT=true 이지만 oracleStore(DATABASE_URL+OracleRepo)가 없어 impact가 항상 skip됩니다.')
-  }
-
-  // P4: property는 verifyWp 안 develop_code 경로에서만 동작하므로 MANAGER_WP_VERIFY off면 무음 no-op. 오진 방지 경고.
-  if (config.MANAGER_WP_PROPERTY && !config.MANAGER_WP_VERIFY) {
-    app.log.warn('MANAGER_WP_PROPERTY=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 property 채널이 동작하지 않습니다(verifyWp 미경유).')
-  }
-  // P4: property는 approvedInvariantsForStory(=OracleRepo)를 필요로 한다 — pool/oracleStore 부재면 항상 skip. 전역 결함 가시화.
-  if (config.MANAGER_WP_PROPERTY && !oracleStore) {
-    app.log.warn('MANAGER_WP_PROPERTY=true 이지만 oracleStore(DATABASE_URL+OracleRepo)가 없어 property가 항상 skip됩니다.')
-  }
-
-  // P4: mutation은 verifyWp 안 develop_code 경로에서만 동작하므로 MANAGER_WP_VERIFY off면 무음 no-op. 오진 방지 경고.
-  if (config.MANAGER_WP_MUTATION && !config.MANAGER_WP_VERIFY) {
-    app.log.warn('MANAGER_WP_MUTATION=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 mutation 채널이 동작하지 않습니다(verifyWp 미경유).')
-  }
-  // (G8: mutation 가시성 하한 경고는 lease auto-tune으로 대체 — 위 resolveLeaseVisibilityMs가 600s로 자동 상향.)
-  // G7: mutation은 wp.risk >= MANAGER_MUTATION_MIN_RISK(기본 HIGH)일 때만 발화하는데, wp.risk는 risk 분류→승인→
-  // 라우팅 체인이 HIGH로 write-back해야 올라간다. min-risk=HIGH인데 그 체인(RISK_CLASSIFY+RISK_ROUTING)이
-  // 불완전하면 wp.risk는 기본 MEDIUM에 머물러 mutation이 **항상 skip**된다(무음 no-op·W7). 이를 표면화한다.
-  if (
-    config.MANAGER_WP_MUTATION &&
-    config.MANAGER_WP_VERIFY &&
-    config.MANAGER_MUTATION_MIN_RISK === 'HIGH' &&
-    (!config.MANAGER_RISK_CLASSIFY || !config.MANAGER_RISK_ROUTING)
-  ) {
-    app.log.warn(
-      'MANAGER_WP_MUTATION=true·MANAGER_MUTATION_MIN_RISK=HIGH 인데 risk write-back 체인(MANAGER_RISK_CLASSIFY+MANAGER_RISK_ROUTING)이 불완전해 wp.risk가 기본 MEDIUM에 머물러 mutation이 항상 skip됩니다(무음 no-op). risk 체인을 켜 HIGH 승인·write-back하거나, MANAGER_MUTATION_MIN_RISK를 MEDIUM/LOW로 낮추세요.',
-    )
-  }
-  // S5.4: per-tier θ 를 설정했는데 min-risk 가 그 등급을 애초에 걸러 내면 그 값은 **닿지 않는다.**
-  // 켜 놓고 아무 일도 안 일어나는 것이 이 채널의 상습 함정이라(위 경고와 같은 이유) 표면화한다.
-  const thetaTiers = resolveThetaByRisk(config.MANAGER_MUTATION_THETA, {
-    LOW: config.MANAGER_MUTATION_THETA_LOW,
-    MEDIUM: config.MANAGER_MUTATION_THETA_MEDIUM,
-    HIGH: config.MANAGER_MUTATION_THETA_HIGH,
-  })
-  if (config.MANAGER_WP_MUTATION && config.MANAGER_WP_VERIFY) {
-    const unreachable = (['LOW', 'MEDIUM'] as const).filter(
-      (t) => config[`MANAGER_MUTATION_THETA_${t}`] !== undefined
-        && !meetsMinRisk(t, config.MANAGER_MUTATION_MIN_RISK),
-    )
-    if (unreachable.length > 0) {
-      app.log.warn(
-        `MANAGER_MUTATION_THETA_${unreachable.join('·')} 를 설정했지만 MANAGER_MUTATION_MIN_RISK=${config.MANAGER_MUTATION_MIN_RISK} 가 그 등급을 mutation 대상에서 제외해 이 θ 는 적용되지 않습니다. min-risk 를 낮추거나 해당 θ 설정을 제거하세요.`,
-      )
-    }
-    // 위 G7 경고는 min-risk=HIGH 만 본다. 그런데 **리스크 체인이 꺼져 있으면 min-risk 와 무관하게
-    // 전 WP 가 분해 기본값 MEDIUM 에 머문다** — 그러면 LOW·HIGH 티어의 θ 는 영원히 닿지 않는다.
-    // min-risk 를 MEDIUM 으로 낮춰 mutation 이 *돌기는 하는* 구성에서는 G7 이 침묵하므로 별도로 알린다
-    // (Grok 반증이 짚은 사각지대 — 켜 놓고 아무 일도 안 일어나는 것이 이 채널의 상습 함정이다).
-    const chainIncomplete = !config.MANAGER_RISK_CLASSIFY || !config.MANAGER_RISK_ROUTING
-    const deadTiers = (['LOW', 'HIGH'] as const).filter((t) => config[`MANAGER_MUTATION_THETA_${t}`] !== undefined)
-    if (chainIncomplete && deadTiers.length > 0) {
-      app.log.warn(
-        `MANAGER_MUTATION_THETA_${deadTiers.join('·')} 를 설정했지만 risk 분류·라우팅 체인(MANAGER_RISK_CLASSIFY+MANAGER_RISK_ROUTING)이 불완전해 모든 WP 의 risk 가 기본 MEDIUM 에 머뭅니다 — 이 θ 는 적용되지 않습니다. risk 체인을 켜세요.`,
-      )
-    }
-    // 저위험 WP 에 고위험보다 엄격한 바닥을 요구하는 것은 거의 항상 오타다. 다만 보안 불변식이
-    // 아니라 캘리브레이션 취향이라 거부하지 않고 알리기만 한다.
-    if (nonMonotonicThetaTiers(thetaTiers)) {
-      app.log.warn(
-        `mutation θ 가 등급 순서를 거스릅니다(LOW=${thetaTiers.LOW}·MEDIUM=${thetaTiers.MEDIUM}·HIGH=${thetaTiers.HIGH}). 저위험 WP 에 고위험보다 엄격한 바닥을 요구하고 있는지 확인하세요.`,
-      )
-    }
-  }
-
-  // P4 4d: security는 verifyWp 안 develop_code 경로에서만 동작하므로 MANAGER_WP_VERIFY off면 무음 no-op. 오진 방지 경고.
-  if (config.MANAGER_WP_SECURITY && !config.MANAGER_WP_VERIFY) {
-    app.log.warn('MANAGER_WP_SECURITY=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 security 채널이 동작하지 않습니다(verifyWp 미경유).')
-  }
-  // (G8: security 가시성 하한 경고는 lease auto-tune으로 대체 — 위 resolveLeaseVisibilityMs가 360s로 자동 상향.)
-
-  // P4: advisory는 verdict.ok 후(verifyWp 경로) develop_code WP에만 생산되므로 MANAGER_WP_VERIFY가 꺼져 있으면
-  // 무동작(무음 no-op). 전제 없이 켜면 사용자가 제안을 기대하나 아무 일도 없으므로 오진 방지 경고.
-  if (config.MANAGER_WP_ADVISORY && !config.MANAGER_WP_VERIFY) {
-    app.log.warn('MANAGER_WP_ADVISORY=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 advisory 채널이 동작하지 않습니다(verdict.ok 경로 미경유).')
-  }
-  // P4: advisory는 AdvisoryRepo(=DATABASE_URL)가 없으면 영속되지 않는다(advisoryStore 부재 → advisoryEnabled=false). 가시화.
-  if (config.MANAGER_WP_ADVISORY && !pool) {
-    app.log.warn('MANAGER_WP_ADVISORY=true 이지만 DATABASE_URL이 없어 advisory가 영속되지 않습니다(AdvisoryRepo 부재).')
-  }
-
-  // P6: 결정 라우팅은 라우팅할 결정 브리프(=MANAGER_DECISION_BRIEF가 생성하는 defect_brief DecisionRequest)가 있어야
-  // fix_reverify가 의미를 가진다 — BRIEF off면 escalation이 브리프로 영속되지 않아 라우팅 대상이 비어 있다. 오진 방지 경고.
-  if (config.MANAGER_DECISION_ROUTING && !config.MANAGER_DECISION_BRIEF) {
-    app.log.warn('MANAGER_DECISION_ROUTING=true 이지만 MANAGER_DECISION_BRIEF가 꺼져 있어 라우팅할 결정 브리프가 생성되지 않습니다.')
-  }
-  // P5-2a: 사인오프 라우팅은 릴리스 게이트(gate.blocked 발행)와 결정 라우팅(decision.recorded 소비) 전제.
-  // 하나라도 off면 gate.blocked 미발행/미소비로 사인오프 미생성 — 오진 방지 경고.
-  if (config.MANAGER_RELEASE_SIGNOFF && (!config.MANAGER_RELEASE_GATE || !config.MANAGER_DECISION_ROUTING)) {
-    app.log.warn('MANAGER_RELEASE_SIGNOFF는 MANAGER_RELEASE_GATE+MANAGER_DECISION_ROUTING 전제 — gate.blocked 미발행/미소비 시 사인오프 미생성')
-  }
-  // N2: DEGRADED HIGH-risk 사인오프 전제 누락 시 오진 방지 경고.
-  if (config.MANAGER_DEGRADED_SIGNOFF && (!pool || !config.MANAGER_DEGRADED_ENFORCE || !config.MANAGER_DECISION_ROUTING)) {
-    app.log.warn('MANAGER_DEGRADED_SIGNOFF는 MANAGER_DEGRADED_ENFORCE(getMode)+MANAGER_DECISION_ROUTING+DATABASE_URL 전제 — 미충족 시 DEGRADED HIGH-risk 사인오프 비활성')
-  }
-
-  // B1: 결정 만료 sweep은 pool(=DATABASE_URL)이 필수 — pool 없으면 DecisionRepo 미생성·sweep 미배선.
-  if (config.MANAGER_DECISION_EXPIRY && !pool) {
-    app.log.warn('MANAGER_DECISION_EXPIRY=true 이지만 DATABASE_URL이 없어 결정 만료 sweep이 비활성입니다.')
-  }
-  // B1: sweep·expiresAt 주입은 Supervisor 안에서만 동작 — Supervisor는 TASK_MANAGER_ENABLED+pool 시만 배선됨.
-  // TASK_MANAGER_ENABLED=false면 createSupervisor 미호출 → DecisionSweeper 미생성 → silent no-op.
-  if (config.MANAGER_DECISION_EXPIRY && pool && !config.TASK_MANAGER_ENABLED) {
-    app.log.warn('MANAGER_DECISION_EXPIRY=true 이지만 TASK_MANAGER_ENABLED가 꺼져 있어 Supervisor가 미배선 — 결정 만료 sweep·expiresAt 주입이 비활성입니다.')
-  }
-
-  // P5-1: 릴리스 게이트 전제 누락 시 오진 방지 경고(순수 헬퍼 위임·테스트 가능).
-  for (const msg of releaseGateWarnings({
-    releaseGate: config.MANAGER_RELEASE_GATE, taskManager: config.TASK_MANAGER_ENABLED,
-    wpVerify: config.MANAGER_WP_VERIFY, hasPool: pool !== undefined,
+  // 기동 경고는 startup-warnings.ts 의 순수 함수 하나가 판정한다. **여기서 조건을 다시 쓰지 않는다** —
+  // 이 파일은 buildServer 배선을 통째로 끌고 와 테스트가 부르지 못하고(라인 1/236·분기 0/396), 그래서
+  // 인라인 경고는 한 번도 검증된 적이 없었다. 실제로 advisory 경고가 사실과 반대였다(startup-warnings.ts).
+  for (const msg of startupWarnings({
+    taskManager: config.TASK_MANAGER_ENABLED, taskWorker: config.MANAGER_TASK_WORKER,
+    decompose: config.MANAGER_DECOMPOSE_ENABLED,
+    degradedMode: config.MANAGER_DEGRADED_MODE, degradedEnforce: config.MANAGER_DEGRADED_ENFORCE,
+    degradedSignoff: config.MANAGER_DEGRADED_SIGNOFF,
+    deployGate: config.MANAGER_DEPLOY_GATE, releaseGate: config.MANAGER_RELEASE_GATE,
+    releaseSignoff: config.MANAGER_RELEASE_SIGNOFF,
+    oracleDraft: config.MANAGER_ORACLE_DRAFT, oracleInvariants: config.MANAGER_ORACLE_INVARIANTS,
+    oracleDecision: config.MANAGER_ORACLE_DECISION, goldenSignoff: config.MANAGER_GOLDEN_SIGNOFF,
+    wpVerify: config.MANAGER_WP_VERIFY, wpConformance: config.MANAGER_WP_CONFORMANCE,
+    wpImpact: config.MANAGER_WP_IMPACT, wpProperty: config.MANAGER_WP_PROPERTY,
+    wpMutation: config.MANAGER_WP_MUTATION, wpSecurity: config.MANAGER_WP_SECURITY,
+    wpAdvisory: config.MANAGER_WP_ADVISORY,
+    decisionBrief: config.MANAGER_DECISION_BRIEF, decisionRouting: config.MANAGER_DECISION_ROUTING,
+    decisionExpiry: config.MANAGER_DECISION_EXPIRY,
+    riskClassify: config.MANAGER_RISK_CLASSIFY, riskRouting: config.MANAGER_RISK_ROUTING,
+    riskDecision: config.MANAGER_RISK_DECISION, modelRouting: config.MANAGER_MODEL_ROUTING,
+    // 파생 상태는 플래그로 재계산하지 않고 **실제로 만들어진 것**을 넘긴다.
+    hasPool: pool !== undefined, hasOracleStore: oracleStore !== undefined,
+    hasBudget: budget !== undefined, hasProviderCircuit: providerCircuit !== undefined,
+    mutationMinRisk: config.MANAGER_MUTATION_MIN_RISK, mutationTheta: config.MANAGER_MUTATION_THETA,
+    thetaLow: config.MANAGER_MUTATION_THETA_LOW, thetaMedium: config.MANAGER_MUTATION_THETA_MEDIUM,
+    thetaHigh: config.MANAGER_MUTATION_THETA_HIGH,
   })) app.log.warn(msg)
-
-  // D5: 모델 라우팅 전제 누락 시 오진 방지 경고(worker가 CLAUDE_MODEL 폴백).
-  if (config.MANAGER_MODEL_ROUTING && (!pool || !config.MANAGER_TASK_WORKER)) {
-    app.log.warn('[model-routing] MANAGER_MODEL_ROUTING=true이나 전제(MANAGER_TASK_WORKER+DATABASE_URL) 미충족 — 모델 라우팅 비활성(CLAUDE_MODEL 폴백)')
-  }
 
   // Task Manager Supervisor 배선(P1d-7): flag on + pool이면 decomposition 소비→디스패치·lease sweep·
   // completion 소비→재디스패치를 가동. 생산자(P2) 미도착이라 빈 스트림 구독(동작 준비). flag off면 미배선.
@@ -653,16 +492,9 @@ export async function buildServer(
         isProviderFailure,
       }
     : undefined
+  // 경고는 위 startupWarnings 가 낸다(아웃박스 미경유·C1 미노출). 여기는 배선 사실만 알린다.
   if (config.MANAGER_DECOMPOSE_ENABLED) {
     app.log.info('[decompose] MANAGER_DECOMPOSE_ENABLED — decompose_request 생산자 배선')
-    // 하드닝: pool 없으면 분해 emission이 raw 발행(내구성 없음·크래시/전송실패 시 유실). 트랜잭셔널 아웃박스 미적용 경고.
-    if (!pool) {
-      app.log.warn('MANAGER_DECOMPOSE_ENABLED=true 이지만 DATABASE_URL이 없어 분해 emission이 트랜잭셔널 아웃박스를 경유하지 않습니다(raw 발행·내구성 없음).')
-    }
-    // C7: MANAGER_DECISION_ROUTING off면 decompose inconsistent가 C1 UI에 노출되지 않음(error 스트림만).
-    if (!config.MANAGER_DECISION_ROUTING) {
-      app.log.warn('[decompose] MANAGER_DECISION_ROUTING off — 분해 불일치가 C1 UI에 surface되지 않음(error 스트림만 노출).')
-    }
   }
 
   // P2r-3 생산자(MANAGER_RISK_CLASSIFY) + P2r-4 승인 라우트(MANAGER_RISK_ROUTING) 공유 repo — 위에서 선언됨.
@@ -680,24 +512,12 @@ export async function buildServer(
         ...(config.MANAGER_RISK_DECISION && decisionStore && { decisionStore }),
       }
     : undefined
-  if (config.MANAGER_RISK_DECISION && (!pool || !config.MANAGER_RISK_CLASSIFY || !config.MANAGER_DECISION_ROUTING)) {
-    app.log.warn('[risk] MANAGER_RISK_DECISION=true이나 전제(MANAGER_RISK_CLASSIFY+MANAGER_DECISION_ROUTING+DATABASE_URL) 미충족 — C5 승인 흐름 부분 비활성')
+  // 전제 미충족 경고(risk·oracle·golden)는 위 startupWarnings 가 낸다. 여기는 배선 성공만 알린다.
+  if (config.MANAGER_RISK_CLASSIFY && pool && config.MANAGER_DECOMPOSE_ENABLED) {
+    app.log.info('[risk] P2r-3 리스크 분류 생산자 배선(pending·N6 미승인)')
   }
-  if (config.MANAGER_ORACLE_DECISION && (!pool || !config.MANAGER_ORACLE_DRAFT || !config.MANAGER_DECISION_ROUTING)) {
-    app.log.warn('[oracle] MANAGER_ORACLE_DECISION=true이나 전제(MANAGER_ORACLE_DRAFT+MANAGER_DECISION_ROUTING+DATABASE_URL) 미충족 — C3 오라클 승인 흐름 부분 비활성')
-  }
-  if (config.MANAGER_GOLDEN_SIGNOFF && (!pool || !config.MANAGER_WP_IMPACT || !config.MANAGER_DECISION_ROUTING || !config.MANAGER_TASK_WORKER)) {
-    app.log.warn('[golden] MANAGER_GOLDEN_SIGNOFF=true이나 전제(MANAGER_WP_IMPACT+MANAGER_DECISION_ROUTING+MANAGER_TASK_WORKER+DATABASE_URL) 미충족 — golden freeze 사인오프 흐름 부분 비활성')
-  }
-  if (config.MANAGER_RISK_CLASSIFY) {
-    if (!pool) app.log.warn('[risk] MANAGER_RISK_CLASSIFY=true이나 DATABASE_URL 없음 — 분류 영속 불가(미배선)')
-    else if (!config.MANAGER_DECOMPOSE_ENABLED) app.log.warn('[risk] MANAGER_RISK_CLASSIFY=true이나 MANAGER_DECOMPOSE_ENABLED off — decompose_request 핸들러 미도달로 분류 미발생(no-op)')
-    else app.log.info('[risk] P2r-3 리스크 분류 생산자 배선(pending·N6 미승인)')
-  }
-  if (config.MANAGER_RISK_ROUTING) {
-    if (!pool) app.log.warn('[risk] MANAGER_RISK_ROUTING=true이나 DATABASE_URL 없음 — 승인/write-back 불가(미배선)')
-    else if (!config.TASK_MANAGER_ENABLED) app.log.warn('[risk] MANAGER_RISK_ROUTING=true이나 TASK_MANAGER_ENABLED off — Supervisor 미배선으로 risk.approved 소비자 미가동(승인 라우트만 동작)')
-    else app.log.info('[risk] P2r-4 리스크 승인 라우팅 배선(risk.approved→wp.risk write-back)')
+  if (config.MANAGER_RISK_ROUTING && pool && config.TASK_MANAGER_ENABLED) {
+    app.log.info('[risk] P2r-4 리스크 승인 라우팅 배선(risk.approved→wp.risk write-back)')
   }
 
   const authHook = config.SERVICE_JWT_SECRET ? verifyServiceToken : undefined
