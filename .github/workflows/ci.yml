@@ -92,6 +92,10 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
           TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
+          # pg 통합 파일은 39개 중 36개이고 전부 이 잡에서 돈다. env 를 빼면 그것들이 조용히
+          # skip 되고 잡은 초록이다 — 이 저장소가 이미 당한 모양이다. 그래서 fail-closed 로 건다.
+          # `=1` 은 Redis 게이트까지 요구해 여기서는 항상 throw 하므로 **pg 만** 요구한다.
+          REQUIRE_INTEGRATION: "pg"
           NODE_OPTIONS: --max-old-space-size=3072
         run: pnpm vitest run --coverage --coverage.reportsDirectory=coverage/shard-1 --shard=1/2
 
@@ -100,6 +104,10 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
           TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres
+          # pg 통합 파일은 39개 중 36개이고 전부 이 잡에서 돈다. env 를 빼면 그것들이 조용히
+          # skip 되고 잡은 초록이다 — 이 저장소가 이미 당한 모양이다. 그래서 fail-closed 로 건다.
+          # `=1` 은 Redis 게이트까지 요구해 여기서는 항상 throw 하므로 **pg 만** 요구한다.
+          REQUIRE_INTEGRATION: "pg"
           NODE_OPTIONS: --max-old-space-size=3072
         run: pnpm vitest run --coverage --coverage.reportsDirectory=coverage/shard-2 --shard=2/2
 
