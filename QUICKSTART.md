@@ -175,7 +175,7 @@ pnpm test
 ✓ 45 tests passed
 ```
 
-> 전체 337개 테스트는 GitHub Actions CI에서 자동으로 실행됩니다.  
+> 전체 스위트는 GitHub Actions CI에서 자동으로 실행됩니다. **개수는 여기 적지 않는다** — 실행 출력의 `Tests N passed`와 skip 수를 본다.  
 > Pull Request를 생성하면 자동으로 검사가 시작됩니다.
 
 ---

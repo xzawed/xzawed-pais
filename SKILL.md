@@ -62,7 +62,7 @@ for svc in xzawedOrchestrator xzawedManager xzawedPlanner xzawedDeveloper \
 done
 ```
 
-**예상**: 모든 서비스 통과 (총 450+ 테스트)
+**예상**: 모든 서비스 통과. **개수를 여기 적지 않는다** — 숫자는 즉시 낡는다. 각 실행의 출력에서 `Tests N passed`와 **skip 수**를 함께 읽는다(skip 을 통과로 세지 않는다).
 
 ---
 
@@ -238,12 +238,12 @@ redis-cli XINFO GROUPS orchestrator:to-manager:<sessionId>
 ---
 
 ### health-check
-9개 서비스 `/health` 일괄 확인
+9개 서비스 readiness 일괄 확인. **`/health` 가 아니라 `/health/ready` 를 친다** — 전자는 정적 200이라 의존이 다 죽어도 healthy 를 보고한다(compose healthcheck 도 후자를 친다)
 
 ```bash
 for port in 3000 3001 3002 3003 3004 3005 3006 3007 3008; do
   echo -n "Port $port: "
-  curl -s http://localhost:$port/health | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','?'))" 2>/dev/null || echo "DOWN"
+  curl -s http://localhost:$port/health/ready | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status','?'))" 2>/dev/null || echo "DOWN"
 done
 ```
 

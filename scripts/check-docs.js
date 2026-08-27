@@ -8,13 +8,28 @@
  *
  * 1. 상대 마크다운 링크는 전부 실존해야 한다.
  * 2. CLAUDE.md는 200줄을 넘지 않는다(Anthropic 권장 상한).
- * 3. CLAUDE.md는 이력 마커를 담지 않는다(날짜·PR번호·"머지 완료"류).
+ * 3. CLAUDE.md는 24KB를 넘지 않는다 — **줄 수만 세면 우회된다**(아래).
+ * 4. CLAUDE.md는 이력 마커를 담지 않는다(날짜·PR번호·"머지 완료"류).
  */
 const { execFileSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
 
 const CLAUDE_MD_MAX_LINES = 200
+
+/**
+ * 줄 수 상한만으로는 크기가 바운드되지 않는다 — 줄을 길게 쓰면 무한히 자란다. 실측이 그랬다:
+ * `xzawedManager/CLAUDE.md` 가 168줄(상한의 84%)인데 200줄인 루트보다 **1.67배** 컸다
+ * (34,071 vs 20,391 바이트 · 줄당 203 vs 102 · 최장 줄 688자).
+ *
+ * 상한 24KB 는 임의 숫자가 아니라 **당시 통과하던 파일들의 실측 상단**이다 — 루트 20.4KB ·
+ * Orchestrator 17.8KB · Shared 13.2KB 는 그대로 통과하고, 유일하게 비대해진 하나만 걸린다.
+ * 예외 목록을 달지 않는다는 이 파일의 원칙과도 맞는다(위 주석 참조).
+ *
+ * 바이트로 재는 이유: 줄 수·문자 수는 CJK 에서 실제 읽는 양과 어긋난다. `Buffer.byteLength` 는
+ * git blob 과 같은 단위다(`core.autocrlf=true` 라 워킹트리 `wc -c` 는 부풀려진다).
+ */
+const CLAUDE_MD_MAX_BYTES = 24 * 1024
 
 /** 설계 스펙 아카이브. 날짜-주제 파일이 서로를 가리켜 링크 검사 대상이 아니다. */
 const LINK_SCAN_EXCLUDE = ['docs/superpowers/']
@@ -104,6 +119,21 @@ function checkClaudeMdSize(files) {
   return violations
 }
 
+/** 줄 수 게이트를 우회하는 경로를 막는다 — 사유와 상한 근거는 상수 주석에. */
+function checkClaudeMdBytes(files) {
+  const violations = []
+  for (const file of files.filter((f) => path.basename(f) === 'CLAUDE.md')) {
+    if (!fs.existsSync(file)) continue
+    // CRLF 를 정규화해 git blob 과 같은 단위로 잰다(core.autocrlf=true).
+    const bytes = Buffer.byteLength(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), 'utf8')
+    if (bytes > CLAUDE_MD_MAX_BYTES) {
+      const over = bytes - CLAUDE_MD_MAX_BYTES
+      violations.push(`${file}  ${bytes}바이트 (상한 ${CLAUDE_MD_MAX_BYTES} · ${over} 초과)`)
+    }
+  }
+  return violations
+}
+
 function report(title, violations) {
   if (violations.length === 0) {
     console.log(`✓ ${title}`)
@@ -118,6 +148,7 @@ const files = trackedMarkdown()
 let failed = 0
 failed += report('상대 마크다운 링크 실존', checkLinks(files))
 failed += report(`CLAUDE.md ${CLAUDE_MD_MAX_LINES}줄 이하`, checkClaudeMdSize(files))
+failed += report(`CLAUDE.md ${CLAUDE_MD_MAX_BYTES / 1024}KB 이하`, checkClaudeMdBytes(files))
 failed += report('CLAUDE.md 이력 마커 없음', checkClaudeMdHistoryMarkers(files))
 
 if (failed > 0) {
