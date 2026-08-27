@@ -353,10 +353,10 @@ jobs:
         working-directory: xzawedOrchestrator/packages/server
         env:
           REDIS_URL: redis://localhost:6379
-          # 이 스텝은 파일 하나를 지정 실행한다 — REDIS_URL 이 빠지면 그 파일이 통째로 skip 되고
-          # 잡은 초록이다(7건이 조용히 사라진다). 게이트를 fail-closed 로 건다.
+          # 파일 하나만 돈다 — REDIS_URL 이 빠지면 그 파일이 통째로 skip 되고 잡은 초록이다
+          # (7건이 조용히 사라진다). 게이트를 fail-closed 로 건다.
           REQUIRE_INTEGRATION: "redis"
-        run: pnpm test -- --reporter=verbose src/__tests__/redis-streams.integration.test.ts
+        run: pnpm vitest run --reporter=verbose src/__tests__/redis-streams.integration.test.ts
 
   # ── Manager Redis wiring E2E (G9 Slice C) ─────────────────────────────────
   # 프리미엄(autonomous) 프로필이 켜는 실 소비자 루프가 build→WP→verify→완료 아크를 실제로 닫는지
