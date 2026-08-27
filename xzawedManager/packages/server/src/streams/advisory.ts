@@ -44,12 +44,16 @@ function summarizeArtifacts(result: unknown): string {
  * 파싱 실패·DB throw)도 삼켜 완료 결정에 영향 0(N3). findings 비면 no-op.
  * advisory는 비차단·정보성이라 LLM 판정 허용(N1/N6는 차단 게이트만 구속, spec §9).
  *
- * **호출 조건을 "verdict.ok 뒤"로 읽으면 안 된다.** 워커는 `runVerifyGate` 가 outcome 을 반환하지
- * 않았을 때 이것을 부르는데, `verifyEnabled` 가 false 면 그 게이트는 **판정 없이 null(=계속)** 을
- * 낸다. 즉 검증 게이트가 꺼져 있어도 advisory 는 생산된다(`worker.advisory.test.ts` N3-a 가
- * `verifyEnabled:false` 로 그것을 단언한다). 실제 전제는 **실행 워커 배선 + advisoryStore + LLM seam**
- * 이다. 이 주석이 원래 "verdict.ok 를 낸 뒤"라고 적고 있었고, 같은 오해가 기동 경고에도 복제돼
- * 운영자에게 "advisory 가 동작하지 않는다"는 거짓을 알렸다 — 판정은 `startup-warnings.ts` 가 갖는다.
+ * **통과한 verdict 뒤에만 호출된다(사람 결정, 2026-08-28).** 정상 동작과 안정성이 먼저이고
+ * 최적화는 그다음이다 — 아직 정상임이 증명되지 않은 산출물에 최적화를 제안하지 않는다.
+ *
+ * 이 주석은 한동안 그렇게 적혀 있었지만 **코드는 그렇지 않았다.** `verifyEnabled` 가 false 면
+ * `runVerifyGate` 가 판정 없이 `null`(=계속)을 내서 검증이 꺼져 있어도 생산됐고, 그 사실을
+ * 모른 채 운영자 경고까지 반대로 나갔다(#645 에서 경고를 코드에 맞췄다). 지금은 반대로
+ * **코드를 의도에 맞췄다** — 실패한 verdict 는 원래도 호출부가 막고 있었으므로, 남은 구멍이던
+ * "검증이 꺼져 판정 자체가 없는" 경우를 `maybeProduceAdvisory` 가드가 닫는다.
+ *
+ * 전제는 넷이다: 통과한 verdict · `MANAGER_WP_ADVISORY` · `advisoryStore` · LLM seam.
  */
 export async function produceAdvisory(
   workflowId: string, wp: WorkPackage, attempt: number, result: unknown, deps: AdvisoryProducerDeps,

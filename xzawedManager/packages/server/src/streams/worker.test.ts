@@ -495,13 +495,29 @@ describe('handleWpDispatchSignal — lease 하트비트(하드닝)', () => {
   })
 })
 
+/**
+ * advisory 는 **통과한 verdict** 를 전제한다(사람 결정, 2026-08-28). 검증을 켜면 파생 체크가
+ * 실제로 build_project·run_tests 를 부르고(N1: 선언이 아니라 실행 결과), workspaceRoot 가 없으면
+ * fail-closed 다. 아래 헬퍼가 그 최소 통과 구성이다.
+ */
+const verifiedDeps = (over: Partial<WorkerDeps> = {}): WorkerDeps => deps({
+  verifyEnabled: true,
+  repo: repoMock({ workPackages: [wp()], eventId: 'e1', version: 1, userContext: { userId: 'u', projectId: 'p', workspaceRoot: '/ws' } }),
+  handlers: {
+    develop_code: { execute: vi.fn().mockResolvedValue({ artifacts: ['src/x.ts'] }) },
+    build_project: { execute: vi.fn().mockResolvedValue({ success: true }) },
+    run_tests: { execute: vi.fn().mockResolvedValue({ success: true, passed: 3, failed: 0 }) },
+  },
+  ...over,
+})
+
 describe('handleWpDispatchSignal — G1 advisory 서킷 스레딩', () => {
   it('budget 주입 시 advisory 경로에서 budget.check가 호출된다', async () => {
     const advisoryStore = { recordFindings: vi.fn().mockResolvedValue(undefined) }
     const budgetCheck = vi.fn()
     const budget = { check: budgetCheck, record: vi.fn() } as never
     const claudeMock = { messages: { create: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: JSON.stringify({ findings: [{ title: 'a', rationale: 'r' }] }) }] }) } }
-    const d = deps({
+    const d = verifiedDeps({
       advisoryEnabled: true, advisoryStore, budget,
       claude: claudeMock as never, model: 'm', timeoutMs: 1000,
     })
@@ -513,7 +529,7 @@ describe('handleWpDispatchSignal — G1 advisory 서킷 스레딩', () => {
   it('breaker 미주입이면 advisory completed(회귀 0·never-throw)', async () => {
     const advisoryStore = { recordFindings: vi.fn().mockResolvedValue(undefined) }
     const claudeMock = { messages: { create: vi.fn().mockResolvedValue({ content: [{ type: 'text', text: JSON.stringify({ findings: [{ title: 'a', rationale: 'r' }] }) }] }) } }
-    const d = deps({
+    const d = verifiedDeps({
       advisoryEnabled: true, advisoryStore,
       claude: claudeMock as never, model: 'm', timeoutMs: 1000,
     })

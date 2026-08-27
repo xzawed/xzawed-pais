@@ -76,7 +76,7 @@ export interface WorkerDeps {
   riskStore?: { approvedForWorkflow(workflowId: string): Promise<{ modelRouting: Record<RoutedAgent, ModelTier> } | null> }
   /** D5: tier→concrete model id. MANAGER_MODEL_ROUTING 시 주입. */
   modelRouting?: ModelTierIds
-  /** P4 advisory 채널(=MANAGER_WP_ADVISORY && advisoryStore 주입). develop_code WP 실행 뒤 비차단 생산 — **verifyEnabled 와 무관하다**(아래 호출부). */
+  /** P4 advisory 채널(=MANAGER_WP_ADVISORY && advisoryStore 주입). develop_code WP 가 **검증을 통과한 뒤에만** 비차단 생산. */
   advisoryEnabled?: boolean
   advisoryStore?: AdvisoryStore
   /** P4 advisory 생산자 LLM seam(produceAdvisory용). advisoryEnabled 시 동반 주입. */
@@ -249,8 +249,9 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
     const gate = await runVerifyGate(tool, wp, result, msg, userContext, deps)
     if (gate) return gate // 실패 = 완료 미발행(lease 백스톱 reclaim→escalate·N5) + 관측 이벤트.
     // P4 advisory(N3)·Slice 1 golden: 게이트가 **차단하지 않았을 때** 도는 비차단 후처리다. 게이트는 이 둘을 모른다.
-    // **"verdict.ok 뒤"로 읽으면 안 된다** — verifyEnabled 가 false 면 runVerifyGate 는 판정 없이 null 을
-    // 반환하므로 검증이 꺼져 있어도 둘 다 돈다(worker.advisory.test.ts N3-a · worker.golden.test.ts 가 봉인).
+    // **둘의 전제가 다르다.** advisory 는 통과한 verdict 를 요구한다(자기 가드의 verifyEnabled 체크).
+    // golden 은 요구하지 않는다 — 사인오프 *요청*만 만들고 freeze 는 사람 승인으로만 일어나므로
+    // 미검증 산출물에도 물어보는 편이 맞다(worker.golden.test.ts 가 그 차이를 봉인한다).
     await maybeProduceAdvisory(tool, workflowId, wp, msg.payload.attempt, result, userContext, deps)
     // Slice 1: 미freeze golden 있으면 golden_diff 사인오프 요청(best-effort·완료 영향 0). N7 은 유지된다 —
     // 이 경로는 요청만 만들고 freeze 는 사람 승인으로만 일어난다.
@@ -342,13 +343,21 @@ async function persistVerificationEvidence(
   }
 }
 
-/** P4 advisory(N3): develop_code WP 실행 뒤 비차단 optimization 제안을 생산한다(produceAdvisory는
+/** P4 advisory(N3): develop_code WP 가 검증을 통과한 뒤 비차단 optimization 제안을 생산한다(produceAdvisory는
  *  best-effort never-throw — 게이트·완료에 영향 0). flag+LLM seam+advisoryStore 전부 주입 시에만 동작. */
 async function maybeProduceAdvisory(
   tool: string, workflowId: string, wp: WorkPackage, attempt: number, result: unknown,
   userContext: UserContext | undefined, deps: WorkerDeps,
 ): Promise<void> {
+  // **통과한 verdict 뒤에만 생산한다(사람 결정, 2026-08-28).** 정상 동작과 안정성이 먼저이고
+  // 최적화는 그다음이다 — 아직 정상임이 증명되지 않은 산출물에 최적화를 제안하지 않는다.
+  //
+  // 실측으로 이 한 조건이 그 정책 전부다. `runVerifyGate` 의 반환은 셋뿐이라
+  // (verify off → null · verdict.ok → null · 실패 → outcome), 실패는 호출부의 `if (gate) return gate`
+  // 가 이미 막고 있었다. 남은 구멍은 **검증이 꺼져 판정 자체가 없는** 경우 하나였다.
+  // 그래서 `verifyEnabled === true` 는 곧 "판정이 있었고 통과했다"와 같다.
   if (
+    deps.verifyEnabled !== true ||
     !deps.advisoryEnabled || tool !== 'develop_code' ||
     !deps.advisoryStore || !deps.claude || !deps.model || deps.timeoutMs === undefined
   ) {
