@@ -312,11 +312,17 @@ export async function buildServer(config: Config, runnerOverride?: ClaudeRunner)
 
         let project: Awaited<ReturnType<typeof projectRepo.findByIdAndUser>> | undefined
 
-        if (payload.projectId) {
-          project = await projectRepo.findByIdAndUser(payload.projectId, session.userId)
-        } else if (payload.name) {
+        // 게이트웨이 스키마가 `payload: z.unknown()` 이고 소비 지점은 타입 단언뿐이라 **무엇이든
+        // 도달한다.** `{}`·문자열·배열은 그냥 미일치로 떨어지는데 `null` 만 TypeError 를 냈고,
+        // 소비자가 그것을 잡아 error 응답의 message 로 Manager 에 그대로 돌려줬다 — 내부 스택
+        // 용어가 LLM 에게 가는 것보다 도메인 에러 하나로 맞추는 편이 낫다.
+        const id = payload?.projectId
+        const name = payload?.name
+        if (id) {
+          project = await projectRepo.findByIdAndUser(id, session.userId)
+        } else if (name) {
           const all = await projectRepo.findByUser(session.userId)
-          project = all.find(p => p.name === payload.name || p.slug === payload.name)
+          project = all.find(p => p.name === name || p.slug === name)
         }
 
         if (!project) throw new Error('Project not found')
