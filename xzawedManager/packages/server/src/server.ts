@@ -68,8 +68,13 @@ import { RiskClassificationRepo } from './db/risk-classification.repo.js'
  *   값이다. Manager 는 오늘 rate limit 도 IP 기반 로직도 없어 악용 경로가 아직 없지만,
  *   그래서 더더욱 하드코딩으로 켜 둘 이유가 없다. `TRUST_PROXY` 로 명시한다.
  *
- * `buildServer` 는 DB·Redis·Anthropic 배선을 통째로 끌고 와 테스트가 부르지 못한다.
- * 옵션 계산만 떼어 두면 배선 없이 검사할 수 있다 — `__tests__/server-options.test.ts`.
+ * 옵션 계산을 떼어 두면 배선 없이 검사할 수 있다 — `__tests__/server-options.test.ts`.
+ *
+ * **이 주석은 오래 "`buildServer` 는 DB·Redis·Anthropic 배선을 통째로 끌고 와 테스트가 부르지
+ * 못한다"고 적고 있었고, 실측하니 거짓이었다.** 셋 다 지연 연결이라 `DATABASE_URL` 없이 죽은
+ * Redis 포트를 줘도 기동한다 — `__tests__/server-wiring.test.ts` 가 그렇게 부른다. 그 거짓
+ * 전제가 배선 판정을 아무도 보지 않는 자리로 밀어 넣었다(실측 라인 1/236 · 분기 0/396).
+ * 옵션 추출은 여전히 옳지만 **이유는 "부를 수 없어서"가 아니라 "순수 함수가 더 촘촘해서"** 다.
  */
 export function makeServerOptions(config: Config): { logger: boolean; trustProxy: boolean } {
   return { logger: true, trustProxy: config.TRUST_PROXY }
@@ -273,7 +278,7 @@ export async function buildServer(
   // 하나라도 켜지면(+pool) 생성 — 라우팅 소비자도 같은 DecisionRepo의 getRequest를 사용한다(회귀 0: 둘 다 off면 undefined).
   const decisionStore =
     pool && (config.MANAGER_DECISION_BRIEF || config.MANAGER_DECISION_ROUTING || config.MANAGER_DECISION_EXPIRY || config.MANAGER_RISK_DECISION || config.MANAGER_DEGRADED_SIGNOFF || config.MANAGER_ORACLE_DECISION || config.MANAGER_GOLDEN_SIGNOFF) ? new DecisionRepo(pool) : undefined
-  // P4: advisory 채널 영속소(verdict.ok 후 optimization 제안). MANAGER_WP_ADVISORY + pool 시만 생성(회귀 0).
+  // P4: advisory 채널 영속소(WP 실행 뒤 optimization 제안). MANAGER_WP_ADVISORY + pool 시만 생성(회귀 0).
   const advisoryStore = pool && config.MANAGER_WP_ADVISORY ? new AdvisoryRepo(pool) : undefined
   // P5-1: 릴리스 게이트 증거/결과 영속소(recordEvidence·recordGate·evidenceForWorkflow). MANAGER_RELEASE_GATE + pool 시만 생성(회귀 0).
   const releaseStore = pool && config.MANAGER_RELEASE_GATE ? new ReleaseGateRepo(pool) : undefined

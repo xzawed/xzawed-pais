@@ -103,7 +103,7 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
-    // P4 advisory 채널(기본 false). true면 develop_code WP의 verdict.ok 후 비차단 optimization 제안을
+    // P4 advisory 채널(기본 false). true면 develop_code WP 실행 뒤 비차단 optimization 제안을
     // 생산해 advisory_findings 투영 + manager_events(wp.advisory.found)로 영속한다(N3 — 절대 게이트 미차단).
     // 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY(verdict.ok 경로) + DATABASE_URL(AdvisoryRepo).
     MANAGER_WP_ADVISORY: z
@@ -237,7 +237,7 @@ const configSchema = z
     // C3: 기본 false. true면 decomposition-consumer가 draft 영속 후 oracle_approval DecisionRequest 발행(생산자) +
     //   decision-consumer가 approve→OracleRepo.approvePendingByWorkflow(소비자). 전제: MANAGER_ORACLE_DRAFT+MANAGER_DECISION_ROUTING+DATABASE_URL.
     MANAGER_ORACLE_DECISION: z.string().optional().transform((v) => v === 'true'),
-    // Slice 1: 기본 false. true면 develop_code verdict.ok 후 미freeze golden 있으면 golden_diff DecisionRequest 발행(워커 hook) +
+    // Slice 1: 기본 false. true면 develop_code 실행 뒤 미freeze golden 있으면 golden_diff DecisionRequest 발행(워커 hook) +
     //   decision-consumer가 approve→OracleRepo.freezeGoldensByWorkflow(소비자). impact는 frozen golden만 소비(N7).
     //   전제: MANAGER_WP_IMPACT(채널)+MANAGER_DECISION_ROUTING(사인오프 소비)+DATABASE_URL+워커 스택. off면 회귀 0.
     MANAGER_GOLDEN_SIGNOFF: z.string().optional().transform((v) => v === 'true'),
