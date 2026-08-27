@@ -76,7 +76,7 @@ export interface WorkerDeps {
   riskStore?: { approvedForWorkflow(workflowId: string): Promise<{ modelRouting: Record<RoutedAgent, ModelTier> } | null> }
   /** D5: tier→concrete model id. MANAGER_MODEL_ROUTING 시 주입. */
   modelRouting?: ModelTierIds
-  /** P4 advisory 채널(=MANAGER_WP_ADVISORY && advisoryStore 주입). develop_code WP의 verdict.ok 후 비차단 생산. */
+  /** P4 advisory 채널(=MANAGER_WP_ADVISORY && advisoryStore 주입). develop_code WP 실행 뒤 비차단 생산 — **verifyEnabled 와 무관하다**(아래 호출부). */
   advisoryEnabled?: boolean
   advisoryStore?: AdvisoryStore
   /** P4 advisory 생산자 LLM seam(produceAdvisory용). advisoryEnabled 시 동반 주입. */
@@ -248,9 +248,12 @@ export async function handleWpDispatchSignal(msg: WpDispatchSignalMessage, deps:
     // P4b-1 검증 게이트: trivial(무예외=성공)을 실행 ground truth fail-closed 판정으로 교체(N1).
     const gate = await runVerifyGate(tool, wp, result, msg, userContext, deps)
     if (gate) return gate // 실패 = 완료 미발행(lease 백스톱 reclaim→escalate·N5) + 관측 이벤트.
-    // P4 advisory(N3): verdict가 이미 확정된 뒤에만 비차단 생산 — 게이트는 advisory를 모른다.
+    // P4 advisory(N3)·Slice 1 golden: 게이트가 **차단하지 않았을 때** 도는 비차단 후처리다. 게이트는 이 둘을 모른다.
+    // **"verdict.ok 뒤"로 읽으면 안 된다** — verifyEnabled 가 false 면 runVerifyGate 는 판정 없이 null 을
+    // 반환하므로 검증이 꺼져 있어도 둘 다 돈다(worker.advisory.test.ts N3-a · worker.golden.test.ts 가 봉인).
     await maybeProduceAdvisory(tool, workflowId, wp, msg.payload.attempt, result, userContext, deps)
-    // Slice 1: verdict.ok 후 미freeze golden 있으면 golden_diff 사인오프 요청(best-effort·완료 영향 0).
+    // Slice 1: 미freeze golden 있으면 golden_diff 사인오프 요청(best-effort·완료 영향 0). N7 은 유지된다 —
+    // 이 경로는 요청만 만들고 freeze 는 사람 승인으로만 일어난다.
     await maybeRequestGoldenSignoff(tool, workflowId, userContext, deps)
     // S6.3: 이 WP 가 실제로 낸 산출물을 기록해 후행이 입력으로 받게 한다(결함 F7).
     // 검증을 통과한 뒤에만 쓴다 — 검증 실패한 실행의 파일을 후행이 감사하면 안 된다.
@@ -339,7 +342,7 @@ async function persistVerificationEvidence(
   }
 }
 
-/** P4 advisory(N3): develop_code WP의 verdict.ok 후 비차단 optimization 제안을 생산한다(produceAdvisory는
+/** P4 advisory(N3): develop_code WP 실행 뒤 비차단 optimization 제안을 생산한다(produceAdvisory는
  *  best-effort never-throw — 게이트·완료에 영향 0). flag+LLM seam+advisoryStore 전부 주입 시에만 동작. */
 async function maybeProduceAdvisory(
   tool: string, workflowId: string, wp: WorkPackage, attempt: number, result: unknown,
@@ -361,7 +364,7 @@ async function maybeProduceAdvisory(
   })
 }
 
-/** Slice 1: develop_code WP의 verdict.ok 후 그 workflow에 미freeze golden이 있으면 golden_diff DecisionRequest를
+/** Slice 1: develop_code WP 실행 뒤 그 workflow에 미freeze golden이 있으면 golden_diff DecisionRequest를
  *  발행해 사람 사인오프를 C1에 surface한다(maybeProduceAdvisory 미러·best-effort never-throw — 완료/게이트 영향 0·
  *  에이전트 호출 0·오라클 조회만). flag+oracleStore.unfrozenGoldenCount+decisionStore 전부 주입 시에만 동작. */
 export async function maybeRequestGoldenSignoff(
