@@ -1,0 +1,70 @@
+# 불변식 (M1~M9 · N1~N8)
+
+프로덕션 코드 주석이 `M8`·`N6` 같은 라벨로 계속 가리키는 것들의 **정본 정의**다.
+
+> **왜 여기 있나.** 이 라벨들은 원래 별도 비공개 저장소(`xzawed/xzawed-pais-senario`)의
+> `xzawedPAIS_handoff_spec.md` §1 에만 정의돼 있었다. 그 저장소는 `docs/senario/` 로 gitignore 라
+> **이 저장소를 clone 한 사람에게는 존재하지 않는다** — 코드 54개 파일이 정의되지 않은 용어를
+> 가리키고 있었다. 정본을 여기로 옮긴다. 앞으로 이 파일이 정본이고, senario 스펙은 출처다.
+
+**표에 "강제"라고 적힌 것만 강제된다.** 원문은 선언문(Non-negotiable)이라 전부 당위로 읽히지만,
+실제로 무엇이 걸리는지는 실측해야 안다. 아래 "강제 지점" 열은 코드를 대조한 결과이고,
+**"규약"** 은 사람이 지키기로 한 것이지 기계가 막는 것이 아니라는 뜻이다.
+
+## 미션
+
+WBS로 분해된 작업을 전문 에이전트가 나눠 수행하고, **사람이 승인한 의도와 동일하게 구현됐음이
+검증된 것만** CI/CD로 내보내, 라이브 서비스 사용자에게 결함이 도달하지 않게 한다.
+
+## MUST
+
+| ID | 불변식 | 강제 지점 | 기본 태세 |
+|---|---|---|---|
+| **M1** | CI/CD(빌드·배포)는 **fail-closed 릴리스 게이트** 뒤에서만. TC 통과 + 품질·보안 검증이 하드 전제 | `streams/release-gate.ts` · `tools/deploy-gate.ts` | **휴면** — `MANAGER_RELEASE_GATE`·`MANAGER_DEPLOY_GATE` 기본 off. 켜면 strict 가 기본 true |
+| **M2** | "의도와 같은 동작"의 오라클은 **사람이 정의·승인**한다. 에이전트는 제안·대조만 | `db/oracle.repo.ts`(`human_approved` 만 계수) · `task-graph/oracle-dor.ts` | 휴면 — `MANAGER_ORACLE_*` 기본 off |
+| **M3** | 에이전트 간 통신은 **Event Bus 메시지 패싱만**. 직접 import 금지 | **강제** — CI `module-boundaries` 잡(dependency-cruiser), `all-checks-pass` 필수 | **상시** |
+| **M4** | Orchestrator는 **stateless**. 워크플로 상태는 내구적 저장소에 | `db/event-store.ts` · `manager_events` | **조건부** — `msgRepo` 미주입 시 `messageStore: Map` 인메모리 폴백(`sessions.route.ts`). DB 있을 때만 성립 |
+| **M5** | 상태 변경과 이벤트 발행은 **트랜잭셔널 아웃박스**로 원자화(dual-write 금지) | `migrations/006_events_outbox.sql` · `streams/outbox-relay.ts` | DB 있을 때 |
+| **M6** | 모든 에이전트 작업은 `(workflow_id, step_id, attempt_id)` 로 **멱등** | `types/event-envelope.ts` `idempotencyKey` · shared `BaseConsumer` dedup | **상시**(shared 소비자 경로) |
+| **M7** | 모든 이벤트는 `correlationId` + `causationId` 로 **분산 트레이스**를 형성 | `types/event-envelope.ts` — `correlationId` 는 `.min(1)` 필수, **`causationId` 는 `.nullable()`**(루트 이벤트는 원인이 없다) | **강제**(Zod). 단 `causationId: null` 은 유효한 값이라 "인과가 항상 있다"로 읽으면 안 된다 |
+| **M8** | 모든 실패는 **에스컬레이션 사다리**를 따른다. 무음 실패·하드 크래시 금지, 항상 *알려진* 강등 모드 | 소비자 DLQ 격리 · `recordOutcome` · 기동 경고 | **상시** — 코드 14개 파일이 이 라벨을 인용 |
+| **M9** | 사람의 결정·사인오프는 **append-only·귀속·부인방지** 기록 | `migrations/011_decisions.sql` | **규약** — DB 에 `REVOKE`·트리거·룰 **없음**. 런타임 TypeScript 의 `UPDATE`/`DELETE` 는 0건이지만 **마이그레이션은 이미 한 번 고쳐 썼다**(아래 참조) |
+
+## MUST NOT
+
+| ID | 불변식 | 강제 지점 | 기본 태세 |
+|---|---|---|---|
+| **N1** | LLM이 "테스트 통과"를 **선언**해서 게이트를 열지 않는다. TC 통과 = 실제 실행 결과 | `streams/verify.ts` `judgePrimaryResult` — `run_tests` 실행 결과 필드로만 판정 | 검증 게이트가 켜졌을 때 |
+| **N2** | 강등 모드에서 고위험 릴리스를 자동 통과시키지 않는다 → 사람 사인오프 | `streams/dispatch.ts` — DEGRADED + HIGH-risk WP 는 서명 요구 | 휴면 — `MANAGER_DEGRADED_*` 기본 off |
+| **N3** | advisory(개선 가능)를 blocking(결함)과 같은 채널에 섞지 않는다 | `db/advisory.types.ts` — `severity: z.literal('advisory')`, verdict 경로 미유입 | **구조적** |
+| **N4** | 분해·재분해가 진행 중인 git 브랜치를 다시 쓰지 않는다 | `decomposition/content-hash.ts`(risk 제외 → id 안정) · `mergeKeepInflight` | **상시** |
+| **N5** | 결함 국소화·재분해 루프를 무한히 돌리지 않는다. 임계에서 사람에게 에스컬레이션 | `attributionCounters` · `MANAGER_DECISION_REESCALATE_MAX` | 결정 체인이 켜졌을 때 |
+| **N6** | AI 자기검증·다중 에이전트 투표는 **추가 신호일 뿐** M2·N1 을 대체·완화하지 않는다 | `verify.ts` security 채널 — 결정론 findings(`static`·`deps`)만 게이트, LLM findings 제외 | **구조적** — 코드 10개 파일이 인용 |
+| **N7** | 에이전트는 **골든 레퍼런스를 자동 갱신하지 않는다.** 신규 골든은 사람 승인으로만 | `db/oracle.repo.ts` `freezeGoldensByWorkflow` | 오라클 체인이 켜졌을 때 |
+| **N8** | **빈 껍데기 스위트로 게이트를 열지 않는다.** mutation score < θ 면 닫힘 또는 사람 사인오프 | `verify.ts` — `passed <= 0` vacuous 차단(상시) + `runMutationCheck`(플래그) | 앞은 **상시**, mutation 은 휴면 |
+
+## 읽는 법 — 두 가지 함정
+
+**"강제 지점이 있다"와 "지금 걸린다"는 다르다.** 자율 스택은 **전부 플래그 뒤에 있고 기본 off** 다
+(→ [LIVE_VS_FLAGGED](../LIVE_VS_FLAGGED.md)). M1·M2·N2·N7 은 코드가 있어도 기본 구성에서는 돌지
+않는다. 그것이 결함이 아니라 **선언된 태세**다 — 대화형 챗 + 사람 승인 게이트가 기본이다.
+
+**"규약"은 다음 사람이 깨뜨릴 수 있다 — 이미 한 번 그랬다.** M9 의 append-only 는 DB 가 막지
+않는다(`REVOKE`·트리거·룰 0건). 런타임 코드의 위반은 0건이지만 **마이그레이션 `018_wp_state_contract.sql`
+은 `wp_state_log` 를 실제로 `UPDATE` 했다** — S6.1 이 WP 상태 정본을 통일하면서 레거시 `IN_PROGRESS`
+행을 `DISPATCHED` 로 정규화해야 `ADD CONSTRAINT` 가 통과했기 때문이다.
+
+그 변경 자체는 정당했다(제약을 붙이려면 값 집합을 먼저 맞춰야 한다). 기록해 두는 이유는 **"append-only
+니까 과거 행은 절대 안 바뀐다"를 전제로 감사 추론을 하면 틀린다**는 것이다. 스키마 마이그레이션은
+그 규약 밖에 있고, 앞으로도 그럴 것이다 — 런타임 writer 만 규약의 대상이다.
+
+이 문서를 처음 쓸 때 나는 "프로덕션 `UPDATE`/`DELETE` 0건"이라고 적었다. `--include=*.ts` 로만
+grep 해서 `.sql` 을 놓친 것이고, Grok 반증이 잡았다. **불변식 문서가 코드보다 많이 주장하면
+그 문서가 곧 다음 사고의 원인이 된다.**
+
+## 출처
+
+원문은 `xzawed/xzawed-pais-senario` 의 `xzawedPAIS_handoff_spec.md` §1(v5). 그 저장소의 로드맵
+기능은 끝났다 — Phase 0~6 산출물 24개 중 23개가 이 저장소에 구현돼 있고 유일한 미완은 saga 보상이다.
+설계 근거를 더 파려면 그쪽의 확정 문서 5종(`ORACLE_SCHEMA`·`VERIFICATION_ADVERSARIAL_STRATEGY`·
+`WIKI_AGENT_RISK_CLASSIFICATION`·`HUMAN_DECISION_PERSISTENCE`·`OPERATIONS_DECISIONS`)을 본다.

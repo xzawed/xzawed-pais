@@ -46,6 +46,7 @@
 |---|---|
 | [기여 가이드](development/contributing.md) | 개발 환경, 브랜치 전략, 커밋 컨벤션, PR 기준 |
 | [코딩 컨벤션](development/conventions.md) | 전 서비스 공통 패턴 |
+| [불변식 M1~M9·N1~N8](development/invariants.md) | 코드 주석이 `M8`·`N6` 라벨로 가리키는 것들의 **정본 정의** + 각각이 실제로 강제되는 지점 |
 | [보안 패턴](development/security-patterns.md) | 명령 실행·경로 검증·인증·IPC 구현 패턴 |
 | [테스트 패턴](development/testing-patterns.md) | 블로킹 I/O mock, E2E Electron 제약, shard coverage |
 | [SonarCloud](development/sonarcloud.md) | CPD·커버리지·핫스팟 트러블슈팅 |
