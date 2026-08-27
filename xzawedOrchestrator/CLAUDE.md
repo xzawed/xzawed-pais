@@ -11,6 +11,10 @@ cd packages/server && pnpm test <파일>
 cd packages/app && pnpm test:e2e    # Playwright + Electron
 ```
 
+**인프라 게이트에 걸리는 테스트는 이름으로 못 찾는다.** `*.integration.test.ts` 뿐 아니라 `auth.test.ts`·`projects.test.ts`도 `skipIf(!hasDb)`로 묶여 있다. 세는 단위는 파일이 아니라 **게이트가 여닫는 테스트 수**다 — 실측: 인프라 없음 **589 passed/16 skipped** · DB만 **598/7** · DB+Redis **605/0**(pg 9건 · Redis 7건).
+
+**CI에서는 `REQUIRE_INTEGRATION`이 게이트를 fail-closed로 만든다 — 값이 게이트 이름이다**(`1`=전부, `pg`·`redis`·`pg,redis`). 요구한 게이트가 닫혀 있으면 globalSetup이 **throw해서 런을 죽인다**(모르는 이름도 오타로 보고 throw). `turborepo` 잡이 `=pg`, `redis-integration` 잡의 이 서비스 스텝이 `=redis`다. **판정 코어는 Manager와 복제 블록**(`integration-gate-core`)이고 게이트 표만 서비스별이다 — 한쪽만 고치면 `scripts/check-replicated-blocks.js`가 파일:줄로 지목하고 실패한다.
+
 ## 패키지 지도
 
 | 패키지 | 책임 |
