@@ -103,7 +103,7 @@ const configSchema = z
       .string()
       .optional()
       .transform((v) => v === 'true'),
-    // P4 advisory 채널(기본 false). true면 develop_code WP 실행 뒤 비차단 optimization 제안을
+    // P4 advisory 채널(기본 false). true면 develop_code WP 가 검증을 통과한 뒤 비차단 optimization 제안을
     // 생산해 advisory_findings 투영 + manager_events(wp.advisory.found)로 영속한다(N3 — 절대 게이트 미차단).
     // 전제: MANAGER_TASK_WORKER + MANAGER_WP_VERIFY(verdict.ok 경로) + DATABASE_URL(AdvisoryRepo).
     MANAGER_WP_ADVISORY: z

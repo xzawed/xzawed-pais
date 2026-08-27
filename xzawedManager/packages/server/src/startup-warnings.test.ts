@@ -105,36 +105,37 @@ describe('startupWarnings — 워커·검증 게이트', () => {
 })
 
 /**
- * **회귀 봉인.** 이전 경고는 "MANAGER_WP_VERIFY 가 꺼져 있어 advisory 가 동작하지 않는다"고 말했다.
- * 코드는 그 반대다 — `worker.advisory.test.ts` N3-a 가 `verifyEnabled:false` 로 `recordFindings`
- * 1회 호출을 단언한다. 그 오보가 다시 들어오면 여기서 깨진다.
+ * **회귀 봉인 — 경고와 코드가 어긋나면 여기서 깨진다.**
+ *
+ * 이 경고는 두 번 뒤집혔다. 원래 "`MANAGER_WP_VERIFY` 가 꺼져 있어 advisory 가 동작하지 않는다"고
+ * 말했는데 **코드는 반대였다**(검증이 꺼져도 생산됐다) — #645 에서 경고를 코드에 맞췄다.
+ * 그 뒤 사람 결정으로 **코드를 의도에 맞췄다**(2026-08-28: 정상 동작·안정성이 먼저, 최적화는 그다음).
+ * 그래서 지금은 다시 전제이고, 이번에는 **참이다** — `worker.advisory.test.ts` 가 워커 쪽을 봉인한다.
+ *
+ * 방향이 바뀌어도 이 봉인의 역할은 같다: **문구가 코드보다 많이/적게 주장하면 깨진다.**
  */
-describe('startupWarnings — advisory 는 WP_VERIFY 를 전제하지 않는다 (회귀 봉인)', () => {
-  const wiredWorker = { wpAdvisory: true, taskManager: true, taskWorker: true, hasPool: true }
+describe('startupWarnings — advisory 는 통과한 verdict 를 전제한다 (회귀 봉인)', () => {
+  const fullyOn = { wpAdvisory: true, taskManager: true, taskWorker: true, hasPool: true, wpVerify: true }
 
-  test('워커가 배선돼 있으면 WP_VERIFY 가 꺼져 있어도 advisory 경고가 없다', () => {
-    expect(has(base({ ...wiredWorker, wpVerify: false }), 'advisory')).toBe(false)
+  test('전제가 다 있으면 advisory 경고가 없다', () => {
+    expect(has(base(fullyOn), 'advisory')).toBe(false)
   })
 
-  test('advisory 경고가 MANAGER_WP_VERIFY 를 전제로 지목하지 않는다', () => {
-    const msgs = startupWarnings(base({ wpAdvisory: true }))
-    const advisory = msgs.filter((m) => m.includes('advisory'))
-    expect(advisory.length).toBeGreaterThan(0)
-    for (const m of advisory) {
-      expect(m).not.toMatch(/MANAGER_WP_VERIFY가 꺼져 있어 advisory/)
+  test('WP_VERIFY 가 꺼져 있으면 경고한다 — 판정 없는 산출물에는 제안하지 않는다', () => {
+    expect(has(base({ ...fullyOn, wpVerify: false }), 'MANAGER_WP_VERIFY가 꺼져 있어 advisory가 생산되지 않습니다')).toBe(true)
+  })
+
+  /** 워커 전제는 **별개 축**이다 — 검증을 켜도 WP 가 실행되지 않으면 도달하지 못한다. */
+  test('실행 워커 전제 셋 중 하나만 빠져도 따로 경고한다', () => {
+    for (const k of ['taskManager', 'taskWorker', 'hasPool'] as const) {
+      expect(has(base({ ...fullyOn, [k]: false }), '실행 워커 전제')).toBe(true)
     }
+    expect(has(base(fullyOn), '실행 워커 전제')).toBe(false)
   })
 
-  test('실제 전제는 실행 워커다 — 셋 중 하나만 빠져도 경고한다', () => {
-    expect(has(base({ ...wiredWorker, taskManager: false }), 'advisory가 생산되지 않습니다')).toBe(true)
-    expect(has(base({ ...wiredWorker, taskWorker: false }), 'advisory가 생산되지 않습니다')).toBe(true)
-    expect(has(base({ ...wiredWorker, hasPool: false }), 'advisory가 생산되지 않습니다')).toBe(true)
-    expect(has(base(wiredWorker), 'advisory가 생산되지 않습니다')).toBe(false)
-  })
-
-  test('pool 부재는 영속 불가로 따로 알린다(생산 여부와 다른 축)', () => {
-    expect(has(base({ ...wiredWorker, hasPool: false }), 'advisory가 영속되지 않습니다')).toBe(true)
-    expect(has(base(wiredWorker), 'advisory가 영속되지 않습니다')).toBe(false)
+  test('pool 부재는 영속 불가로 또 따로 알린다(생산 여부와 다른 축)', () => {
+    expect(has(base({ ...fullyOn, hasPool: false }), 'advisory가 영속되지 않습니다')).toBe(true)
+    expect(has(base(fullyOn), 'advisory가 영속되지 않습니다')).toBe(false)
   })
 })
 

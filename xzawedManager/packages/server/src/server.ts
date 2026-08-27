@@ -278,7 +278,7 @@ export async function buildServer(
   // 하나라도 켜지면(+pool) 생성 — 라우팅 소비자도 같은 DecisionRepo의 getRequest를 사용한다(회귀 0: 둘 다 off면 undefined).
   const decisionStore =
     pool && (config.MANAGER_DECISION_BRIEF || config.MANAGER_DECISION_ROUTING || config.MANAGER_DECISION_EXPIRY || config.MANAGER_RISK_DECISION || config.MANAGER_DEGRADED_SIGNOFF || config.MANAGER_ORACLE_DECISION || config.MANAGER_GOLDEN_SIGNOFF) ? new DecisionRepo(pool) : undefined
-  // P4: advisory 채널 영속소(WP 실행 뒤 optimization 제안). MANAGER_WP_ADVISORY + pool 시만 생성(회귀 0).
+  // P4: advisory 채널 영속소(검증 통과 뒤 optimization 제안). MANAGER_WP_ADVISORY + pool 시만 생성(회귀 0).
   const advisoryStore = pool && config.MANAGER_WP_ADVISORY ? new AdvisoryRepo(pool) : undefined
   // P5-1: 릴리스 게이트 증거/결과 영속소(recordEvidence·recordGate·evidenceForWorkflow). MANAGER_RELEASE_GATE + pool 시만 생성(회귀 0).
   const releaseStore = pool && config.MANAGER_RELEASE_GATE ? new ReleaseGateRepo(pool) : undefined

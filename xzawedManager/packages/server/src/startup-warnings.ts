@@ -226,13 +226,17 @@ function workerWarnings(w: StartupWiring): string[] {
   if (w.wpSecurity && !w.wpVerify) {
     out.push('MANAGER_WP_SECURITY=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 security 채널이 동작하지 않습니다(verifyWp 미경유).')
   }
-  // **advisory 는 MANAGER_WP_VERIFY 를 전제하지 않는다.** 이전 경고는 그 반대를 말했고 틀렸다:
-  // `runVerifyGate` 는 `!verifyEnabled` 에 null(=계속)을 반환하고(worker.ts), 그 다음 줄이
-  // `maybeProduceAdvisory` 를 무조건 부르며 그 가드는 verifyEnabled 를 보지 않는다.
-  // `worker.advisory.test.ts` N3-a 가 verifyEnabled:false 로 recordFindings 1회를 이미 단언한다.
-  // 실제 전제는 **실행 워커 배선**이다.
+  // **advisory 는 통과한 verdict 를 전제한다(사람 결정, 2026-08-28).** 정상 동작과 안정성이 먼저다.
+  //
+  // 이 경고는 두 번 뒤집혔다. 원래 "MANAGER_WP_VERIFY 가 꺼져 있어 동작하지 않는다"고 말했는데
+  // 코드는 반대였고(#645 에서 경고를 코드에 맞췄다), 이번에는 **코드를 의도에 맞췄다**.
+  // 그래서 다시 전제다 — 다만 이제는 참이고, `worker.advisory.test.ts` 가 그것을 봉인한다.
+  if (w.wpAdvisory && !w.wpVerify) {
+    out.push('MANAGER_WP_ADVISORY=true 이지만 MANAGER_WP_VERIFY가 꺼져 있어 advisory가 생산되지 않습니다. advisory는 검증을 통과한 산출물에만 제안하므로 판정이 없으면 건너뜁니다.')
+  }
+  // 검증을 켜도 워커가 배선되지 않으면 WP 자체가 실행되지 않는다 — 별개의 전제다.
   if (w.wpAdvisory && !(w.taskManager && w.hasPool && w.taskWorker)) {
-    out.push('MANAGER_WP_ADVISORY=true 이지만 실행 워커 전제(TASK_MANAGER_ENABLED+MANAGER_TASK_WORKER+DATABASE_URL)가 없어 advisory가 생산되지 않습니다. MANAGER_WP_VERIFY는 전제가 아닙니다 — 검증 게이트가 꺼져 있어도 advisory는 생산됩니다.')
+    out.push('MANAGER_WP_ADVISORY=true 이지만 실행 워커 전제(TASK_MANAGER_ENABLED+MANAGER_TASK_WORKER+DATABASE_URL)가 없어 advisory가 생산되지 않습니다.')
   }
   if (w.wpAdvisory && !w.hasPool) {
     out.push('MANAGER_WP_ADVISORY=true 이지만 DATABASE_URL이 없어 advisory가 영속되지 않습니다(AdvisoryRepo 부재).')
