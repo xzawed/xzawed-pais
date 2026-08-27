@@ -196,5 +196,5 @@ node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200�
 - 전체 인덱스 → [docs/README.md](docs/README.md)
 - 기본 실행 vs 플래그 게이트 → [docs/LIVE_VS_FLAGGED.md](docs/LIVE_VS_FLAGGED.md)
 - 테스트 패턴·E2E → [docs/development/testing-patterns.md](docs/development/testing-patterns.md)
-- 보안 패턴 → [docs/development/security-patterns.md](docs/development/security-patterns.md)
+- 보안 패턴 → [docs/development/security-patterns.md](docs/development/security-patterns.md) · 코드 주석의 `M8`·`N6` 라벨 정본 → [invariants.md](docs/development/invariants.md)(전부 강제되는 것은 아니다 — 표의 "강제 지점" 열을 본다)
 - SonarCloud → [docs/development/sonarcloud.md](docs/development/sonarcloud.md)
