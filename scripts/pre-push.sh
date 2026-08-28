@@ -49,8 +49,9 @@ fi
 # (실측: `Detection time: 0.16ms`, 표도 `Found N clones` 줄도 없음). 그 상태에서
 # 예전 코드는 `|| echo "0"` 으로 0을 만들어 "클론 없음"을 찍었다 — 상시 no-op 이자
 # fail-open 이었다. 경로를 주면 478파일 37,856줄을 7.6초에 스캔한다.
-# shellcheck disable=SC2086
-CPD_RAW=$($JSCPD_BIN --config .jscpd.json --reporters console $SERVICES 2>&1) && CPD_RC=0 || CPD_RC=$?
+# 경로는 `.` 하나면 된다 — CI 의 `cpd` 잡과 **같은 파일 집합**이 된다(실측 479개로 일치).
+# 서비스 디렉토리만 나열하면 `scripts/` 가 빠져 CI 보다 좁아진다(478 vs 479).
+CPD_RAW=$($JSCPD_BIN --config .jscpd.json --reporters console . 2>&1) && CPD_RC=0 || CPD_RC=$?
 # ANSI 색코드를 벗긴다 — 안 벗기면 `[22m` 같은 이스케이프의 숫자가 표의 수치로 잘못 잡힌다
 # (실측: 파일 수 478 을 22 로 읽었다).
 CPD_OUT=$(echo "$CPD_RAW" | sed 's/\x1b\[[0-9;]*m//g')
