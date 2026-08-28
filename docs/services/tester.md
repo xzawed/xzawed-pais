@@ -74,18 +74,28 @@ interface TestFailure {
 
 ```
 src/
-├── index.ts              # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
-├── config.ts             # 환경변수 검증 (Zod) — workspaceRoot, testTimeoutMs 포함
-├── server.ts             # Fastify HTTP 서버 (/health, PORT=3005)
-├── tester.ts             # 테스트 조율 — validateTestCommand(), detectTestCommand(), exec() 호출
-├── detector.ts           # 프로젝트 타입 감지 (의존성 기반 하드코딩 명령어 반환); parseTestCounts()
-├── executor.ts           # spawn(shell:false) 실행; validatePath() — WORKSPACE_ROOT 검증
-├── types.ts              # TestFailure, ManagerToTesterMessageSchema, TesterToManagerMessage 정의
-├── streams/
-│   ├── consumer.ts       # BaseConsumer 확장 — manager:to-tester:{sessionId} 구독
-│   └── producer.ts       # tester:to-manager:{sessionId} 발행
-└── claude/
-    └── runner.ts         # Anthropic SDK — 테스트 출력 → TestFailure[] 분석
+├── config.test.ts
+├── config.ts   # 환경변수 검증 (Zod) — workspaceRoot, testTimeoutMs 포함
+├── detector.test.ts
+├── detector.ts   # 프로젝트 타입 감지 (의존성 기반 하드코딩 명령어 반환); parseTestCounts()
+├── executor.test.ts
+├── executor.ts   # spawn(shell:false) 실행; validatePath() — WORKSPACE_ROOT 검증
+├── index.ts   # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
+├── server.ts   # Fastify HTTP 서버 (/health, PORT=3005)
+├── tester.test.ts
+├── tester.ts   # 테스트 조율 — validateTestCommand(), detectTestCommand(), exec() 호출
+├── types.test.ts
+├── types.ts   # TestFailure, ManagerToTesterMessageSchema, TesterToManagerMessage 정의
+├── __tests__/
+│   └── workspace-root.test.ts
+├── claude/
+│   ├── runner.test.ts
+│   └── runner.ts   # Anthropic SDK — 테스트 출력 → TestFailure[] 분석
+└── streams/
+    ├── consumer.test.ts
+    ├── consumer.ts   # BaseConsumer 확장 — manager:to-tester:{sessionId} 구독
+    ├── producer.test.ts
+    └── producer.ts   # tester:to-manager:{sessionId} 발행
 ```
 
 ### 데이터 흐름

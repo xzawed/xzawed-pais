@@ -89,16 +89,23 @@ interface UISpec {
 
 ```
 src/
-├── index.ts             # 진입점: Redis consumer + Fastify 서버 시작
-├── config.ts            # 환경변수 검증 (Zod)
-├── server.ts            # Fastify HTTP 서버 (/health, 포트 3002)
-├── planner.ts           # Planner 클래스 — handle() 메서드로 메시지 처리 조율
-├── types.ts             # ManagerToPlannerMessage, PlannerToManagerMessage, Step, UISpec 타입 정의
-├── streams/
-│   ├── consumer.ts      # Consumer — BaseConsumer<ManagerToPlannerMessage> 확장
-│   └── producer.ts      # Producer — planner:to-manager:{sessionId} 발행
-└── claude/
-    └── runner.ts        # ClaudeRunner — generatePlan() → Step[] 생성, Zod safeParse 검증
+├── config.test.ts
+├── config.ts   # 환경변수 검증 (Zod)
+├── index.ts   # 진입점: Redis consumer + Fastify 서버 시작
+├── planner.test.ts
+├── planner.ts   # Planner 클래스 — handle() 메서드로 메시지 처리 조율
+├── server.test.ts
+├── server.ts   # Fastify HTTP 서버 (/health, 포트 3002)
+├── types.test.ts
+├── types.ts   # ManagerToPlannerMessage, PlannerToManagerMessage, Step, UISpec 타입 정의
+├── claude/
+│   ├── runner.test.ts
+│   └── runner.ts   # ClaudeRunner — generatePlan() → Step[] 생성, Zod safeParse 검증
+└── streams/
+    ├── consumer.test.ts
+    ├── consumer.ts   # Consumer — BaseConsumer<ManagerToPlannerMessage> 확장
+    ├── producer.test.ts
+    └── producer.ts   # Producer — planner:to-manager:{sessionId} 발행
 ```
 
 `claude/runner.ts`는 Claude 응답을 `PlanResponseSchema.safeParse()`로 검증한다. 검증 실패 시 단일 Step fallback을 반환한다. `ClarificationNeeded` 예외를 던지면 `planner.ts`가 `info_request`로 변환한다.

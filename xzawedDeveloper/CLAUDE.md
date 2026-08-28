@@ -5,24 +5,10 @@
 xzawedDeveloper는 xzawed 멀티 에이전트 시스템의 **코드 생성 에이전트**다.
 xzawedManager로부터 계획(plan)과 프로젝트 경로를 받아 코드를 생성·수정하고 결과를 반환한다.
 
-## 디렉토리 구조
+## 구조
 
-```
-src/
-├── index.ts          # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
-├── config.ts         # 환경변수 검증 (Zod) — workspaceRoot 포함
-├── server.ts         # Fastify HTTP 서버 ((/health · /health/ready, PORT=3003))
-├── developer.ts      # 코드 생성·수정 조율 로직
-├── fileio.ts         # 파일 읽기/쓰기/삭제 — 삭제는 .bak 리네임으로 보존
-├── types.ts          # FileChange, ManagerToDeveloperMessageSchema, DeveloperToManagerMessage
-├── streams/
-│   ├── consumer.ts   # BaseConsumer 확장 — manager:to-developer:{sessionId}
-│   └── producer.ts   # developer:to-manager:{sessionId} 발행
-└── claude/
-    ├── runner.ts     # Anthropic SDK — plan → FileChange[] 생성
-    └── runner.test.ts
-```
-
+`src/` 트리 → [docs/services/developer.md](../docs/services/developer.md#architecture). **여기 복사하지 않는다** —
+두 벌을 손으로 유지하다 양쪽이 다 낡았다(한쪽은 없는 파일을, 다른 쪽은 없는 테스트를 적고 있었다).
 ## Redis Streams 인터페이스
 
 **Consumer Group:** `developer-consumers`
@@ -67,14 +53,14 @@ interface FileChange {
 **파일 I/O 보안 (fileio.ts)**
 - 파일 삭제: 실제 삭제 대신 `.bak` 리네임으로 처리 (복구 가능)
 - `WORKSPACE_ROOT`가 파일시스템 루트이면 즉시 거부 (`validateWorkspaceRoot()`)
-- LLM 생성 절대경로는 `workspaceRoot` 기준 상대경로로 강제 변환 (`path.resolve(workspaceRoot, filePath)`)
+- LLM 이 낸 **절대경로는 파서가 거부한다**(`claude/runner.ts` — 변환하지 않는다). 파일 I/O 는 `realpath` 한 워크스페이스 루트 기준으로만 해석한다
 
 **Claude 프롬프트**
 - SYSTEM_PROMPT: LLM에게 절대경로 대신 상대경로 사용 지시 (`src/index.ts` 형태)
-- `claude/runner.ts`: `FileChange[]` JSON 응답 파싱 후 `fileio.applyChange()` 호출
+- `claude/runner.ts` 는 `FileChange[]` **파싱만** 한다 — `fileio.applyChange()` 호출은 `developer.ts` 다
 
 **공통 보안 패턴**
-- Redis 메시지: `ManagerToDeveloperMessageSchema.safeParse()` 검증. 실패 시 xack 후 skip
+- Redis 메시지: `ManagerToDeveloperMessageSchema.safeParse()` 검증. **실패는 `invalid_schema` 로 DLQ 격리**한다(shared `BaseConsumer`). `try/finally` 는 **배치**에 걸린다
 - xack 보장: `handler()` `try/finally` 래핑으로 PEL 누수 방지
 
 **협업·도메인 위키 (createCollaborativeHandler)**

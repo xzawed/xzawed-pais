@@ -5,27 +5,10 @@
 xzawedSecurity는 xzawed 멀티 에이전트 시스템의 **보안 감사 에이전트**다.
 xzawedManager로부터 감사 요청을 받아 OWASP Top 10 기반 정적 분석, 의존성 취약점 검사, Claude AI 분석을 병렬로 실행하고 보안 점수와 수정 제안을 반환한다.
 
-## 디렉토리 구조
+## 구조
 
-```
-src/
-├── index.ts              # 진입점: config 로드, Redis 연결, 모든 컴포넌트 초기화
-├── config.ts             # 환경변수 검증 (Zod)
-├── server.ts             # Fastify HTTP 서버 ((/health · /health/ready, PORT=3008))
-├── security.ts           # 분석기 3종 Promise.allSettled(전부 실패 시에만 throw), calculateScore(), filterBySeverity()
-├── executor.ts           # validatePath() — WORKSPACE_ROOT 경로 검증
-├── types.ts              # SecurityIssue, ManagerToSecurityMessageSchema
-├── analyzers/
-│   ├── static.ts         # 규칙 집계자 — 자체 규칙 + static-*.ts 모듈을 ALL_RULES로 합쳐 스캔
-│   ├── static-*.ts       # 카테고리별 규칙 모듈(crypto·config·injection·traversal·xss·access). 개수는 디렉토리가 정본
-│   └── deps.ts           # npm audit --json 실행 → SecurityIssue[] 변환
-├── streams/
-│   ├── consumer.ts       # BaseConsumer 확장 — manager:to-security:{sessionId}
-│   └── producer.ts       # security:to-manager:{sessionId} 발행
-└── claude/
-    └── runner.ts         # Anthropic SDK — OWASP 컨텍스트 기반 추가 분석
-```
-
+`src/` 트리 → [docs/services/security.md](../docs/services/security.md#architecture). **여기 복사하지 않는다** —
+두 벌을 손으로 유지하다 양쪽이 다 낡았다(한쪽은 없는 파일을, 다른 쪽은 없는 테스트를 적고 있었다).
 ## Redis Streams 인터페이스
 
 **Consumer Group:** `security-consumers`

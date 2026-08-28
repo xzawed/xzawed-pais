@@ -83,16 +83,22 @@ interface UISpec {
 
 ```
 src/
-├── index.ts            # 진입점: Redis consumer + Fastify 서버 시작
-├── config.ts           # 환경변수 검증 (Zod)
-├── server.ts           # Fastify HTTP 서버 (/health, 포트 3004)
-├── designer.ts         # Designer 클래스 — handle() 메서드로 메시지 처리 조율
-├── types.ts            # ManagerToDesignerMessage, DesignerToManagerMessage, ComponentSpec, UISpec 타입 정의
-├── streams/
-│   ├── consumer.ts     # Consumer — BaseConsumer<ManagerToDesignerMessage> 확장
-│   └── producer.ts     # Producer — designer:to-manager:{sessionId} 발행
-└── claude/
-    └── runner.ts       # ClaudeRunner — generateDesign() → ComponentSpec[] 생성
+├── config.test.ts
+├── config.ts   # 환경변수 검증 (Zod)
+├── designer.test.ts
+├── designer.ts   # Designer 클래스 — handle() 메서드로 메시지 처리 조율
+├── index.ts   # 진입점: Redis consumer + Fastify 서버 시작
+├── server.ts   # Fastify HTTP 서버 (/health, 포트 3004)
+├── types.test.ts
+├── types.ts   # ManagerToDesignerMessage, DesignerToManagerMessage, ComponentSpec, UISpec 타입 정의
+├── claude/
+│   ├── runner.test.ts
+│   └── runner.ts   # ClaudeRunner — generateDesign() → ComponentSpec[] 생성
+└── streams/
+    ├── consumer.test.ts
+    ├── consumer.ts   # Consumer — BaseConsumer<ManagerToDesignerMessage> 확장
+    ├── producer.test.ts
+    └── producer.ts   # Producer — designer:to-manager:{sessionId} 발행
 ```
 
 ### 데이터 흐름

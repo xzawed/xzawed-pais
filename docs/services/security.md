@@ -76,21 +76,41 @@ interface SecurityIssue {
 
 ```
 src/
-├── index.ts              # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner·Security 초기화
-├── config.ts             # 환경변수 검증 (Zod)
-├── server.ts             # Fastify HTTP 서버 (/health, PORT=3008)
-├── security.ts           # 분석기 3종 Promise.allSettled, 점수 계산, 심각도 필터링
-├── executor.ts           # validatePath() — WORKSPACE_ROOT 경로 검증
-├── types.ts              # SecurityIssue, ManagerToSecurityMessageSchema 정의
+├── config.test.ts
+├── config.ts   # 환경변수 검증 (Zod)
+├── executor.test.ts
+├── executor.ts   # validatePath() — WORKSPACE_ROOT 경로 검증
+├── index.ts   # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner·Security 초기화
+├── security.test.ts
+├── security.ts   # 분석기 3종 Promise.allSettled, 점수 계산, 심각도 필터링
+├── server.ts   # Fastify HTTP 서버 (/health, PORT=3008)
+├── types.test.ts
+├── types.ts   # SecurityIssue, ManagerToSecurityMessageSchema 정의
+├── __tests__/
+│   └── workspace-root.test.ts
 ├── analyzers/
-│   ├── static.ts         # 규칙 집계자 — 자체 규칙 + static-*.ts 모듈을 ALL_RULES로 합쳐 스캔
-│   ├── static-*.ts       # 카테고리별 규칙 모듈(crypto·config·injection·traversal·xss·access). 개수는 디렉토리가 정본
-│   └── deps.ts           # npm audit --json 실행 → SecurityIssue[] 변환
-├── streams/
-│   ├── consumer.ts       # BaseConsumer 확장 — manager:to-security:{sessionId} 구독
-│   └── producer.ts       # security:to-manager:{sessionId} 발행
-└── claude/
-    └── runner.ts         # Anthropic SDK — OWASP 컨텍스트 기반 추가 분석
+│   ├── deps.test.ts
+│   ├── deps.ts   # npm audit --json 실행 → SecurityIssue[] 변환
+│   ├── static-access.ts
+│   ├── static-config.test.ts
+│   ├── static-config.ts
+│   ├── static-crypto.test.ts
+│   ├── static-crypto.ts
+│   ├── static-injection.test.ts
+│   ├── static-injection.ts
+│   ├── static-traversal.test.ts
+│   ├── static-traversal.ts
+│   ├── static-xss.ts
+│   ├── static.test.ts
+│   └── static.ts   # 규칙 집계자 — 자체 규칙 + static-*.ts 모듈을 ALL_RULES로 합쳐 스캔
+├── claude/
+│   ├── runner.test.ts
+│   └── runner.ts   # Anthropic SDK — OWASP 컨텍스트 기반 추가 분석
+└── streams/
+    ├── consumer.test.ts
+    ├── consumer.ts   # BaseConsumer 확장 — manager:to-security:{sessionId} 구독
+    ├── producer.test.ts
+    └── producer.ts   # security:to-manager:{sessionId} 발행
 ```
 
 ### 데이터 흐름
