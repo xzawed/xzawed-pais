@@ -5,26 +5,10 @@
 xzawedPlanner는 xzawed 멀티 에이전트 시스템의 **계획 에이전트**다.
 xzawedManager로부터 작업 지시(intent)를 받아 실행 가능한 단계별 계획(`Step[]`)으로 분해하고 반환한다.
 
-## 디렉토리 구조
+## 구조
 
-```
-src/
-├── index.ts          # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
-├── config.ts         # 환경변수 검증 (Zod) — PORT=3002, WORKSPACE_ROOT 필수
-├── server.ts         # Fastify HTTP 서버 ((/health · /health/ready, PORT=3002))
-├── planner.ts        # intent + context → Step[] 분해 핵심 로직
-├── types.ts          # Step, UISpec, ManagerToPlannerMessageSchema, PlannerToManagerMessage
-├── streams/
-│   ├── consumer.ts   # BaseConsumer 확장 — manager:to-planner:{sessionId}
-│   ├── consumer.test.ts
-│   ├── producer.ts   # planner:to-manager:{sessionId} 발행
-│   ├── producer.test.ts
-│   └── runner.test.ts  (claude/)
-└── claude/
-    ├── runner.ts     # Anthropic SDK — intent → PlanResponse JSON 생성
-    └── runner.test.ts
-```
-
+`src/` 트리 → [docs/services/planner.md](../docs/services/planner.md#architecture). **여기 복사하지 않는다** —
+두 벌을 손으로 유지하다 양쪽이 다 낡았다(한쪽은 없는 파일을, 다른 쪽은 없는 테스트를 적고 있었다).
 ## Redis Streams 인터페이스
 
 **Consumer Group:** `planner-consumers`
@@ -45,7 +29,7 @@ interface ManagerToPlannerMessage {
 // 발신: planner:to-manager:{sessionId}
 interface PlannerToManagerMessage {
   sessionId: string; messageId: string; timestamp: number
-  type: 'plan_complete' | 'info_request' | 'error'
+  type: 'plan_complete' | 'info_request' | 'error' | 'agent_query'
   payload: {
     steps?: Step[]
     estimatedTime?: string
@@ -73,7 +57,7 @@ interface Step {
 - `claude/runner.ts`: Claude JSON 응답을 `PlanResponseSchema.safeParse()`(Zod)로 검증. 검증 실패 시 단일 step fallback 반환
 - `StepSchema`: `agentType` enum 강제, `estimatedMinutes` 0초과 480분 이하 제약
 - `JSON.parse() as Type` 캐스트 금지 — 반드시 `safeParse` 사용
-- **Redis 메시지 검증**: `ManagerToPlannerMessageSchema.safeParse()`. 실패 시 xack 후 skip
+- **Redis 메시지 검증**: `ManagerToPlannerMessageSchema.safeParse()`. **실패는 `invalid_schema` 로 DLQ 격리**한다(shared `BaseConsumer` — 조용히 ack 하고 버리지 않는다). `try/finally` 는 `handler()` 가 아니라 **배치**에 걸려 있다
 - **Redis xack 보장**: `handler()` `try/finally` 래핑으로 PEL 누수 방지
 
 **협업·도메인 위키 (createCollaborativeHandler)**

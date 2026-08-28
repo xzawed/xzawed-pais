@@ -78,17 +78,26 @@ interface FileChange {
 
 ```
 src/
-├── index.ts            # 진입점: Redis consumer + Fastify 서버 시작
-├── config.ts           # 환경변수 검증 (Zod) — WORKSPACE_ROOT 필수 검증 포함
-├── server.ts           # Fastify HTTP 서버 (/health, 포트 3003)
-├── developer.ts        # Developer 클래스 — handle() 메서드로 메시지 처리 조율
-├── fileio.ts           # validatePath(), applyChange() — 경로 검증 및 파일 I/O
-├── types.ts            # ManagerToDeveloperMessage, DeveloperToManagerMessage, FileChange 타입 정의
-├── streams/
-│   ├── consumer.ts     # Consumer — BaseConsumer<ManagerToDeveloperMessage> 확장
-│   └── producer.ts     # Producer — developer:to-manager:{sessionId} 발행
-└── claude/
-    └── runner.ts       # ClaudeRunner — generateChanges() → FileChange[] 생성
+├── config.test.ts
+├── config.ts   # 환경변수 검증 (Zod) — WORKSPACE_ROOT 필수 검증 포함
+├── developer.test.ts
+├── developer.ts   # Developer 클래스 — handle() 메서드로 메시지 처리 조율
+├── fileio.test.ts
+├── fileio.ts   # validatePath(), applyChange() — 경로 검증 및 파일 I/O
+├── index.ts   # 진입점: Redis consumer + Fastify 서버 시작
+├── server.ts   # Fastify HTTP 서버 (/health, 포트 3003)
+├── types.test.ts
+├── types.ts   # ManagerToDeveloperMessage, DeveloperToManagerMessage, FileChange 타입 정의
+├── __tests__/
+│   └── workspace-root.test.ts
+├── claude/
+│   ├── runner.test.ts
+│   └── runner.ts   # ClaudeRunner — generateChanges() → FileChange[] 생성
+└── streams/
+    ├── consumer.test.ts
+    ├── consumer.ts   # Consumer — BaseConsumer<ManagerToDeveloperMessage> 확장
+    ├── producer.test.ts
+    └── producer.ts   # Producer — developer:to-manager:{sessionId} 발행
 ```
 
 ### 데이터 흐름

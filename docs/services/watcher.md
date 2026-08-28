@@ -70,17 +70,28 @@ interface FileEvent {
 
 ```
 src/
-├── index.ts              # 진입점: config 로드, Redis 연결, Consumer·Producer·Watcher·Store 초기화
-├── config.ts             # 환경변수 검증 (Zod) — maxWatchers, debounceMs 포함
-├── server.ts             # Fastify HTTP 서버 (/health, PORT=3007)
-├── watcher.ts            # chokidar 감시 로직 — per-file 디바운스, safeTriggers 이중 필터
-├── watcher-store.ts      # WatcherStore 클래스 — sessionId → WatchEntry Map 관리
-├── executor.ts           # validatePath() — WORKSPACE_ROOT 경로 검증 (claude/ 없음)
-├── types.ts              # FileEvent, ManagerToWatcherMessageSchema, WatcherToManagerMessage 정의
-├── streams/
-│   ├── consumer.ts       # BaseConsumer 확장 — manager:to-watcher:{sessionId} 구독
-│   └── producer.ts       # watcher:to-manager:{sessionId} 발행
-└── (claude/ 없음 — Claude API 미사용)
+├── config.test.ts
+├── config.ts   # 환경변수 검증 (Zod) — maxWatchers, debounceMs 포함
+├── executor.test.ts
+├── executor.ts   # validatePath() — WORKSPACE_ROOT 경로 검증 (claude/ 없음)
+├── index.ts   # 진입점: config 로드, Redis 연결, Consumer·Producer·Watcher·Store 초기화
+├── server.ts   # Fastify HTTP 서버 (/health, PORT=3007)
+├── session-consumer.test.ts
+├── session-consumer.ts
+├── types.test.ts
+├── types.ts   # FileEvent, ManagerToWatcherMessageSchema, WatcherToManagerMessage 정의
+├── watcher-store.test.ts
+├── watcher-store.ts   # WatcherStore 클래스 — sessionId → WatchEntry Map 관리
+├── watcher.realfs.test.ts
+├── watcher.test.ts
+├── watcher.ts   # chokidar 감시 로직 — per-file 디바운스, safeTriggers 이중 필터
+├── __tests__/
+│   └── workspace-root.test.ts
+└── streams/
+    ├── consumer.test.ts
+    ├── consumer.ts   # BaseConsumer 확장 — manager:to-watcher:{sessionId} 구독
+    ├── producer.test.ts
+    └── producer.ts   # watcher:to-manager:{sessionId} 발행
 ```
 
 ### 데이터 흐름

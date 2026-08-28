@@ -10,6 +10,7 @@
  * 2. CLAUDE.md는 200줄을 넘지 않는다(Anthropic 권장 상한).
  * 3. CLAUDE.md는 24KB를 넘지 않는다 — **줄 수만 세면 우회된다**(아래).
  * 4. CLAUDE.md는 이력 마커를 담지 않는다(날짜·PR번호·"머지 완료"류).
+ * 5. docs/services/*.md의 src 트리는 실제 디렉토리와 일치한다(손 유지로 양쪽이 썩었다).
  */
 const { execFileSync } = require('node:child_process')
 const fs = require('node:fs')
@@ -134,6 +135,50 @@ function checkClaudeMdBytes(files) {
   return violations
 }
 
+/**
+ * 서비스 문서의 `src/` 트리가 실제 디렉토리와 일치하는가.
+ *
+ * 손으로 유지하다 **양쪽이 다 썩었다** — 서비스 `CLAUDE.md` 트리는 없는 파일
+ * (`streams/runner.test.ts`)을 적고 있었고, `docs/services/*.md` 트리는 있는 테스트 파일들을
+ * 빠뜨리고 있었다. 트리는 한 벌만 두고(서비스 문서), 실재 여부는 기계가 본다.
+ *
+ * 파일 **이름**만 본다 — 위치는 트리 렌더링 방식에 따라 달라지지만 이름은 안 달라진다.
+ */
+const TREE_DOCS = {
+  planner: 'xzawedPlanner', developer: 'xzawedDeveloper', designer: 'xzawedDesigner',
+  tester: 'xzawedTester', builder: 'xzawedBuilder', watcher: 'xzawedWatcher', security: 'xzawedSecurity',
+}
+
+function collectTs(dir, out) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.isDirectory()) collectTs(path.join(dir, e.name), out)
+    else if (e.name.endsWith('.ts')) out.add(e.name)
+  }
+  return out
+}
+
+function checkServiceTrees() {
+  const violations = []
+  for (const [doc, svc] of Object.entries(TREE_DOCS)) {
+    const file = `docs/services/${doc}.md`
+    const root = `${svc}/src`
+    if (!fs.existsSync(file) || !fs.existsSync(root)) continue
+    // CRLF 를 정규화한다 — core.autocrlf=true 라 워킹트리는 \r\n 이고 펜스 앵커가 어긋난다.
+    const src = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
+    const fence = src.indexOf('```\nsrc/')
+    if (fence < 0) { violations.push(`${file}  src 트리 블록 없음`); continue }
+    const close = src.indexOf('\n```', fence + 4)
+    const block = src.slice(fence, close < 0 ? src.length : close)
+    const listed = new Set([...block.matchAll(/([A-Za-z0-9_.-]+\.ts)/g)].map((m) => m[1]))
+    const real = collectTs(root, new Set())
+    const missing = [...real].filter((f) => !listed.has(f))
+    const phantom = [...listed].filter((f) => !real.has(f))
+    if (missing.length > 0) violations.push(`${file}  트리에 없는 실제 파일 ${missing.length}개: ${missing.slice(0, 4).join(', ')}`)
+    if (phantom.length > 0) violations.push(`${file}  실재하지 않는 파일 ${phantom.length}개: ${phantom.slice(0, 4).join(', ')}`)
+  }
+  return violations
+}
+
 function report(title, violations) {
   if (violations.length === 0) {
     console.log(`✓ ${title}`)
@@ -150,6 +195,7 @@ failed += report('상대 마크다운 링크 실존', checkLinks(files))
 failed += report(`CLAUDE.md ${CLAUDE_MD_MAX_LINES}줄 이하`, checkClaudeMdSize(files))
 failed += report(`CLAUDE.md ${CLAUDE_MD_MAX_BYTES / 1024}KB 이하`, checkClaudeMdBytes(files))
 failed += report('CLAUDE.md 이력 마커 없음', checkClaudeMdHistoryMarkers(files))
+failed += report('서비스 문서 src 트리 == 실제 디렉토리', checkServiceTrees())
 
 if (failed > 0) {
   console.error(`\n문서 게이트 실패 — 위반 ${failed}건`)

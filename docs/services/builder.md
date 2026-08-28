@@ -74,18 +74,29 @@ interface BuildError {
 
 ```
 src/
-├── index.ts              # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
-├── config.ts             # 환경변수 검증 (Zod) — workspaceRoot, buildTimeoutMs 포함
-├── server.ts             # Fastify HTTP 서버 (/health, PORT=3006)
-├── builder.ts            # 빌드 조율 — validateBuildCommand(), stripPackageManagerField(), runPreInstall()
-├── detector.ts           # 빌드 명령 자동 감지 — projectPath→workspaceRoot 상향 탐색 (detectBuildInfo)
-├── executor.ts           # spawn(shell:false) 실행; validatePath() — WORKSPACE_ROOT 검증
-├── types.ts              # BuildError, ManagerToBuilderMessageSchema, BuilderToManagerMessage 정의
-├── streams/
-│   ├── consumer.ts       # BaseConsumer 확장 — manager:to-builder:{sessionId} 구독
-│   └── producer.ts       # builder:to-manager:{sessionId} 발행
-└── claude/
-    └── runner.ts         # Anthropic SDK — 빌드 로그 → BuildError[] 분석
+├── builder.test.ts
+├── builder.ts   # 빌드 조율 — validateBuildCommand(), stripPackageManagerField(), runPreInstall()
+├── config.test.ts
+├── config.ts   # 환경변수 검증 (Zod) — workspaceRoot, buildTimeoutMs 포함
+├── detector.test.ts
+├── detector.ts   # 빌드 명령 자동 감지 — projectPath→workspaceRoot 상향 탐색 (detectBuildInfo)
+├── executor.test.ts
+├── executor.ts   # spawn(shell:false) 실행; validatePath() — WORKSPACE_ROOT 검증
+├── index.ts   # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
+├── server.test.ts
+├── server.ts   # Fastify HTTP 서버 (/health, PORT=3006)
+├── types.ts   # BuildError, ManagerToBuilderMessageSchema, BuilderToManagerMessage 정의
+├── __tests__/
+│   ├── builder.test.ts
+│   └── workspace-root.test.ts
+├── claude/
+│   ├── runner.test.ts
+│   └── runner.ts   # Anthropic SDK — 빌드 로그 → BuildError[] 분석
+└── streams/
+    ├── consumer.test.ts
+    ├── consumer.ts   # BaseConsumer 확장 — manager:to-builder:{sessionId} 구독
+    ├── producer.test.ts
+    └── producer.ts   # builder:to-manager:{sessionId} 발행
 ```
 
 ### 데이터 흐름

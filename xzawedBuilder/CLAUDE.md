@@ -5,26 +5,10 @@
 xzawedBuilder는 xzawed 멀티 에이전트 시스템의 **빌드 에이전트**다.
 xzawedManager로부터 프로젝트 경로와 빌드 타깃을 받아 빌드를 실행하고 결과 아티팩트를 반환한다.
 
-## 디렉토리 구조
+## 구조
 
-```
-src/
-├── index.ts              # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
-├── config.ts             # 환경변수 검증 (Zod) — workspaceRoot, buildTimeoutMs 포함
-├── server.ts             # Fastify HTTP 서버 ((/health · /health/ready, PORT=3006))
-├── builder.ts            # 빌드 조율 — validateBuildCommand(), stripPackageManagerField(), runPreInstall()
-├── detector.ts           # 빌드 명령 감지 — projectPath→workspaceRoot 상향 탐색 (detectBuildInfo)
-├── executor.ts           # spawn(shell:false) 실행; validatePath() — WORKSPACE_ROOT 검증
-├── types.ts              # BuildError, ManagerToBuilderMessageSchema, BuilderToManagerMessage
-├── streams/
-│   ├── consumer.ts       # BaseConsumer 확장 — manager:to-builder:{sessionId}
-│   ├── consumer.test.ts
-│   ├── producer.ts       # builder:to-manager:{sessionId} 발행
-│   └── producer.test.ts
-└── claude/
-    └── runner.ts         # Anthropic SDK — 빌드 로그 → BuildError[] 분석
-```
-
+`src/` 트리 → [docs/services/builder.md](../docs/services/builder.md#architecture). **여기 복사하지 않는다** —
+두 벌을 손으로 유지하다 양쪽이 다 낡았다(한쪽은 없는 파일을, 다른 쪽은 없는 테스트를 적고 있었다).
 ## Redis Streams 인터페이스
 
 **Consumer Group:** `builder-consumers`

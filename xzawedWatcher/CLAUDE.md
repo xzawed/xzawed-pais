@@ -7,23 +7,10 @@ xzawedManager로부터 감시 요청을 받아 chokidar로 파일 변경을 감�
 
 **Claude API 미사용** — 순수 파일 시스템 이벤트 처리만 수행. `ANTHROPIC_API_KEY` 불필요. Claude를 쓰지 않으므로 에이전트 협업(AgentQuery 답변·교차질의)·도메인 지식 emit 대상에서 제외된다(`createCollaborativeHandler` 미적용).
 
-## 디렉토리 구조
+## 구조
 
-```
-src/
-├── index.ts              # 진입점: config 로드, Redis 연결, Consumer·Producer·WatcherStore·Watcher 초기화
-├── config.ts             # 환경변수 검증 (Zod) — maxWatchers, debounceMs 포함
-├── server.ts             # Fastify HTTP 서버 ((/health · /health/ready, PORT=3007))
-├── watcher.ts            # chokidar 감시 로직 — per-file 디바운스, safeTriggers 이중 필터
-├── watcher-store.ts      # WatcherStore — sessionId → WatchEntry Map 관리
-├── executor.ts           # validatePath() — workspaceRoot 앵커 + 경로 검증 (claude/ 없음)
-├── types.ts              # FileEvent, ManagerToWatcherMessageSchema, WatcherToManagerMessage
-├── streams/
-│   ├── consumer.ts       # BaseConsumer 확장 — manager:to-watcher:{sessionId}
-│   └── producer.ts       # watcher:to-manager:{sessionId} 발행
-└── (claude/ 없음)
-```
-
+`src/` 트리 → [docs/services/watcher.md](../docs/services/watcher.md#architecture). **여기 복사하지 않는다** —
+두 벌을 손으로 유지하다 양쪽이 다 낡았다(한쪽은 없는 파일을, 다른 쪽은 없는 테스트를 적고 있었다).
 ## Redis Streams 인터페이스
 
 **Consumer Group:** `watcher-consumers`

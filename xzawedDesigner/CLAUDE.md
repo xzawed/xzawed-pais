@@ -5,24 +5,10 @@
 xzawedDesigner는 xzawed 멀티 에이전트 시스템의 **UI 설계 에이전트**다.
 xzawedManager로부터 UI/UX 설계 요청을 받아 ComponentSpec 구조로 컴포넌트 스펙을 생성하고 반환한다.
 
-## 디렉토리 구조
+## 구조
 
-```
-src/
-├── index.ts          # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
-├── config.ts         # 환경변수 검증 (Zod) — PORT=3004, WORKSPACE_ROOT 필수
-├── server.ts         # Fastify HTTP 서버 ((/health · /health/ready, PORT=3004))
-├── designer.ts       # UI 컴포넌트 스펙 생성 조율 로직
-├── types.ts          # ComponentSpec (z.lazy 재귀 스키마), ManagerToDesignerMessageSchema
-├── streams/
-│   ├── consumer.ts   # BaseConsumer 확장 — manager:to-designer:{sessionId}
-│   ├── producer.ts   # designer:to-manager:{sessionId} 발행
-│   └── runner.test.ts
-└── claude/
-    ├── runner.ts     # Anthropic SDK — intent → ComponentSpec[] 생성
-    └── runner.test.ts
-```
-
+`src/` 트리 → [docs/services/designer.md](../docs/services/designer.md#architecture). **여기 복사하지 않는다** —
+두 벌을 손으로 유지하다 양쪽이 다 낡았다(한쪽은 없는 파일을, 다른 쪽은 없는 테스트를 적고 있었다).
 ## Redis Streams 인터페이스
 
 **Consumer Group:** `designer-consumers`
@@ -44,7 +30,7 @@ interface ManagerToDesignerMessage {
 // 발신: designer:to-manager:{sessionId}
 interface DesignerToManagerMessage {
   sessionId: string; messageId: string; timestamp: number
-  type: 'design_complete' | 'error'
+  type: 'design_complete' | 'error' | 'agent_query'
   payload: {
     components?: ComponentSpec[]
     uiSpec?: UISpec
@@ -82,7 +68,7 @@ interface UISpec {
 - `ComponentSpec` 재귀 구조: `z.lazy()`로 정의; `z.ZodType<ComponentSpec>` 어노테이션 필요 (`exactOptionalPropertyTypes` 호환)
 - `claude/runner.ts`의 `parseResponse`: JSON 펜스 제거 후 `ComponentSpec[]` 파싱
 - **파싱 실패 폴백은 컴포넌트 1개를 낸다 — 그래서 개수로는 실패를 구분할 수 없다.** 폴백은 generic 스텁을 `design_complete`로 발행하므로 전선 위 모양이 성공과 같고, `console.warn`은 이 프로세스 로그에만 남는다. 소비자(Manager 자기검증)가 구분할 수 있는 유일한 신호가 `designed.source`다 — **폴백 경로를 늘릴 때 이 필드를 반드시 함께 채운다**
-- **Redis 메시지 검증**: 수신 메시지는 `ManagerToDesignerMessageSchema.safeParse()`로 검증. 실패 시 xack 후 skip
+- **Redis 메시지 검증**: `ManagerToDesignerMessageSchema.safeParse()`. **실패는 `invalid_schema` 로 DLQ 격리**한다(shared `BaseConsumer`). `try/finally` 는 **배치**에 걸린다
 - **Redis xack 보장**: `handler()` 호출을 `try/finally`로 감싸 PEL 누수 방지
 
 **협업·도메인 위키 (createCollaborativeHandler)**

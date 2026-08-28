@@ -5,25 +5,10 @@
 xzawedTester는 xzawed 멀티 에이전트 시스템의 **테스트 실행 에이전트**다.
 xzawedManager로부터 프로젝트 경로를 받아 테스트를 실행하고 결과를 분석해 반환한다.
 
-## 디렉토리 구조
+## 구조
 
-```
-src/
-├── index.ts          # 진입점: config 로드, Redis 연결, Consumer·Producer·Runner 초기화
-├── config.ts         # 환경변수 검증 (Zod) — workspaceRoot, testTimeoutMs 포함
-├── server.ts         # Fastify HTTP 서버 ((/health · /health/ready, PORT=3005))
-├── tester.ts         # 테스트 조율 — validateTestCommand(), detectTestCommand(), exec() 호출
-├── detector.ts       # 프로젝트 타입 감지; buildCommandWithFiles(); parseTestCounts()
-├── executor.ts       # spawn(shell:false) 실행; validatePath() — WORKSPACE_ROOT 검증
-├── types.ts          # TestFailure, ManagerToTesterMessageSchema, TesterToManagerMessage
-├── streams/
-│   ├── consumer.ts   # BaseConsumer 확장 — manager:to-tester:{sessionId}
-│   └── producer.ts   # tester:to-manager:{sessionId} 발행
-└── claude/
-    ├── runner.ts     # Anthropic SDK — 테스트 출력 → TestFailure[] 분석
-    └── runner.test.ts
-```
-
+`src/` 트리 → [docs/services/tester.md](../docs/services/tester.md#architecture). **여기 복사하지 않는다** —
+두 벌을 손으로 유지하다 양쪽이 다 낡았다(한쪽은 없는 파일을, 다른 쪽은 없는 테스트를 적고 있었다).
 ## Redis Streams 인터페이스
 
 **Consumer Group:** `tester-consumers`
@@ -73,7 +58,7 @@ interface TestFailure { file: string; testName: string; message: string; suggest
 
 **보안 패턴**
 - `validateTestCommand()`: `ALLOWED_PREFIXES`(`pnpm`, `npm`, `npx`, `yarn`, `vitest`, `jest`, `mocha`, `pytest`, `cargo test`, `go test`, `make test`) + 셸 메타문자(`;&|`$><`) 이중 차단
-- `detectTestCommand()`: `package.json scripts.test`는 신뢰하지 않음 — 의존성(`vitest`, `jest`, `mocha`) 기반 하드코딩 명령어만 반환
+- `detectTestCommand()`: `package.json scripts.test`는 신뢰하지 않음 — **하드코딩 명령만 반환**한다 — 의존성 매칭(`vitest`/`jest`/`mocha`), 매칭 실패 시 `pnpm test`, `Cargo.toml` 이면 `cargo test`, 그 외에는 **throw**(감지 실패를 통과로 세지 않는다)
 - `validatePath()`: `validateWorkspaceRoot()` → **`workspaceRoot` 기준 앵커** → `fs.realpath`로 심볼릭 링크 우회 차단. **상대경로는 cwd 가 아니라 `workspaceRoot` 기준으로 푼다** — 계약(루트 CLAUDE.md)이 그렇게 못박고 있는데 예전엔 원시 인자를 그대로 realpath 해 서버 프로세스 cwd 기준이었다. 절대경로는 손대지 않는다(`path.resolve(root, abs)` 는 win32 에서 POSIX 절대경로를 드라이브 상대로 재해석해 로컬↔CI 를 갈라놓는다)
 - `testFiles` 경로도 개별 `validatePath()` 적용
 
@@ -83,6 +68,6 @@ interface TestFailure { file: string; testName: string; message: string; suggest
 - `executor.ts`: `COREPACK_ENABLE_STRICT=0`, `COREPACK_ENABLE_AUTO_PIN=0` 환경변수 강제 설정
 
 **협업 (createCollaborativeHandler)**
-- `handle()`는 `createCollaborativeHandler`로 감싸 다른 에이전트의 교차질의에 `runner.answerQuery`로 답변(답변자 역할 — 교차질의 개시·지식 emit은 없음)
+- `handle()`는 `createCollaborativeHandler`로 감싸 다른 에이전트의 교차질의에 `runner.answerQuery`로 답변(답변자 역할 — **교차질의 개시는 없으나 지식 emit 은 한다**: `extractKnowledge` 결과를 `test_complete` 에 싣는다)
 
 **Manager 연결:** `xzawedManager/packages/server/src/tools/run-tests.ts` (`createRunTestsHandler`)
