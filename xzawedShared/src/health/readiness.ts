@@ -186,6 +186,23 @@ export function buildProbes(deps: ProbeDeps): ReadinessProbe[] {
  * (Orchestrator 사본은 그 타입을 모른다).
  */
 export function agentReadinessProbes(redis: Redis, dispatcher: SessionDispatcher): ReadinessProbe[] {
+  // **기동 시점 하드 실패.** 디스패처와 같은 연결을 넘기면 readiness 가 조용히 펄럭인다 —
+  // ioredis 는 한 연결에서 명령을 직렬화하는데 디스패처가 `xreadgroup … BLOCK` 으로 붙잡고
+  // 있어 그 뒤의 `ping()` 이 예산(1000ms)을 넘긴다.
+  //
+  // 실측(에이전트 7종, 각 20회): 같은 연결일 때 **140회 중 92회 503**(ping 21~1002ms),
+  // 전용 연결로 바꾸면 **140/140 통과**(ping 0~2ms). 세션이 살아 있을 때도 140/140.
+  //
+  // 경고가 아니라 throw 인 이유: 이 결함의 증상은 "가끔 503"이라 로그에 묻힌다. compose
+  // healthcheck(30초×3)가 컨테이너를 unhealthy 로 뒤집고 Launcher 는 그 신호로 running 을
+  // 판정하므로, 조용히 나가는 것보다 기동에서 죽는 편이 낫다.
+  if (dispatcher.usesConnection(redis)) {
+    throw new Error(
+      'readiness 프로브에 SessionDispatcher 와 같은 Redis 연결을 넘겼다. '
+      + 'ioredis 는 한 연결에서 명령을 직렬화하므로 blocking xreadgroup 뒤에 ping 이 밀려 '
+      + 'readiness 예산을 넘긴다 — 프로브 전용 연결을 따로 만들어 넘긴다.',
+    )
+  }
   return [
     redisPingProbe(redis),
     loopProbe('dispatcher', () => dispatcher.isRunning()),
