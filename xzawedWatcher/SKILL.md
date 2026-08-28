@@ -7,7 +7,7 @@ description: xzawedWatcher 개발·디버깅·운영 스킬
 
 # xzawedWatcher 스킬
 
-**테스트 실행**: `pnpm test` (수량은 루트 CLAUDE.md 서비스 표 참조)
+**테스트 실행**: `pnpm test` — **개수를 문서에 적지 않는다**. 출력의 `Tests N passed` 와 **skip 수**를 함께 읽는다
 **참고**: Claude API 미사용 — ANTHROPIC_API_KEY 불필요
 **관련 문서**: [docs/services/watcher.md](../docs/services/watcher.md)
 

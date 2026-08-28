@@ -63,6 +63,8 @@ interface TestFailure { file: string; testName: string; message: string; suggest
 - `testFiles` 경로도 개별 `validatePath()` 적용
 
 **동작 특이사항**
+- **`validatePath` 는 경로가 이미 존재할 것을 요구한다.** `realpath` 실패는 거부다 — Developer 는 없는 파일을 만들지만 Tester 는 **없는 `projectPath`·테스트 파일에 대해 돌지 못한다**(심볼릭 링크 탈출 방어와 별개의 fail-closed)
+- **명령은 공백 분해 후 `spawn(bin, args, {shell:false})` 다.** `cargo test` 가 도는 이유는 `['cargo','test']` 로 갈리기 때문이고, 그래서 **공백이 든 `testFiles` 는 거부**한다
 - `parseTestCounts()`: Vitest, Jest(`Tests: N failed, N passed`), Cargo(`N passed; N failed`) 포맷 지원
 - 테스트 출력은 최대 2000자로 잘라 `content`에 전달
 - `executor.ts`: `COREPACK_ENABLE_STRICT=0`, `COREPACK_ENABLE_AUTO_PIN=0` 환경변수 강제 설정
