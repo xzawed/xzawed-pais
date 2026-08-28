@@ -1,6 +1,6 @@
 import { isAbsolute, join, relative, sep } from 'node:path'
 import { z } from 'zod'
-import { makeEnvelope } from '@xzawed/agent-streams'
+import { makeEnvelope, isSafeRelativePath } from '@xzawed/agent-streams'
 import type { WorkPackage, WpRisk } from '@xzawed/agent-streams'
 import type { ChannelName, ChannelOutcomeKind } from '../db/release-gate.types.js'
 import type { UserContext } from '../types/user-context.js'
@@ -155,21 +155,20 @@ export function toWireArtifacts(artifacts: string[], workspaceRoot?: string): st
 }
 
 /**
- * Security 인바운드 술어의 **사본**(`xzawedSecurity/src/types.ts` — `!isAbsolute && !includes('..')`).
+ * Security 인바운드 술어와 **같은 함수**를 쓴다(`@xzawed/agent-streams` `isSafeRelativePath`).
  *
- * 두 분기가 서로 다른 규칙을 쓰고 있었다. 상대화 경로는 `toAuditPath` 의 **의미적** 판정
- * (`path.relative` 기준 탈출 여부)만 거쳤는데, Security 의 판정은 **어휘적**이다 — 그래서
- * `patches/v1..v2.diff` 처럼 탈출이 아닌 **정상 파일명**이 통과해 나갔다. Zod `refine` 은
- * 원소별이라 그런 경로 하나가 `security_audit` **메시지 전체**를 거부시키고 DLQ→120초
- * 타임아웃이 된다 — 한 파일이 감사에서 빠지는 것보다 훨씬 나쁘다. Grok 반증이 잡았다.
+ * 예전에는 여기와 `xzawedSecurity/src/types.ts` 가 **사본**이었고 둘 다 어휘적
+ * `!includes('..')` 이었다. 그래서 `patches/v1..v2.diff` 처럼 탈출이 아닌 정상 파일명이
+ * 걸렸고, Zod `refine` 실패는 원소가 아니라 **메시지 전체**를 거부시켜 `security_audit`
+ * 이 DLQ→120초 타임아웃이 됐다 — 기본 대화형 챗 경로에서 발현한다.
  *
- * **대가를 적어 둔다.** 이름에 `..` 가 든 정상 파일은 감사 대상에서 빠진다. Security 의 술어를
- * 의미적 검사로 완화하면 해결되지만 그것은 **보안 표면의 서비스 간 계약 변경**이라 별도 판단이다.
- * 여기서는 "보낼 수 없는 것은 보내지 않는다"만 한다 — 소비자가 못 받는 값을 만들지 않는 것이
- * 생산자의 책임이다.
+ * 이전 판은 "이름에 `..` 가 든 정상 파일은 감사에서 빠진다"를 대가로 적고, 의미적 검사로의
+ * 완화는 **보안 표면의 서비스 간 계약 변경이라 별도 판단**이라며 미뤘다. 그 판단을 했다 —
+ * 세그먼트 판정으로 양쪽을 함께 바꿨으므로 **그 대가는 이제 없다.** 사본이 아니라 공유
+ * 함수라 두 쪽이 갈라질 수 없다(그것이 원래 결함의 원인이었다).
  */
 function acceptedBySecurityInbound(p: string): boolean {
-  return !isAbsolute(p) && !p.includes('..')
+  return isSafeRelativePath(p)
 }
 
 /** 판정 전용 minimal 스키마 — 핸들러 outputSchema의 .default()에 기대지 않고

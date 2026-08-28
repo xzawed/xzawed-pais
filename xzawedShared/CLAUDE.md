@@ -46,7 +46,7 @@ Manager는 경로가 다르지만(`file:../../../xzawedShared`) **같은 함정�
 | `streams/event-bus.ts` | 전송 추상화. `RedisEventBus` 구현과 발행·소비 포트 타입 |
 | `streams/session-dispatcher.ts` | 세션 게이트웨이 스트림에서 세션별 소비자를 띄우고 **내리는** 디스패처. 개통·종료 계약(`GatewayStartSchema`·`GatewayEndSchema`)의 정본 |
 | `streams/collaboration.ts` | 에이전트 handle 골격(`runCollaborativeHandle`·`createCollaborativeHandler`)과 `CollabMessage` 봉투 타입 |
-| `workspace-guard.ts` | `validateWorkspaceRoot`(파일시스템 루트 거부)·`resolveWorkspaceRoot` |
+| `workspace-guard.ts` | `validateWorkspaceRoot`(파일시스템 루트 거부)·`resolveWorkspaceRoot`·`isSafeRelativePath`/`hasTraversalSegment`(인바운드 경로 1차 거름망) |
 | `types/agent-query.ts` | 교차질의 계약. `collaborationPayloadFields`가 답변자 스키마의 공통 필드 |
 | `types/event-envelope.ts` | 이벤트소싱 메타데이터(`eventId`·`correlationId`·`causationId`·`idempotencyKey`). **스트림 봉투와 다른 것이다** |
 | `types/work-package.ts` | WorkPackage 계약. `risk`·`inputs`·`outputs`·`epicId`·`attributionCounters` |

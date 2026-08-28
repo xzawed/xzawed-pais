@@ -1,10 +1,12 @@
 import { Octokit } from '@octokit/rest'
+import { hasTraversalSegment } from '@xzawed/agent-streams'
 import type { ToolHandler } from './handler.interface.js'
 
 function validateCommitPath(p: string): void {
   if (typeof p !== 'string' || p.length === 0) throw new Error('Invalid file path')
   if (p.startsWith('/') || /^[A-Za-z]:/.test(p)) throw new Error(`Absolute paths not allowed: ${p}`)
-  if (p.includes('..')) throw new Error(`Path traversal rejected: ${p}`)
+  // 세그먼트 판정. 부분문자열 검사는 `patches/v1..v2.diff` 같은 정상 파일명을 오거부한다.
+  if (hasTraversalSegment(p)) throw new Error(`Path traversal rejected: ${p}`)
   if (/[\x00-\x1f]/.test(p)) throw new Error(`Invalid characters in path: ${p}`)
   if (p.toLowerCase().startsWith('.github/workflows/')) {
     throw new Error(`Writing to .github/workflows/ is not permitted: ${p}`)

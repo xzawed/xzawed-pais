@@ -91,7 +91,7 @@ interface SecurityAuditable {
 
 ## 감사 경로 계약
 
-인바운드 스키마가 `artifacts`를 **상대경로**로 강제한다(`..` 금지·절대경로 금지). 그 상대경로는
+인바운드 스키마가 `artifacts`를 **상대경로**로 강제한다(상위 이동 `..` **세그먼트** 금지·절대경로 금지 — shared `isSafeRelativePath`. 부분문자열 검사가 아니라서 `patches/v1..v2.diff` 같은 정상 파일명은 통과한다). 그 상대경로는
 `process.cwd()`가 아니라 **`workspaceRoot` 기준**으로 해석된다 — `executor.ts`의 `validatePath`가
 `path.resolve(workspaceRoot, targetPath)`를 먼저 하고 realpath한다.
 

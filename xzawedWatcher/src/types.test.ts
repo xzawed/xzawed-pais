@@ -51,12 +51,28 @@ describe('ManagerToWatcherMessageSchema', () => {
     expect(result.success).toBe(false)
   })
 
-  it('경로 탐색(..) trigger는 파싱 실패한다', () => {
+  it.each([
+    ['../outside/*.ts', '앞선 상위 이동'],
+    ['a/../../etc/*', '중간 상위 이동'],
+  ])('경로 탐색 trigger 는 파싱 실패한다: %s (%s)', (p) => {
     const result = ManagerToWatcherMessageSchema.safeParse({
       ...base,
-      payload: { ...base.payload, triggers: ['../outside/*.ts'] },
+      payload: { ...base.payload, triggers: [p] },
     })
     expect(result.success).toBe(false)
+  })
+
+  /** 세그먼트 판정 회귀 가드 — 예전 `!includes('..')` 는 이 glob 들을 오거부했다. */
+  it.each([
+    ['patches/v1..v2/*.diff', '버전 범위 디렉토리'],
+    ['src/..hidden/**', '점 두 개로 시작하는 디렉토리'],
+    ['**/*..bak', '연속 점이 든 확장자'],
+  ])('탈출이 아닌 정상 glob 은 통과한다: %s (%s)', (p) => {
+    const result = ManagerToWatcherMessageSchema.safeParse({
+      ...base,
+      payload: { ...base.payload, triggers: [p] },
+    })
+    expect(result.success).toBe(true)
   })
 
   it('빈 triggers 배열은 파싱 성공한다', () => {
