@@ -103,3 +103,47 @@ describe('isSafeRelativePath', () => {
     expect(isSafeRelativePath('a/../../etc/passwd')).toBe(false)
   })
 })
+
+/**
+ * **Grok 반증이 찾은 구멍들.**
+ *
+ * 세그먼트 판정으로 바꾸면서 옛 술어가 (우연히) 막던 것 몇 가지가 열렸다.
+ * 전부 여기서 못박는다.
+ */
+describe('isSafeRelativePath — 반증에서 나온 회귀 가드', () => {
+  it.each([
+    ['C:../Windows', '드라이브 상대경로 — win32 에서 C:\\Windows 로 탈출한다'],
+    ['C:..', '드라이브 루트로 탈출'],
+    ['C:..\\Windows', '드라이브 상대 + 백슬래시'],
+    ['D:../foo', '다른 드라이브'],
+    ['C:\\Windows\\system32', '드라이브 절대경로 — posix 에서는 isAbsolute 가 false 다'],
+    ['C:/Windows/system32', '슬래시 드라이브 경로'],
+  ])('%s 는 거부한다 (%s)', (p) => {
+    expect(isSafeRelativePath(p)).toBe(false)
+  })
+
+  it.each([
+    ['.. ', '끝 공백 — Windows 가 syscall 에서 떼어내 `..` 가 된다'],
+    ['foo/.. ', '중간 세그먼트의 끝 공백'],
+    ['..  ', '공백 여러 개'],
+  ])('%s 는 거부한다 (%s)', (p) => {
+    expect(isSafeRelativePath(p)).toBe(false)
+  })
+
+  it.each([
+    ['a\u0000/../b', 'NUL 바이트'],
+    ['a\u001f/b', '제어문자'],
+  ])('%s 는 거부한다 (%s)', (p) => {
+    expect(isSafeRelativePath(p)).toBe(false)
+  })
+
+  /** 끝의 **점**은 떼지 않는다 — 상위 이동이 아니고 워크스페이스 안으로 해석된다. */
+  it.each([
+    ['...', '점 세 개'],
+    ['....//etc', '점 네 개'],
+    ['..;/etc', '세미콜론이 붙은 것'],
+    ['.../.../etc', '점 세 개 디렉토리'],
+  ])('%s 는 통과한다 — 탈출이 아니다', (p) => {
+    expect(isSafeRelativePath(p)).toBe(true)
+  })
+})
