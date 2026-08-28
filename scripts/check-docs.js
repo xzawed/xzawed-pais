@@ -149,12 +149,49 @@ const TREE_DOCS = {
   tester: 'xzawedTester', builder: 'xzawedBuilder', watcher: 'xzawedWatcher', security: 'xzawedSecurity',
 }
 
-function collectTs(dir, out) {
+/**
+ * **선별형 트리** — 전수가 아니라 고른 것만 싣는 트리다(Orchestrator 는 269개 파일 중 40개).
+ * 완전성은 요구할 수 없지만 **유령은 막을 수 있다**: 적혀 있는데 실재하지 않는 파일은
+ * 언제나 오류다. 실측 기준선은 유령 0 이라 이 검사는 지금 상태를 고정한다.
+ */
+const CURATED_TREES = {
+  'docs/services/orchestrator.md': 'xzawedOrchestrator/packages',
+}
+const TREE_SKIP_DIRS = new Set(['node_modules', 'dist', 'coverage', '.turbo'])
+
+function collectTs(dir, out, tsx = false) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (e.isDirectory()) collectTs(path.join(dir, e.name), out)
-    else if (e.name.endsWith('.ts')) out.add(e.name)
+    if (TREE_SKIP_DIRS.has(e.name)) continue
+    if (e.isDirectory()) collectTs(path.join(dir, e.name), out, tsx)
+    else if (e.name.endsWith('.ts') || (tsx && e.name.endsWith('.tsx'))) out.add(e.name)
   }
   return out
+}
+
+/** 펜스 안 트리 블록을 뽑는다. `head` 는 `src/` 또는 `packages/`. */
+function treeBlock(src, head) {
+  const fence = src.indexOf('```\n' + head)
+  if (fence < 0) return null
+  const close = src.indexOf('\n```', fence + 4)
+  return src.slice(fence, close < 0 ? src.length : close)
+}
+
+/** 선별형 트리: 완전성은 묻지 않고 **유령만** 잡는다. */
+function checkCuratedTrees() {
+  const violations = []
+  for (const [file, root] of Object.entries(CURATED_TREES)) {
+    if (!fs.existsSync(file) || !fs.existsSync(root)) continue
+    const src = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
+    const block = treeBlock(src, 'packages/') ?? treeBlock(src, 'src/')
+    if (block === null) { violations.push(`${file}  트리 블록 없음`); continue }
+    const listed = new Set([...block.matchAll(/([A-Za-z0-9_.-]+\.tsx?)/g)].map((m) => m[1]))
+    const real = collectTs(root, new Set(), true)
+    const phantom = [...listed].filter((f) => !real.has(f))
+    if (phantom.length > 0) {
+      violations.push(`${file}  실재하지 않는 파일 ${phantom.length}개: ${phantom.slice(0, 4).join(', ')}`)
+    }
+  }
+  return violations
 }
 
 function checkServiceTrees() {
@@ -196,6 +233,7 @@ failed += report(`CLAUDE.md ${CLAUDE_MD_MAX_LINES}줄 이하`, checkClaudeMdSize
 failed += report(`CLAUDE.md ${CLAUDE_MD_MAX_BYTES / 1024}KB 이하`, checkClaudeMdBytes(files))
 failed += report('CLAUDE.md 이력 마커 없음', checkClaudeMdHistoryMarkers(files))
 failed += report('서비스 문서 src 트리 == 실제 디렉토리', checkServiceTrees())
+failed += report('선별형 트리에 유령 파일 없음', checkCuratedTrees())
 
 if (failed > 0) {
   console.error(`\n문서 게이트 실패 — 위반 ${failed}건`)
