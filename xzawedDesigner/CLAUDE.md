@@ -65,11 +65,12 @@ interface UISpec {
 
 ## 구현 참고사항
 
+- **프롬프트는 Planner 교차확인을 강제한다.** `SYSTEM_PROMPT` 가 *"ALWAYS cross-check your understanding before producing components"* 로 Format 3(`to: 'planner'`·`kind: 'cross_check'`)을 요구한다 — Designer↔Developer 만이 아니라 **설계 전 Planner 확인이 기본 경로**다
+- **빈 `components` 배열은 실패다.** `DesignResponseSchema` 가 `.min(1)` 이라 LLM 이 빈 배열을 주면 파싱 실패로 떨어져 폴백 스텁이 나간다 — "아무것도 설계 안 함"이 아니라 **실패의 다른 얼굴**이다
 - `ComponentSpec` 재귀 구조: `z.lazy()`로 정의; `z.ZodType<ComponentSpec>` 어노테이션 필요 (`exactOptionalPropertyTypes` 호환)
 - `claude/runner.ts`의 `parseResponse`: JSON 펜스 제거 후 `ComponentSpec[]` 파싱
 - **파싱 실패 폴백은 컴포넌트 1개를 낸다 — 그래서 개수로는 실패를 구분할 수 없다.** 폴백은 generic 스텁을 `design_complete`로 발행하므로 전선 위 모양이 성공과 같고, `console.warn`은 이 프로세스 로그에만 남는다. 소비자(Manager 자기검증)가 구분할 수 있는 유일한 신호가 `designed.source`다 — **폴백 경로를 늘릴 때 이 필드를 반드시 함께 채운다**
-- **Redis 메시지 검증**: `ManagerToDesignerMessageSchema.safeParse()`. **실패는 `invalid_schema` 로 DLQ 격리**한다(shared `BaseConsumer`). `try/finally` 는 **배치**에 걸린다
-- **Redis xack 보장**: `handler()` 호출을 `try/finally`로 감싸 PEL 누수 방지
+- **소비 계약(스키마 검증·DLQ·ack·재시도)은 shared `BaseConsumer` 가 정본**이다 → [xzawedShared/CLAUDE.md](../xzawedShared/CLAUDE.md)
 
 **협업·도메인 위키 (createCollaborativeHandler)**
 - `handle()`는 `createCollaborativeHandler`로 감싸 교차질의 발생·답변을 통합 — `generateDesign`이 `AgentQuery` 반환 시 `agent_query`로 발행(Designer↔Developer 교차질의 개시), 수신 query는 `runner.answerQuery`로 답변

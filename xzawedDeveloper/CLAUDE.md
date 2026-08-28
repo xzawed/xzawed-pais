@@ -53,6 +53,8 @@ interface FileChange {
 **파일 I/O 보안 (fileio.ts)**
 - 파일 삭제: 실제 삭제 대신 `.bak` 리네임으로 처리 (복구 가능)
 - `WORKSPACE_ROOT`가 파일시스템 루트이면 즉시 거부 (`validateWorkspaceRoot()`)
+- **빈 상대경로는 워크스페이스 루트 자신이다.** `.`·`''`·`a/..` 는 `path.resolve` 후 루트와 같아지고, 그 상태로 delete 가 돌면 **워크스페이스 전체가 `.bak` 으로 rename 된다**. 파서(`claude/runner.ts`)가 그 모양을 먼저 거르고 `fileio.ts` 가 `resolved === realRoot` 를 다시 막는다 — **둘 다 필요하다**
+- **파싱 실패는 `changes: []` 로 떨어져 성공한 no-op 과 같은 모양이다.** 감사 필드가 없어 Manager 가 구별하지 못한다
 - LLM 이 낸 **절대경로는 파서가 거부한다**(`claude/runner.ts` — 변환하지 않는다). 파일 I/O 는 `realpath` 한 워크스페이스 루트 기준으로만 해석한다
 
 **Claude 프롬프트**
@@ -60,8 +62,7 @@ interface FileChange {
 - `claude/runner.ts` 는 `FileChange[]` **파싱만** 한다 — `fileio.applyChange()` 호출은 `developer.ts` 다
 
 **공통 보안 패턴**
-- Redis 메시지: `ManagerToDeveloperMessageSchema.safeParse()` 검증. **실패는 `invalid_schema` 로 DLQ 격리**한다(shared `BaseConsumer`). `try/finally` 는 **배치**에 걸린다
-- xack 보장: `handler()` `try/finally` 래핑으로 PEL 누수 방지
+- **소비 계약(스키마 검증·DLQ·ack·재시도)은 shared `BaseConsumer` 가 정본**이다 → [xzawedShared/CLAUDE.md](../xzawedShared/CLAUDE.md)
 
 **협업·도메인 위키 (createCollaborativeHandler)**
 - `handle()`는 `createCollaborativeHandler`로 감싸 다른 에이전트의 교차질의에 `runner.answerQuery`로 답변

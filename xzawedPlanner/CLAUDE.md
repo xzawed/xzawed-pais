@@ -54,11 +54,11 @@ interface Step {
 
 ## 구현 참고사항
 
+- **폴백 계획은 성공과 구별되지 않는다.** 파싱 실패 시 `fallback()` 이 `agentType: 'developer'` 단일 Step 을 만들어 그대로 `plan_complete` 로 발행한다 — Manager 는 그것이 진짜 1단계 계획인지 알 수 없다. Designer 는 같은 문제를 `designed.source` 로 표시하는데 **여기엔 그 필드가 없다**
 - `claude/runner.ts`: Claude JSON 응답을 `PlanResponseSchema.safeParse()`(Zod)로 검증. 검증 실패 시 단일 step fallback 반환
 - `StepSchema`: `agentType` enum 강제, `estimatedMinutes` 0초과 480분 이하 제약
 - `JSON.parse() as Type` 캐스트 금지 — 반드시 `safeParse` 사용
-- **Redis 메시지 검증**: `ManagerToPlannerMessageSchema.safeParse()`. **실패는 `invalid_schema` 로 DLQ 격리**한다(shared `BaseConsumer` — 조용히 ack 하고 버리지 않는다). `try/finally` 는 `handler()` 가 아니라 **배치**에 걸려 있다
-- **Redis xack 보장**: `handler()` `try/finally` 래핑으로 PEL 누수 방지
+- **소비 계약(스키마 검증·DLQ·ack·재시도)은 shared `BaseConsumer` 가 정본**이다 → [xzawedShared/CLAUDE.md](../xzawedShared/CLAUDE.md). 여기서 다시 쓰지 않는다 — 서비스마다 복제하다 세 곳이 같은 오기를 갖고 있었다
 
 **협업·도메인 위키 (createCollaborativeHandler)**
 - `handle()`는 `createCollaborativeHandler`로 감싸 답변 모드(`answerQuery`)와 교차질의 발생을 통합 — `generatePlan`이 `AgentQuery` 반환 시 `agent_query` 타입으로 발행(교차질의 개시), 수신 query는 `runner.answerQuery`로 답변

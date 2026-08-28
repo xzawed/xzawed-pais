@@ -7,7 +7,7 @@ description: xzawedManager 개발·디버깅·운영 스킬
 
 # xzawedManager 스킬
 
-**테스트 실행**: `cd packages/server && pnpm test` (수량은 루트 CLAUDE.md 서비스 표 참조)
+**테스트 실행**: `cd packages/server && pnpm test` — **개수를 문서에 적지 않는다**. 출력의 `Tests N passed` 와 **skip 수**를 함께 읽는다
 **관련 문서**: [docs/services/manager.md](../docs/services/manager.md)
 
 ---
