@@ -5,7 +5,7 @@ services:
   postgres:
     image: postgres:16-alpine
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: xzawed
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
@@ -22,7 +22,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -38,7 +38,7 @@ services:
       context: .
       dockerfile: xzawedOrchestrator/Dockerfile
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     env_file: ./xzawedOrchestrator/.env
     environment:
       REDIS_URL: redis://redis:6379
@@ -73,7 +73,7 @@ services:
       context: .
       dockerfile: xzawedManager/Dockerfile
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     env_file: ./xzawedManager/.env
     environment:
       REDIS_URL: redis://redis:6379
@@ -107,7 +107,7 @@ services:
       context: .
       dockerfile: xzawedPlanner/Dockerfile
     ports:
-      - "3002:3002"
+      - "127.0.0.1:3002:3002"
     env_file: ./xzawedPlanner/.env
     environment:
       REDIS_URL: redis://redis:6379
@@ -135,7 +135,7 @@ services:
       context: .
       dockerfile: xzawedDeveloper/Dockerfile
     ports:
-      - "3003:3003"
+      - "127.0.0.1:3003:3003"
     env_file: ./xzawedDeveloper/.env
     environment:
       REDIS_URL: redis://redis:6379
@@ -165,7 +165,7 @@ services:
       context: .
       dockerfile: xzawedDesigner/Dockerfile
     ports:
-      - "3004:3004"
+      - "127.0.0.1:3004:3004"
     env_file: ./xzawedDesigner/.env
     environment:
       REDIS_URL: redis://redis:6379
@@ -193,7 +193,7 @@ services:
       context: .
       dockerfile: xzawedTester/Dockerfile
     ports:
-      - "3005:3005"
+      - "127.0.0.1:3005:3005"
     env_file: ./xzawedTester/.env
     environment:
       REDIS_URL: redis://redis:6379
@@ -223,7 +223,7 @@ services:
       context: .
       dockerfile: xzawedBuilder/Dockerfile
     ports:
-      - "3006:3006"
+      - "127.0.0.1:3006:3006"
     env_file: ./xzawedBuilder/.env
     environment:
       REDIS_URL: redis://redis:6379
@@ -253,7 +253,7 @@ services:
       context: .
       dockerfile: xzawedWatcher/Dockerfile
     ports:
-      - "3007:3007"
+      - "127.0.0.1:3007:3007"
     env_file: ./xzawedWatcher/.env
     environment:
       REDIS_URL: redis://redis:6379
@@ -283,7 +283,7 @@ services:
       context: .
       dockerfile: xzawedSecurity/Dockerfile
     ports:
-      - "3008:3008"
+      - "127.0.0.1:3008:3008"
     env_file: ./xzawedSecurity/.env
     environment:
       REDIS_URL: redis://redis:6379

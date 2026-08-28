@@ -909,6 +909,11 @@ jobs:
       - name: Check prod compose copies stay in parity
         run: node scripts/check-compose-parity.js
 
+      # 게시 포트는 루프백이어야 한다. parity 는 두 prod 사본의 **동일성**만 보므로
+      # "둘 다 똑같이 빠진" 결함과 dev compose 는 구조적으로 안 보였다 — 그 자리를 막는다.
+      - name: Check compose published ports bind to loopback
+        run: node scripts/check-compose-posture.js
+
   # ── Compose 기동 + 챗 1왕복 스모크(S4.3 / 수용 기준 L1-9) ──────────────────
   # 이 저장소에는 컨테이너 스택을 실제로 띄우는 검사가 하나도 없었다. 다른 잡은 GitHub Actions
   # services: 로 pg·redis 만 붙이고 앱은 in-process 로 돈다 — Dockerfile·compose 배선·서비스 간
