@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { StreamConsumer } from '../streams/consumer.js'
+import { getRedisClient } from '../streams/redis.client.js'
+import { expireSessionStreams, persistSessionStreams, managerSessionStreamKeys } from '../streams/session-keys.js'
 import type { StreamProducer } from '../streams/producer.js'
 import type { ClaudeRunner, RunnerOptions } from '../claude/runner.js'
 import type { SessionStore } from '../sessions/session.store.js'
@@ -69,6 +71,9 @@ export function makeSessionStarter(
         await opts.sessionStore.delete(sessionId)
       } finally {
         await opts.registry?.releaseAll(sessionId)
+        // 에이전트 쌍은 각 핸들러의 releaseSession 이 회수한다. 여기서는 Manager↔Orchestrator
+        // 쌍과 이벤트 스트림을 맡는다 — 그 셋은 **모든 세션**에 생기므로 누적의 주된 몫이다.
+        await expireSessionStreams(getRedisClient(opts.redisUrl), managerSessionStreamKeys(sessionId))
       }
     }
     // 요청자에게 error 메시지 발행(무음 drop 금지·M8).
@@ -153,6 +158,8 @@ export function makeSessionStarter(
           await opts.sessionStore.delete(sessionId)
         } finally {
           await opts.registry?.releaseAll(sessionId)
+          // abort 도 세션 종료다 — 여기만 빠지면 중단된 세션의 키가 영구히 남는다.
+          await expireSessionStreams(getRedisClient(opts.redisUrl), managerSessionStreamKeys(sessionId))
         }
       } else {
         // M8(무음 통과 금지·방어): 스키마는 통과했으나 처리 분기가 없는 타입. 닫힌 union이라 정상 경로엔
@@ -168,6 +175,16 @@ export function makeSessionStarter(
       // 소비 루프가 죽은 세션은 에이전트 쪽 소비자가 영구히 남았다.
       await cleanupSession()
     })
+
+    // 앞선 세션이 남긴 TTL 을 벗긴다. 종료 시 `cleanupSession` 이 이 키들에 TTL 을 거는데
+    // **`XADD` 도 `XGROUP CREATE` 도 TTL 을 지우지 않으므로**(실측 600 → 599) 같은
+    // sessionId 로 재개하면 살아 있는 세션 도중에 스트림이 증발한다. 에이전트 쌍은
+    // `RedisAgentHandler.ensureSessionStream` 이 같은 이유로 같은 일을 한다.
+    //
+    // **소비자 기동 뒤에 둔다.** 앞에 두면 세션 시작이 Redis 왕복에 묶여, 느린 Redis 가
+    // 소비 시작을 지연시킨다(실제로 그렇게 넣었다가 콜백 테스트 6건이 깨져서 발견했다).
+    // TTL 이 1시간이라 몇 ms 늦게 벗겨도 무해하다.
+    await persistSessionStreams(getRedisClient(opts.redisUrl), managerSessionStreamKeys(sessionId))
   }
 }
 

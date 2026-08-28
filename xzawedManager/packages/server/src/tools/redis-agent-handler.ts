@@ -6,6 +6,7 @@ import type { Redis } from 'ioredis'
 import { RedisEventBus } from '@xzawed/agent-streams'
 import type { RequestReplyPort, Bulkhead } from '@xzawed/agent-streams'
 import { ClarificationNeededError, AgentQueryError } from './errors.js'
+import { expireSessionStreams, persistSessionStreams } from '../streams/session-keys.js'
 
 const DEFAULT_TIMEOUT_MS = 120_000
 const BLOCK_STEP_MS = 5_000
@@ -44,13 +45,24 @@ export class RedisAgentHandler<TInput, TOutput>
     return this._bus
   }
 
-  private async ensureSessionStream(requestStream: string): Promise<void> {
+  /** 이 핸들러가 세션마다 만드는 스트림 쌍. 종료 시 TTL 대상이자 재개 시 PERSIST 대상이다. */
+  private sessionStreamKeys(sessionId: string): string[] {
+    return [
+      `manager:to-${this.agentName}:${sessionId}`,
+      `${this.agentName}:to-manager:${sessionId}`,
+    ]
+  }
+
+  private async ensureSessionStream(requestStream: string, sessionId: string): Promise<void> {
     const group = `${this.agentName}-consumers`
     try {
       await this.redis.xgroup('CREATE', requestStream, group, '$', 'MKSTREAM')
     } catch (e: unknown) {
       if (!(e instanceof Error && e.message.includes('BUSYGROUP'))) throw e
     }
+    // 앞선 세션이 남긴 TTL 을 벗긴다. **`XGROUP CREATE` 도 `XADD` 도 TTL 을 지우지 않아서**
+    // (실측: 600 → 599) 이게 없으면 같은 sessionId 로 재개된 세션의 스트림이 도중에 증발한다.
+    await persistSessionStreams(this.redis, this.sessionStreamKeys(sessionId))
   }
 
   private async notifyGateway(sessionId: string): Promise<void> {
@@ -178,7 +190,7 @@ export class RedisAgentHandler<TInput, TOutput>
 
     const notifyKey = `${this.agentName}:${sessionId}`
     if (!this._notifiedSessions.has(notifyKey)) {
-      await this.ensureSessionStream(requestStream)
+      await this.ensureSessionStream(requestStream, sessionId)
       await this.notifyGateway(sessionId)
       this._notifiedSessions.add(notifyKey)
     }
@@ -227,6 +239,11 @@ export class RedisAgentHandler<TInput, TOutput>
     } catch (err) {
       console.error(`[RedisAgentHandler] ${this.agentName} 세션 종료 통지 실패(무시):`, err)
     } finally {
+      // 통지 성패와 무관하게 회수한다 — 통지가 실패한 세션일수록 키가 남는다.
+      // 즉시 `DEL` 이 아니라 TTL 인 이유: 종료 통지를 받은 에이전트가 소비자를 내리는 것은
+      // 비동기라, 곧바로 지우면 그 소비자가 `NOGROUP` 을 만난다. 회수량은 동등하다
+      // (실측 EXPIRE 98.6% vs DEL 99.7%).
+      await expireSessionStreams(this.redis, this.sessionStreamKeys(sessionId))
       this._notifiedSessions.delete(notifyKey)
     }
   }

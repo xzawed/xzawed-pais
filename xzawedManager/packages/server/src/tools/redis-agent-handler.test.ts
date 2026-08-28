@@ -6,6 +6,7 @@ import { getRedisClient } from '../streams/redis.client.js'
 import { z } from 'zod'
 import { RedisAgentHandler } from './redis-agent-handler.js'
 import { ClarificationNeededError, AgentQueryError } from './errors.js'
+import { SESSION_STREAM_TTL_SEC } from '../streams/session-keys.js'
 import { Bulkhead } from '@xzawed/agent-streams'
 
 const getRedisClientMock = vi.mocked(getRedisClient)
@@ -21,6 +22,8 @@ type MockRedis = {
   xadd: ReturnType<typeof vi.fn>
   xread: ReturnType<typeof vi.fn>
   xgroup: ReturnType<typeof vi.fn>
+  expire: ReturnType<typeof vi.fn>
+  persist: ReturnType<typeof vi.fn>
 }
 
 function makeMsg(type: string, payload: Record<string, unknown>) {
@@ -37,6 +40,8 @@ beforeEach(() => {
     xadd: vi.fn().mockResolvedValue('1-0'),
     xread: vi.fn().mockResolvedValue(null),
     xgroup: vi.fn().mockResolvedValue('OK'),
+    expire: vi.fn().mockResolvedValue(1),
+    persist: vi.fn().mockResolvedValue(1),
   }
   getRedisClientMock.mockReturnValue(mockRedis as unknown as ReturnType<typeof getRedisClient>)
   handler = new RedisAgentHandler(
@@ -424,5 +429,67 @@ describe('RedisAgentHandler — LLM이 userContext를 공급하지 못한다 (6-
     await handler.execute({ plan: 'x', projectPath: '/w', context: {} } as never, 'sess-1')
     const p = payloadOf(requestOf()[0]!)
     expect(p).toEqual({ plan: 'x', projectPath: '/w', context: {} })
+  })
+})
+
+/**
+ * **세션 스트림 키 회수.** 스트림 키는 세션마다 새로 생기는데 회수 코드가 0줄이었다.
+ * 출하 스택은 `noeviction` 384MB 라 상한에 닿으면 모든 XADD 가 영구 실패한다
+ * (실측: 실제 세션 161,610 B → 2,484 세션에 도달).
+ */
+describe('RedisAgentHandler — 세션 스트림 키 수명', () => {
+  const keys = ['manager:to-builder:sess-1', 'builder:to-manager:sess-1']
+
+  async function notifyOnce(): Promise<void> {
+    mockRedis.xread.mockResolvedValueOnce(
+      makeMsg('build_complete', { success: true, output: '', artifacts: [] }),
+    )
+    await handler.execute({}, 'sess-1')
+  }
+
+  it('세션 종료 시 이 핸들러가 만든 스트림 쌍에 TTL 을 건다', async () => {
+    await notifyOnce()
+    expect(mockRedis.expire).not.toHaveBeenCalled()
+
+    await handler.releaseSession('sess-1')
+    const expired = (mockRedis.expire.mock.calls as unknown[][]).map((c) => c[0])
+    expect(expired.sort()).toEqual([...keys].sort())
+    for (const call of mockRedis.expire.mock.calls as unknown[][]) {
+      expect(call[1]).toBe(SESSION_STREAM_TTL_SEC)
+    }
+  })
+
+  /** 통지가 실패한 세션일수록 키가 남는다 — 통지 성패와 무관하게 회수해야 한다. */
+  it('종료 통지가 실패해도 TTL 은 건다', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await notifyOnce()
+    mockRedis.xadd.mockRejectedValueOnce(new Error('redis down'))
+
+    await expect(handler.releaseSession('sess-1')).resolves.toBeUndefined()
+    expect(mockRedis.expire).toHaveBeenCalledTimes(keys.length)
+  })
+
+  it('통지 이력이 없으면 회수도 하지 않는다(조기 반환)', async () => {
+    await handler.releaseSession('never-notified')
+    expect(mockRedis.expire).not.toHaveBeenCalled()
+  })
+
+  /**
+   * **이게 없으면 재개된 세션의 스트림이 도중에 증발한다.**
+   * 실측: `XADD` 도 `XGROUP CREATE` 도 TTL 을 지우지 않는다(600 → 599).
+   */
+  it('세션 재개 시 TTL 을 벗긴다(PERSIST)', async () => {
+    await notifyOnce()
+    const persisted = (mockRedis.persist.mock.calls as unknown[][]).map((c) => c[0])
+    expect(persisted.sort()).toEqual([...keys].sort())
+  })
+
+  it('종료 후 같은 sessionId 로 재개하면 다시 PERSIST 한다', async () => {
+    await notifyOnce()
+    await handler.releaseSession('sess-1')
+    mockRedis.persist.mockClear()
+
+    await notifyOnce()
+    expect((mockRedis.persist.mock.calls as unknown[][]).map((c) => c[0]).sort()).toEqual([...keys].sort())
   })
 })
