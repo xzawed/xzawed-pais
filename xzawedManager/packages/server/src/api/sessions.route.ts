@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { StreamConsumer } from '../streams/consumer.js'
 import { getRedisClient } from '../streams/redis.client.js'
-import { expireSessionStreams, managerSessionStreamKeys } from '../streams/session-keys.js'
+import { expireSessionStreams, persistSessionStreams, managerSessionStreamKeys } from '../streams/session-keys.js'
 import type { StreamProducer } from '../streams/producer.js'
 import type { ClaudeRunner, RunnerOptions } from '../claude/runner.js'
 import type { SessionStore } from '../sessions/session.store.js'
@@ -175,6 +175,16 @@ export function makeSessionStarter(
       // 소비 루프가 죽은 세션은 에이전트 쪽 소비자가 영구히 남았다.
       await cleanupSession()
     })
+
+    // 앞선 세션이 남긴 TTL 을 벗긴다. 종료 시 `cleanupSession` 이 이 키들에 TTL 을 거는데
+    // **`XADD` 도 `XGROUP CREATE` 도 TTL 을 지우지 않으므로**(실측 600 → 599) 같은
+    // sessionId 로 재개하면 살아 있는 세션 도중에 스트림이 증발한다. 에이전트 쌍은
+    // `RedisAgentHandler.ensureSessionStream` 이 같은 이유로 같은 일을 한다.
+    //
+    // **소비자 기동 뒤에 둔다.** 앞에 두면 세션 시작이 Redis 왕복에 묶여, 느린 Redis 가
+    // 소비 시작을 지연시킨다(실제로 그렇게 넣었다가 콜백 테스트 6건이 깨져서 발견했다).
+    // TTL 이 1시간이라 몇 ms 늦게 벗겨도 무해하다.
+    await persistSessionStreams(getRedisClient(opts.redisUrl), managerSessionStreamKeys(sessionId))
   }
 }
 

@@ -3,6 +3,13 @@ import Fastify from 'fastify'
 
 vi.mock('../streams/consumer.js')
 vi.mock('../workspace.js', () => ({ ensureWorkspace: vi.fn().mockResolvedValue(undefined) }))
+// 세션 스트림 키 회수가 실제 Redis 를 치지 않게 한다 — 안 막으면 never-throw 가 삼켜
+// 테스트는 통과하지만 연결 실패 로그만 쌓이고 호출 자체를 관측할 수 없다.
+const redisMock = { expire: vi.fn().mockResolvedValue(1), persist: vi.fn().mockResolvedValue(1) }
+vi.mock('../streams/redis.client.js', () => ({
+  getRedisClient: vi.fn(() => redisMock),
+  closeRedisClients: vi.fn().mockResolvedValue(undefined),
+}))
 
 import { StreamConsumer } from '../streams/consumer.js'
 import { ensureWorkspace } from '../workspace.js'
@@ -318,6 +325,86 @@ describe('sessionsRoute — 세션 종료 시 registry 해제 (F5)', () => {
     await flushMicrotasks()
 
     expect(releaseAll).toHaveBeenCalledWith(SESSION_D)
+    await app.close()
+  })
+})
+
+/**
+ * **세션 스트림 키 수명 (Manager 소유분).**
+ *
+ * 에이전트 쌍은 `RedisAgentHandler` 가 맡고, 여기서는 모든 세션에 생기는 셋을 맡는다 —
+ * `orchestrator:to-manager` · `manager:to-orchestrator` · `manager:events`.
+ */
+describe('sessionsRoute — 세션 스트림 키 TTL', () => {
+  const SESSION_E = '550e8400-e29b-41d4-a716-446655440010'
+  const MANAGER_KEYS = [
+    `orchestrator:to-manager:${SESSION_E}`,
+    `manager:to-orchestrator:${SESSION_E}`,
+    `manager:events:${SESSION_E}`,
+  ]
+
+  function captureHandlerConsumer() {
+    const capturedHandlers: MsgHandler[] = []
+    vi.mocked(StreamConsumer).mockImplementation(function () { return ({
+      start: vi.fn().mockImplementation(async (_sid: string, handler: MsgHandler) => {
+        capturedHandlers.push(handler)
+      }),
+      stop: vi.fn(),
+    }) as unknown as StreamConsumer })
+    return capturedHandlers
+  }
+
+  async function makeApp() {
+    const app = Fastify({ logger: false })
+    await app.register(sessionsRoute, {
+      redisUrl: 'redis://localhost:6379',
+      runner: { run: vi.fn().mockResolvedValue('done') } as never,
+      producer: { publish: vi.fn().mockResolvedValue(undefined) } as never,
+      sessionStore: new SessionStore(),
+      registry: { releaseAll: vi.fn() } as never,
+    })
+    return app
+  }
+
+  /**
+   * **이게 없으면 재개된 세션의 스트림이 도중에 증발한다.**
+   * 실측: `XADD` 도 `XGROUP CREATE` 도 TTL 을 지우지 않는다(600 → 599).
+   */
+  it('세션 시작 시 앞선 TTL 을 벗긴다(PERSIST)', async () => {
+    redisMock.persist.mockClear()
+    captureHandlerConsumer()
+    const app = await makeApp()
+
+    await app.inject({ method: 'POST', url: `/api/sessions/${SESSION_E}/start` })
+
+    expect(redisMock.persist.mock.calls.map((c) => c[0]).sort()).toEqual([...MANAGER_KEYS].sort())
+    await app.close()
+  })
+
+  it('정상 종료 시 Manager 소유 키에 TTL 을 건다', async () => {
+    redisMock.expire.mockClear()
+    const capturedHandlers = captureHandlerConsumer()
+    const app = await makeApp()
+
+    await app.inject({ method: 'POST', url: `/api/sessions/${SESSION_E}/start` })
+    await capturedHandlers[0]!(makeTaskRequest(SESSION_E))
+    await flushMicrotasks()
+
+    expect(redisMock.expire.mock.calls.map((c) => c[0]).sort()).toEqual([...MANAGER_KEYS].sort())
+    await app.close()
+  })
+
+  /** abort 를 빠뜨리면 중단된 세션의 키가 영구히 남는다. */
+  it('abort 경로에서도 TTL 을 건다', async () => {
+    redisMock.expire.mockClear()
+    const capturedHandlers = captureHandlerConsumer()
+    const app = await makeApp()
+
+    await app.inject({ method: 'POST', url: `/api/sessions/${SESSION_E}/start` })
+    await capturedHandlers[0]!({ sessionId: SESSION_E, type: 'abort', payload: {} } as unknown as OrchestratorToManagerMessage)
+    await flushMicrotasks()
+
+    expect(redisMock.expire.mock.calls.map((c) => c[0]).sort()).toEqual([...MANAGER_KEYS].sort())
     await app.close()
   })
 })
