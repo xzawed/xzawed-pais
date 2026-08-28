@@ -19,7 +19,7 @@ description: xzawedWatcher 개발·디버깅·운영 스킬
 **파일**: `src/watcher.ts`의 safeTriggers 필터
 
 **주의사항**:
-- `triggers`는 상대경로 glob만 허용 (절대경로·'..' 포함 불가 — Zod에서 차단)
+- `triggers`는 상대경로 glob만 허용 (절대경로·상위 이동 `..` 세그먼트 불가 — Zod에서 차단)
 - chokidar `cwd` 옵션은 절대경로에 적용되지 않으므로 Zod 단계 차단이 핵심
 
 **검증**: `pnpm test src/watcher.test.ts`

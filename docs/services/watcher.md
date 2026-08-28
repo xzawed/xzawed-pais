@@ -29,7 +29,7 @@ interface ManagerToWatcherMessage {
   type: 'watch_request' | 'stop_watch' | 'abort'
   payload: {
     projectPath: string
-    triggers: string[]            // 상대경로 glob 패턴 (절대경로·'..' 포함 불가)
+    triggers: string[]            // 상대경로 glob 패턴 (절대경로·상위 이동(`..` 세그먼트) 불가)
     debounceMs?: number           // 이벤트 디바운스 ms (기본: 300)
     context: Record<string, unknown>
     userContext?: {
@@ -98,7 +98,7 @@ src/
 
 1. `consumer.ts` → `watch_request` 수신, Zod 스키마 검증 (`triggers` 패턴 차단 포함)
 2. `watcher.ts` → `validatePath(projectPath)` 경로 검증
-3. `triggers` 이중 필터: `filter(t => !path.isAbsolute(t) && !t.includes('..'))`
+3. `triggers` 이중 필터: `filter(isSafeRelativePath)` — shared 의 세그먼트 판정
 4. `chokidar.watch(safeTriggers, { cwd: validPath, followSymlinks: false })` 시작
 5. `WatcherStore.add(sessionId, { watcherId, watcher, timers })` — 한도 초과 시 즉시 throw 후 watcher 닫기
 6. `watch_started` 발행 후 파일 이벤트 대기

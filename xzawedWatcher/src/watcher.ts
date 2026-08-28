@@ -1,11 +1,10 @@
 import chokidar from 'chokidar'
-import path from 'node:path'
 import type { ManagerToWatcherMessage, FileEvent } from './types.js'
 import type { Producer } from './streams/producer.js'
 import type { WatcherStore } from './watcher-store.js'
 import { validatePath } from './executor.js'
 import type { Config } from './config.js'
-import { resolveWorkspaceRoot } from '@xzawed/agent-streams'
+import { resolveWorkspaceRoot, isSafeRelativePath } from '@xzawed/agent-streams'
 
 export { resolveWorkspaceRoot }
 
@@ -73,7 +72,7 @@ export class Watcher {
         timers.set(filePath, timer)
       }
 
-      const safeTriggers = payload.triggers.filter(t => !path.isAbsolute(t) && !t.includes('..'))
+      const safeTriggers = payload.triggers.filter(isSafeRelativePath)
       const watchedPaths = safeTriggers.length > 0 ? safeTriggers : ['**/*']
       const fsWatcher = chokidar.watch(watchedPaths, {
         cwd: validPath,

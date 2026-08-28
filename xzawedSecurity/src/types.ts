@@ -1,6 +1,5 @@
-import path from 'node:path'
 import { z } from 'zod'
-import { collaborationPayloadFields } from '@xzawed/agent-streams'
+import { collaborationPayloadFields, isSafeRelativePath } from '@xzawed/agent-streams'
 
 export interface SecurityIssue {
   id: string
@@ -73,10 +72,12 @@ export const ManagerToSecurityMessageSchema = z.object({
   type: z.enum(['audit_request', 'abort']),
   payload: z.object({
     artifacts: z.array(
-      z.string().refine(
-        (s) => !path.isAbsolute(s) && !s.includes('..'),
-        { message: 'artifacts must be relative paths without path traversal' },
-      ),
+      // 세그먼트 판정이다. `includes('..')` 은 `patches/v1..v2.diff` 같은 정상
+      // 파일명을 오거부했고, refine 실패는 항목 하나가 아니라 **메시지 전체를 DLQ**
+      // 로 보낸다 — 기본 챗 경로의 감사 요청이 통째로 사라졌다.
+      z.string().refine(isSafeRelativePath, {
+        message: 'artifacts must be relative paths without path traversal',
+      }),
     ),
     projectPath: z.string(),
     severity: z.enum(['low', 'medium', 'high']),

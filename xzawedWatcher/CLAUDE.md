@@ -22,7 +22,7 @@ interface ManagerToWatcherMessage {
   type: 'watch_request' | 'stop_watch' | 'abort'
   payload: {
     projectPath: string
-    triggers: string[]            // 상대경로 glob 패턴 (절대경로·'..' 포함 불가)
+    triggers: string[]            // 상대경로 glob 패턴 (절대경로·상위 이동(`..` 세그먼트) 불가)
     debounceMs?: number           // 기본 300ms
     context: Record<string, unknown>
     userContext?: { userId: string; projectId: string; workspaceRoot: string }
@@ -57,7 +57,7 @@ interface FileEvent { path: string; event: 'add' | 'change' | 'unlink'; timestam
 ## 구현 참고사항
 
 **보안 패턴**
-- `triggers` 이중 차단: Zod `refine`(`!path.isAbsolute && !includes('..')`) + `watcher.ts` 런타임 `filter` (defense-in-depth)
+- `triggers` 이중 차단: Zod `refine`(shared `isSafeRelativePath`) + `watcher.ts` 런타임 `filter` (defense-in-depth). **세그먼트 판정이다** — `includes('..')` 부분문자열 검사는 `patches/v1..v2/*` 같은 정상 glob 을 오거부한다
 - chokidar `cwd` 옵션은 절대경로 항목에 적용되지 않으므로 Zod 단계에서 반드시 차단
 - `followSymlinks: false` — 심볼릭 링크 추적 비활성화
 

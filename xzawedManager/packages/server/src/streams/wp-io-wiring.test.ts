@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { WorkPackage } from '@xzawed/agent-streams'
+import { hasTraversalSegment } from '@xzawed/agent-streams'
 import { isAbsolute, join, resolve } from 'node:path'
 import { buildWorkerInput, handleWpDispatchSignal } from './worker.js'
 import { toWireArtifacts } from './verify.js'
@@ -207,19 +208,23 @@ describe('toWireArtifacts — 후행이 파싱할 수 있는 형태로만 넘긴
     const out = toWireArtifacts([inside, outside, '../x', 'ok/d.ts'], root)
     for (const p of out) {
       expect(isAbsolute(p), `${p} 가 절대경로다`).toBe(false)
-      expect(p.includes('..'), `${p} 에 traversal 이 있다`).toBe(false)
+      expect(hasTraversalSegment(p), `${p} 에 traversal 이 있다`).toBe(false)
     }
   })
 })
 
 /**
- * **Grok 반증이 잡은 자리 — 두 분기가 서로 다른 규칙을 썼다.**
+ * **판정을 어휘적 → 세그먼트로 바꿨다. 이 블록은 그 전후가 뒤집힌 자리다.**
  *
- * 상대화 경로는 `toAuditPath` 의 **의미적** 판정만 거쳤는데 Security 의 판정은 **어휘적**이다.
- * 그래서 `patches/v1..v2.diff` 처럼 탈출이 아닌 정상 파일명이 통과해 나갔고, Zod `refine` 은
- * 원소별이라 그런 경로 하나가 **메시지 전체**를 거부시켜 DLQ→120초 타임아웃이 된다.
+ * 이전 판은 `patches/v1..v2.diff` 같은 **정상 파일명을 드롭하는 것**을 계약으로 못박고
+ * 있었다 — Security 인바운드가 `!includes('..')` 이라 보내면 메시지 전체가 DLQ 되기
+ * 때문이었다. 생산자가 "소비자가 못 받는 값을 만들지 않는다"로 대응한 것이고, 대가는
+ * **그 파일이 감사에서 빠지는 것**이었다.
+ *
+ * 이제 양쪽이 `isSafeRelativePath`(세그먼트 판정)를 **공유**하므로 그 대가가 없다.
+ * 정상 파일명은 그대로 흘러가고 진짜 상위 이동만 걸린다.
  */
-describe('toWireArtifacts — 어휘적 술어까지 만족시킨다(정상 파일명이라도)', () => {
+describe('toWireArtifacts — 세그먼트 판정: 정상 파일명은 흘려보낸다', () => {
   const root = resolve('/ws')
 
   it.each([
@@ -228,7 +233,15 @@ describe('toWireArtifacts — 어휘적 술어까지 만족시킨다(정상 파�
     ['foo/..hidden', '점 두 개로 시작하는 이름'],
     ['file..', '점으로 끝나는 이름'],
     ['...', '점 세 개'],
-  ])('탈출이 아니어도 %s 는 보내지 않는다(%s)', (p) => {
+  ])('%s 는 탈출이 아니므로 그대로 보낸다(%s)', (p) => {
+    expect(toWireArtifacts([p], root)).toEqual([p])
+  })
+
+  it.each([
+    ['../escape.ts', '앞선 상위 이동'],
+    ['a/../../etc/passwd', '중간 상위 이동'],
+    ['a/..', '끝의 상위 이동'],
+  ])('%s 는 진짜 탈출이므로 버린다(%s)', (p) => {
     expect(toWireArtifacts([p], root)).toEqual([])
   })
 
@@ -236,8 +249,8 @@ describe('toWireArtifacts — 어휘적 술어까지 만족시킨다(정상 파�
     expect(toWireArtifacts(['src/ok.ts', 'a.b.ts', 'x.min.js'], root)).toEqual(['src/ok.ts', 'a.b.ts', 'x.min.js'])
   })
 
-  it('한 건이 걸려도 나머지는 살아 나간다(메시지 전체가 죽지 않는다)', () => {
-    expect(toWireArtifacts(['patches/v1..v2.diff', 'src/ok.ts'], root)).toEqual(['src/ok.ts'])
+  it('탈출 한 건이 섞여도 나머지는 살아 나간다', () => {
+    expect(toWireArtifacts(['../escape.ts', 'src/ok.ts'], root)).toEqual(['src/ok.ts'])
   })
 
   /** 두 분기(root 유/무)가 **같은 관문**을 지나는지 — 규칙이 갈리면 한쪽만 새어 나간다. */
@@ -246,8 +259,10 @@ describe('toWireArtifacts — 어휘적 술어까지 만족시킨다(정상 파�
     for (const out of [toWireArtifacts(inputs, root), toWireArtifacts(inputs, undefined)]) {
       for (const p of out) {
         expect(isAbsolute(p)).toBe(false)
-        expect(p.includes('..')).toBe(false)
+        expect(hasTraversalSegment(p)).toBe(false)
       }
+      // 정상 파일명이 살아 나오는 것까지 확인한다 — "전부 드롭"도 술어는 만족한다.
+      expect(out).toContain('patches/v1..v2.diff')
     }
   })
 })

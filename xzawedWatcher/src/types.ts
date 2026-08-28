@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import path from 'node:path'
+import { isSafeRelativePath } from '@xzawed/agent-streams'
 
 export interface FileEvent {
   path: string
@@ -35,7 +35,7 @@ export const ManagerToWatcherMessageSchema = z.object({
     projectPath: z.string(),
     triggers: z.array(
       z.string().refine(
-        s => !path.isAbsolute(s) && !s.includes('..'),
+        isSafeRelativePath,
         { message: 'triggers must be relative glob patterns without path traversal' }
       )
     ),
