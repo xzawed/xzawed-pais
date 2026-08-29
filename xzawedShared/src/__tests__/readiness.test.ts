@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   runProbes, summarize, readinessResult,
-  redisPingProbe, loopProbe, pgProbe,
+  redisPingProbe, loopProbe, pgProbe, agentReadinessProbes,
   DEFAULT_PROBE_TIMEOUT_MS,
   type ReadinessProbe,
 } from '../health/readiness.js'
@@ -185,3 +185,33 @@ describe('타이머 위생', () => {
   })
 })
 
+
+/**
+ * **에이전트 7종이 전부 같은 실수를 했던 자리.**
+ *
+ * 실측(컨테이너 기동 후 각 에이전트 20회): 디스패처와 같은 연결이면 140회 중 **92회 503**
+ * (ping 21~1002ms). 전용 연결로 바꾸면 140/140 통과(ping 0~2ms). 세션이 살아 있을 때도 140/140.
+ * Manager 는 이미 전용 연결로 고쳤는데 그 수정이 에이전트에 전파되지 않았다.
+ */
+describe('agentReadinessProbes — 프로브 연결 분리 강제', () => {
+  function fakeDispatcher(gatewayRedis: unknown) {
+    return {
+      usesConnection: (r: unknown) => r === gatewayRedis,
+      isRunning: () => true,
+    } as unknown as Parameters<typeof agentReadinessProbes>[1]
+  }
+
+  it('디스패처와 같은 연결을 넘기면 기동에서 throw 한다', () => {
+    const shared = { ping: async () => 'PONG' } as never
+    expect(() => agentReadinessProbes(shared, fakeDispatcher(shared)))
+      .toThrow(/같은 Redis 연결/)
+  })
+
+  it('전용 연결이면 프로브 2종을 만든다', () => {
+    const gateway = { ping: async () => 'PONG' } as never
+    const probe = { ping: async () => 'PONG' } as never
+    const probes = agentReadinessProbes(probe, fakeDispatcher(gateway))
+    expect(probes).toHaveLength(2)
+    expect(probes.map((p) => p.name).sort()).toEqual(['dispatcher', 'redis'])
+  })
+})

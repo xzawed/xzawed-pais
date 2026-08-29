@@ -100,6 +100,17 @@ export class SessionDispatcher {
   }
 
   /** 무음 return을 남기지 않는다 — 여기서 사라진 엔트리는 DLQ에도 안 남기 때문이다(M8). */
+  /**
+   * 이 디스패처가 점유하는 연결인가.
+   *
+   * readiness 프로브가 같은 연결을 쓰면 안 되므로 `agentReadinessProbes` 가 이것으로 판정한다 —
+   * ioredis 는 한 연결에서 명령을 직렬화하는데 이 클래스는 `xreadgroup … BLOCK` 으로 그 연결을
+   * 붙잡고 있다. 인스턴스 동일성만 보므로 부작용이 없다.
+   */
+  usesConnection(redis: unknown): boolean {
+    return redis === this.gatewayRedis
+  }
+
   private handleGatewayEntry(fields: string[]): void {
     const dataIdx = fields.indexOf('data')
     if (dataIdx === -1) { console.error('[SessionDispatcher] data 필드 없음 — skip'); return }
