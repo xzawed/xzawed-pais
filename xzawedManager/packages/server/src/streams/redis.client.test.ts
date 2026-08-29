@@ -50,3 +50,41 @@ describe('redis.client — probe 연결 분리', () => {
     expect(quit, 'probe 연결이 정리 대상에서 빠졌다').toHaveBeenCalled()
   })
 })
+
+/**
+ * **전용 연결 회수.** 세션마다 `createRedisClient` 로 소켓이 생기므로 세션 종료 시
+ * 되돌려야 한다 — 안 그러면 `dedicated` Set 과 실제 연결이 세션 수만큼 쌓인다.
+ * (실측: 활성 세션 12개일 때 Manager 가 Redis 연결 15개를 보유했다.)
+ */
+describe('releaseRedisClient — 전용 연결 회수', () => {
+  afterEach(async () => { await closeRedisClients().catch(() => undefined) })
+
+  it('quit 을 부르고 dedicated 추적에서 뺀다', async () => {
+    const { releaseRedisClient } = await import('./redis.client.js')
+    const c = createRedisClient('redis://127.0.0.1:6399')
+    const quit = vi.spyOn(c, 'quit').mockResolvedValue('OK')
+
+    await releaseRedisClient(c)
+    expect(quit).toHaveBeenCalledTimes(1)
+
+    // 이미 회수했으므로 closeRedisClients 가 다시 quit 하지 않는다(이중 quit 방지).
+    await closeRedisClients()
+    expect(quit).toHaveBeenCalledTimes(1)
+  })
+
+  /** 정리 경로는 절대 throw 하지 않는다 — 세션 종료가 회수 실패로 멈추면 안 된다. */
+  it('quit 이 실패해도 throw 하지 않는다', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { releaseRedisClient } = await import('./redis.client.js')
+    const c = createRedisClient('redis://127.0.0.1:6399')
+    vi.spyOn(c, 'quit').mockRejectedValue(new Error('connection lost'))
+
+    await expect(releaseRedisClient(c)).resolves.toBeUndefined()
+  })
+
+  /** 블로킹 소비자는 서로 다른 소켓을 받아야 한다 — 공유하면 XGROUP CREATE 가 뒤에 줄 선다. */
+  it('createRedisClient 는 호출마다 새 인스턴스를 준다', () => {
+    const url = 'redis://127.0.0.1:6399'
+    expect(createRedisClient(url)).not.toBe(createRedisClient(url))
+  })
+})

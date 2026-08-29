@@ -48,6 +48,7 @@ describe('sessionsRoute — abort 처리', () => {
         capturedHandlers.push(handler)
       }),
       stop: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
     }) as unknown as StreamConsumer })
 
     const mockRun = vi.fn().mockRejectedValue(new Error('Session aborted'))
@@ -81,6 +82,7 @@ describe('sessionsRoute — abort 처리', () => {
         capturedHandlers.push(handler)
       }),
       stop: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
     }) as unknown as StreamConsumer })
 
     const mockRun = vi.fn().mockRejectedValue(new Error('Something went wrong'))
@@ -116,6 +118,7 @@ describe('sessionsRoute — 무음 drop 금지 (M8)', () => {
         capturedHandlers.push(handler)
       }),
       stop,
+      close: vi.fn().mockResolvedValue(undefined),
     }) as unknown as StreamConsumer })
     return { capturedHandlers, stop }
   }
@@ -186,6 +189,7 @@ describe('sessionsRoute — riskClassify 스레딩 (P2r-3)', () => {
         capturedHandlers.push(handler)
       }),
       stop: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
     }) as unknown as StreamConsumer })
 
     const emitPublish = vi.fn().mockResolvedValue('1-0')
@@ -232,6 +236,7 @@ describe('sessionsRoute — decompose_request 배선 (P4a-2)', () => {
         capturedHandlers.push(handler)
       }),
       stop: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
     }) as unknown as StreamConsumer })
 
     // LLM 실패 → fallback 단일 WP 경로(P4a-2: fallback도 userContext 보존)
@@ -280,6 +285,7 @@ describe('sessionsRoute — 세션 종료 시 registry 해제 (F5)', () => {
         capturedHandlers.push(handler)
       }),
       stop: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
     }) as unknown as StreamConsumer })
     return capturedHandlers
   }
@@ -350,6 +356,7 @@ describe('sessionsRoute — 세션 스트림 키 TTL', () => {
         capturedHandlers.push(handler)
       }),
       stop: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
     }) as unknown as StreamConsumer })
     return capturedHandlers
   }

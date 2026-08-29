@@ -2,9 +2,12 @@ import { vi, describe, it, expect, afterEach } from 'vitest'
 
 vi.mock('./redis.client.js', () => ({
   getRedisClient: vi.fn(),
+  // 블로킹 소비자는 전용 연결을 쓴다 — 공유 소켓 직렬화로 XGROUP CREATE 가 밀렸다.
+  createRedisClient: vi.fn(),
+  releaseRedisClient: vi.fn().mockResolvedValue(undefined),
 }))
 
-import { getRedisClient } from '../streams/redis.client.js'
+import { getRedisClient, createRedisClient } from '../streams/redis.client.js'
 import { SessionGatewayConsumer } from './session-gateway.js'
 
 function makeRedis(xreadgroupResults: unknown[][] = []) {
@@ -32,6 +35,7 @@ describe('SessionGatewayConsumer', () => {
       [['orchestrator:to-manager:sessions', [['1-0', ['data', JSON.stringify({ sessionId })]]]]]
     ])
     vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    vi.mocked(createRedisClient).mockReturnValue(mockRedis as never)
 
     const onSessionInit = vi.fn()
     const gateway = new SessionGatewayConsumer('redis://localhost:6379', onSessionInit)
@@ -57,6 +61,7 @@ describe('SessionGatewayConsumer', () => {
       [['orchestrator:to-manager:sessions', [['2-0', ['data', 'bad json']]]]]
     ])
     vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    vi.mocked(createRedisClient).mockReturnValue(mockRedis as never)
 
     const onSessionInit = vi.fn()
     const gateway = new SessionGatewayConsumer('redis://localhost:6379', onSessionInit)
@@ -74,6 +79,7 @@ describe('SessionGatewayConsumer', () => {
     const mockRedis = makeRedis([])
     mockRedis.xgroup.mockRejectedValueOnce(new Error('BUSYGROUP Consumer Group name already exists'))
     vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    vi.mocked(createRedisClient).mockReturnValue(mockRedis as never)
 
     const gateway = new SessionGatewayConsumer('redis://localhost:6379', vi.fn())
     const p = gateway.start()
@@ -85,6 +91,7 @@ describe('SessionGatewayConsumer', () => {
   it('JSON 무효를 {stream}:dlq로 격리(invalid_schema)', async () => {
     const mockRedis = makeRedis([[['orchestrator:to-manager:sessions', [['8-0', ['data', 'bad json']]]]]])
     vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    vi.mocked(createRedisClient).mockReturnValue(mockRedis as never)
     const onSessionInit = vi.fn()
     const g = new SessionGatewayConsumer('redis://localhost:6379', onSessionInit)
     const p = g.start(); await new Promise(r => setTimeout(r, 50)); g.stop(); await p
@@ -97,6 +104,7 @@ describe('SessionGatewayConsumer', () => {
     const sid = '550e8400-e29b-41d4-a716-446655440000'
     const mockRedis = makeRedis([[['orchestrator:to-manager:sessions', [['8-1', ['data', JSON.stringify({ sessionId: sid })]]]]]])
     vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    vi.mocked(createRedisClient).mockReturnValue(mockRedis as never)
     const onSessionInit = vi.fn().mockRejectedValue(new Error('boom'))
     const g = new SessionGatewayConsumer('redis://localhost:6379', onSessionInit)
     const p = g.start(); await new Promise(r => setTimeout(r, 50)); g.stop(); await p
@@ -109,6 +117,7 @@ describe('SessionGatewayConsumer', () => {
     // 유일한 생산자가 UUID v4를 강제하므로 여기 도달 = 손상/주입. 무음 skip하지 않는다(M8).
     const mockRedis = makeRedis([[['orchestrator:to-manager:sessions', [['8-2', ['data', JSON.stringify({ sessionId: 'not-a-uuid' })]]]]]])
     vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    vi.mocked(createRedisClient).mockReturnValue(mockRedis as never)
     const onSessionInit = vi.fn()
     const g = new SessionGatewayConsumer('redis://localhost:6379', onSessionInit)
     const p = g.start(); await new Promise(r => setTimeout(r, 50)); g.stop(); await p
@@ -122,6 +131,7 @@ describe('SessionGatewayConsumer', () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     const mockRedis = makeRedis([[['orchestrator:to-manager:sessions', [['8-3', ['other', 'x']]]]]])
     vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    vi.mocked(createRedisClient).mockReturnValue(mockRedis as never)
     const onSessionInit = vi.fn()
     const g = new SessionGatewayConsumer('redis://localhost:6379', onSessionInit)
     const p = g.start(); await new Promise(r => setTimeout(r, 50)); g.stop(); await p
@@ -155,6 +165,7 @@ describe('SessionGatewayConsumer.isRunning', () => {
     // 준다 — Redis 프로브만 보는 readiness 는 이 상태를 ready 로 답한다.
     const redis = { ...makeRedis(), xgroup: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) }
     vi.mocked(getRedisClient).mockReturnValue(redis as never)
+    vi.mocked(createRedisClient).mockReturnValue(redis as never)
 
     await expect(make().start()).rejects.toThrow('ECONNREFUSED')
     expect(redis.xreadgroup).not.toHaveBeenCalled()

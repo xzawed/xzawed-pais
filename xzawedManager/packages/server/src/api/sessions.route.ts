@@ -64,6 +64,8 @@ export function makeSessionStarter(
     const cleanupSession = async (): Promise<void> => {
       opts.watcherEventConsumer?.unwatchSession(sessionId)
       consumer.stop()
+      // 전용 연결 회수 — stop() 은 루프 탈출만 요청한다. 안 닫으면 세션 수만큼 소켓이 쌓인다.
+      void consumer.close()
       opts.activeConsumers.delete(sessionId)
       // releaseAll을 finally에 둔다 — 앞의 await가 throw하면 에이전트 쪽 세션 소비자에
       // 종료가 통지되지 않아 그 소비자와 전용 Redis 연결이 프로세스 수명 내내 남는다.
@@ -152,6 +154,7 @@ export function makeSessionStarter(
         opts.watcherEventConsumer?.unwatchSession(sessionId)
         // stop을 먼저 — sessionStore.abort가 throw해도 소비자가 남지 않게 한다.
         consumer.stop()
+        void consumer.close()
         opts.activeConsumers.delete(sessionId)
         try {
           await opts.sessionStore.abort(sessionId)

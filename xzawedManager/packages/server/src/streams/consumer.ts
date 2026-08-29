@@ -3,7 +3,7 @@ import { RedisEventBus, routeToDlq } from '@xzawed/agent-streams'
 import type { StreamConsumerPort } from '@xzawed/agent-streams'
 import type { OrchestratorToManagerMessage } from '../types/streams.js'
 import { UserContextSchema, AbsoluteUserContextSchema } from '../types/user-context.js'
-import { getRedisClient } from './redis.client.js'
+import { createRedisClient, releaseRedisClient } from './redis.client.js'
 
 const streamKey = (sessionId: string) => `orchestrator:to-manager:${sessionId}`
 const GROUP = 'manager-consumers'
@@ -64,17 +64,37 @@ export const OrchestratorToManagerMessageSchema = z.union([
 export class StreamConsumer {
   private running = false
   private _bus: StreamConsumerPort | null = null
+  private _redis: import('ioredis').Redis | null = null
 
   constructor(private readonly redisUrl: string) {}
 
-  /** getRedisClient는 URL별 캐시 클라이언트 — bus도 1회 생성 후 재사용. */
+  /**
+   * **세션마다 전용 연결.** 공유 클라이언트(`getRedisClient`)를 쓰면 세션 소비자 N 개가
+   * 한 소켓에서 `XREADGROUP ... BLOCK 2000` 으로 경쟁하고, ioredis 는 명령을 직렬화하므로
+   * 새 세션의 `XGROUP CREATE` 가 그 뒤에 줄을 선다.
+   *
+   * 실측(같은 스택, 세션 누적에 따라): 활성 0개일 때 **1ms** → 5개 4~9초 → 17개 **12초**
+   * → 21개 **16~23초**. 그 창 동안 도착한 `task_request` 는 아래 `'0'` 이 없으면 유실된다.
+   */
   private get bus(): StreamConsumerPort {
-    this._bus ??= new RedisEventBus(getRedisClient(this.redisUrl))
+    this._redis ??= createRedisClient(this.redisUrl)
+    this._bus ??= new RedisEventBus(this._redis)
     return this._bus
   }
 
+  /**
+   * **`'0'` 으로 만든다 — 생산자가 소비자보다 먼저 쓸 수 있는 스트림이기 때문이다.**
+   *
+   * Orchestrator 는 세션 개통 통지와 `task_request` 를 잇달아 발행하는데, Manager 가 그
+   * 세션의 소비자를 세우는 것은 게이트웨이를 한 번 거친 뒤다. 기본값 `'$'` 는 그룹 생성
+   * **이후** 메시지만 주므로, 그 사이에 도착한 첫 메시지가 영원히 전달되지 않는다 —
+   * DLQ 도 로그도 에러도 없는 완전한 무음 유실이었다(실측 6/6, Grok 반증 3/3 재현).
+   *
+   * `'0'` 은 **그룹이 처음 만들어질 때만** 적용된다(BUSYGROUP 이면 무시). 즉 재시작 시
+   * 기존 그룹의 위치를 되돌리지 않으므로 대량 재전달은 일어나지 않는다.
+   */
   async ensureGroup(sessionId: string): Promise<void> {
-    await this.bus.ensureGroup(streamKey(sessionId), GROUP)
+    await this.bus.ensureGroup(streamKey(sessionId), GROUP, '0')
   }
 
   /** 구조적 결함=null(ack-skip), JSON/스키마 무효={poison}(DLQ), 유효={data,raw}. */
@@ -157,5 +177,17 @@ export class StreamConsumer {
 
   stop(): void {
     this.running = false
+  }
+
+  /**
+   * 전용 연결을 닫는다. `stop()` 은 루프 탈출만 요청하므로 소켓은 이것으로 회수한다 —
+   * 안 부르면 세션 수만큼 연결이 쌓인다. never-throw(정리 경로).
+   */
+  async close(): Promise<void> {
+    this.running = false
+    const r = this._redis
+    this._redis = null
+    this._bus = null
+    if (r) await releaseRedisClient(r)
   }
 }
