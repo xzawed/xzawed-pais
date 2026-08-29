@@ -577,6 +577,16 @@ jobs:
           MAX_WAIT=300
           ELAPSED=0
 
+          # fork·bot PR 은 SONAR_TOKEN 에 접근할 수 없어 분석이 **구조적으로** 일어나지 않는다.
+          # 그때도 기다리면 폴링이 300초를 꽉 채우고 TIMEOUT 으로 끝난다 — 실측: bot PR 은
+          # 이 잡이 5분 09초~5분 15초, 사람 PR 은 5~8초였다. 결과가 달라지지 않는 대기다.
+          # 바로 옆 sonar 잡은 이미 같은 이유로 `if: env.SONAR_TOKEN != ''` 를 쓴다.
+          if [ -z "${SONAR_TOKEN}" ]; then
+            echo "sonar_status=NO_TOKEN" >> "$GITHUB_OUTPUT"
+            echo "::warning title=SonarCloud CPD 미실행::SONAR_TOKEN 이 없어 분석을 기다리지 않습니다(fork·bot PR 구조적 제약). 코드 문제가 아닙니다."
+            exit 0
+          fi
+
           echo "Waiting for SonarCloud analysis on PR #${PR_NUMBER}..."
           while [ $ELAPSED -lt $MAX_WAIT ]; do
             curl -sf -u "${SONAR_TOKEN}:" \
@@ -597,6 +607,8 @@ jobs:
 
       - name: Fetch CPD breakdown from SonarCloud API
         id: sonar-cpd
+        # 토큰이 없으면 조회할 분석 자체가 없다 — 부르면 인증 오류만 난다.
+        if: steps.sonar-wait.outputs.sonar_status != 'NO_TOKEN'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
@@ -676,7 +688,11 @@ jobs:
 
             let body = marker + '\n## SonarCloud CPD Analysis\n\n'
 
-            if (sonarStatus === 'TIMEOUT') {
+            if (sonarStatus === 'NO_TOKEN') {
+              // 초록이 "중복 0"을 뜻하지 않는다는 것을 코멘트가 분명히 말해야 한다.
+              body += 'ℹ️ `SONAR_TOKEN` 에 접근할 수 없어 분석을 실행하지 않았습니다(fork·bot PR 구조적 제약). '
+              body += '**이 잡의 통과는 중복이 없다는 뜻이 아닙니다** — 중복 게이트는 `Copy-Paste Detection`(jscpd) 잡입니다.\n'
+            } else if (sonarStatus === 'TIMEOUT') {
               body += '⏳ SonarCloud analysis did not complete within 5 minutes. Check the [dashboard](https://sonarcloud.io/project/overview?id=xzawed_xzawed-pais) manually.\n'
             } else {
               const gateIcon = gate === 'OK' ? '✅' : gate === 'ERROR' ? '❌' : '⚠️'
