@@ -137,7 +137,7 @@ node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200�
 
 **버전 비호환은 에러 메시지가 아니라 `peerDependencies`로 판정한다.** `ERR_PACKAGE_PATH_NOT_EXPORTED` 류는 "한 단계만 올리면 되겠다"는 오추론을 부른다. `npm view <pkg>@<major> peerDependencies`로 얽힌 패키지들의 범위 **교집합**을 먼저 구한다.
 
-**Dependabot PR이 붉으면 Sonar부터 의심하지 않는다** — sonar 잡은 `if: always()`라 bot PR의 `SONAR_TOKEN` 부재를 가시적 통과로 처리한다. 실제로 터지는 곳은 `--frozen-lockfile`을 도는 서비스 잡이다: **봇이 만든 락파일에는 최상위 `overrides:` 키가 없어** `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`로 거부된다. 로컬에서 `pnpm install --lockfile-only`로 재생성해 사람 브랜치 하나로 합친다.
+**Dependabot PR이 붉으면 Sonar부터 의심하지 않는다.** 스캔 스텝이 `if: env.SONAR_TOKEN != ''`로 걸려 있어 토큰이 없는 bot PR에서는 경고만 찍고 exit 0 한다 — **그 초록은 "분석이 돌지 않았다"는 뜻이지 품질 게이트 통과가 아니다**(`if: always()`는 needs 실패 후에도 잡을 돌리는 별개 장치다). 실제로 터지는 곳은 `pnpm install --frozen-lockfile`이고, 서비스·Turborepo 잡뿐 아니라 **Compose Smoke가 굽는 Dockerfile 안에서도** 돈다. 원인은 `pnpm.overrides`와 락파일에 기록된 `overrides`의 **불일치**다 — 키가 통째로 빠졌을 때도, 값만 어긋났을 때도 같은 `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`가 난다(`The current "overrides" configuration doesn't match the value found in the lockfile`). 로컬에서 재생성해 사람 브랜치 하나로 합친다.
 
 ## 실측 규칙
 
