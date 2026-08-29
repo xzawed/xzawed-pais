@@ -33,10 +33,23 @@ const config: Configuration = {
   // electron-updater verifies update packages via SHA-512 checksum by default;
   // do NOT set autoUpdater.verifyUpdateCodeSignature = false anywhere.
   mac: { target: [{ target: 'dmg', arch: ['x64', 'arm64'] }], notarize: false },
-  linux: { target: [
-    { target: 'AppImage', arch: ['x64'] },
-    { target: 'deb',      arch: ['x64'] },
-  ]},
+  linux: {
+    // **리눅스만 실행 파일 이름을 `productName` 이 아니라 `executableName` 에서 가져온다.**
+    // 설정하지 않으면 패키지 `name`(`@xzawed/launcher-app`)에서 파생되는데 `@` 가 남아
+    // AppImage 빌드가 거부한다 — Windows·macOS 는 `productFilename` 을 쓰므로 걸리지 않는
+    // **리눅스 전용 결함**이다(`platformPackager.js:317` 이 그 분기다). 실측 에러:
+    // `executableName contains characters that cannot be safely used in file paths:
+    //  @xzawedlauncher-app`
+    executableName: 'xzawed-launcher',
+    // 미설정 시 electron-builder 가 "Utility" 로 조용히 채우고 경고만 남긴다
+    // (`linux.category is not set and cannot map from macOS`). .desktop 항목에 들어가는
+    // 값이라 기본값에 맡기지 않는다.
+    category: 'Development',
+    target: [
+      { target: 'AppImage', arch: ['x64'] },
+      { target: 'deb',      arch: ['x64'] },
+    ],
+  },
   // nsis 는 자체 기본 artifactName(`${productName} Setup ...`)을 갖고 있어 위 최상위 값을
   // 상속하지 않는다 — 여기서 다시 안전 이름으로 못 박는다.
   nsis: {
