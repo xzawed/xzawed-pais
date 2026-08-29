@@ -20,7 +20,11 @@ jobs:
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with: { version: 10 }
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with: { node-version: 22, cache: pnpm }
+        with:
+          node-version: 22
+          cache: pnpm
+          # 루트에 lockfile 이 없다 — 경로를 주지 않으면 setup-node 가 저장소 루트에서 찾다 실패한다.
+          cache-dependency-path: xzawedLauncher/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: xzawedLauncher
         run: pnpm install --frozen-lockfile
@@ -53,7 +57,11 @@ jobs:
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with: { version: 10 }
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with: { node-version: 22, cache: pnpm }
+        with:
+          node-version: 22
+          cache: pnpm
+          # 루트에 lockfile 이 없다 — 경로를 주지 않으면 setup-node 가 저장소 루트에서 찾다 실패한다.
+          cache-dependency-path: xzawedLauncher/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: xzawedLauncher
         run: pnpm install --frozen-lockfile
@@ -86,7 +94,11 @@ jobs:
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with: { version: 10 }
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with: { node-version: 22, cache: pnpm }
+        with:
+          node-version: 22
+          cache: pnpm
+          # 루트에 lockfile 이 없다 — 경로를 주지 않으면 setup-node 가 저장소 루트에서 찾다 실패한다.
+          cache-dependency-path: xzawedLauncher/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: xzawedLauncher
         run: pnpm install --frozen-lockfile
