@@ -16,6 +16,7 @@ const mockStop = vi.fn()
 vi.mock('../../src/streams/consumer.js', () => ({
   StreamConsumer: class {
     stop = mockStop
+    close = vi.fn().mockResolvedValue(undefined)
     ensureGroup = vi.fn().mockResolvedValue(undefined)
     start(_sessionId: string, cb: ConsumerCallback) {
       capturedCallback = cb

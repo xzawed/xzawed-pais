@@ -15,6 +15,22 @@ export function createRedisClient(url: string): Redis {
   return client
 }
 
+/**
+ * `createRedisClient` 로 만든 전용 연결을 닫고 추적에서 뺀다.
+ *
+ * 세션마다 전용 연결을 만드는 소비자는 세션 종료 시 이것을 불러야 한다 — 안 부르면
+ * `dedicated` Set 과 실제 소켓이 프로세스 수명 내내 쌓인다(세션 수만큼).
+ * never-throw: 정리 경로가 세션 종료를 막으면 안 된다.
+ */
+export async function releaseRedisClient(client: Redis): Promise<void> {
+  dedicated.delete(client)
+  try {
+    await client.quit()
+  } catch (err) {
+    console.error('[redis.client] 전용 연결 quit 실패(무시):', err)
+  }
+}
+
 export function getRedisClient(url: string): Redis {
   let client = clients.get(url)
   if (!client) {

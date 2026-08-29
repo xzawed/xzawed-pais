@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { RedisEventBus, routeToDlq } from '@xzawed/agent-streams'
 import type { StreamConsumerPort } from '@xzawed/agent-streams'
-import { getRedisClient } from './redis.client.js'
+import { createRedisClient } from './redis.client.js'
 
 const GATEWAY_STREAM = 'orchestrator:to-manager:sessions'
 const GROUP = 'manager-gateway'
@@ -17,9 +17,13 @@ export class SessionGatewayConsumer {
     private readonly onSessionInit: SessionInitCallback,
   ) {}
 
-  /** getRedisClient는 URL별 캐시 클라이언트 — bus도 1회 생성 후 재사용. */
+  /**
+   * **전용 연결.** 이 소비자는 게이트웨이 스트림을 `BLOCK 2000` 으로 붙잡는다 — 공유
+   * 클라이언트를 쓰면 같은 소켓의 다른 명령(세션 소비자의 XGROUP CREATE 등)이 그 뒤에 줄 선다.
+   * `closeRedisClients` 가 종료 시 함께 quit 한다(수명이 프로세스와 같아 개별 회수 불필요).
+   */
   private get bus(): StreamConsumerPort {
-    this._bus ??= new RedisEventBus(getRedisClient(this.redisUrl))
+    this._bus ??= new RedisEventBus(createRedisClient(this.redisUrl))
     return this._bus
   }
 

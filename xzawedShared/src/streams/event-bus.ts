@@ -16,8 +16,15 @@ export type RawStreamReply = [string, [string, string[]][]][]
 
 /** 소비 전송 포트(P1c-2). EventBus(publish)를 상속 — DLQ 발행에 publish 재사용. */
 export interface StreamConsumerPort extends EventBus {
-  /** xgroup CREATE(MKSTREAM). BUSYGROUP은 무시, 그 외 오류는 전파. */
-  ensureGroup(stream: string, group: string): Promise<void>
+  /**
+   * xgroup CREATE(MKSTREAM). BUSYGROUP은 무시, 그 외 오류는 전파.
+   *
+   * `startId` 기본값 `'$'` 는 **그룹 생성 시점 이후**의 메시지만 준다 — 생성 전에 이미
+   * 쌓인 엔트리는 영원히 전달되지 않는다(무음 유실). 생산자가 소비자보다 먼저 쓸 수 있는
+   * 스트림은 `'0'` 을 넘겨야 한다. 이 값은 **그룹이 처음 만들어질 때만** 의미가 있고
+   * BUSYGROUP(이미 존재)에는 영향이 없다.
+   */
+  ensureGroup(stream: string, group: string, startId?: '$' | '0'): Promise<void>
   /** xreadgroup '>'(신규 메시지). raw 응답 또는 null(타임아웃). */
   readGroup(stream: string, group: string, consumer: string, opts: { count: number; blockMs: number }): Promise<RawStreamReply | null>
   /** 다중 스트림 xreadgroup(fan-in). ids는 streams와 1:1(길이 불일치는 throw). raw 응답 또는 null. */
@@ -47,9 +54,9 @@ export class RedisEventBus implements StreamConsumerPort, RequestReplyPort {
       : this.redis.xadd(stream, '*', 'data', data)
   }
 
-  async ensureGroup(stream: string, group: string): Promise<void> {
+  async ensureGroup(stream: string, group: string, startId: '$' | '0' = '$'): Promise<void> {
     try {
-      await this.redis.xgroup('CREATE', stream, group, '$', 'MKSTREAM')
+      await this.redis.xgroup('CREATE', stream, group, startId, 'MKSTREAM')
     } catch (e: unknown) {
       if (!(e instanceof Error && e.message.includes('BUSYGROUP'))) throw e
     }

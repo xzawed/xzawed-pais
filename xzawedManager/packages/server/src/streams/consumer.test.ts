@@ -2,9 +2,12 @@ import { vi, describe, it, expect, afterEach } from 'vitest'
 
 vi.mock('./redis.client.js', () => ({
   getRedisClient: vi.fn(),
+  // 블로킹 소비자는 전용 연결을 쓴다 — 공유 소켓 직렬화로 XGROUP CREATE 가 밀렸다.
+  createRedisClient: vi.fn(),
+  releaseRedisClient: vi.fn().mockResolvedValue(undefined),
 }))
 
-import { getRedisClient } from '../streams/redis.client.js'
+import { getRedisClient, createRedisClient } from '../streams/redis.client.js'
 import { OrchestratorToManagerMessageSchema, StreamConsumer } from './consumer.js'
 
 describe('OrchestratorToManagerMessageSchema — decompose_request', () => {
@@ -83,6 +86,7 @@ describe('StreamConsumer — 인바운드 DLQ 격리', () => {
     const stream = `orchestrator:to-manager:${sid}`
     const mockRedis = makeRedis([[[stream, [['9-0', ['data', JSON.stringify({ type: 'unknown_type' })]]]]]])
     vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    vi.mocked(createRedisClient).mockReturnValue(mockRedis as never)
     const handler = vi.fn()
     const c = new StreamConsumer('redis://localhost:6379')
     const p = c.start(sid, handler)
@@ -98,6 +102,7 @@ describe('StreamConsumer — 인바운드 DLQ 격리', () => {
     const msg = { sessionId: sid, messageId: 'm1', timestamp: 1, type: 'abort', payload: {} }
     const mockRedis = makeRedis([[[stream, [['9-1', ['data', JSON.stringify(msg)]]]]]])
     vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    vi.mocked(createRedisClient).mockReturnValue(mockRedis as never)
     const handler = vi.fn().mockRejectedValue(new Error('boom'))
     const c = new StreamConsumer('redis://localhost:6379')
     const p = c.start(sid, handler)
@@ -112,6 +117,7 @@ describe('StreamConsumer — 인바운드 DLQ 격리', () => {
     const stream = `orchestrator:to-manager:${sid}`
     const mockRedis = makeRedis([[[stream, [['9-2', ['nodata', 'x']]]]]])
     vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    vi.mocked(createRedisClient).mockReturnValue(mockRedis as never)
     const c = new StreamConsumer('redis://localhost:6379')
     const p = c.start(sid, vi.fn())
     await new Promise(r => setTimeout(r, 50)); c.stop(); await p
