@@ -7,7 +7,7 @@ vi.mock('./redis.client.js', () => ({
   releaseRedisClient: vi.fn().mockResolvedValue(undefined),
 }))
 
-import { getRedisClient, createRedisClient } from '../streams/redis.client.js'
+import { getRedisClient, createRedisClient, releaseRedisClient } from '../streams/redis.client.js'
 import { OrchestratorToManagerMessageSchema, StreamConsumer } from './consumer.js'
 
 describe('OrchestratorToManagerMessageSchema — decompose_request', () => {
@@ -123,5 +123,46 @@ describe('StreamConsumer — 인바운드 DLQ 격리', () => {
     await new Promise(r => setTimeout(r, 50)); c.stop(); await p
     expect(mockRedis.xadd).not.toHaveBeenCalled()
     expect(mockRedis.xack).toHaveBeenCalled()
+  })
+})
+
+/**
+ * **세션마다 전용 연결이므로 회수 경로가 필요하다.**
+ *
+ * 공유 연결이던 시절에는 닫을 것이 없었다. 이제 세션당 소켓이 생기므로 `close()` 가
+ * 없으면 세션 수만큼 쌓인다 — 실측에서 Manager 가 활성 12세션에 연결 15개를 들고 있었다.
+ */
+describe('StreamConsumer.close — 전용 연결 회수', () => {
+  it('전용 연결을 releaseRedisClient 로 되돌리고 루프를 멈춘다', async () => {
+    const mockRedis = makeRedis()
+    vi.mocked(getRedisClient).mockReturnValue(mockRedis as never)
+    vi.mocked(createRedisClient).mockReturnValue(mockRedis as never)
+
+    const c = new StreamConsumer('redis://localhost:6379')
+    await c.ensureGroup('sess-close') // 연결을 실제로 만들게 한다
+    await c.close()
+
+    expect(vi.mocked(releaseRedisClient)).toHaveBeenCalledWith(mockRedis)
+  })
+
+  it('연결을 만든 적 없으면 회수도 시도하지 않는다', async () => {
+    vi.mocked(releaseRedisClient).mockClear()
+    const c = new StreamConsumer('redis://localhost:6379')
+    await c.close()
+    expect(vi.mocked(releaseRedisClient)).not.toHaveBeenCalled()
+  })
+
+  /** 두 번 불러도 안전해야 한다 — cleanupSession 과 abort 분기가 겹칠 수 있다. */
+  it('두 번 호출해도 한 번만 회수한다', async () => {
+    const mockRedis = makeRedis()
+    vi.mocked(createRedisClient).mockReturnValue(mockRedis as never)
+    vi.mocked(releaseRedisClient).mockClear()
+
+    const c = new StreamConsumer('redis://localhost:6379')
+    await c.ensureGroup('sess-twice')
+    await c.close()
+    await c.close()
+
+    expect(vi.mocked(releaseRedisClient)).toHaveBeenCalledTimes(1)
   })
 })
