@@ -211,3 +211,23 @@ describe('electron-builder 리눅스 실행 파일 이름', () => {
     expect(name!, 'linux.executableName').toMatch(/^[A-Za-z0-9._\- ]+$/)
   })
 })
+
+describe('electron-builder deb 메타데이터', () => {
+  it('linux.maintainer 가 deb 가 받아주는 형태다', async () => {
+    const { default: config } = await import('../../electron-builder')
+    // deb 만 요구한다 — AppImage 는 없어도 빌드된다. 그래서 리눅스 안에서도 타깃별로 갈리고,
+    // AppImage 가 성공한 뒤 deb 에서 처음 죽었다. 실측 에러:
+    // `It is required to set Linux .deb package maintainer.`
+    const m = config.linux?.maintainer
+    expect(m, 'linux.maintainer 가 설정돼 있어야 한다 — deb 빌드가 거부한다').toBeDefined()
+    expect(m!, 'deb Maintainer 는 `Name <email>` 형태다').toMatch(/^.+ <[^@\s]+@[^@\s]+>$/)
+  })
+
+  it('package.json 에 homepage 가 있다 — deb 가 요구한다', () => {
+    // 실측 에러: `Please specify project homepage, see .../configuration#metadata`.
+    // metadata 는 package.json 을 가리킨다.
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'xzawedLauncher/packages/app/package.json'), 'utf-8'))
+    expect(pkg.homepage, 'package.json.homepage').toBeTruthy()
+    expect(String(pkg.homepage)).toMatch(/^https:\/\//)
+  })
+})
