@@ -195,3 +195,19 @@ describe('electron-builder 패키징 계약', () => {
     expect(version, '버전 문자열 자체가 URL 안전해야 한다').toMatch(GITHUB_SAFE)
   })
 })
+
+describe('electron-builder 리눅스 실행 파일 이름', () => {
+  it('linux.executableName 이 리눅스가 받아주는 문자만 쓴다', async () => {
+    const { default: config } = await import('../../electron-builder')
+
+    // 리눅스만 실행 파일 이름을 productName 이 아니라 executableName 에서 가져온다
+    // (`platformPackager.js:317` 의 `this instanceof LinuxPackager` 분기). 설정하지 않으면
+    // 패키지 name 인 `@xzawed/launcher-app` 에서 파생돼 `@` 가 남고, AppImage 빌드가
+    // 거부한다 — Windows·macOS 는 productFilename 을 쓰므로 초록이다. 실제로 CI 에서
+    // windows 는 통과하고 linux 만 이 이유로 죽었다.
+    const name = config.linux?.executableName
+    expect(name, 'linux.executableName 이 설정돼 있어야 한다 — 기본값은 패키지 name 에서 파생된다').toBeDefined()
+    // electron-builder 의 문구: "only letters, digits, hyphens, underscores, dots, and spaces"
+    expect(name!, 'linux.executableName').toMatch(/^[A-Za-z0-9._\- ]+$/)
+  })
+})
