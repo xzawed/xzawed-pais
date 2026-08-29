@@ -133,3 +133,65 @@ describe('두 사본의 드리프트', () => {
     expect(diff).toEqual([['      CLAUDE_MODE: ${CLAUDE_MODE:-api}', '      CLAUDE_MODE: ${CLAUDE_MODE:-cli}']])
   })
 })
+
+/**
+ * **패키징 계약 — compose 가 실제로 앱 안에 들어가는가.**
+ *
+ * 위 검사들은 두 사본이 같은지만 본다. 그것으로는 부족하다는 것이 실측으로 드러났다:
+ * 설정 파일이 `electron-builder.config.ts` 라는 이름이었는데 electron-builder 는 그 이름을
+ * **자동 탐색하지 않고**(탐색 대상은 `electron-builder.{yml,yaml,json,json5,toml,js,cjs,ts}`),
+ * 릴리스 워크플로 3개 잡이 전부 `--config` 없이 부른다. 그래서 설정이 통째로 무시됐고
+ * `extraResources` 도 적용되지 않아 **출하된 앱의 `resources/` 에 compose 가 아예 없었다**.
+ * `docker-manager.ts` 는 `process.resourcesPath` 기준으로 그 파일을 여니, 사용자에게 나간
+ * 런처는 스택을 띄울 수 없었다. 빌드는 성공하므로 아무도 몰랐다.
+ *
+ * 이름이 탐색되는지는 `scripts/check-compose-parity.js` 가 본다(파일명이라 정확히 판정된다).
+ * **내용은 여기서 본다** — 여기서만 설정 객체를 그대로 import 할 수 있기 때문이다.
+ */
+describe('electron-builder 패키징 계약', () => {
+  it('extraResources 가 compose 를 resources 루트에 그 이름으로 넣는다', async () => {
+    const { default: config } = await import('../../electron-builder')
+    const entries = config.extraResources
+    expect(Array.isArray(entries), 'extraResources 가 배열이어야 판정할 수 있다').toBe(true)
+
+    // 도착지 기준으로 본다 — 런타임이 여는 것은 `to` 쪽이다. `to` 생략 시 `from` 의 basename.
+    const destinations = (entries as Array<string | { from?: string; to?: string }>).map((e) => {
+      if (typeof e === 'string') return path.basename(e)
+      const to = e.to
+      if (to === undefined || to === '.') return path.basename(e.from ?? '')
+      return to
+    })
+
+    // 하위 디렉토리로 넣으면 resourcesPath 루트에서 못 찾는다 — basename 비교로는 그것을 놓친다.
+    expect(destinations).toContain('docker-compose.prod.yml')
+  })
+
+  it('artifactName 이 URL 안전 문자만 낸다 — 아니면 자동 업데이트가 404 난다', async () => {
+    const { default: config } = await import('../../electron-builder')
+
+    // `latest.yml` 의 url 은 electron-builder 가 파생한 safeArtifactName 이다(공백 등을 `-` 로
+    // 치환한 것). 디스크 이름에 공백이 있으면 둘이 갈라지고, 릴리스에 올라가는 것은 디스크
+    // 이름이라 electron-updater 가 없는 자산을 받으러 간다. 패턴 단계에서 막는다.
+    const GITHUB_SAFE = /^[0-9A-Za-z._-]*$/
+    // 확장 결과가 안전 문자만 내는 매크로. `productName` 은 공백을 담으므로 여기 없다.
+    const SAFE_MACROS = ['version', 'arch', 'ext', 'os', 'channel', 'platform']
+
+    const patterns: Array<[string, string | undefined]> = [
+      ['artifactName', config.artifactName],
+      ['nsis.artifactName', config.nsis?.artifactName],
+    ]
+
+    for (const [label, pattern] of patterns) {
+      expect(pattern, `${label} 이 설정돼 있어야 한다 — 기본값은 productName 의 공백을 그대로 쓴다`).toBeDefined()
+      const macros = [...pattern!.matchAll(/\$\{([^}]+)\}/g)].map((m) => m[1]!)
+      for (const m of macros) {
+        expect(SAFE_MACROS, `${label} 의 \${${m}} 는 안전 문자를 보장하지 않는다`).toContain(m)
+      }
+      expect(pattern!.replace(/\$\{[^}]+\}/g, ''), `${label} 의 리터럴 부분`).toMatch(GITHUB_SAFE)
+    }
+
+    // `${version}` 은 안전 매크로지만 semver 빌드 메타데이터(`1.0.0+build`)는 `+` 를 낸다.
+    const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'xzawedLauncher/packages/app/package.json'), 'utf-8'))
+    expect(version, '버전 문자열 자체가 URL 안전해야 한다').toMatch(GITHUB_SAFE)
+  })
+})
