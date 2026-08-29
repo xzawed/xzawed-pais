@@ -231,3 +231,48 @@ describe('electron-builder deb 메타데이터', () => {
     expect(String(pkg.homepage)).toMatch(/^https:\/\//)
   })
 })
+
+describe('트레이 아이콘이 패키지에 들어간다', () => {
+  /** `tray-manager.ts` 의 `getIconPath` 와 같은 규칙 — 한쪽만 바뀌면 여기서 걸린다. */
+  const TRAY_ICONS = ['tray-ok.png', 'tray-warn.png', 'tray-error.png'] as const
+
+  it('세 아이콘이 resources/ 에 실제로 있다', () => {
+    // 이 파일들이 없던 동안 앱은 죽지 않았다 — `nativeImage.createFromPath` 는 없는 경로에
+    // throw 하지 않고 **빈 이미지**를 준다. 그래서 tray-manager 의 try/catch 가 아무것도
+    // 잡지 못했고 트레이 아이콘이 조용히 비어 있었다. 창을 닫으면 hide() 되고 되살리는
+    // 유일한 경로가 트레이라, 빈 아이콘은 앱을 되찾을 수 없다는 뜻이다.
+    for (const icon of TRAY_ICONS) {
+      const p = path.join(ROOT, 'xzawedLauncher/packages/app/resources', icon)
+      expect(fs.existsSync(p), `${icon} 가 resources/ 에 없다`).toBe(true)
+      // 시그니처만 보면 몸통이 깨진 PNG 가 통과한다 — IHDR 까지 읽는다.
+      // (`createFromPath` 는 잘못된 이미지에도 throw 하지 않고 빈 이미지를 주므로,
+      //  파일이 있다는 것만으로는 아이콘이 그려진다는 보장이 되지 않는다.)
+      const buf = fs.readFileSync(p)
+      expect(buf.subarray(0, 8).toString('hex'), `${icon} 가 PNG 가 아니다`).toBe('89504e470d0a1a0a')
+      expect(buf.subarray(12, 16).toString('ascii'), `${icon} 에 IHDR 청크가 없다`).toBe('IHDR')
+      expect(buf.readUInt32BE(16), `${icon} 폭`).toBeGreaterThan(0)
+      expect(buf.readUInt32BE(20), `${icon} 높이`).toBeGreaterThan(0)
+    }
+  })
+
+  it('extraResources 가 세 아이콘을 resources 루트에 넣는다', async () => {
+    const { default: config } = await import('../../electron-builder')
+    const entries = config.extraResources as Array<{ from?: string; to?: string }>
+    const APP = path.join(ROOT, 'xzawedLauncher/packages/app')
+    for (const icon of TRAY_ICONS) {
+      const entry = entries.find((e) => (e.to ?? path.basename(e.from ?? '')) === icon)
+      expect(entry, `extraResources 에 ${icon} 도착지가 없다`).toBeDefined()
+      // **`to` 만 보면 `from` 이 없는 파일을 가리켜도 통과한다.** 출처가 실재하는지 함께 본다.
+      expect(fs.existsSync(path.join(APP, entry!.from!)), `${icon} 의 from 이 실재하지 않는다: ${entry!.from}`).toBe(true)
+    }
+  })
+
+  it('tray-manager 가 resources 루트에서 그 이름으로 읽는다', () => {
+    // 파일은 있는데 코드가 다른 이름이나 **다른 디렉토리**를 읽으면 여전히 비어 있다.
+    // extraResources 는 resources 루트에 넣으므로 읽는 쪽도 `process.resourcesPath` 여야 한다.
+    const src = fs.readFileSync(path.join(ROOT, 'xzawedLauncher/packages/app/src/main/tray-manager.ts'), 'utf-8')
+    expect(src, '아이콘 이름 규칙이 바뀌었다 — TRAY_ICONS 를 함께 고쳐라').toMatch(/`tray-\$\{status\}\.png`/)
+    expect(src, '아이콘 경로가 process.resourcesPath 기준이 아니다 — extraResources 도착지와 어긋난다')
+      .toMatch(/path\.join\(\s*process\.resourcesPath/)
+  })
+})

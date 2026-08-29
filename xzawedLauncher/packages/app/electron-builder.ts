@@ -5,7 +5,17 @@ const config: Configuration = {
   productName: 'xzawed Launcher',
   directories: { output: 'dist', buildResources: 'resources' },
   files: ['out/**/*'],
-  extraResources: [{ from: 'resources/docker-compose.prod.yml', to: 'docker-compose.prod.yml' }],
+  extraResources: [
+    { from: 'resources/docker-compose.prod.yml', to: 'docker-compose.prod.yml' },
+    // 트레이 아이콘 3종. `tray-manager.ts` 가 `process.resourcesPath` 기준으로 읽는다 —
+    // **여기 없으면 앱이 죽지 않고 아이콘만 빈다.** `nativeImage.createFromPath` 는 없는
+    // 경로에 throw 하지 않고 빈 이미지를 주기 때문이다(그래서 그쪽 try/catch 가 아무것도
+    // 잡지 못했다). 창을 닫으면 `hide()` 되고 되살리는 유일한 경로가 트레이라, 빈 아이콘은
+    // 사용자가 앱을 되찾지 못한다는 뜻이다. `scripts/make-tray-icons.mjs` 가 생성한다.
+    { from: 'resources/tray-ok.png', to: 'tray-ok.png' },
+    { from: 'resources/tray-warn.png', to: 'tray-warn.png' },
+    { from: 'resources/tray-error.png', to: 'tray-error.png' },
+  ],
   // **공백을 넣지 마라 — 자동 업데이트가 조용히 404 난다.**
   // `latest.yml` 의 url 은 artifactName 이 아니라 electron-builder 가 파생한
   // `safeArtifactName`(공백 등 URL 비안전 문자를 `-` 로 치환한 것)이다. 기본값
