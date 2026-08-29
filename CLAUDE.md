@@ -137,7 +137,7 @@ node scripts/check-docs.js                     # 링크 실존 · CLAUDE.md 200�
 
 **버전 비호환은 에러 메시지가 아니라 `peerDependencies`로 판정한다.** `ERR_PACKAGE_PATH_NOT_EXPORTED` 류는 "한 단계만 올리면 되겠다"는 오추론을 부른다. `npm view <pkg>@<major> peerDependencies`로 얽힌 패키지들의 범위 **교집합**을 먼저 구한다.
 
-**Dependabot PR의 SonarCloud 실패는 코드 문제가 아니다** — bot PR은 `SONAR_TOKEN`에 접근할 수 없어 구조적으로 실패한다. 로컬 일괄 반영 후 사람 브랜치 단일 PR로 우회한다.
+**Dependabot PR이 붉으면 Sonar부터 의심하지 않는다** — sonar 잡은 `if: always()`라 bot PR의 `SONAR_TOKEN` 부재를 가시적 통과로 처리한다. 실제로 터지는 곳은 `--frozen-lockfile`을 도는 서비스 잡이다: **봇이 만든 락파일에는 최상위 `overrides:` 키가 없어** `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`로 거부된다. 로컬에서 `pnpm install --lockfile-only`로 재생성해 사람 브랜치 하나로 합친다.
 
 ## 실측 규칙
 
