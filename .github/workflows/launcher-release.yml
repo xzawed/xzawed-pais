@@ -3,6 +3,13 @@ name: Launcher Release
 on:
   push:
     tags: ['launcher-v*']
+  # **태그 없이도 패키징을 돌릴 수 있어야 한다.** 이것이 없으면 windows·macos·linux
+  # 산출물이 **릴리스를 자른 뒤에야** 처음 검증된다 — 필수 PR 잡(`ci.yml` 의 `launcher`)은
+  # `ELECTRON_SKIP_BINARY_DOWNLOAD: "1"` 이라 electron 바이너리를 받지도 않고
+  # `electron-builder` 를 부르지도 않으므로, 그 초록은 tsc + vitest 만 말한다.
+  # 실제로 그 사각지대에서 결함이 나왔다(설정 파일이 자동 탐색되지 않는 이름이라
+  # 통째로 무시돼 출하본에 compose 파일이 없었다 — 로컬 패키징으로만 발견됐다).
+  workflow_dispatch: {}
 
 jobs:
   build-windows:
@@ -106,6 +113,10 @@ jobs:
             xzawedLauncher/packages/app/dist/latest-linux.yml
 
   release:
+    # **릴리스는 태그 푸시에서만 만든다.** `workflow_dispatch` 는 3플랫폼 패키징을 실제로
+    # 돌려 산출물만 남기는 검증 실행이라, 여기서 릴리스를 만들면 검증할 때마다 릴리스가
+    # 생긴다. 세 build 잡의 `upload-artifact` 는 그대로 도므로 산출물은 확인할 수 있다.
+    if: github.event_name == 'push'
     needs: [build-windows, build-macos, build-linux]
     runs-on: ubuntu-latest
     timeout-minutes: 45
