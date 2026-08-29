@@ -1,6 +1,14 @@
 {
   "name": "@xzawed/launcher-app",
   "version": "0.1.0",
+  "description": "xzawedPAIS 설치·실행 런처 — Docker 스택 관리와 Claude 인증을 담당한다",
+  "homepage": "https://github.com/xzawed/xzawed-pais",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xzawed/xzawed-pais.git"
+  },
+  "author": "xzawed <xzawed@users.noreply.github.com>",
+  "license": "MIT",
   "private": true,
   "main": "out/main/index.js",
   "scripts": {

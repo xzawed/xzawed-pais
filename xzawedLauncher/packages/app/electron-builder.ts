@@ -41,6 +41,12 @@ const config: Configuration = {
     // `executableName contains characters that cannot be safely used in file paths:
     //  @xzawedlauncher-app`
     executableName: 'xzawed-launcher',
+    // **deb 는 maintainer 를 요구한다** — 없으면 빌드가 거부한다(AppImage 는 요구하지 않아
+    // 리눅스 안에서도 타깃별로 갈린다). 실측 에러: `It is required to set Linux .deb package
+    // maintainer.` 와 `Please specify project homepage`. 후자는 package.json 의 `homepage`
+    // 로 채웠다. 배포되는 .deb 의 Maintainer 필드에 그대로 들어가는 값이라 개인 주소 대신
+    // GitHub no-reply 를 쓴다.
+    maintainer: 'xzawed <xzawed@users.noreply.github.com>',
     // 미설정 시 electron-builder 가 "Utility" 로 조용히 채우고 경고만 남긴다
     // (`linux.category is not set and cannot map from macOS`). .desktop 항목에 들어가는
     // 값이라 기본값에 맡기지 않는다.
