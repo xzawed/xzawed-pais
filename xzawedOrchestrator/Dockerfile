@@ -31,5 +31,9 @@ COPY --from=deps /app/packages/server/node_modules ./packages/server/node_module
 
 EXPOSE 3000
 WORKDIR /app/packages/server
+# 공유 workspace 볼륨의 마운트포인트를 **이미지 안에** node 소유로 만들어 둔다.
+# 없으면 Docker 가 named volume 을 root:root 로 생성하고, 러너는 USER node 라 EACCES 로
+# 한 줄도 못 쓴다 — 코드 생성·빌드·테스트가 전부 막힌다(실측: 7개 서비스 전부 DENIED).
+RUN mkdir -p /workspace && chown node:node /workspace
 USER node
 CMD ["node", "dist/index.js"]
