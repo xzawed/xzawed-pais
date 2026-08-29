@@ -100,7 +100,18 @@ export async function getServiceStatuses(): Promise<ServiceState[]> {
       try { return [JSON.parse(l) as Record<string, unknown>] } catch { return [] }
     })
     return rows.map((r) => {
-      const name = String(r['Name'] ?? '').replace(/^xzawed[_-]/, '').replace(/[_-]\d+$/, '') as ServiceName
+      // **`Name` 이 아니라 `Service` 를 읽는다.** `Name` 은 컨테이너 이름
+      // `<project>-<service>-<index>` 이고 project 는 compose 파일이 있는 **디렉토리**에서
+      // 온다 — 패키징된 앱에서는 `resources`, 저장소에서는 `xzawedpais` 다. 옛 코드는
+      // `^xzawed[_-]` 로 접두사를 벗기려 했는데 그 정규식은 `xzawed` 뒤에 `_`·`-` 를
+      // 요구하므로 **어느 경우에도 매치되지 않는다**.
+      //
+      // 실측(11개 컨테이너가 전부 healthy 인 스택):
+      //   Name="pais-verify-builder-1" → 옛 코드 "pais-verify-builder" · 실제 "builder"
+      // 서비스 이름이 어긋나면 모든 카드가 `stopped` 으로 남고, 마법사의 완료 조건
+      // `states.every(s => s.status === 'running')` 이 **영영 참이 되지 않는다.**
+      // `docker compose ps --format json` 은 `Service` 를 그대로 준다.
+      const name = String(r['Service'] ?? '') as ServiceName
       let status: ServiceStatus = 'stopped'
       if (r['State'] === 'running' && r['Health'] === 'healthy') status = 'running'
       else if (r['State'] === 'running') status = 'starting'
