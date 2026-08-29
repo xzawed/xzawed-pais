@@ -1,18 +1,43 @@
 name: Docker Publish
 
 on:
-  # 결손 이미지 재발행 수단. push 트리거만 있으면 크래시로 빠진 태그를 되돌릴 방법이 없다.
+  # 결손 이미지 재발행 수단. 게이트 트리거만 있으면 크래시로 빠진 태그를 되돌릴 방법이 없다.
   workflow_dispatch:
-  push:
+  # **CI 가 끝난 뒤에 돈다.** 이전에는 `push: branches: [master]` 라 CI 와 **동시에** 출발했다.
+  # 실측: master `76ec026` 의 publish 는 16:22:01Z 에 끝났고 그 커밋의 CI 는 16:24:31Z 에
+  # 끝났다 — **판정이 나오기 2분 30초 전에 `:latest` 가 이미 GHCR 에 있었다.**
+  #
+  # `paths` 필터는 함께 없앴다. `workflow_run` 이 경로 필터를 지원하지 않기도 하지만,
+  # 그 필터가 `package.json`·`pnpm-lock.yaml` 을 빼먹고 있어서 **의존성만 바뀐 머지는
+  # 발행되지 않고 `:latest` 가 조용히 낡았다**(실측: `f034d6a` 는 그 두 파일만 바꿨고
+  # docker-publish 런이 0건이다). 전부 발행하는 편이 정직하다 — 9개 매트릭스 전체 빌드는
+  # 실측 3분 34초이고, 한 번 관측된 11분 22초는 그중 8분 07초가 러너 큐 대기였다.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [master]
-    paths:
-      - 'xzawed*/src/**'              # 독립 서비스 (Security, Planner, Developer 등)
-      - 'xzawed*/packages/*/src/**'   # Turborepo 서비스 (Orchestrator, Manager)
-      - 'xzawed*/Dockerfile'
-      - 'xzawed*/Dockerfile.dockerignore'
+
+# 태그를 미는 도중 취소하면 `:latest` 가 반쯤 갱신된 채 남는다 — 취소하지 않고 줄 세운다.
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish:
+    # **`event == 'push'` 가 보안 가드다 — 빼면 안 된다.**
+    # `workflow_run` 은 **특권 토큰**(`packages: write` · 시크릿 접근)으로 돌고, 위의
+    # `branches: [master]` 는 트리거한 런의 `head_branch` 를 본다. `pull_request` 로 돈 CI 런의
+    # `head_branch` 는 **PR 소스 브랜치 이름**이라, fork 의 기본 브랜치명이 `master` 인 PR 이
+    # 그 필터를 통과한다. 그러면 신뢰할 수 없는 `head_sha` 를 체크아웃해 특권 토큰으로
+    # `:latest` 를 GHCR 에 민다(저장소가 공개라 누구나 열 수 있다). `event == 'push'` 로
+    # **master 에 실제로 push 된 커밋의 CI 런만** 받는다.
+    #
+    # 수동 재발행이 필요하면 이 워크플로 자신의 `workflow_dispatch` 를 쓴다 — 그쪽은
+    # 저장소 쓰기 권한이 있어야 부를 수 있다.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -36,7 +61,11 @@ jobs:
           - { name: security,     dir: xzawedSecurity }
 
     steps:
+      # **CI 가 검증한 그 커밋을 굽는다.** `workflow_run` 에서 `github.sha` 는 트리거 시점의
+      # 기본 브랜치 tip 이라, 그 사이 머지가 하나 더 들어오면 **검증되지 않은 커밋**이 구워진다.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
@@ -60,6 +89,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/xzawed/xzawed-${{ matrix.service.name }}:latest
-            ghcr.io/xzawed/xzawed-${{ matrix.service.name }}:${{ github.sha }}
+            ghcr.io/xzawed/xzawed-${{ matrix.service.name }}:${{ github.event.workflow_run.head_sha || github.sha }}
           cache-from: type=gha,scope=docker-${{ matrix.service.name }}
           cache-to: type=gha,mode=max,scope=docker-${{ matrix.service.name }}
