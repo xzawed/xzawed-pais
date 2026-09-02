@@ -18,7 +18,7 @@
     "@fastify/jwt": "^10.2.2",
     "@octokit/rest": "^22.0.1",
     "@xzawed/agent-streams": "file:../../../xzawedShared",
-    "fastify": "^5.10.0",
+    "fastify": "^5.12.1",
     "ioredis": "^5.6.0",
     "pg": "^8.23.0",
     "zod": "^3.24.0"
